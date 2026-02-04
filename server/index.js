@@ -35,13 +35,23 @@ app.post("/webhook", async (req, res) => {
   }
 
   try {
-    // Note: We need to create the table first.
-    const query =
-      "INSERT INTO alerts(ticker, signal_type, price, message) VALUES($1, $2, $3, $4) RETURNING *";
-    const values = [ticker, signal, price, message || ""];
+    // Ensure table exists (Auto-migration for simplicity)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id SERIAL PRIMARY KEY,
+        ticker VARCHAR(20) NOT NULL,
+        signal_type VARCHAR(10) NOT NULL,
+        price DECIMAL(15, 2) NOT NULL,
+        message TEXT,
+        timestamp TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    
+    const query = 'INSERT INTO alerts(ticker, signal_type, price, message) VALUES($1, $2, $3, $4) RETURNING *';
+    const values = [ticker, signal, price, message || ''];
     const result = await pool.query(query, values);
-    console.log("Alert received:", result.rows[0]);
-    res.status(200).send("Alert Received");
+    console.log('Alert received:', result.rows[0]);
+    res.status(200).send('Alert Received');
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).send("Server Error");
