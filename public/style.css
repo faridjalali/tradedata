@@ -171,34 +171,45 @@ h2 { margin: 0; font-size: 1.2rem; }
 }
 
 /* LEADERBOARD STYLES */
-.leaderboard-grid {
+.leaderboard-container {
     display: grid;
-    grid-template-columns: 1fr 1fr; /* 2x2 grid */
-    gap: 20px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-top: 20px;
 }
-.rank-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    overflow: hidden;
-}
-.rank-header {
-    padding: 10px;
-    font-weight: bold;
-    text-align: center;
-    border-bottom: 1px solid var(--border-color);
-    background: rgba(255,255,255,0.05);
-}
-.bull-header { color: var(--accent-bullish); border-bottom-color: var(--accent-bullish); }
-.bear-header { color: var(--accent-bearish); border-bottom-color: var(--accent-bearish); }
 
-table { width: 100%; border-collapse: collapse; }
-td, th { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
-th { color: var(--text-secondary); font-size: 0.8rem; }
-td:last-child { text-align: right; font-weight: bold; }
+.rank-container {
+    background: rgba(22, 27, 34, 0.4); /* Semi-transparent dark */
+    backdrop-filter: blur(12px); /* Glass blur effect */
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+    border-radius: 12px;
+    padding: 15px;
+    height: 100%;
+}
+
+.rank-header {
+    text-align: center;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bull-header { color: #56d364; }
+.bear-header { color: #fa7970; }
+
+table { width: 100%; }
+td { padding: 8px 5px; font-size: 0.9rem; border-bottom: 1px solid rgba(255, 255, 255, 0.03); }
+td:first-child { color: var(--text-primary); }
+td:last-child { text-align: right; font-weight: 500; color: var(--text-secondary); }
 tr:last-child td { border-bottom: none; }
-.clickable-row { cursor: pointer; transition: background-color 0.2s; }
-.clickable-row:hover { background-color: rgba(255, 255, 255, 0.05); }
+.clickable-row { cursor: pointer; transition: background-color 0.2s; border-radius: 4px; }
+.clickable-row:hover { background-color: rgba(255, 255, 255, 0.08); }
 
 /* Utilities */
 .hidden { display: none !important; }
