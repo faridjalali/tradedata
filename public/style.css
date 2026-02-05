@@ -359,7 +359,6 @@ tr:last-child td { border-bottom: none; }
 .clickable-row:hover { background-color: rgba(255, 255, 255, 0.08); }
 
 /* Utilities */
-.hidden { display: none !important; }
 button {
     background: var(--highlight);
     color: white;
@@ -390,6 +389,8 @@ button:hover { opacity: 0.9; }
         display: none !important;
     }
 }
-
 /* Desktop Defaults */
 .mobile-only { display: none; }
+
+/* Utility: Hidden always wins */
+.hidden { display: none !important; }
