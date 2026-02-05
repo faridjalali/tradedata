@@ -35,6 +35,33 @@ function getRelativeTime(timestamp) {
     return `${diffDays}d ago`;
 }
 
+// Mobile Column Logic
+let mobileMode = 'daily'; // 'daily' or 'weekly'
+
+function setMobileMode(mode) {
+    mobileMode = mode;
+    const btnD = document.getElementById('mobile-btn-d');
+    const btnW = document.getElementById('mobile-btn-w');
+    if (btnD) btnD.classList.toggle('active', mode === 'daily');
+    if (btnW) btnW.classList.toggle('active', mode === 'weekly');
+    updateMobileColumns();
+}
+
+function updateMobileColumns() {
+    const colDaily = document.getElementById('col-daily');
+    const colWeekly = document.getElementById('col-weekly');
+    
+    if (!colDaily || !colWeekly) return;
+
+    if (mobileMode === 'daily') {
+        colDaily.classList.remove('mobile-hidden');
+        colWeekly.classList.add('mobile-hidden');
+    } else {
+        colDaily.classList.add('mobile-hidden');
+        colWeekly.classList.remove('mobile-hidden');
+    }
+}
+
 // Initialization
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -173,28 +200,7 @@ function isCurrentTimeframe() {
 
 
 // Mobile Column Logic
-let mobileMode = 'daily'; // 'daily' or 'weekly'
-
-function setMobileMode(mode) {
-    mobileMode = mode;
-    document.getElementById('mobile-btn-d').classList.toggle('active', mode === 'daily');
-    document.getElementById('mobile-btn-w').classList.toggle('active', mode === 'weekly');
-    updateMobileColumns();
-}
-
-function updateMobileColumns() {
-    const colDaily = document.getElementById('col-daily');
-    const colWeekly = document.getElementById('col-weekly');
-    
-    // Only applies styles if on mobile via CSS utility, but we toggle class regardless
-    if (mobileMode === 'daily') {
-        colDaily.classList.remove('mobile-hidden');
-        colWeekly.classList.add('mobile-hidden');
-    } else {
-        colDaily.classList.add('mobile-hidden');
-        colWeekly.classList.remove('mobile-hidden');
-    }
-}
+// Mobile logic moved to top
 
 // --- LIVE FEED LOGIC ---
 async function fetchLiveAlerts(force = false) {
