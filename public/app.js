@@ -123,6 +123,9 @@ function attachClickHandlers() {
 }
 
 function showTickerView(ticker) {
+    if (currentView !== 'live') {
+        switchView('live');
+    }
     document.getElementById('ticker-view').dataset.ticker = ticker;
     document.getElementById('reset-filter').classList.remove('hidden');
     document.getElementById('dashboard-view').classList.add('hidden');
