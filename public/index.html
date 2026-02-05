@@ -54,23 +54,9 @@
          <main id="view-live">
              <!-- Ticker Detail View (Hidden by default) -->
              <div id="ticker-view" class="hidden">
-                 <div class="stats-panel">
-                     <div class="stat-box">
-                         <h3>Ticker</h3>
-                         <div id="stat-ticker">--</div>
-                     </div>
-                     <div class="stat-box">
-                         <h3>Bullish</h3>
-                         <div id="stat-bullish" class="bull-text">0</div>
-                     </div>
-                     <div class="stat-box">
-                         <h3>Bearish</h3>
-                         <div id="stat-bearish" class="bear-text">0</div>
-                     </div>
-                 </div>
-                 
-                 <div class="chart-container">
-                     <canvas id="priceChart"></canvas>
+                 <div class="ticker-header-simple">
+                     <button id="back-to-dashboard" class="nav-btn">← Back</button>
+                     <h2 id="view-ticker-title">Ticker</h2>
                  </div>
 
                  <!-- Ticker Alert History -->

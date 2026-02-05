@@ -48,6 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inputs
     document.getElementById('reset-filter').addEventListener('click', showOverview);
     
+    // Ticker View Back Button
+    const backBtn = document.getElementById('back-to-dashboard');
+    if (backBtn) backBtn.addEventListener('click', showOverview);
+    
     // Live Feed Controls
     document.getElementById('btn-30').addEventListener('click', () => setLiveFeedMode('30'));
     document.getElementById('btn-7').addEventListener('click', () => setLiveFeedMode('7'));
@@ -265,7 +269,7 @@ function setTickerSort(mode) {
     document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.sort === mode);
     });
-    const currentTicker = document.getElementById('stat-ticker').textContent;
+    const currentTicker = document.getElementById('view-ticker-title').textContent;
     if (currentTicker && currentTicker !== '--') {
          renderTickerView(currentTicker);
     }
@@ -439,11 +443,10 @@ function renderTickerView(ticker) {
         return 0;
     });
     
-    document.getElementById('stat-ticker').textContent = ticker;
-    document.getElementById('stat-bullish').textContent = alerts.filter(a => a.signal_type.toLowerCase().includes('bull')).length;
-    document.getElementById('stat-bearish').textContent = alerts.filter(a => a.signal_type.toLowerCase().includes('bear')).length;
+    document.getElementById('view-ticker-title').textContent = ticker;
     
-    renderChart(ticker, chartData);
+    // Sort logic handles the list order
+    // renderChart call removed
     
     const listContainer = document.getElementById('ticker-alerts-list');
     if (alerts.length === 0) {
@@ -453,39 +456,7 @@ function renderTickerView(ticker) {
     }
 }
 
-function renderChart(ticker, alerts) {
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    const labels = alerts.map(a => new Date(a.timestamp).toLocaleDateString());
-    const bgColors = alerts.map(a => a.signal_type.includes('bull') ? '#3fb950' : '#f85149');
-
-    if (chartInstance) chartInstance.destroy();
-
-    chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: `${ticker} Price Alerts`,
-                data: alerts.map(a => a.price),
-                borderColor: '#58a6ff',
-                backgroundColor: 'rgba(88, 166, 255, 0.1)',
-                pointBackgroundColor: bgColors,
-                pointRadius: 6,
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: { grid: { color: '#30363d' }, ticks: { color: '#8b949e' } },
-                x: { grid: { display: false }, ticks: { color: '#8b949e' } }
-            },
-            plugins: { legend: { display: false } }
-        }
-    });
-}
+// Chart removed as per request
 
 // --- LEADERBOARD LOGIC ---
 async function fetchLeaderboardData() {
