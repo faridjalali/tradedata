@@ -23,6 +23,19 @@
              <div id="live-controls">
                 <button id="reset-filter" class="hidden">← Back</button>
                 <div class="feed-controls-group">
+                    <button class="glass-btn icon-btn active" id="sort-time" title="Sort by Time">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                    </button>
+                    <button class="glass-btn icon-btn" id="sort-ticker" title="Sort by Ticker">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M15 6l-6 6l6 6"></path> <!-- Placeholder like icon, let's use a standard list or A-Z icon -->
+                            <path d="M3 6h18M3 12h18M3 18h18" stroke-width="2"></path>
+                        </svg>
+                    </button>
+                    <div class="divider-vertical"></div>
                     <button class="glass-btn active" id="btn-week">Week</button>
                     <button class="glass-btn" id="btn-month">Month</button>
                     <input type="date" id="history-date" class="glass-input">

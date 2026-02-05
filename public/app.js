@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-month').addEventListener('click', () => setLiveFeedMode('month'));
     document.getElementById('history-date').addEventListener('change', () => fetchLiveAlerts(true)); // Pass true to indicate custom date
 
+    // Sorting Controls
+    document.getElementById('sort-time').addEventListener('click', () => setSortMode('time'));
+    document.getElementById('sort-ticker').addEventListener('click', () => setSortMode('ticker'));
+
     // Timeframe Buttons
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -42,6 +46,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let liveFeedMode = 'week'; // 'week' or 'month'
+let currentSortMode = 'time'; // 'time' or 'ticker'
+
+function setSortMode(mode) {
+    currentSortMode = mode;
+    document.getElementById('sort-time').classList.toggle('active', mode === 'time');
+    document.getElementById('sort-ticker').classList.toggle('active', mode === 'ticker');
+    renderOverview(); // Re-render with new sort
+}
 
 function setLiveFeedMode(mode) {
     liveFeedMode = mode;
@@ -110,8 +122,20 @@ function renderOverview() {
     const dailyContainer = document.getElementById('daily-container');
     const weeklyContainer = document.getElementById('weekly-container');
     
-    const daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() === 'daily');
-    const weekly = allAlerts.filter(a => a.timeframe && a.timeframe.toLowerCase() === 'weekly');
+    let daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() === 'daily');
+    let weekly = allAlerts.filter(a => a.timeframe && a.timeframe.toLowerCase() === 'weekly');
+    
+    // Sort logic
+    const sortFn = (a, b) => {
+        if (currentSortMode === 'time') {
+            return new Date(b.timestamp) - new Date(a.timestamp); // Newest first
+        } else {
+            return a.ticker.localeCompare(b.ticker); // A-Z
+        }
+    };
+
+    daily.sort(sortFn);
+    weekly.sort(sortFn);
     
     document.getElementById('daily-count').textContent = daily.length;
     document.getElementById('weekly-count').textContent = weekly.length;
