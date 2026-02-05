@@ -304,7 +304,7 @@ function renderOverview() {
     const dailyContainer = document.getElementById('daily-container');
     const weeklyContainer = document.getElementById('weekly-container');
     
-    let daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() === 'daily');
+    let daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() !== 'weekly');
     let weekly = allAlerts.filter(a => a.timeframe && a.timeframe.toLowerCase() === 'weekly');
     
     // Sort Helper
