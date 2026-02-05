@@ -72,7 +72,20 @@
                  <div class="chart-container">
                      <canvas id="priceChart"></canvas>
                  </div>
-             </div>
+
+                 <!-- Ticker Alert History -->
+                 <div class="ticker-history-section">
+                     <div class="history-controls">
+                         <span class="sort-label">Sort by:</span>
+                         <button class="sort-btn active" data-sort="time">Date</button>
+                         <button class="sort-btn" data-sort="volume">Volume</button>
+                         <button class="sort-btn" data-sort="intensity">Intensity</button>
+                         <button class="sort-btn" data-sort="combo">Combo</button>
+                     </div>
+                     <div id="ticker-alerts-list" class="alerts-list">
+                         <!-- Alerts rendered here -->
+                     </div>
+                 </div>
  
              <!-- Main Dashboard Split View -->
              <div id="dashboard-view" class="split-view">

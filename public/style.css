@@ -268,8 +268,9 @@ h2 { margin: 0; font-size: 1.2rem; }
     
     /* Force GPU rendering for crisper edges */
     -webkit-backface-visibility: hidden;
-    -moz-backface-visibility: hidden;
+    backface-visibility: hidden;
     -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
 }
 
 .alert-time { 
@@ -290,6 +291,48 @@ h2 { margin: 0; font-size: 1.2rem; }
 .stat-box div { font-size: 2rem; font-weight: bold; }
 .bull-text { color: var(--accent-bullish); }
 .bear-text { color: var(--accent-bearish); }
+
+/* Ticker History */
+.ticker-history-section {
+    margin-top: 20px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 20px;
+}
+
+.history-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.sort-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-right: 5px;
+}
+
+.sort-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.sort-btn:hover {
+    border-color: var(--highlight);
+    color: var(--text-primary);
+}
+
+.sort-btn.active {
+    background: rgba(88, 166, 255, 0.1);
+    border-color: var(--highlight);
+    color: var(--highlight);
+}
 
 /* Chart */
 .chart-container {

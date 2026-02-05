@@ -58,6 +58,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const weekInput = document.getElementById('history-week');
     const monthInput = document.getElementById('history-month');
 
+    // Ticker View Sort Buttons
+    document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
+    });
+
     // Set defaults
     weekInput.value = getCurrentWeekISO();
     monthInput.value = getCurrentMonthISO();
@@ -254,6 +259,18 @@ window.setWeeklySort = function(mode) {
     renderOverview();
 }
 
+let tickerSortMode = 'time';
+function setTickerSort(mode) {
+    tickerSortMode = mode;
+    document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sort === mode);
+    });
+    const currentTicker = document.getElementById('stat-ticker').textContent;
+    if (currentTicker && currentTicker !== '--') {
+         renderTickerView(currentTicker);
+    }
+}
+
 function updateSortIcons(context, mode) {
     // Find buttons in the specific column header context
     // This assumes specific button structure or re-render. 
@@ -407,14 +424,32 @@ function showOverview() {
 }
 
 function renderTickerView(ticker) {
-    const alerts = allAlerts.filter(a => a.ticker === ticker);
-    alerts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    let alerts = allAlerts.filter(a => a.ticker === ticker);
+    
+    // 1. Chart Data (Always Chronological)
+    const chartData = [...alerts].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    
+    // 2. List Data (Sorted by User Preference)
+    alerts.sort((a, b) => {
+        if (tickerSortMode === 'time') return new Date(b.timestamp) - new Date(a.timestamp); // Newest first
+        if (tickerSortMode === 'volume') return (b.signal_volume || 0) - (a.signal_volume || 0);
+        if (tickerSortMode === 'intensity') return (b.intensity_score || 0) - (a.intensity_score || 0);
+        if (tickerSortMode === 'combo') return (b.combo_score || 0) - (a.combo_score || 0);
+        return 0;
+    });
     
     document.getElementById('stat-ticker').textContent = ticker;
     document.getElementById('stat-bullish').textContent = alerts.filter(a => a.signal_type.toLowerCase().includes('bull')).length;
     document.getElementById('stat-bearish').textContent = alerts.filter(a => a.signal_type.toLowerCase().includes('bear')).length;
     
-    renderChart(ticker, alerts);
+    renderChart(ticker, chartData);
+    
+    const listContainer = document.getElementById('ticker-alerts-list');
+    if (alerts.length === 0) {
+        listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No alerts in this timeframe</div>';
+    } else {
+        listContainer.innerHTML = alerts.map(createAlertCard).join('');
+    }
 }
 
 function renderChart(ticker, alerts) {
