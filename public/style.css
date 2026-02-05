@@ -376,4 +376,8 @@ button:hover { opacity: 0.9; }
         grid-template-columns: 1fr 1fr !important; 
         row-gap: 80px;
     }
+    
+    .split-view {
+        grid-template-columns: 1fr;
+    }
 }
