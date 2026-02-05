@@ -239,7 +239,7 @@ function renderTable(elementId, items) {
         <thead><tr><th>Ticker</th><th>Signals</th></tr></thead>
         <tbody>
             ${items.map(item => `
-                <tr>
+                <tr class="clickable-row" onclick="showTickerView('${item.ticker}')">
                     <td>${item.ticker}</td>
                     <td>${item.count}</td>
                 </tr>
