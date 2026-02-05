@@ -68,15 +68,21 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.get("/api/alerts", async (req, res) => {
+app.get('/api/alerts', async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 50",
-    );
+    const days = parseInt(req.query.days) || 0;
+    let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100'; // Default limit
+    let values = [];
+
+    if (days > 0) {
+        query = `SELECT * FROM alerts WHERE timestamp >= NOW() - INTERVAL '${days} days' ORDER BY timestamp DESC`;
+    }
+    
+    const result = await pool.query(query, values);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).send("Server Error");
+    res.status(500).send('Server Error');
   }
 });
 
