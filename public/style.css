@@ -61,6 +61,7 @@ h2 { margin: 0; font-size: 1.2rem; }
 /* Controls */
 /* Controls */
 #controls-bar { margin-bottom: 20px; min-height: 40px; display: flex; align-items: center; justify-content: space-between; }
+#live-controls { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .feed-controls-group { display: flex; gap: 10px; align-items: center; }
 
 
