@@ -389,7 +389,24 @@ button:hover { opacity: 0.9; }
         display: none !important;
     }
 }
-/* Desktop Defaults */
+/* CSS Hardening: Strict Desktop/Mobile Separation */
+@media (min-width: 769px) {
+    /* Force columns to be visible on desktop, ignoring mobile-hidden utility */
+    .column { display: block !important; }
+    
+    /* Force mobile toggles to be hidden on desktop */
+    .mobile-only { display: none !important; }
+}
+
+@media (max-width: 768px) {
+    /* Ensure grid is active */
+    .split-view { display: grid; }
+    
+    /* Default mobile-only to flex */
+    .mobile-only { display: flex !important; }
+}
+
+/* Fallback Defaults (Overridden by above specific queries) */
 .mobile-only { display: none; }
 
 /* Utility: Hidden always wins */
