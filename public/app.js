@@ -2,6 +2,24 @@ let allAlerts = [];
 let chartInstance = null;
 let currentView = 'live'; // 'live' or 'leaderboard'
 
+// Helper to get current ISO week string (YYYY-Www)
+function getCurrentWeekISO() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    const yearStart = new Date(d.getFullYear(), 0, 1);
+    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+}
+
+// Helper to get current ISO month string (YYYY-MM)
+function getCurrentMonthISO() {
+    const d = new Date();
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    return `${d.getFullYear()}-${month}`;
+}
+
+// Initialization
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
     // Navigation
@@ -17,7 +35,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Live Feed Controls
     document.getElementById('btn-week').addEventListener('click', () => setLiveFeedMode('week'));
     document.getElementById('btn-month').addEventListener('click', () => setLiveFeedMode('month'));
-    document.getElementById('history-date').addEventListener('change', () => fetchLiveAlerts(true)); // Pass true to indicate custom date
+    
+    // New Date Inputs
+    const weekInput = document.getElementById('history-week');
+    const monthInput = document.getElementById('history-month');
+
+    // Set defaults
+    weekInput.value = getCurrentWeekISO();
+    monthInput.value = getCurrentMonthISO();
+
+    weekInput.addEventListener('change', () => fetchLiveAlerts(true));
+    monthInput.addEventListener('change', () => fetchLiveAlerts(true));
 
     // Timeframe Buttons
     document.querySelectorAll('.tf-btn').forEach(btn => {
@@ -31,8 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Initial Load - Set Today's date in picker but load week default
-    document.getElementById('history-date').valueAsDate = new Date();
+    // Initial Load
     setLiveFeedMode('week'); 
     
     setInterval(() => {
@@ -70,15 +97,35 @@ function setSortMode(mode) {
 
 function setLiveFeedMode(mode) {
     liveFeedMode = mode;
-    document.getElementById('btn-week').classList.toggle('active', mode === 'week');
-    document.getElementById('btn-month').classList.toggle('active', mode === 'month');
+    
+    const btnWeek = document.getElementById('btn-week');
+    const btnMonth = document.getElementById('btn-month');
+    const inputWeek = document.getElementById('history-week');
+    const inputMonth = document.getElementById('history-month');
+
+    if (mode === 'week') {
+        btnWeek.classList.add('active');
+        btnMonth.classList.remove('active');
+        inputWeek.classList.remove('hidden');
+        inputMonth.classList.add('hidden');
+    } else {
+        btnWeek.classList.remove('active');
+        btnMonth.classList.add('active');
+        inputWeek.classList.add('hidden');
+        inputMonth.classList.remove('hidden');
+    }
+
     fetchLiveAlerts(true);
 }
 
 function isCurrentTimeframe() {
-    const pickerDate = new Date(document.getElementById('history-date').value);
-    const today = new Date();
-    return pickerDate.toDateString() === today.toDateString();
+    if (liveFeedMode === 'week') {
+        const val = document.getElementById('history-week').value;
+        return val === getCurrentWeekISO();
+    } else {
+        const val = document.getElementById('history-month').value;
+        return val === getCurrentMonthISO();
+    }
 }
 
 // --- LIVE FEED LOGIC ---
@@ -86,27 +133,47 @@ async function fetchLiveAlerts(force = false) {
     try {
         let url = '/api/alerts';
         
-        // Calculate Date Range based on Picker + Mode
-        const selectedDate = new Date(document.getElementById('history-date').value);
-        let startDate, endDate;
-
         if (liveFeedMode === 'week') {
-            // Find Monday of that week
-            const day = selectedDate.getDay();
-            const diff = selectedDate.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-            const monday = new Date(selectedDate.setDate(diff));
+            const val = document.getElementById('history-week').value;
+            // val is "YYYY-Www"
+            if (!val) return; 
+
+            // Calculate start of week (Monday) from ISO string
+            // Simple Parse:
+            const [yearStr, weekStr] = val.split('-W');
+            const year = parseInt(yearStr);
+            const week = parseInt(weekStr);
+
+            // 1. Get Jan 4th of year (always in week 1)
+            const d = new Date(year, 0, 4);
+            // 2. Adjust to Monday of Week 1
+            const dayShift = d.getDay() === 0 ? 6 : d.getDay() - 1;
+            const week1Monday = new Date(d.setDate(d.getDate() - dayShift));
+            
+            // 3. Add (week - 1) weeks
+            const monday = new Date(week1Monday.setDate(week1Monday.getDate() + (week - 1) * 7));
             monday.setHours(0,0,0,0);
             
             const sunday = new Date(monday);
             sunday.setDate(monday.getDate() + 6);
             sunday.setHours(23,59,59,999);
-            
+
             startDate = monday.toISOString();
             endDate = sunday.toISOString();
+
         } else {
-            // Month
-            startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
-            endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+            const val = document.getElementById('history-month').value;
+            // val is "YYYY-MM"
+            if (!val) return;
+
+            const [year, month] = val.split('-').map(Number);
+            // month is 1-12, Date takes 0-11
+            const start = new Date(year, month - 1, 1);
+            const end = new Date(year, month, 0); // Last day of month
+            end.setHours(23,59,59,999);
+
+            startDate = start.toISOString();
+            endDate = end.toISOString();
         }
         
         url += `?start_date=${startDate}&end_date=${endDate}`;
