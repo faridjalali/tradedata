@@ -316,45 +316,74 @@ function updateSortIcons(context, mode) {
 }
 
 function renderOverview() {
-    document.getElementById('ticker-view').classList.add('hidden');
-    document.getElementById('dashboard-view').classList.remove('hidden');
-    document.getElementById('reset-filter').classList.add('hidden');
-    
-    const dailyContainer = document.getElementById('daily-container');
-    const weeklyContainer = document.getElementById('weekly-container');
-    
-    // Relaxed filters to catch 'Daily', '1D', '1d', etc. causing empty feed
-    let daily = allAlerts.filter(a => {
-        const tf = (a.timeframe || '').toLowerCase().trim();
-        return tf === '1d' || tf === 'daily' || tf.includes('day');
-    });
-    
-    let weekly = allAlerts.filter(a => {
-        const tf = (a.timeframe || '').toLowerCase().trim();
-        return tf === '1w' || tf === 'weekly' || tf.includes('week');
-    });
-    
-    // Sort Helper
-    const applySort = (list, mode) => {
-        list.sort((a, b) => {
-            if (mode === 'time') {
-                return new Date(b.timestamp) - new Date(a.timestamp);
+    try {
+        const dashboard = document.getElementById('dashboard-view');
+        const tickerDetail = document.getElementById('ticker-view');
+        const resetBtn = document.getElementById('reset-filter');
+        const desktopFilters = document.getElementById('desktop-filters');
+
+        // Force visibility
+        if (tickerDetail) tickerDetail.classList.add('hidden');
+        if (dashboard) dashboard.classList.remove('hidden');
+        if (resetBtn) resetBtn.classList.add('hidden');
+        if (desktopFilters) desktopFilters.classList.remove('hidden');
+        
+        const dailyContainer = document.getElementById('daily-container');
+        const weeklyContainer = document.getElementById('weekly-container');
+        
+        if (!dailyContainer || !weeklyContainer) return;
+
+        // Safety check for data
+        if (!Array.isArray(allAlerts)) {
+            console.error('Data invalid', allAlerts);
+            dailyContainer.innerHTML = '<div style="padding:15px;text-align:center">Error loading data</div>';
+            return;
+        }
+
+        // BUCKET LOGIC: Default to Daily unless explicitly Weekly
+        // This ensures NO alert is hidden due to bad timeframe tag
+        let daily = [];
+        let weekly = [];
+
+        allAlerts.forEach(a => {
+            const tf = (a.timeframe || '').toLowerCase().trim();
+            const isWeekly = tf === '1w' || tf === 'weekly' || tf.includes('week');
+            
+            if (isWeekly) {
+                weekly.push(a);
             } else {
-                return a.ticker.localeCompare(b.ticker);
+                daily.push(a);
             }
         });
-    };
+        
+        // Sort Helper
+        const applySort = (list, mode) => {
+            list.sort((a, b) => {
+                if (mode === 'time') {
+                    return new Date(b.timestamp) - new Date(a.timestamp);
+                } else {
+                    return a.ticker.localeCompare(b.ticker);
+                }
+            });
+        };
 
-    applySort(daily, dailySortMode);
-    applySort(weekly, weeklySortMode);
-    
-    dailyContainer.innerHTML = daily.map(createAlertCard).join('');
-    weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
-    
-    // IMPORTANT: Re-attach click listeners because we just wiped the HTML
-    // The previous implementation had a bug where leaderboard clicks might not work if 'showTickerView' relied on scope.
-    // But here for live feed cards:
-    attachClickHandlers();
+        applySort(daily, dailySortMode);
+        applySort(weekly, weeklySortMode);
+        
+        if (daily.length === 0) dailyContainer.innerHTML = '<div style="padding:15px;color:var(--text-secondary)">No daily alerts</div>';
+        else dailyContainer.innerHTML = daily.map(createAlertCard).join('');
+
+        if (weekly.length === 0) weeklyContainer.innerHTML = '<div style="padding:15px;color:var(--text-secondary)">No weekly alerts</div>';
+        else weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+        
+        attachClickHandlers();
+
+    } catch (e) {
+        console.error('Render error:', e);
+        // Attempt to show something
+        const d = document.getElementById('daily-container');
+        if (d) d.innerHTML = 'System encountered a display error.';
+    }
 }
 
 function formatVolume(vol) {
