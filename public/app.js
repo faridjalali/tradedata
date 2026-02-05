@@ -279,7 +279,7 @@ function createAlertCard(alert) {
             <div class="alert-info">
                 <h3>${alert.ticker}</h3>
                 <div class="alert-meta">
-                    <span class="price">$${alert.price}</span> | <sub>${date}</sub>
+                    <span class="price">$${alert.price}</span>
                 </div>
             </div>
             <div class="signal-pill ${signalClass}">
