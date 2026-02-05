@@ -181,6 +181,9 @@ h2 { margin: 0; font-size: 1.2rem; }
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
 }
 @media (hover: hover) {
     .icon-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
