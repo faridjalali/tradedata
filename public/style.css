@@ -228,12 +228,48 @@ h2 { margin: 0; font-size: 1.2rem; }
     font-size: 1rem; 
     color: var(--text-primary);
     font-weight: 600;
+    min-width: 60px; /* Ensure ticker has space */
 }
 
+/* New Metrics Layout */
+.metrics-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.metric-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.volume-text {
+    font-family: inherit;
+    font-weight: 500;
+}
+
+/* Score Circles */
+.score-circle {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: conic-gradient(var(--highlight) 0%, transparent 0%);
+    position: relative;
+    display: inline-block;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.score-circle.intensity { --circle-color: #a371f7; } /* Purple for Intensity */
+.score-circle.combo { --circle-color: #2196f3; } /* Blue for Combo */
+
 .alert-time { 
-    font-size: 0.8rem; 
+    font-size: 0.75rem; 
     color: var(--text-secondary); 
     white-space: nowrap;
+    min-width: 50px;
+    text-align: right;
 }
 .stat-box {
     background: var(--card-bg);

@@ -47,18 +47,29 @@ app.post("/webhook", async (req, res) => {
       );
     `);
     
-    // Attempt to add timeframe column if it doesn't exist (Migration)
+    // Attempt to add new columns if they don't exist (Migration)
     try {
         await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS timeframe VARCHAR(10)`);
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS signal_direction INTEGER`);
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS signal_volume INTEGER`);
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS intensity_score INTEGER`);
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS combo_score INTEGER`);
     } catch (e) {
-        // Ignore error if column exists or other minor issue
         console.log('Migration note:', e.message);
     }
 
-    const timeframe = req.body.timeframe || 'daily'; // Default to daily if missing
+    const timeframe = req.body.timeframe || 'daily'; 
+    const signalDirection = req.body.signal_direction || 0;
+    const signalVolume = req.body.signal_volume || 0;
+    const intensityScore = req.body.intensity_score || 0;
+    const comboScore = req.body.combo_score || 0;
     
-    const query = 'INSERT INTO alerts(ticker, signal_type, price, message, timeframe) VALUES($1, $2, $3, $4, $5) RETURNING *';
-    const values = [ticker, signal, price, message || '', timeframe];
+    const query = `
+      INSERT INTO alerts(ticker, signal_type, price, message, timeframe, signal_direction, signal_volume, intensity_score, combo_score) 
+      VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+      RETURNING *
+    `;
+    const values = [ticker, signal, price, message || '', timeframe, signalDirection, signalVolume, intensityScore, comboScore];
     const result = await pool.query(query, values);
     console.log('Alert received:', result.rows[0]);
     res.status(200).send('Alert Received');

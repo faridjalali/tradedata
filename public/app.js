@@ -313,16 +313,59 @@ function renderOverview() {
     attachClickHandlers();
 }
 
+function formatVolume(vol) {
+    if (!vol) return '0';
+    if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K';
+    return vol.toString();
+}
+
 function createAlertCard(alert) {
     const timeStr = getRelativeTime(alert.timestamp);
     
-    // Determine tone based on signal type string
-    const isBull = alert.signal_type.toLowerCase().includes('bull');
-    const cardClass = isBull ? 'bullish-card' : 'bearish-card';
+    // Parse direction from signal_direction property if available
+    // Default to strict 'bull' check if legacy
+    let isBull = false;
+    let isBear = false;
+
+    if (alert.signal_direction !== undefined && alert.signal_direction !== null) {
+        const dir = parseInt(alert.signal_direction);
+        isBull = dir === 1;
+        isBear = dir === -1;
+    } else {
+        // Fallback to text check
+        isBull = alert.signal_type && alert.signal_type.toLowerCase().includes('bull');
+        isBear = !isBull;
+    }
+
+    const cardClass = isBull ? 'bullish-card' : (isBear ? 'bearish-card' : '');
     
+    // Formatting
+    const volStr = formatVolume(alert.signal_volume || 0);
+    const intScore = alert.intensity_score || 0;
+    const cmbScore = alert.combo_score || 0;
+
+    // Conic gradient styles
+    // Intensity (Purple-ish), Combo (Blue-ish) defined in CSS classes variables?
+    // We set background directly here for the specific percentage
+    const intStyle = `background: conic-gradient(#a371f7 ${intScore}%, rgba(255,255,255,0.1) 0%);`;
+    const cmbStyle = `background: conic-gradient(#2196f3 ${cmbScore}%, rgba(255,255,255,0.1) 0%);`;
+
     return `
         <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
             <h3>${alert.ticker}</h3>
+            
+            <div class="metrics-container">
+                <div class="metric-item" title="Signal Volume">
+                    <span class="volume-text">${volStr}</span>
+                </div>
+                <div class="metric-item" title="Intensity Score: ${intScore}">
+                    <div class="score-circle intensity" style="${intStyle}"></div>
+                </div>
+                <div class="metric-item" title="Combo Score: ${cmbScore}">
+                    <div class="score-circle combo" style="${cmbStyle}"></div>
+                </div>
+            </div>
+
             <span class="alert-time">${timeStr}</span>
         </div>
     `;
