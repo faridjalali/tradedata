@@ -48,9 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inputs
     document.getElementById('reset-filter').addEventListener('click', showOverview);
     
-    // Ticker View Back Button
-    const backBtn = document.getElementById('back-to-dashboard');
-    if (backBtn) backBtn.addEventListener('click', showOverview);
+    // Ticker View Back Button (local button removed, global reset-filter used)
     
     // Live Feed Controls
     document.getElementById('btn-30').addEventListener('click', () => setLiveFeedMode('30'));
@@ -269,7 +267,7 @@ function setTickerSort(mode) {
     document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.sort === mode);
     });
-    const currentTicker = document.getElementById('view-ticker-title').textContent;
+    const currentTicker = document.getElementById('ticker-view').dataset.ticker;
     if (currentTicker && currentTicker !== '--') {
          renderTickerView(currentTicker);
     }
@@ -443,7 +441,7 @@ function renderTickerView(ticker) {
         return 0;
     });
     
-    document.getElementById('view-ticker-title').textContent = ticker;
+    // document.getElementById('view-ticker-title').textContent = ticker; // Removed
     
     // Sort logic handles the list order
     // renderChart call removed
