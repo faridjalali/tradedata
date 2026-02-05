@@ -23,9 +23,11 @@
              <div id="live-controls">
                 <button id="reset-filter" class="hidden">← Back</button>
                 <div class="feed-controls-group">
-                     <button class="glass-btn active" id="btn-week">Week</button>
-                     <button class="glass-btn" id="btn-month">Month</button>
-                     <input type="week" id="history-week" class="glass-input">
+                     <button class="glass-btn active" id="btn-30" data-tooltip="Alerts from last 30 days">30</button>
+                     <button class="glass-btn" id="btn-7" data-tooltip="Alerts from last 7 days">7</button>
+                     <button class="glass-btn" id="btn-week" data-tooltip="Alerts from this week">W</button>
+                     <button class="glass-btn" id="btn-month" data-tooltip="Alerts from this month">M</button>
+                     <input type="week" id="history-week" class="glass-input hidden">
                      <input type="month" id="history-month" class="glass-input hidden">
                  </div>
               </div>

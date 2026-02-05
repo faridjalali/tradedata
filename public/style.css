@@ -76,12 +76,38 @@ h2 { margin: 0; font-size: 1.2rem; }
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative; /* For tooltip positioning */
 }
 .glass-btn:hover { background: rgba(255, 255, 255, 0.1); color: #c9d1d9; }
 .glass-btn.active {
     background: rgba(255, 255, 255, 0.15); /* Keep it gray/monotone but lighter */
     border-color: rgba(255, 255, 255, 0.3);
     color: #ffffff;
+}
+
+/* Tooltip Styles */
+.glass-btn[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 125%; /* Position above */
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #21262d;
+    color: #8b949e;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    border: 1px solid #30363d;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    pointer-events: none;
+    opacity: 0;
+    animation: fadeIn 0.3s forwards;
+    animation-delay: 2s; /* 2 second hover delay */
+}
+
+@keyframes fadeIn {
+    to { opacity: 1; }
 }
 
 .icon-btn { padding: 6px 10px; }

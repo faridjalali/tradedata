@@ -33,6 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('reset-filter').addEventListener('click', showOverview);
     
     // Live Feed Controls
+    document.getElementById('btn-30').addEventListener('click', () => setLiveFeedMode('30'));
+    document.getElementById('btn-7').addEventListener('click', () => setLiveFeedMode('7'));
     document.getElementById('btn-week').addEventListener('click', () => setLiveFeedMode('week'));
     document.getElementById('btn-month').addEventListener('click', () => setLiveFeedMode('month'));
     
@@ -60,7 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial Load
-    setLiveFeedMode('week'); 
+    // Initial Load
+    setLiveFeedMode('30'); 
     
     setInterval(() => {
         // Only poll if "current" week/month is selected, not historical
@@ -68,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 10000); 
 });
 
-let liveFeedMode = 'week'; // 'week' or 'month'
+let liveFeedMode = '30'; // '30', '7', 'week', 'month'
 
 function switchView(view) {
     currentView = view;
@@ -98,20 +101,28 @@ function setSortMode(mode) {
 function setLiveFeedMode(mode) {
     liveFeedMode = mode;
     
+    const btn30 = document.getElementById('btn-30');
+    const btn7 = document.getElementById('btn-7');
     const btnWeek = document.getElementById('btn-week');
     const btnMonth = document.getElementById('btn-month');
+    
     const inputWeek = document.getElementById('history-week');
     const inputMonth = document.getElementById('history-month');
 
-    if (mode === 'week') {
+    // Reset all
+    [btn30, btn7, btnWeek, btnMonth].forEach(b => b.classList.remove('active'));
+    inputWeek.classList.add('hidden');
+    inputMonth.classList.add('hidden');
+
+    if (mode === '30') {
+        btn30.classList.add('active');
+    } else if (mode === '7') {
+        btn7.classList.add('active');
+    } else if (mode === 'week') {
         btnWeek.classList.add('active');
-        btnMonth.classList.remove('active');
         inputWeek.classList.remove('hidden');
-        inputMonth.classList.add('hidden');
-    } else {
-        btnWeek.classList.remove('active');
+    } else if (mode === 'month') {
         btnMonth.classList.add('active');
-        inputWeek.classList.add('hidden');
         inputMonth.classList.remove('hidden');
     }
 
@@ -119,6 +130,7 @@ function setLiveFeedMode(mode) {
 }
 
 function isCurrentTimeframe() {
+    if (liveFeedMode === '30' || liveFeedMode === '7') return true; // Always current for rolling windows
     if (liveFeedMode === 'week') {
         const val = document.getElementById('history-week').value;
         return val === getCurrentWeekISO();
@@ -133,7 +145,21 @@ async function fetchLiveAlerts(force = false) {
     try {
         let url = '/api/alerts';
         
-        if (liveFeedMode === 'week') {
+        if (liveFeedMode === '30') {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 30);
+            
+            endDate = end.toISOString();
+            startDate = start.toISOString();
+        } else if (liveFeedMode === '7') {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 7);
+            
+            endDate = end.toISOString();
+            startDate = start.toISOString();
+        } else if (liveFeedMode === 'week') {
             const val = document.getElementById('history-week').value;
             // val is "YYYY-Www"
             if (!val) return; 
@@ -162,6 +188,7 @@ async function fetchLiveAlerts(force = false) {
             endDate = sunday.toISOString();
 
         } else {
+            // Month
             const val = document.getElementById('history-month').value;
             // val is "YYYY-MM"
             if (!val) return;
