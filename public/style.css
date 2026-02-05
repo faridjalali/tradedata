@@ -129,7 +129,9 @@ h2 { margin: 0; font-size: 1.2rem; }
     justify-content: center;
     position: relative;
 }
-.tf-btn:hover { border-color: var(--highlight); color: var(--text-primary); }
+@media (hover: hover) {
+    .tf-btn:hover { border-color: var(--highlight); color: var(--text-primary); }
+}
 .tf-btn.active {
     background: var(--highlight);
     color: white;
@@ -179,7 +181,9 @@ h2 { margin: 0; font-size: 1.2rem; }
     justify-content: center;
     transition: all 0.2s;
 }
-.icon-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
+@media (hover: hover) {
+    .icon-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
+}
 .icon-btn.active {
     background: rgba(255, 255, 255, 0.15);
     color: white;
@@ -210,8 +214,9 @@ h2 { margin: 0; font-size: 1.2rem; }
     border-color: rgba(248, 81, 73, 0.3);
 }
 
-
-.alert-card:hover { transform: translateY(-2px); border-color: var(--highlight); }
+@media (hover: hover) {
+    .alert-card:hover { transform: translateY(-2px); border-color: var(--highlight); }
+}
 
 /* Compact Layout */
 .alert-card h3 { 
