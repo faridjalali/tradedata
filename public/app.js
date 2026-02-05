@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthInput = document.getElementById('history-month');
 
     // Ticker View Sort Buttons
-    document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
+    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
     });
 
@@ -264,7 +264,7 @@ window.setWeeklySort = function(mode) {
 let tickerSortMode = 'time';
 function setTickerSort(mode) {
     tickerSortMode = mode;
-    document.querySelectorAll('.history-controls .sort-btn').forEach(btn => {
+    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.sort === mode);
     });
     const currentTicker = document.getElementById('ticker-view').dataset.ticker;
