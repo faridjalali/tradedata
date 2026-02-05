@@ -35,16 +35,6 @@ function getRelativeTime(timestamp) {
     return `${diffDays}d ago`;
 }
 
-
-
-// Add resize listener to potentially reset or re-apply? 
-// Actually, media query handles the "display: none !important" part.
-// The issue "No daily alert column" likely means the column content is empty or hidden.
-// I already fixed the filter. User might be seeing cached legacy "empty" behavior?
-// Let's add a log/debug or just ensure we don't accidentally hide dashboard.
-
-
-
 // Initialization
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -74,8 +64,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
     });
-
-
 
     // Set defaults
     weekInput.value = getCurrentWeekISO();
@@ -174,11 +162,6 @@ function isCurrentTimeframe() {
         return val === getCurrentMonthISO();
     }
 }
-
-
-
-// Mobile Column Logic
-// Mobile logic moved to top
 
 // --- LIVE FEED LOGIC ---
 async function fetchLiveAlerts(force = false) {
@@ -316,74 +299,38 @@ function updateSortIcons(context, mode) {
 }
 
 function renderOverview() {
-    try {
-        const dashboard = document.getElementById('dashboard-view');
-        const tickerDetail = document.getElementById('ticker-view');
-        const resetBtn = document.getElementById('reset-filter');
-        const desktopFilters = document.getElementById('desktop-filters');
-
-        // Force visibility
-        if (tickerDetail) tickerDetail.classList.add('hidden');
-        if (dashboard) dashboard.classList.remove('hidden');
-        if (resetBtn) resetBtn.classList.add('hidden');
-        if (desktopFilters) desktopFilters.classList.remove('hidden');
-        
-        const dailyContainer = document.getElementById('daily-container');
-        const weeklyContainer = document.getElementById('weekly-container');
-        
-        if (!dailyContainer || !weeklyContainer) return;
-
-        // Safety check for data
-        if (!Array.isArray(allAlerts)) {
-            console.error('Data invalid', allAlerts);
-            dailyContainer.innerHTML = '<div style="padding:15px;text-align:center">Error loading data</div>';
-            return;
-        }
-
-        // BUCKET LOGIC: Default to Daily unless explicitly Weekly
-        // This ensures NO alert is hidden due to bad timeframe tag
-        let daily = [];
-        let weekly = [];
-
-        allAlerts.forEach(a => {
-            const tf = (a.timeframe || '').toLowerCase().trim();
-            const isWeekly = tf === '1w' || tf === 'weekly' || tf.includes('week');
-            
-            if (isWeekly) {
-                weekly.push(a);
+    document.getElementById('ticker-view').classList.add('hidden');
+    document.getElementById('dashboard-view').classList.remove('hidden');
+    document.getElementById('reset-filter').classList.add('hidden');
+    
+    const dailyContainer = document.getElementById('daily-container');
+    const weeklyContainer = document.getElementById('weekly-container');
+    
+    // Strict 1d/1w filters as requested
+    let daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
+    let weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
+    
+    // Sort Helper
+    const applySort = (list, mode) => {
+        list.sort((a, b) => {
+            if (mode === 'time') {
+                return new Date(b.timestamp) - new Date(a.timestamp);
             } else {
-                daily.push(a);
+                return a.ticker.localeCompare(b.ticker);
             }
         });
-        
-        // Sort Helper
-        const applySort = (list, mode) => {
-            list.sort((a, b) => {
-                if (mode === 'time') {
-                    return new Date(b.timestamp) - new Date(a.timestamp);
-                } else {
-                    return a.ticker.localeCompare(b.ticker);
-                }
-            });
-        };
+    };
 
-        applySort(daily, dailySortMode);
-        applySort(weekly, weeklySortMode);
-        
-        if (daily.length === 0) dailyContainer.innerHTML = '<div style="padding:15px;color:var(--text-secondary)">No daily alerts</div>';
-        else dailyContainer.innerHTML = daily.map(createAlertCard).join('');
-
-        if (weekly.length === 0) weeklyContainer.innerHTML = '<div style="padding:15px;color:var(--text-secondary)">No weekly alerts</div>';
-        else weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
-        
-        attachClickHandlers();
-
-    } catch (e) {
-        console.error('Render error:', e);
-        // Attempt to show something
-        const d = document.getElementById('daily-container');
-        if (d) d.innerHTML = 'System encountered a display error.';
-    }
+    applySort(daily, dailySortMode);
+    applySort(weekly, weeklySortMode);
+    
+    dailyContainer.innerHTML = daily.map(createAlertCard).join('');
+    weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+    
+    // IMPORTANT: Re-attach click listeners because we just wiped the HTML
+    // The previous implementation had a bug where leaderboard clicks might not work if 'showTickerView' relied on scope.
+    // But here for live feed cards:
+    attachClickHandlers();
 }
 
 function formatVolume(vol) {
@@ -471,25 +418,11 @@ window.showTickerView = function(ticker) {
     document.getElementById('reset-filter').classList.remove('hidden');
     document.getElementById('dashboard-view').classList.add('hidden');
     document.getElementById('ticker-view').classList.remove('hidden');
-    
-    // Hide Filters in Ticker View
-    const desktopFilters = document.getElementById('desktop-filters');
-    if (desktopFilters) desktopFilters.classList.add('hidden');
-
     renderTickerView(ticker);
 }
 
 function showOverview() {
     delete document.getElementById('ticker-view').dataset.ticker;
-    
-    document.getElementById('ticker-view').classList.add('hidden');
-    document.getElementById('dashboard-view').classList.remove('hidden');
-    document.getElementById('reset-filter').classList.add('hidden');
-
-    // Show Filters in Overview
-    const desktopFilters = document.getElementById('desktop-filters');
-    if (desktopFilters) desktopFilters.classList.remove('hidden');
-
     renderOverview();
 }
 

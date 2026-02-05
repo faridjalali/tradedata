@@ -359,6 +359,7 @@ tr:last-child td { border-bottom: none; }
 .clickable-row:hover { background-color: rgba(255, 255, 255, 0.08); }
 
 /* Utilities */
+.hidden { display: none !important; }
 button {
     background: var(--highlight);
     color: white;
@@ -370,27 +371,9 @@ button {
 }
 button:hover { opacity: 0.9; }
 
-/* --- RESPONSIVE LAYOUT & LOGIC --- */
-
-/* 1. Default Desktop State (Width > 768px) */
-/* Columns are always visible */
-.column { display: block; }
-/* Mobile toggles are hidden */
-.mobile-only { display: none; }
-/* Global Hidden Utility */
-.hidden { display: none !important; }
-
-/* 2. Mobile State (Width <= 768px) */
-/* 2. Mobile State (Width <= 768px) */
 @media (max-width: 768px) {
-    /* Leaderboard Stack */
     .leaderboard-container { 
         grid-template-columns: 1fr 1fr !important; 
         row-gap: 80px;
-    }
-    
-    /* Dashboard Split View: Grid Stack (Daily Top, Weekly Bottom) */
-    .split-view {
-        grid-template-columns: 1fr; 
     }
 }
