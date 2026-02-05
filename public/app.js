@@ -19,6 +19,22 @@ function getCurrentMonthISO() {
     return `${d.getFullYear()}-${month}`;
 }
 
+function getRelativeTime(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    
+    // Reset hours to compare calendar days
+    const d1 = new Date(date); d1.setHours(0,0,0,0);
+    const d2 = new Date(now); d2.setHours(0,0,0,0);
+    
+    const diffTime = d2 - d1;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "1d ago";
+    return `${diffDays}d ago`;
+}
+
 // Initialization
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -298,10 +314,7 @@ function renderOverview() {
 }
 
 function createAlertCard(alert) {
-    const d = new Date(alert.timestamp);
-    const day = d.getDate().toString().padStart(2, '0');
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const dateStr = `${day}/${month}`;
+    const timeStr = getRelativeTime(alert.timestamp);
     
     // Determine tone based on signal type string
     const isBull = alert.signal_type.toLowerCase().includes('bull');
@@ -309,12 +322,8 @@ function createAlertCard(alert) {
     
     return `
         <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
-            <div class="alert-info">
-                <h3>${alert.ticker}</h3>
-                <div class="alert-meta">
-                    ${dateStr}
-                </div>
-            </div>
+            <h3>${alert.ticker}</h3>
+            <span class="alert-time">${timeStr}</span>
         </div>
     `;
 }
