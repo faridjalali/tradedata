@@ -345,9 +345,16 @@ function renderOverview() {
     const dailyContainer = document.getElementById('daily-container');
     const weeklyContainer = document.getElementById('weekly-container');
     
-    // Strict 1d/1w filters as requested
-    let daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
-    let weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
+    // Relaxed filters to catch 'Daily', '1D', '1d', etc. causing empty feed
+    let daily = allAlerts.filter(a => {
+        const tf = (a.timeframe || '').toLowerCase().trim();
+        return tf === '1d' || tf === 'daily' || tf.includes('day');
+    });
+    
+    let weekly = allAlerts.filter(a => {
+        const tf = (a.timeframe || '').toLowerCase().trim();
+        return tf === '1w' || tf === 'weekly' || tf.includes('week');
+    });
     
     // Sort Helper
     const applySort = (list, mode) => {
