@@ -50,10 +50,10 @@ document.addEventListener('DOMContentLoaded', () => {
     monthInput.addEventListener('change', () => fetchLiveAlerts(true));
 
     // Timeframe Buttons
-    document.querySelectorAll('.tf-btn').forEach(btn => {
+    document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             // Remove active from all
-            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(b => b.classList.remove('active'));
             // Add active to clicked
             e.target.classList.add('active');
             // Fetch
