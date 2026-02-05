@@ -381,6 +381,7 @@ button:hover { opacity: 0.9; }
 .hidden { display: none !important; }
 
 /* 2. Mobile State (Width <= 768px) */
+/* 2. Mobile State (Width <= 768px) */
 @media (max-width: 768px) {
     /* Leaderboard Stack */
     .leaderboard-container { 
@@ -388,16 +389,8 @@ button:hover { opacity: 0.9; }
         row-gap: 80px;
     }
     
-    /* Show Mobile Toggles */
-    .mobile-only { display: flex !important; }
-    
-    /* Dashboard Split View: Grid Stack */
+    /* Dashboard Split View: Grid Stack (Daily Top, Weekly Bottom) */
     .split-view {
         grid-template-columns: 1fr; 
-    }
-    
-    /* Toggle Logic: Only effective on mobile */
-    .mobile-hidden {
-        display: none !important;
     }
 }

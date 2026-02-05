@@ -35,39 +35,7 @@ function getRelativeTime(timestamp) {
     return `${diffDays}d ago`;
 }
 
-// Mobile Column Logic
-let mobileMode = 'daily'; // 'daily' or 'weekly'
 
-function setMobileMode(mode) {
-    mobileMode = mode;
-    const btnD = document.getElementById('mobile-btn-d');
-    const btnW = document.getElementById('mobile-btn-w');
-    if (btnD) btnD.classList.toggle('active', mode === 'daily');
-    if (btnW) btnW.classList.toggle('active', mode === 'weekly');
-    updateMobileColumns();
-}
-
-function updateMobileColumns() {
-    const colDaily = document.getElementById('col-daily');
-    const colWeekly = document.getElementById('col-weekly');
-    
-    if (!colDaily || !colWeekly) return;
-
-    // Safety check: Only apply mobile hiding logic if on mobile or if classes are present
-    // Actually, relying on CSS media query is best, but if user sees issues, let's enforce via JS too.
-    
-    // If we are on desktop, we want BOTH columns to be clean of mobile-hidden? 
-    // No, reliance on CSS media query is standard.
-    // But let's try to be safer.
-    
-    if (mobileMode === 'daily') {
-        colDaily.classList.remove('mobile-hidden');
-        colWeekly.classList.add('mobile-hidden');
-    } else {
-        colDaily.classList.add('mobile-hidden');
-        colWeekly.classList.remove('mobile-hidden');
-    }
-}
 
 // Add resize listener to potentially reset or re-apply? 
 // Actually, media query handles the "display: none !important" part.
@@ -75,7 +43,7 @@ function updateMobileColumns() {
 // I already fixed the filter. User might be seeing cached legacy "empty" behavior?
 // Let's add a log/debug or just ensure we don't accidentally hide dashboard.
 
-window.addEventListener('resize', updateMobileColumns);
+
 
 // Initialization
 // Initialization
@@ -107,12 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
     });
 
-    // Mobile Column Toggles
-    const btnMobileD = document.getElementById('mobile-btn-d');
-    const btnMobileW = document.getElementById('mobile-btn-w');
-    btnMobileD.addEventListener('click', () => setMobileMode('daily'));
-    btnMobileW.addEventListener('click', () => setMobileMode('weekly'));
-    updateMobileColumns(); // Initial state
+
 
     // Set defaults
     weekInput.value = getCurrentWeekISO();
@@ -482,9 +445,7 @@ window.showTickerView = function(ticker) {
     
     // Hide Filters in Ticker View
     const desktopFilters = document.getElementById('desktop-filters');
-    const mobileToggles = document.getElementById('mobile-toggles');
     if (desktopFilters) desktopFilters.classList.add('hidden');
-    if (mobileToggles) mobileToggles.classList.add('hidden');
 
     renderTickerView(ticker);
 }
@@ -498,9 +459,7 @@ function showOverview() {
 
     // Show Filters in Overview
     const desktopFilters = document.getElementById('desktop-filters');
-    const mobileToggles = document.getElementById('mobile-toggles');
     if (desktopFilters) desktopFilters.classList.remove('hidden');
-    if (mobileToggles) mobileToggles.classList.remove('hidden');
 
     renderOverview();
 }
