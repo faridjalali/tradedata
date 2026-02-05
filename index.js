@@ -68,21 +68,10 @@ app.post("/webhook", async (req, res) => {
     const price = req.body.price || 0;
     const message = req.body.message || '';
     
-    // Normalize Timeframe
-    let timeframeInput = req.body.timeframe || '1D'; // Default to Daily
-    let timeframe = 'daily';
-    
-    // Check for Weekly variations
-    if (['1w', 'w', 'weekly'].includes(timeframeInput.toLowerCase())) {
-        timeframe = 'weekly';
-    } 
-    // Check for Daily variations (or default)
-    else if (['1d', 'd', 'daily'].includes(timeframeInput.toLowerCase())) {
-        timeframe = 'daily';
-    } else {
-        // Fallback for other timeframes (like intraday) if needed, currently defaults to daily in this logic
-        timeframe = timeframeInput.toLowerCase();
-    } 
+    // Strict 1d/1w Logic
+    // If input contains 'w' (case-insensitive), it's 1w. Otherwise 1d.
+    const rawTf = (req.body.timeframe || '').toString().toLowerCase();
+    const timeframe = rawTf.includes('w') ? '1w' : '1d'; 
 
     const signalDirection = signalDir;
     const signalVolume = req.body.signalVol || 0;

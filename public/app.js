@@ -304,8 +304,8 @@ function renderOverview() {
     const dailyContainer = document.getElementById('daily-container');
     const weeklyContainer = document.getElementById('weekly-container');
     
-    let daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() !== 'weekly');
-    let weekly = allAlerts.filter(a => a.timeframe && a.timeframe.toLowerCase() === 'weekly');
+    let daily = allAlerts.filter(a => a.timeframe === '1d');
+    let weekly = allAlerts.filter(a => a.timeframe === '1w');
     
     // Sort Helper
     const applySort = (list, mode) => {
@@ -507,7 +507,7 @@ function calculateAndRenderLeaderboard(data) {
     data.forEach(a => {
         if (!stats[a.ticker]) stats[a.ticker] = { dailyBull: 0, dailyBear: 0, weeklyBull: 0, weeklyBear: 0 };
         const isBull = a.signal_type.toLowerCase().includes('bull');
-        const isWeekly = a.timeframe && a.timeframe.toLowerCase() === 'weekly';
+        const isWeekly = a.timeframe === '1w';
         
         if (isWeekly) {
             if (isBull) stats[a.ticker].weeklyBull++;
