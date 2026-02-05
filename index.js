@@ -58,18 +58,36 @@ app.post("/webhook", async (req, res) => {
         console.log('Migration note:', e.message);
     }
 
-    const timeframe = req.body.timeframe || 'daily'; 
-    const signalDirection = req.body.signal_direction || 0;
-    const signalVolume = req.body.signal_volume || 0;
-    const intensityScore = req.body.intensity_score || 0;
-    const comboScore = req.body.combo_score || 0;
+    // Map Pine Script inputs to DB columns
+    // Accepted JSON keys: ticker, time (opt), signalDir, signalVol, finalIntensityScore, comboScore
+    const ticker = req.body.ticker;
+    const signalDir = req.body.signalDir || 0;
+    
+    // Infer signal_type from direction for backward compatibility
+    let signal = 'neutral';
+    if (signalDir == 1) signal = 'bullish';
+    if (signalDir == -1) signal = 'bearish';
+
+    // Optional fields with defaults
+    const price = req.body.price || 0;
+    const message = req.body.message || '';
+    const timeframe = req.body.timeframe || '1m'; // Default 
+
+    const signalDirection = signalDir;
+    const signalVolume = req.body.signalVol || 0;
+    const intensityScore = req.body.finalIntensityScore || 0;
+    const comboScore = req.body.comboScore || 0;
+
+    if (!ticker) {
+        return res.status(400).send("Missing ticker");
+    }
     
     const query = `
       INSERT INTO alerts(ticker, signal_type, price, message, timeframe, signal_direction, signal_volume, intensity_score, combo_score) 
       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) 
       RETURNING *
     `;
-    const values = [ticker, signal, price, message || '', timeframe, signalDirection, signalVolume, intensityScore, comboScore];
+    const values = [ticker, signal, price, message, timeframe, signalDirection, signalVolume, intensityScore, comboScore];
     const result = await pool.query(query, values);
     console.log('Alert received:', result.rows[0]);
     res.status(200).send('Alert Received');
