@@ -457,11 +457,29 @@ window.showTickerView = function(ticker) {
     document.getElementById('reset-filter').classList.remove('hidden');
     document.getElementById('dashboard-view').classList.add('hidden');
     document.getElementById('ticker-view').classList.remove('hidden');
+    
+    // Hide Filters in Ticker View
+    const desktopFilters = document.getElementById('desktop-filters');
+    const mobileToggles = document.getElementById('mobile-toggles');
+    if (desktopFilters) desktopFilters.classList.add('hidden');
+    if (mobileToggles) mobileToggles.classList.add('hidden');
+
     renderTickerView(ticker);
 }
 
 function showOverview() {
     delete document.getElementById('ticker-view').dataset.ticker;
+    
+    document.getElementById('ticker-view').classList.add('hidden');
+    document.getElementById('dashboard-view').classList.remove('hidden');
+    document.getElementById('reset-filter').classList.add('hidden');
+
+    // Show Filters in Overview
+    const desktopFilters = document.getElementById('desktop-filters');
+    const mobileToggles = document.getElementById('mobile-toggles');
+    if (desktopFilters) desktopFilters.classList.remove('hidden');
+    if (mobileToggles) mobileToggles.classList.remove('hidden');
+
     renderOverview();
 }
 
