@@ -304,8 +304,9 @@ function renderOverview() {
     const dailyContainer = document.getElementById('daily-container');
     const weeklyContainer = document.getElementById('weekly-container');
     
-    let daily = allAlerts.filter(a => a.timeframe === '1d');
-    let weekly = allAlerts.filter(a => a.timeframe === '1w');
+    // Strict 1d/1w filters as requested
+    let daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
+    let weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
     
     // Sort Helper
     const applySort = (list, mode) => {
