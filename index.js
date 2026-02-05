@@ -28,11 +28,7 @@ app.post("/webhook", async (req, res) => {
     return res.status(401).send("Unauthorized");
   }
 
-  const { ticker, signal, price, message } = req.body;
 
-  if (!ticker || !signal) {
-    return res.status(400).send("Missing ticker or signal fields");
-  }
 
   try {
     // Ensure table exists (Auto-migration for simplicity)
