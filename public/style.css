@@ -126,7 +126,10 @@ h2 { margin: 0; font-size: 1.2rem; }
 
 @media (max-width: 768px) {
     .split-view { grid-template-columns: 1fr; }
-    .leaderboard-container { grid-template-columns: 1fr 1fr !important; }
+    .leaderboard-container { 
+        grid-template-columns: 1fr 1fr !important; 
+        row-gap: 30px;
+    }
 }
 
 .column {
@@ -184,29 +187,21 @@ h2 { margin: 0; font-size: 1.2rem; }
     cursor: pointer;
 }
 
+.alert-card.bullish-card {
+    background-color: rgba(63, 185, 80, 0.1);
+    border-color: rgba(63, 185, 80, 0.3);
+}
+
+.alert-card.bearish-card {
+    background-color: rgba(248, 81, 73, 0.1);
+    border-color: rgba(248, 81, 73, 0.3);
+}
+
+
 .alert-card:hover { transform: translateY(-2px); border-color: var(--highlight); }
 
-.alert-info h3 { margin: 0 0 4px 0; font-size: 1.1rem; color: var(--highlight); }
+.alert-info h3 { margin: 0 0 4px 0; font-size: 1.1rem; color: var(--text-primary); }
 .alert-meta { font-size: 0.85rem; color: var(--text-secondary); }
-
-.signal-pill {
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-weight: bold;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-}
-
-.bullish { background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid var(--accent-bullish); }
-.bearish { background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid var(--accent-bearish); }
-
-/* Stats Panel */
-.stats-panel {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-bottom: 20px;
-}
 .stat-box {
     background: var(--card-bg);
     border: 1px solid var(--border-color);

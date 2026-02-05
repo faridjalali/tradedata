@@ -271,19 +271,22 @@ function renderOverview() {
 }
 
 function createAlertCard(alert) {
-    const date = new Date(alert.timestamp).toLocaleString();
-    const signalClass = alert.signal_type.toLowerCase().includes('bull') ? 'bullish' : 'bearish';
+    const d = new Date(alert.timestamp);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const dateStr = `${day}/${month}`;
+    
+    // Determine tone based on signal type string
+    const isBull = alert.signal_type.toLowerCase().includes('bull');
+    const cardClass = isBull ? 'bullish-card' : 'bearish-card';
     
     return `
-        <div class="alert-card" data-ticker="${alert.ticker}">
+        <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
             <div class="alert-info">
                 <h3>${alert.ticker}</h3>
                 <div class="alert-meta">
-                    <span class="price">$${alert.price}</span>
+                    ${dateStr}
                 </div>
-            </div>
-            <div class="signal-pill ${signalClass}">
-                ${alert.signal_type}
             </div>
         </div>
     `;
