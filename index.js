@@ -47,8 +47,18 @@ app.post("/webhook", async (req, res) => {
       );
     `);
     
-    const query = 'INSERT INTO alerts(ticker, signal_type, price, message) VALUES($1, $2, $3, $4) RETURNING *';
-    const values = [ticker, signal, price, message || ''];
+    // Attempt to add timeframe column if it doesn't exist (Migration)
+    try {
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS timeframe VARCHAR(10)`);
+    } catch (e) {
+        // Ignore error if column exists or other minor issue
+        console.log('Migration note:', e.message);
+    }
+
+    const timeframe = req.body.timeframe || 'daily'; // Default to daily if missing
+    
+    const query = 'INSERT INTO alerts(ticker, signal_type, price, message, timeframe) VALUES($1, $2, $3, $4, $5) RETURNING *';
+    const values = [ticker, signal, price, message || '', timeframe];
     const result = await pool.query(query, values);
     console.log('Alert received:', result.rows[0]);
     res.status(200).send('Alert Received');

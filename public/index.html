@@ -1,25 +1,67 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TradingView Alerts</title>
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
     <div class="container">
-      <header>
-        <h1>Trading Signal Alerts</h1>
-        <p>Real-time feed from TradingView</p>
-      </header>
-
-      <main>
-        <div id="alerts-container">
-          <!-- Alerts will be injected here -->
-          <div class="loading">Loading alerts...</div>
+        <header>
+            <h1>Trading Signal Alerts</h1>
+            <div id="controls">
+                <button id="reset-filter" class="hidden">Show All</button>
+                <div id="connection-status" class="status-indicator"></div>
+            </div>
+        </header>
+        
+        <!-- Ticker Detail View (Hidden by default) -->
+        <div id="ticker-view" class="hidden">
+            <div class="stats-panel">
+                <div class="stat-box">
+                    <h3>Ticker</h3>
+                    <div id="stat-ticker">--</div>
+                </div>
+                <div class="stat-box">
+                    <h3>Bullish</h3>
+                    <div id="stat-bullish" class="bull-text">0</div>
+                </div>
+                <div class="stat-box">
+                    <h3>Bearish</h3>
+                    <div id="stat-bearish" class="bear-text">0</div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="priceChart"></canvas>
+            </div>
         </div>
-      </main>
+
+        <!-- Main Dashboard Split View -->
+        <div id="dashboard-view" class="split-view">
+            <div class="column">
+                <div class="column-header">
+                    <h2>Daily Signals</h2>
+                    <span class="badge" id="daily-count">0</span>
+                </div>
+                <div id="daily-container" class="alerts-list">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+            
+            <div class="column">
+                <div class="column-header">
+                    <h2>Weekly Signals</h2>
+                    <span class="badge" id="weekly-count">0</span>
+                </div>
+                <div id="weekly-container" class="alerts-list">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
     </div>
     <script src="app.js"></script>
-  </body>
+</body>
 </html>
