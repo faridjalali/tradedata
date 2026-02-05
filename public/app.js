@@ -43,6 +43,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let liveFeedMode = 'week'; // 'week' or 'month'
 
+function switchView(view) {
+    currentView = view;
+    // Update Tabs
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`nav-${view}`).classList.add('active');
+
+    // Toggle Main Views
+    if (view === 'live') {
+        document.getElementById('view-live').classList.remove('hidden');
+        document.getElementById('view-leaderboard').classList.add('hidden');
+        document.getElementById('live-controls').classList.remove('hidden');
+        document.getElementById('leaderboard-controls').classList.add('hidden');
+    } else {
+        document.getElementById('view-live').classList.add('hidden');
+        document.getElementById('view-leaderboard').classList.remove('hidden');
+        document.getElementById('live-controls').classList.add('hidden');
+        document.getElementById('leaderboard-controls').classList.remove('hidden');
+        // fetchLeaderboardData called in click listener, but good to ensure
+    }
+}
+
 function setSortMode(mode) {
     // Deprecated global sort
 }
