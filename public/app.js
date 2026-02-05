@@ -239,7 +239,6 @@ function renderTable(elementId, items) {
         return;
     }
     table.innerHTML = `
-        <thead><tr><th>Ticker</th><th>Signals</th></tr></thead>
         <tbody>
             ${items.map(item => `
                 <tr class="clickable-row" onclick="showTickerView('${item.ticker}')">
