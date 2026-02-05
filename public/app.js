@@ -65,6 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
     });
 
+    // Mobile Column Toggles
+    const btnMobileD = document.getElementById('mobile-btn-d');
+    const btnMobileW = document.getElementById('mobile-btn-w');
+    btnMobileD.addEventListener('click', () => setMobileMode('daily'));
+    btnMobileW.addEventListener('click', () => setMobileMode('weekly'));
+    updateMobileColumns(); // Initial state
+
     // Set defaults
     weekInput.value = getCurrentWeekISO();
     monthInput.value = getCurrentMonthISO();
@@ -160,6 +167,32 @@ function isCurrentTimeframe() {
     } else {
         const val = document.getElementById('history-month').value;
         return val === getCurrentMonthISO();
+    }
+}
+
+
+
+// Mobile Column Logic
+let mobileMode = 'daily'; // 'daily' or 'weekly'
+
+function setMobileMode(mode) {
+    mobileMode = mode;
+    document.getElementById('mobile-btn-d').classList.toggle('active', mode === 'daily');
+    document.getElementById('mobile-btn-w').classList.toggle('active', mode === 'weekly');
+    updateMobileColumns();
+}
+
+function updateMobileColumns() {
+    const colDaily = document.getElementById('col-daily');
+    const colWeekly = document.getElementById('col-weekly');
+    
+    // Only applies styles if on mobile via CSS utility, but we toggle class regardless
+    if (mobileMode === 'daily') {
+        colDaily.classList.remove('mobile-hidden');
+        colWeekly.classList.add('mobile-hidden');
+    } else {
+        colDaily.classList.add('mobile-hidden');
+        colWeekly.classList.remove('mobile-hidden');
     }
 }
 
