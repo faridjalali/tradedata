@@ -53,6 +53,13 @@ function updateMobileColumns() {
     
     if (!colDaily || !colWeekly) return;
 
+    // Safety check: Only apply mobile hiding logic if on mobile or if classes are present
+    // Actually, relying on CSS media query is best, but if user sees issues, let's enforce via JS too.
+    
+    // If we are on desktop, we want BOTH columns to be clean of mobile-hidden? 
+    // No, reliance on CSS media query is standard.
+    // But let's try to be safer.
+    
     if (mobileMode === 'daily') {
         colDaily.classList.remove('mobile-hidden');
         colWeekly.classList.add('mobile-hidden');
@@ -61,6 +68,14 @@ function updateMobileColumns() {
         colWeekly.classList.remove('mobile-hidden');
     }
 }
+
+// Add resize listener to potentially reset or re-apply? 
+// Actually, media query handles the "display: none !important" part.
+// The issue "No daily alert column" likely means the column content is empty or hidden.
+// I already fixed the filter. User might be seeing cached legacy "empty" behavior?
+// Let's add a log/debug or just ensure we don't accidentally hide dashboard.
+
+window.addEventListener('resize', updateMobileColumns);
 
 // Initialization
 // Initialization
