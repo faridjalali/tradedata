@@ -344,11 +344,19 @@ function createAlertCard(alert) {
     const intScore = alert.intensity_score || 0;
     const cmbScore = alert.combo_score || 0;
 
-    // Conic gradient styles
-    // Intensity (Purple-ish), Combo (Blue-ish) defined in CSS classes variables?
-    // We set background directly here for the specific percentage
-    const intStyle = `background: conic-gradient(#a371f7 ${intScore}%, rgba(255,255,255,0.1) 0%);`;
-    const cmbStyle = `background: conic-gradient(#2196f3 ${cmbScore}%, rgba(255,255,255,0.1) 0%);`;
+    // Color Logic: Bullish = Green (#3fb950), Bearish = Red (#f85149)
+    // Unfilled part = Black (#000000) or very dark gray (#0d1117)
+    const fillColor = isBull ? '#3fb950' : '#f85149';
+    const emptyColor = '#0d1117'; // Matches bg-color var
+
+    // Conic gradient syntax: color percentage, emptyColor 0
+    // We treat scores as simple 0-100 percentages.
+    const intStyle = `background: conic-gradient(${fillColor} ${intScore}%, ${emptyColor} 0%);`;
+    const cmbStyle = `background: conic-gradient(${fillColor} ${cmbScore}%, ${emptyColor} 0%);`;
+
+    // Tooltip Labels
+    const intLabel = `Intensity: ${intScore}`;
+    const cmbLabel = `Combo: ${cmbScore}`;
 
     return `
         <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
@@ -358,11 +366,13 @@ function createAlertCard(alert) {
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>
                 </div>
-                <div class="metric-item" title="Intensity Score: ${intScore}">
-                    <div class="score-circle intensity" style="${intStyle}"></div>
+                <!-- Intensity Score Circle -->
+                <div class="metric-item" title="${intLabel}">
+                    <div class="score-circle" style="${intStyle}"></div>
                 </div>
-                <div class="metric-item" title="Combo Score: ${cmbScore}">
-                    <div class="score-circle combo" style="${cmbStyle}"></div>
+                <!-- Combo Score Circle -->
+                <div class="metric-item" title="${cmbLabel}">
+                    <div class="score-circle" style="${cmbStyle}"></div>
                 </div>
             </div>
 
