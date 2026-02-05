@@ -370,44 +370,34 @@ button {
 }
 button:hover { opacity: 0.9; }
 
+/* --- RESPONSIVE LAYOUT & LOGIC --- */
+
+/* 1. Default Desktop State (Width > 768px) */
+/* Columns are always visible */
+.column { display: block; }
+/* Mobile toggles are hidden */
+.mobile-only { display: none; }
+/* Global Hidden Utility */
+.hidden { display: none !important; }
+
+/* 2. Mobile State (Width <= 768px) */
 @media (max-width: 768px) {
+    /* Leaderboard Stack */
     .leaderboard-container { 
         grid-template-columns: 1fr 1fr !important; 
         row-gap: 80px;
     }
     
-    /* Mobile Column Toggle */
+    /* Show Mobile Toggles */
     .mobile-only { display: flex !important; }
     
-    /* Dashboard Split View on Mobile */
+    /* Dashboard Split View: Grid Stack */
     .split-view {
-        grid-template-columns: 1fr; /* Stack or single column */
+        grid-template-columns: 1fr; 
     }
     
-    /* Toggle Logic via utility class */
+    /* Toggle Logic: Only effective on mobile */
     .mobile-hidden {
         display: none !important;
     }
 }
-/* CSS Hardening: Strict Desktop/Mobile Separation */
-@media (min-width: 769px) {
-    /* Force columns to be visible on desktop, ignoring mobile-hidden utility */
-    .column { display: block !important; }
-    
-    /* Force mobile toggles to be hidden on desktop */
-    .mobile-only { display: none !important; }
-}
-
-@media (max-width: 768px) {
-    /* Ensure grid is active */
-    .split-view { display: grid; }
-    
-    /* Default mobile-only to flex */
-    .mobile-only { display: flex !important; }
-}
-
-/* Fallback Defaults (Overridden by above specific queries) */
-.mobile-only { display: none; }
-
-/* Utility: Hidden always wins */
-.hidden { display: none !important; }
