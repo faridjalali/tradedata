@@ -23,19 +23,6 @@
              <div id="live-controls">
                 <button id="reset-filter" class="hidden">← Back</button>
                 <div class="feed-controls-group">
-                    <button class="glass-btn icon-btn active" id="sort-time" title="Sort by Time">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
-                    </button>
-                    <button class="glass-btn icon-btn" id="sort-ticker" title="Sort by Ticker">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M15 6l-6 6l6 6"></path> <!-- Placeholder like icon, let's use a standard list or A-Z icon -->
-                            <path d="M3 6h18M3 12h18M3 18h18" stroke-width="2"></path>
-                        </svg>
-                    </button>
-                    <div class="divider-vertical"></div>
                      <button class="glass-btn active" id="btn-week">Week</button>
                      <button class="glass-btn" id="btn-month">Month</button>
                      <input type="date" id="history-date" class="glass-input">
@@ -93,9 +80,7 @@
                             </button>
                             <button class="icon-btn" onclick="setDailySort('ticker')" title="Sort A-Z">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                     <path d="M4 7V19M4 12H10M10 7V19M14 7L17 19L20 7" transform="scale(0.8) translate(3,3)"></path> <!-- A-Z placeholder -->
-                                     <!-- Simple Text A-Z icon -->
-                                     <text x="13" y="17" font-size="10" font-weight="bold" fill="currentColor">AZ</text>
+                                     <text x="12" y="16" font-size="14" font-weight="bold" text-anchor="middle" fill="currentColor">A</text>
                                 </svg>
                             </button>
                          </div>
@@ -117,7 +102,7 @@
                              </button>
                              <button class="icon-btn" onclick="setWeeklySort('ticker')" title="Sort A-Z">
                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                      <text x="13" y="17" font-size="10" font-weight="bold" fill="currentColor">AZ</text>
+                                      <text x="12" y="16" font-size="14" font-weight="bold" text-anchor="middle" fill="currentColor">A</text>
                                  </svg>
                              </button>
                           </div>

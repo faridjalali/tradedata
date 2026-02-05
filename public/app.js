@@ -19,10 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-month').addEventListener('click', () => setLiveFeedMode('month'));
     document.getElementById('history-date').addEventListener('change', () => fetchLiveAlerts(true)); // Pass true to indicate custom date
 
-    // Sorting Controls
-    document.getElementById('sort-time').addEventListener('click', () => setSortMode('time'));
-    document.getElementById('sort-ticker').addEventListener('click', () => setSortMode('ticker'));
-
     // Timeframe Buttons
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -46,13 +42,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let liveFeedMode = 'week'; // 'week' or 'month'
-let currentSortMode = 'time'; // 'time' or 'ticker'
 
 function setSortMode(mode) {
-    currentSortMode = mode;
-    document.getElementById('sort-time').classList.toggle('active', mode === 'time');
-    document.getElementById('sort-ticker').classList.toggle('active', mode === 'ticker');
-    renderOverview(); // Re-render with new sort
+    // Deprecated global sort
 }
 
 function setLiveFeedMode(mode) {
