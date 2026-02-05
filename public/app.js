@@ -114,6 +114,48 @@ async function fetchLiveAlerts(force = false) {
     }
 }
 
+// Sort States (Independent)
+let dailySortMode = 'time';
+let weeklySortMode = 'time';
+
+// Global setters for onclick in HTML
+window.setDailySort = function(mode) {
+    dailySortMode = mode;
+    updateSortIcons('daily', mode);
+    renderOverview();
+}
+
+window.setWeeklySort = function(mode) {
+    weeklySortMode = mode;
+    updateSortIcons('weekly', mode);
+    renderOverview();
+}
+
+function updateSortIcons(context, mode) {
+    // Find buttons in the specific column header context
+    // This assumes specific button structure or re-render. 
+    // Simplified: Just toggle active classes based on hardcoded knowledge or pass ID logic?
+    // Since we used onclick in HTML, lets use selectors.
+    
+    // Actually, simpler to just re-query all buttons in render or handle explicitly.
+    // Let's create a helper that finds the button group in the respective column.
+    
+    // Hacky but effective for this simple static HTML:
+    const colIndex = context === 'daily' ? 0 : 1;
+    const container = document.querySelectorAll('.column-header')[colIndex];
+    if (!container) return;
+    
+    const buttons = container.querySelectorAll('.icon-btn');
+    // 0 is time, 1 is ticker
+    if (mode === 'time') {
+        buttons[0].classList.add('active');
+        buttons[1].classList.remove('active');
+    } else {
+        buttons[0].classList.remove('active');
+        buttons[1].classList.add('active');
+    }
+}
+
 function renderOverview() {
     document.getElementById('ticker-view').classList.add('hidden');
     document.getElementById('dashboard-view').classList.remove('hidden');
@@ -125,24 +167,26 @@ function renderOverview() {
     let daily = allAlerts.filter(a => !a.timeframe || a.timeframe.toLowerCase() === 'daily');
     let weekly = allAlerts.filter(a => a.timeframe && a.timeframe.toLowerCase() === 'weekly');
     
-    // Sort logic
-    const sortFn = (a, b) => {
-        if (currentSortMode === 'time') {
-            return new Date(b.timestamp) - new Date(a.timestamp); // Newest first
-        } else {
-            return a.ticker.localeCompare(b.ticker); // A-Z
-        }
+    // Sort Helper
+    const applySort = (list, mode) => {
+        list.sort((a, b) => {
+            if (mode === 'time') {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            } else {
+                return a.ticker.localeCompare(b.ticker);
+            }
+        });
     };
 
-    daily.sort(sortFn);
-    weekly.sort(sortFn);
-    
-    document.getElementById('daily-count').textContent = daily.length;
-    document.getElementById('weekly-count').textContent = weekly.length;
+    applySort(daily, dailySortMode);
+    applySort(weekly, weeklySortMode);
     
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     
+    // IMPORTANT: Re-attach click listeners because we just wiped the HTML
+    // The previous implementation had a bug where leaderboard clicks might not work if 'showTickerView' relied on scope.
+    // But here for live feed cards:
     attachClickHandlers();
 }
 
@@ -174,7 +218,7 @@ function attachClickHandlers() {
     });
 }
 
-function showTickerView(ticker) {
+window.showTickerView = function(ticker) {
     if (currentView !== 'live') {
         switchView('live');
     }

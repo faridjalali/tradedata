@@ -141,18 +141,33 @@ h2 { margin: 0; font-size: 1.2rem; }
     align-items: center;
     margin-bottom: 15px;
     padding-bottom: 10px;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color);
 }
 
-.badge {
-    background: var(--border-color);
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.8rem;
+.header-sort-controls {
+    display: flex;
+    gap: 8px;
 }
 
-.alerts-list {
-    min-height: 200px;
+.icon-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
+.icon-btn.active {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Alert Cards */
