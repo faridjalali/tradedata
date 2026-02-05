@@ -53,14 +53,24 @@ h2 { margin: 0; font-size: 1.2rem; }
 }
 
 /* Controls */
-#controls-bar { margin-bottom: 20px; min-height: 40px; }
-input[type="number"] {
-    background: var(--bg-color);
+#controls-bar { margin-bottom: 20px; min-height: 40px; display: flex; align-items: center; }
+.control-label { margin-right: 10px; color: var(--text-secondary); font-size: 0.9rem; }
+.timeframe-buttons { display: flex; gap: 5px; flex-wrap: wrap; }
+.tf-btn {
+    background: var(--card-bg);
     border: 1px solid var(--border-color);
-    color: white;
-    padding: 5px;
-    width: 60px;
+    color: var(--text-secondary);
+    padding: 4px 10px;
     border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+.tf-btn:hover { border-color: var(--highlight); color: var(--text-primary); }
+.tf-btn.active {
+    background: var(--highlight);
+    color: white;
+    border-color: var(--highlight);
 }
 
 /* Split View Layout */

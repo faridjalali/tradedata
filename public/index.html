@@ -25,8 +25,16 @@
              </div>
              <!-- Leaderboard Controls -->
              <div id="leaderboard-controls" class="hidden">
-                <label>Analyze Last <input type="number" id="days-input" value="30" min="1" max="365"> Days</label>
-                <button id="refresh-leaderboard">Analyze</button>
+                <span class="control-label">Timeframe:</span>
+                <div class="timeframe-buttons">
+                    <button class="tf-btn" data-days="1">1d</button>
+                    <button class="tf-btn" data-days="7">7d</button>
+                    <button class="tf-btn" data-days="14">14d</button>
+                    <button class="tf-btn active" data-days="30">30d</button>
+                    <button class="tf-btn" data-days="60">60d</button>
+                    <button class="tf-btn" data-days="90">90d</button>
+                    <button class="tf-btn" data-days="0">∞</button>
+                </div>
              </div>
         </div>
         
@@ -83,22 +91,22 @@
             <div class="leaderboard-grid">
                 <!-- Daily Bullish -->
                 <div class="rank-card">
-                    <div class="rank-header bull-header">🔥 Top Daily Bullish</div>
+                    <div class="rank-header bull-header">Top Daily Bullish</div>
                     <table id="lb-daily-bull"></table>
                 </div>
                 <!-- Daily Bearish -->
                 <div class="rank-card">
-                    <div class="rank-header bear-header">🩸 Top Daily Bearish</div>
+                    <div class="rank-header bear-header">Top Daily Bearish</div>
                     <table id="lb-daily-bear"></table>
                 </div>
                 <!-- Weekly Bullish -->
                 <div class="rank-card">
-                    <div class="rank-header bull-header">🚀 Top Weekly Bullish</div>
+                    <div class="rank-header bull-header">Top Weekly Bullish</div>
                     <table id="lb-weekly-bull"></table>
                 </div>
                 <!-- Weekly Bearish -->
                 <div class="rank-card">
-                    <div class="rank-header bear-header">🧊 Top Weekly Bearish</div>
+                    <div class="rank-header bear-header">Top Weekly Bearish</div>
                     <table id="lb-weekly-bear"></table>
                 </div>
             </div>
