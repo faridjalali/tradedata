@@ -14,6 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inputs
     document.getElementById('reset-filter').addEventListener('click', showOverview);
     
+    // Live Feed Controls
+    document.getElementById('btn-week').addEventListener('click', () => setLiveFeedMode('week'));
+    document.getElementById('btn-month').addEventListener('click', () => setLiveFeedMode('month'));
+    document.getElementById('history-date').addEventListener('change', () => fetchLiveAlerts(true)); // Pass true to indicate custom date
+
     // Timeframe Buttons
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -26,48 +31,71 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Initial Load
-    fetchLiveAlerts();
+    // Initial Load - Set Today's date in picker but load week default
+    document.getElementById('history-date').valueAsDate = new Date();
+    setLiveFeedMode('week'); 
+    
     setInterval(() => {
-        if (currentView === 'live') fetchLiveAlerts();
-    }, 10000); // Only poll if looking at live feed
+        // Only poll if "current" week/month is selected, not historical
+        if (currentView === 'live' && isCurrentTimeframe()) fetchLiveAlerts();
+    }, 10000); 
 });
 
-function switchView(view) {
-    currentView = view;
-    // Update Tabs
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(`nav-${view}`).classList.add('active');
+let liveFeedMode = 'week'; // 'week' or 'month'
 
-    // Toggle Main Views
-    if (view === 'live') {
-        document.getElementById('view-live').classList.remove('hidden');
-        document.getElementById('view-leaderboard').classList.add('hidden');
-        document.getElementById('live-controls').classList.remove('hidden');
-        document.getElementById('leaderboard-controls').classList.add('hidden');
-    } else {
-        document.getElementById('view-live').classList.add('hidden');
-        document.getElementById('view-leaderboard').classList.remove('hidden');
-        document.getElementById('live-controls').classList.add('hidden');
-        document.getElementById('leaderboard-controls').classList.remove('hidden');
-        fetchLeaderboardData(); // Ensure fresh data
-    }
+function setLiveFeedMode(mode) {
+    liveFeedMode = mode;
+    document.getElementById('btn-week').classList.toggle('active', mode === 'week');
+    document.getElementById('btn-month').classList.toggle('active', mode === 'month');
+    fetchLiveAlerts(true);
+}
+
+function isCurrentTimeframe() {
+    const pickerDate = new Date(document.getElementById('history-date').value);
+    const today = new Date();
+    return pickerDate.toDateString() === today.toDateString();
 }
 
 // --- LIVE FEED LOGIC ---
-async function fetchLiveAlerts() {
+async function fetchLiveAlerts(force = false) {
     try {
-        const response = await fetch('/api/alerts'); // Default fetch (limit 100)
+        let url = '/api/alerts';
+        
+        // Calculate Date Range based on Picker + Mode
+        const selectedDate = new Date(document.getElementById('history-date').value);
+        let startDate, endDate;
+
+        if (liveFeedMode === 'week') {
+            // Find Monday of that week
+            const day = selectedDate.getDay();
+            const diff = selectedDate.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+            const monday = new Date(selectedDate.setDate(diff));
+            monday.setHours(0,0,0,0);
+            
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            sunday.setHours(23,59,59,999);
+            
+            startDate = monday.toISOString();
+            endDate = sunday.toISOString();
+        } else {
+            // Month
+            startDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1).toISOString();
+            endDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0, 23, 59, 59).toISOString();
+        }
+        
+        url += `?start_date=${startDate}&end_date=${endDate}`;
+
+        const response = await fetch(url);
         const data = await response.json();
         
-        if (JSON.stringify(data) !== JSON.stringify(allAlerts)) {
-            allAlerts = data;
-            const currentTicker = document.getElementById('ticker-view').dataset.ticker;
-            if (currentTicker) {
-                renderTickerView(currentTicker);
-            } else {
-                renderOverview();
-            }
+        allAlerts = data; // Always replace on filter
+        
+        const currentTicker = document.getElementById('ticker-view').dataset.ticker;
+        if (currentTicker && !document.getElementById('ticker-view').classList.contains('hidden')) {
+            renderTickerView(currentTicker);
+        } else {
+            renderOverview();
         }
     } catch (error) {
         console.error('Error fetching live alerts:', error);

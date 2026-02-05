@@ -21,11 +21,15 @@
         <div id="controls-bar">
              <!-- Live Feed Controls -->
              <div id="live-controls">
-                <button id="reset-filter" class="hidden">← Back to Overview</button>
+                <button id="reset-filter" class="hidden">← Back</button>
+                <div class="feed-controls-group">
+                    <button class="glass-btn active" id="btn-week">Week</button>
+                    <button class="glass-btn" id="btn-month">Month</button>
+                    <input type="date" id="history-date" class="glass-input">
+                </div>
              </div>
              <!-- Leaderboard Controls -->
              <div id="leaderboard-controls" class="hidden">
-                <span class="control-label">Timeframe:</span>
                 <div class="timeframe-buttons">
                     <button class="tf-btn" data-days="1">1</button>
                     <button class="tf-btn" data-days="7">7</button>

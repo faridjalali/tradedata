@@ -53,8 +53,40 @@ h2 { margin: 0; font-size: 1.2rem; }
 }
 
 /* Controls */
-#controls-bar { margin-bottom: 20px; min-height: 40px; display: flex; align-items: center; }
-.control-label { margin-right: 10px; color: var(--text-secondary); font-size: 0.9rem; }
+/* Controls */
+#controls-bar { margin-bottom: 20px; min-height: 40px; display: flex; align-items: center; justify-content: space-between; }
+.feed-controls-group { display: flex; gap: 10px; align-items: center; }
+
+.glass-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    padding: 6px 16px;
+    border-radius: 20px; /* Pill shape */
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+.glass-btn:hover { background: rgba(255, 255, 255, 0.1); color: white; }
+.glass-btn.active {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: var(--highlight);
+    color: white;
+}
+
+.glass-input {
+    background: rgba(22, 27, 34, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-family: inherit;
+    cursor: pointer;
+}
+.glass-input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+
+/* Leaderboard Buttons */
 .timeframe-buttons { display: flex; gap: 5px; flex-wrap: wrap; }
 .tf-btn {
     background: var(--card-bg);

@@ -71,10 +71,16 @@ app.post("/webhook", async (req, res) => {
 app.get('/api/alerts', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 0;
+    const startDate = req.query.start_date;
+    const endDate = req.query.end_date;
+    
     let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100'; // Default limit
     let values = [];
 
-    if (days > 0) {
+    if (startDate && endDate) {
+        query = `SELECT * FROM alerts WHERE timestamp >= $1 AND timestamp <= $2 ORDER BY timestamp DESC`;
+        values = [startDate, endDate];
+    } else if (days > 0) {
         query = `SELECT * FROM alerts WHERE timestamp >= NOW() - INTERVAL '${days} days' ORDER BY timestamp DESC`;
     }
     
