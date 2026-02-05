@@ -130,9 +130,7 @@ h2 { margin: 0; font-size: 1.2rem; }
     gap: 20px;
 }
 
-@media (max-width: 768px) {
-    .split-view { grid-template-columns: 1fr; }
-}
+
 
 .column {
     background: rgba(22, 27, 34, 0.5);
