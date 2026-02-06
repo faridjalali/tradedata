@@ -60,8 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const weekInput = document.getElementById('history-week');
     const monthInput = document.getElementById('history-month');
 
-    // Ticker View Sort Buttons (Removed)
-
+    // Ticker View Sort Buttons
+    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
+    });
 
     // Set defaults
     weekInput.value = getCurrentWeekISO();
@@ -259,7 +261,17 @@ window.setWeeklySort = function(mode) {
     renderOverview();
 }
 
-// function setTickerSort(mode) removed as requested
+let tickerSortMode = 'time';
+function setTickerSort(mode) {
+    tickerSortMode = mode;
+    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.sort === mode);
+    });
+    const currentTicker = document.getElementById('ticker-view').dataset.ticker;
+    if (currentTicker) {
+         renderTickerView(currentTicker);
+    }
+}
 
 
 function updateSortIcons(context, mode) {
@@ -423,10 +435,23 @@ function renderTickerView(ticker) {
     let daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
     let weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
     
-    // Default Sort: Newest first
-    const timeSort = (a, b) => new Date(b.timestamp) - new Date(a.timestamp);
-    daily.sort(timeSort);
-    weekly.sort(timeSort);
+    // Sort Logic
+    const getSortValue = (alert, mode) => {
+        if (mode === 'volume') return alert.signal_volume || 0;
+        if (mode === 'intensity') return alert.intensity_score || 0;
+        if (mode === 'combo') return alert.combo_score || 0;
+        return new Date(alert.timestamp).getTime();
+    };
+
+    const sortFn = (a, b) => {
+        const valA = getSortValue(a, tickerSortMode);
+        const valB = getSortValue(b, tickerSortMode);
+        // All sorts are descending
+        return valB - valA;
+    };
+
+    daily.sort(sortFn);
+    weekly.sort(sortFn);
     
     // Render Daily Column
     const dailyContainer = document.getElementById('ticker-daily-container');
