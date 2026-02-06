@@ -423,50 +423,7 @@ button:hover { opacity: 0.9; }
         row-gap: 80px;
     }
 
-    /* Mobile Header Adjustments */
-    .header-left {
-        flex-wrap: wrap; 
-        /* Ensure title and icon stay on row 1, input drops to row 2 if needed? 
-           Actually, user wants input "to the bottom of Volume Delta".
-           Ideally, we make the search container or just the input break.
-        */
-    }
-    
-    #search-input.active {
-        /* On mobile, full width or positioned below */
-        position: absolute;
-        top: 100%; /* Below the header-left container? */
-        left: 0;
-        width: 100%; 
-        /* This simplistic approach might overlap nav. 
-           Let's try a safer flex break approach.
-        */
-        position: static;
-        width: 100%;
-        margin-top: 10px;
-        order: 3; /* Force to bottom of flex if we wrap */
-    }
-    
-    .header-left {
-        /* If input is active, we might want to wrap */
-        max-width: 100%;
-    }
-    
-    header {
-        /* Allow header to expand when search opens */
-        align-items: flex-start; 
-    }
-    
-    /* Better styling for mobile input */
-    #search-container {
-        /* If we want the input below Title, we need flex-wrap on header-left? */
-        flex-wrap: wrap;
-    }
-    #search-input.active {
-        width: 100vw; /* Screen widthish */
-        max-width: 300px; /* Cap it */
-        margin-top: 5px;
-    }
+    /* Mobile Header Adjustments removed to match desktop behavior */
     
     .split-view {
         grid-template-columns: 1fr;
