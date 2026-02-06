@@ -16,7 +16,18 @@
 <body>
     <div class="container">
         <header>
-            <h1>Volume Delta</h1>
+            <div class="header-left">
+                <h1>Volume Delta</h1>
+                <div id="search-container">
+                    <button id="search-toggle" class="icon-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="search-icon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </button>
+                    <input type="text" id="search-input" class="glass-input hidden-search" placeholder="Search ticker...">
+                </div>
+            </div>
             <nav class="main-nav">
                 <button id="nav-live" class="nav-btn active">Live</button>
                 <button id="nav-leaderboard" class="nav-btn">Leaderboard</button>
