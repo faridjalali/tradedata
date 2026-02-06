@@ -11,6 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Volume Delta">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
     <div class="container">
@@ -84,6 +85,11 @@
                              </div>
                          </div>
                      </div>
+                 
+                 <!-- TradingView Widget Container -->
+                 <div id="tv-chart-container" class="tradingview-widget-container" style="height: 610px; width: 100%; margin-top: 20px;">
+                    <div id="tradingview_chart"></div>
+                 </div>
                  </div>
              </div>
  

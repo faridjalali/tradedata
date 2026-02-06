@@ -506,6 +506,28 @@ function renderTickerView(ticker) {
     } else {
         weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     }
+    
+    // Render TradingView Chart
+    renderTradingViewChart(ticker);
+}
+
+function renderTradingViewChart(ticker) {
+    if (typeof TradingView === 'undefined') return;
+
+    // Clear previous if needed, but TV library usually handles container replacement
+    new TradingView.widget({
+        "autosize": true, // Use autosize for responsiveness
+        "symbol": ticker,
+        "interval": "D",
+        "timezone": "Etc/UTC",
+        "theme": "dark",
+        "style": "1",
+        "locale": "en",
+        "toolbar_bg": "#f1f3f6",
+        "enable_publishing": false,
+        "allow_symbol_change": false,
+        "container_id": "tradingview_chart"
+    });
 }
 
 // Chart removed as per request
