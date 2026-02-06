@@ -520,20 +520,19 @@ function renderTradingViewChart(ticker) {
     currentChartTicker = ticker;
 
     // Clear previous if needed, but TV library usually handles container replacement
-    const tvWidget = new TradingView.widget({
+    new TradingView.widget({
         "width": "100%",
         "height": 600,
         "symbol": ticker,
         "interval": "D",
         "timezone": "Etc/UTC",
-        "theme": "dark", // RESTORED: Needed for Dark UI/Toolbar
+        "theme": "dark",
         "style": "1",
         "locale": "en",
-        "toolbar_bg": "#0d1117", // Match page background
+        "toolbar_bg": "#f1f3f6",
         "enable_publishing": false,
         "allow_symbol_change": false,
         "container_id": "tradingview_chart",
-        "disabled_features": ["use_localstorage_for_settings", "header_symbol_search"], 
         "studies": [
             {
                 "id": "MASimple@tv-basicstudies",
@@ -541,42 +540,7 @@ function renderTradingViewChart(ticker) {
                     "length": 50
                 }
             }
-        ],
-        "overrides": {
-            "paneProperties.background": "#0d1117",
-            "paneProperties.backgroundType": "solid",
-            
-            // Grid Lines - Set to Background Color
-            "paneProperties.vertGridProperties.color": "#0d1117",
-            "paneProperties.horzGridProperties.color": "#0d1117",
-            "paneProperties.vertGridProperties.style": 0,
-            "paneProperties.horzGridProperties.style": 0,
-            
-            // Scales / Text
-            "scalesProperties.backgroundColor": "#0d1117",
-            "scalesProperties.lineColor": "#0d1117",
-            "scalesProperties.textColor": "#9ca1b2",
-            
-            // Margins / Lines
-            "mainSeriesProperties.candleStyle.upColor": "#3fb950",
-            "mainSeriesProperties.candleStyle.downColor": "#f85149",
-            "mainSeriesProperties.candleStyle.borderUpColor": "#3fb950",
-            "mainSeriesProperties.candleStyle.borderDownColor": "#f85149",
-            "mainSeriesProperties.candleStyle.wickUpColor": "#3fb950",
-            "mainSeriesProperties.candleStyle.wickDownColor": "#f85149"
-        }
-    });
-
-    tvWidget.onChartReady(function() {
-        // DELAYED Enforcement: Wait for theme to fully load, then crush the grid
-        setTimeout(function() {
-            tvWidget.applyOverrides({
-                "paneProperties.background": "#0d1117",
-                "paneProperties.vertGridProperties.color": "#0d1117",
-                "paneProperties.horzGridProperties.color": "#0d1117",
-                "scalesProperties.lineColor": "#0d1117"
-            });
-        }, 100); 
+        ]
     });
 }
 
