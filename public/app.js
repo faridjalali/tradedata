@@ -618,3 +618,33 @@ function renderTable(elementId, items) {
         </tbody>
     `;
 }
+
+function initSearch() {
+    const toggleBtn = document.getElementById('search-toggle');
+    const input = document.getElementById('search-input');
+    
+    if (!toggleBtn || !input) return;
+    
+    toggleBtn.addEventListener('click', () => {
+        const isActive = input.classList.contains('active');
+        if (isActive) {
+            input.classList.remove('active');
+            input.blur();
+        } else {
+            input.classList.add('active');
+            input.focus();
+        }
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const ticker = input.value.trim().toUpperCase();
+            if (ticker) {
+                showTickerView(ticker);
+                input.value = ''; 
+                input.blur();
+                input.classList.remove('active'); 
+            }
+        }
+    });
+}
