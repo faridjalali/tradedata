@@ -511,8 +511,13 @@ function renderTickerView(ticker) {
     renderTradingViewChart(ticker);
 }
 
+let currentChartTicker = null;
+
 function renderTradingViewChart(ticker) {
     if (typeof TradingView === 'undefined') return;
+    if (currentChartTicker === ticker) return; // Prevent refresh if same ticker
+
+    currentChartTicker = ticker;
 
     // Clear previous if needed, but TV library usually handles container replacement
     new TradingView.widget({
