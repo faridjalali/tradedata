@@ -453,6 +453,44 @@ function renderTickerView(ticker) {
     daily.sort(sortFn);
     weekly.sort(sortFn);
     
+    // Helper to render average score circle
+    const renderAvg = (containerId, list) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        
+        if (list.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const totalScore = list.reduce((sum, a) => sum + (a.combo_score || 0), 0);
+        const avgScore = Math.round(totalScore / list.length);
+        
+        // Determine majority direction for color
+        let bulls = 0; 
+        let bears = 0;
+        list.forEach(a => {
+           // Reuse logic from createAlertCard or simpler check
+           const type = (a.signal_type || '').toLowerCase();
+           if (type.includes('bull')) bulls++;
+           else bears++;
+        });
+        
+        const isBull = bulls >= bears; // Tie goes to bull? or neutral. Let's stick to binary for now.
+        const fillColor = isBull ? '#3fb950' : '#f85149';
+        const emptyColor = '#0d1117';
+        const style = `background: conic-gradient(${fillColor} ${avgScore}%, ${emptyColor} 0%);`;
+        
+        container.innerHTML = `
+            <div class="metric-item" title="Average Score: ${avgScore}">
+                <div class="score-circle" style="${style}"></div>
+            </div>
+        `;
+    };
+
+    renderAvg('ticker-daily-avg', daily);
+    renderAvg('ticker-weekly-avg', weekly);
+    
     // Render Daily Column
     const dailyContainer = document.getElementById('ticker-daily-container');
     if (daily.length === 0) {
