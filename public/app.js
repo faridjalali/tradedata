@@ -526,7 +526,7 @@ function renderTradingViewChart(ticker) {
         "symbol": ticker,
         "interval": "D",
         "timezone": "Etc/UTC",
-        // "theme": "dark", // REMOVED: Causing conflict with overrides
+        "theme": "dark", // RESTORED: Needed for Dark UI/Toolbar
         "style": "1",
         "locale": "en",
         "toolbar_bg": "#0d1117", // Match page background
@@ -555,7 +555,7 @@ function renderTradingViewChart(ticker) {
             // Scales / Text
             "scalesProperties.backgroundColor": "#0d1117",
             "scalesProperties.lineColor": "#0d1117",
-            "scalesProperties.textColor": "#9ca1b2", // Re-add text color manually
+            "scalesProperties.textColor": "#9ca1b2",
             
             // Margins / Lines
             "mainSeriesProperties.candleStyle.upColor": "#3fb950",
@@ -568,13 +568,15 @@ function renderTradingViewChart(ticker) {
     });
 
     tvWidget.onChartReady(function() {
-        // Double enforcement
-        tvWidget.applyOverrides({
-            "paneProperties.background": "#0d1117",
-            "paneProperties.vertGridProperties.color": "#0d1117",
-            "paneProperties.horzGridProperties.color": "#0d1117",
-            "scalesProperties.lineColor": "#0d1117"
-        });
+        // DELAYED Enforcement: Wait for theme to fully load, then crush the grid
+        setTimeout(function() {
+            tvWidget.applyOverrides({
+                "paneProperties.background": "#0d1117",
+                "paneProperties.vertGridProperties.color": "#0d1117",
+                "paneProperties.horzGridProperties.color": "#0d1117",
+                "scalesProperties.lineColor": "#0d1117"
+            });
+        }, 100); 
     });
 }
 
