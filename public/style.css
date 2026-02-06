@@ -203,7 +203,7 @@ h2 { margin: 0; font-size: 1.2rem; }
     margin-bottom: 8px; /* reduced margin */
     display: flex;
     /* justify-content: space-between; Removed to fix middle alignment */
-    gap: 100px; /* Increased to push middle section further right/central */
+    gap: 120px; /* Desktop spacing */
     align-items: center;
     transition: all 0.2s;
     cursor: pointer;
@@ -382,5 +382,9 @@ button:hover { opacity: 0.9; }
     
     .split-view {
         grid-template-columns: 1fr;
+    }
+    
+    .alert-card {
+        gap: 60px; /* Mobile spacing */
     }
 }
