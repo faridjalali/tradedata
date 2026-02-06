@@ -287,8 +287,9 @@ function updateSortIcons(context, mode) {
     // Let's create a helper that finds the button group in the respective column.
     
     // Hacky but effective for this simple static HTML:
+    // Hacky but effective for this simple static HTML:
     const colIndex = context === 'daily' ? 0 : 1;
-    const container = document.querySelectorAll('.column-header')[colIndex];
+    const container = document.querySelectorAll('#dashboard-view .column-header')[colIndex];
     if (!container) return;
     
     const buttons = container.querySelectorAll('.icon-btn');
