@@ -255,9 +255,9 @@ h2 { margin: 0; font-size: 1.2rem; }
 
 /* Score Circles */
 .score-circle {
-    width: 14px;
-    height: 14px;
-    min-width: 14px; /* Prevent squishing */
+    width: 21px;
+    height: 21px;
+    min-width: 21px; /* Prevent squishing */
     border-radius: 50%;
     /* Default background overridden inline by JS */
     background: #0d1117; 
