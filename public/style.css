@@ -202,7 +202,8 @@ h2 { margin: 0; font-size: 1.2rem; }
     padding: 8px 12px; /* reduced padding */
     margin-bottom: 8px; /* reduced margin */
     display: flex;
-    justify-content: space-between;
+    /* justify-content: space-between; Removed to fix middle alignment */
+    gap: 20px; /* Fixed gap + Fixed ticker width = Fixed start for middle */
     align-items: center;
     transition: all 0.2s;
     cursor: pointer;
@@ -228,7 +229,7 @@ h2 { margin: 0; font-size: 1.2rem; }
     font-size: 1rem; 
     color: var(--text-primary);
     font-weight: 600;
-    width: 60px; /* Fixed 5-letter allowance */
+    width: 80px; /* Fixed 5-letter allowance (increased for safety) */
     flex-shrink: 0; /* Prevent shrinking */
 }
 
@@ -280,6 +281,7 @@ h2 { margin: 0; font-size: 1.2rem; }
     white-space: nowrap;
     min-width: 50px;
     text-align: right;
+    margin-left: auto; /* Push to the right edge */
 }
 .stat-box {
     background: var(--card-bg);
