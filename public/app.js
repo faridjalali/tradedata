@@ -539,8 +539,18 @@ function renderTradingViewChart(ticker) {
                 "inputs": {
                     "length": 50
                 }
+            },
+            {
+                "id": "MASimple@tv-basicstudies",
+                "inputs": {
+                    "length": 21
+                }
             }
-        ]
+        ],
+        "overrides": {
+            "paneProperties.vertGridProperties.color": "rgba(0,0,0,0)",
+            "paneProperties.horzGridProperties.color": "rgba(0,0,0,0)"
+        }
     });
 }
 
