@@ -542,8 +542,8 @@ function renderTradingViewChart(ticker) {
             }
         ],
         "overrides": {
-            "paneProperties.vertGridProperties.color": "rgba(0,0,0,0)",
-            "paneProperties.horzGridProperties.color": "rgba(0,0,0,0)"
+            "paneProperties.vertGridProperties.color": "rgba(94, 255, 0, 1)",
+            "paneProperties.horzGridProperties.color": "rgba(255, 0, 0, 1)"
         }
     });
 }
