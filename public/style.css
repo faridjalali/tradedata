@@ -228,7 +228,8 @@ h2 { margin: 0; font-size: 1.2rem; }
     font-size: 1rem; 
     color: var(--text-primary);
     font-weight: 600;
-    min-width: 60px; /* Ensure ticker has space */
+    width: 60px; /* Fixed 5-letter allowance */
+    flex-shrink: 0; /* Prevent shrinking */
 }
 
 /* New Metrics Layout */

@@ -383,9 +383,6 @@ function createAlertCard(alert) {
             <h3>${alert.ticker}</h3>
             
             <div class="metrics-container">
-                <div class="metric-item" title="Signal Volume">
-                    <span class="volume-text">${volStr}</span>
-                </div>
                 <!-- Intensity Score Circle -->
                 <div class="metric-item" title="${intLabel}">
                     <div class="score-circle" style="${intStyle}"></div>
@@ -393,6 +390,9 @@ function createAlertCard(alert) {
                 <!-- Combo Score Circle -->
                 <div class="metric-item" title="${cmbLabel}">
                     <div class="score-circle" style="${cmbStyle}"></div>
+                </div>
+                <div class="metric-item" title="Signal Volume">
+                    <span class="volume-text">${volStr}</span>
                 </div>
             </div>
 
