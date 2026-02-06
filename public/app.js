@@ -521,7 +521,8 @@ function renderTradingViewChart(ticker) {
 
     // Clear previous if needed, but TV library usually handles container replacement
     new TradingView.widget({
-        "autosize": true, // Use autosize for responsiveness
+        "width": "100%",
+        "height": 600,
         "symbol": ticker,
         "interval": "D",
         "timezone": "Etc/UTC",
