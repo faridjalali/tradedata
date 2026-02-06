@@ -60,10 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const weekInput = document.getElementById('history-week');
     const monthInput = document.getElementById('history-month');
 
-    // Ticker View Sort Buttons
-    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
-        btn.addEventListener('click', () => setTickerSort(btn.dataset.sort));
-    });
+    // Ticker View Sort Buttons (Removed)
+
 
     // Set defaults
     weekInput.value = getCurrentWeekISO();
@@ -261,17 +259,8 @@ window.setWeeklySort = function(mode) {
     renderOverview();
 }
 
-let tickerSortMode = 'time';
-function setTickerSort(mode) {
-    tickerSortMode = mode;
-    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.sort === mode);
-    });
-    const currentTicker = document.getElementById('ticker-view').dataset.ticker;
-    if (currentTicker && currentTicker !== '--') {
-         renderTickerView(currentTicker);
-    }
-}
+// function setTickerSort(mode) removed as requested
+
 
 function updateSortIcons(context, mode) {
     // Find buttons in the specific column header context
@@ -427,30 +416,32 @@ function showOverview() {
 }
 
 function renderTickerView(ticker) {
+    // Filter by ticker
     let alerts = allAlerts.filter(a => a.ticker === ticker);
     
-    // 1. Chart Data (Always Chronological)
-    const chartData = [...alerts].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    // Strict 1d/1w filters
+    let daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
+    let weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
     
-    // 2. List Data (Sorted by User Preference)
-    alerts.sort((a, b) => {
-        if (tickerSortMode === 'time') return new Date(b.timestamp) - new Date(a.timestamp); // Newest first
-        if (tickerSortMode === 'volume') return (b.signal_volume || 0) - (a.signal_volume || 0);
-        if (tickerSortMode === 'intensity') return (b.intensity_score || 0) - (a.intensity_score || 0);
-        if (tickerSortMode === 'combo') return (b.combo_score || 0) - (a.combo_score || 0);
-        return 0;
-    });
+    // Default Sort: Newest first
+    const timeSort = (a, b) => new Date(b.timestamp) - new Date(a.timestamp);
+    daily.sort(timeSort);
+    weekly.sort(timeSort);
     
-    // document.getElementById('view-ticker-title').textContent = ticker; // Removed
-    
-    // Sort logic handles the list order
-    // renderChart call removed
-    
-    const listContainer = document.getElementById('ticker-alerts-list');
-    if (alerts.length === 0) {
-        listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No alerts in this timeframe</div>';
+    // Render Daily Column
+    const dailyContainer = document.getElementById('ticker-daily-container');
+    if (daily.length === 0) {
+        dailyContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No daily alerts</div>';
     } else {
-        listContainer.innerHTML = alerts.map(createAlertCard).join('');
+        dailyContainer.innerHTML = daily.map(createAlertCard).join('');
+    }
+
+    // Render Weekly Column
+    const weeklyContainer = document.getElementById('ticker-weekly-container');
+    if (weekly.length === 0) {
+        weeklyContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No weekly alerts</div>';
+    } else {
+        weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     }
 }
 

@@ -56,14 +56,26 @@
              <div id="ticker-view" class="hidden">
                  
                  <div class="ticker-history-section">
-                     <div class="history-controls">
-                         <button class="tf-btn active" data-sort="time">Date</button>
-                         <button class="tf-btn" data-sort="volume">Vol</button>
-                         <button class="tf-btn" data-sort="intensity">Force</button>
-                         <button class="tf-btn" data-sort="combo">Score</button>
-                     </div>
-                     <div id="ticker-alerts-list" class="alerts-list">
-                         <!-- Alerts rendered here -->
+                     <!-- Sort controls removed as requested -->
+                     
+                     <div class="split-view">
+                         <div class="column">
+                             <div class="column-header">
+                                 <h2>Daily</h2>
+                             </div>
+                             <div id="ticker-daily-container" class="alerts-list">
+                                 <div class="loading">Loading...</div>
+                             </div>
+                         </div>
+                         
+                         <div class="column">
+                             <div class="column-header">
+                                 <h2>Weekly</h2>
+                             </div>
+                             <div id="ticker-weekly-container" class="alerts-list">
+                                 <div class="loading">Loading...</div>
+                             </div>
+                         </div>
                      </div>
                  </div>
              </div>
