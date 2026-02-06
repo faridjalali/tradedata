@@ -203,7 +203,7 @@ h2 { margin: 0; font-size: 1.2rem; }
     margin-bottom: 8px; /* reduced margin */
     display: flex;
     /* justify-content: space-between; Removed to fix middle alignment */
-    gap: 20px; /* Fixed gap + Fixed ticker width = Fixed start for middle */
+    gap: 45px; /* Increased to push middle section further right/central */
     align-items: center;
     transition: all 0.2s;
     cursor: pointer;
