@@ -529,7 +529,7 @@ function renderTradingViewChart(ticker) {
         // "theme": "dark", // REMOVED: Causing conflict with overrides
         "style": "1",
         "locale": "en",
-        "toolbar_bg": "#161b22", // Match background
+        "toolbar_bg": "#0d1117", // Match page background
         "enable_publishing": false,
         "allow_symbol_change": false,
         "container_id": "tradingview_chart",
@@ -543,18 +543,18 @@ function renderTradingViewChart(ticker) {
             }
         ],
         "overrides": {
-            "paneProperties.background": "#161b22",
+            "paneProperties.background": "#0d1117",
             "paneProperties.backgroundType": "solid",
             
             // Grid Lines - Set to Background Color
-            "paneProperties.vertGridProperties.color": "#161b22",
-            "paneProperties.horzGridProperties.color": "#161b22",
+            "paneProperties.vertGridProperties.color": "#0d1117",
+            "paneProperties.horzGridProperties.color": "#0d1117",
             "paneProperties.vertGridProperties.style": 0,
             "paneProperties.horzGridProperties.style": 0,
             
             // Scales / Text
-            "scalesProperties.backgroundColor": "#161b22",
-            "scalesProperties.lineColor": "#161b22",
+            "scalesProperties.backgroundColor": "#0d1117",
+            "scalesProperties.lineColor": "#0d1117",
             "scalesProperties.textColor": "#9ca1b2", // Re-add text color manually
             
             // Margins / Lines
@@ -570,10 +570,10 @@ function renderTradingViewChart(ticker) {
     tvWidget.onChartReady(function() {
         // Double enforcement
         tvWidget.applyOverrides({
-            "paneProperties.background": "#161b22",
-            "paneProperties.vertGridProperties.color": "#161b22",
-            "paneProperties.horzGridProperties.color": "#161b22",
-            "scalesProperties.lineColor": "#161b22"
+            "paneProperties.background": "#0d1117",
+            "paneProperties.vertGridProperties.color": "#0d1117",
+            "paneProperties.horzGridProperties.color": "#0d1117",
+            "scalesProperties.lineColor": "#0d1117"
         });
     });
 }
