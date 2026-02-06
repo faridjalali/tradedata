@@ -533,6 +533,7 @@ function renderTradingViewChart(ticker) {
         "enable_publishing": false,
         "allow_symbol_change": false,
         "container_id": "tradingview_chart",
+        "disabled_features": ["use_localstorage_for_settings"],
         "studies": [
             {
                 "id": "MASimple@tv-basicstudies",
@@ -542,23 +543,24 @@ function renderTradingViewChart(ticker) {
             }
         ],
         "overrides": {
-            "paneProperties.vertGridProperties.color": "rgba(0,0,0,0)",
-            "paneProperties.horzGridProperties.color": "rgba(0,0,0,0)",
+            "paneProperties.background": "#161b22",
+            "paneProperties.backgroundType": "solid",
+            "paneProperties.vertGridProperties.color": "#161b22",
+            "paneProperties.horzGridProperties.color": "#161b22",
             "paneProperties.vertGridProperties.style": 0,
             "paneProperties.horzGridProperties.style": 0,
-            "paneProperties.gridProperties.color": "rgba(0,0,0,0)",
-            "paneProperties.gridProperties.clor": "rgba(0,0,0,0)",
-            "scalesProperties.lineColor": "rgba(0,0,0,0)",
-            "scalesProperties.backgroundColor": "rgba(0,0,0,0)"
+            "scalesProperties.lineColor": "#161b22",
+            "scalesProperties.backgroundColor": "#161b22"
         }
     });
 
     tvWidget.onChartReady(function() {
         tvWidget.applyOverrides({
-            "paneProperties.vertGridProperties.color": "rgba(0,0,0,0)",
-            "paneProperties.horzGridProperties.color": "rgba(0,0,0,0)",
-            "paneProperties.gridProperties.color": "rgba(0,0,0,0)",
-            "scalesProperties.lineColor": "rgba(0,0,0,0)"
+            "paneProperties.background": "#161b22",
+            "paneProperties.backgroundType": "solid",
+            "paneProperties.vertGridProperties.color": "#161b22",
+            "paneProperties.horzGridProperties.color": "#161b22",
+            "scalesProperties.lineColor": "#161b22"
         });
     });
 }
