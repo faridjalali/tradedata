@@ -506,6 +506,13 @@ function renderTickerView(ticker) {
     } else {
         weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     }
+    
+    // Update Finviz Chart
+    const chartImg = document.getElementById('finviz-chart');
+    if (chartImg) {
+        chartImg.src = `https://finviz.com/chart.ashx?t=${ticker}&ty=c&ta=1&p=d&s=l`;
+        chartImg.alt = `${ticker} Chart`;
+    }
 }
 
 // Chart removed as per request
