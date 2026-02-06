@@ -92,6 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Only poll if "current" week/month is selected, not historical
         if (currentView === 'live' && isCurrentTimeframe()) fetchLiveAlerts();
     }, 10000); 
+
+    // Setup Search
+    initSearch();
 });
 
 let liveFeedMode = '30'; // '30', '7', 'week', 'month'
@@ -463,26 +466,29 @@ function renderTickerView(ticker) {
             return;
         }
 
-        const totalScore = list.reduce((sum, a) => sum + (a.combo_score || 0), 0);
-        const avgScore = Math.round(totalScore / list.length);
-        
-        // Determine majority direction for color
-        let bulls = 0; 
-        let bears = 0;
+        // Calculate signed aggregate score
+        let signedSum = 0;
         list.forEach(a => {
-           // Reuse logic from createAlertCard or simpler check
-           const type = (a.signal_type || '').toLowerCase();
-           if (type.includes('bull')) bulls++;
-           else bears++;
+            const rawScore = a.combo_score || 0;
+            const type = (a.signal_type || '').toLowerCase();
+            const isBull = type.includes('bull'); // Simplistic toggle, check logic elsewhere if needed
+            
+            // Bullish = positive, Bearish = negative
+            signedSum += isBull ? rawScore : -rawScore;
         });
-        
-        const isBull = bulls >= bears; // Tie goes to bull? or neutral. Let's stick to binary for now.
-        const fillColor = isBull ? '#3fb950' : '#f85149';
+
+        const signedAvg = Math.round(signedSum / list.length);
+        const absAvg = Math.abs(signedAvg);
+        const isPositive = signedAvg >= 0;
+
+        const fillColor = isPositive ? '#3fb950' : '#f85149';
         const emptyColor = '#0d1117';
-        const style = `background: conic-gradient(${fillColor} ${avgScore}%, ${emptyColor} 0%);`;
+        
+        // Circle fill percentage is based on absolute magnitude (0-100)
+        const style = `background: conic-gradient(${fillColor} ${absAvg}%, ${emptyColor} 0%);`;
         
         container.innerHTML = `
-            <div class="metric-item" title="Average Score: ${avgScore}">
+            <div class="metric-item" title="Average Score: ${signedAvg}">
                 <div class="score-circle" style="${style}"></div>
             </div>
         `;
