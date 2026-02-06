@@ -526,14 +526,14 @@ function renderTradingViewChart(ticker) {
         "symbol": ticker,
         "interval": "D",
         "timezone": "Etc/UTC",
-        "theme": "dark",
+        // "theme": "dark", // REMOVED: Causing conflict with overrides
         "style": "1",
         "locale": "en",
-        "toolbar_bg": "#f1f3f6",
+        "toolbar_bg": "#161b22", // Match background
         "enable_publishing": false,
         "allow_symbol_change": false,
         "container_id": "tradingview_chart",
-        "disabled_features": ["use_localstorage_for_settings"],
+        "disabled_features": ["use_localstorage_for_settings", "header_symbol_search"], 
         "studies": [
             {
                 "id": "MASimple@tv-basicstudies",
@@ -545,19 +545,32 @@ function renderTradingViewChart(ticker) {
         "overrides": {
             "paneProperties.background": "#161b22",
             "paneProperties.backgroundType": "solid",
+            
+            // Grid Lines - Set to Background Color
             "paneProperties.vertGridProperties.color": "#161b22",
             "paneProperties.horzGridProperties.color": "#161b22",
             "paneProperties.vertGridProperties.style": 0,
             "paneProperties.horzGridProperties.style": 0,
+            
+            // Scales / Text
+            "scalesProperties.backgroundColor": "#161b22",
             "scalesProperties.lineColor": "#161b22",
-            "scalesProperties.backgroundColor": "#161b22"
+            "scalesProperties.textColor": "#9ca1b2", // Re-add text color manually
+            
+            // Margins / Lines
+            "mainSeriesProperties.candleStyle.upColor": "#3fb950",
+            "mainSeriesProperties.candleStyle.downColor": "#f85149",
+            "mainSeriesProperties.candleStyle.borderUpColor": "#3fb950",
+            "mainSeriesProperties.candleStyle.borderDownColor": "#f85149",
+            "mainSeriesProperties.candleStyle.wickUpColor": "#3fb950",
+            "mainSeriesProperties.candleStyle.wickDownColor": "#f85149"
         }
     });
 
     tvWidget.onChartReady(function() {
+        // Double enforcement
         tvWidget.applyOverrides({
             "paneProperties.background": "#161b22",
-            "paneProperties.backgroundType": "solid",
             "paneProperties.vertGridProperties.color": "#161b22",
             "paneProperties.horzGridProperties.color": "#161b22",
             "scalesProperties.lineColor": "#161b22"
