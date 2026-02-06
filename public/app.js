@@ -520,7 +520,7 @@ function renderTradingViewChart(ticker) {
     currentChartTicker = ticker;
 
     // Clear previous if needed, but TV library usually handles container replacement
-    new TradingView.widget({
+    const tvWidget = new TradingView.widget({
         "width": "100%",
         "height": 600,
         "symbol": ticker,
@@ -551,6 +551,15 @@ function renderTradingViewChart(ticker) {
             "scalesProperties.lineColor": "rgba(0,0,0,0)",
             "scalesProperties.backgroundColor": "rgba(0,0,0,0)"
         }
+    });
+
+    tvWidget.onChartReady(function() {
+        tvWidget.applyOverrides({
+            "paneProperties.vertGridProperties.color": "rgba(0,0,0,0)",
+            "paneProperties.horzGridProperties.color": "rgba(0,0,0,0)",
+            "paneProperties.gridProperties.color": "rgba(0,0,0,0)",
+            "scalesProperties.lineColor": "rgba(0,0,0,0)"
+        });
     });
 }
 
