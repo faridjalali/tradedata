@@ -14,6 +14,45 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const initDB = async () => {
+  try {
+    // Ensure table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS alerts (
+        id SERIAL PRIMARY KEY,
+        ticker VARCHAR(20) NOT NULL,
+        signal_type VARCHAR(10) NOT NULL,
+        price DECIMAL(15, 2) NOT NULL,
+        message TEXT,
+        timestamp TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    
+    // Attempt to add new columns if they don't exist
+    const columns = [
+      "timeframe VARCHAR(10)",
+      "signal_direction INTEGER",
+      "signal_volume INTEGER",
+      "intensity_score INTEGER",
+      "combo_score INTEGER"
+    ];
+
+    for (const col of columns) {
+      try {
+        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ${col}`);
+      } catch (e) {
+        // Ignore errors if column already exists (or other migration issues that shouldn't stop startup)
+        console.log(`Migration note for ${col}:`, e.message);
+      }
+    }
+    console.log("Database initialized successfully");
+  } catch (err) {
+    console.error("Failed to initialize database:", err);
+  }
+};
+
+initDB();
+
 app.get("/", (req, res) => {
   res.send("TradingView Alerts API is running");
 });
@@ -28,31 +67,11 @@ app.post("/webhook", async (req, res) => {
     return res.status(401).send("Unauthorized");
   }
 
-
-
   try {
-    // Ensure table exists (Auto-migration for simplicity)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS alerts (
-        id SERIAL PRIMARY KEY,
-        ticker VARCHAR(20) NOT NULL,
-        signal_type VARCHAR(10) NOT NULL,
-        price DECIMAL(15, 2) NOT NULL,
-        message TEXT,
-        timestamp TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    
-    // Attempt to add new columns if they don't exist (Migration)
-    try {
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS timeframe VARCHAR(10)`);
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS signal_direction INTEGER`);
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS signal_volume INTEGER`);
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS intensity_score INTEGER`);
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS combo_score INTEGER`);
-    } catch (e) {
-        console.log('Migration note:', e.message);
-    }
+
+
+
+
 
     // Map Pine Script inputs to DB columns
     // Accepted JSON keys: ticker, time (opt), signalDir, signalVol, finalIntensityScore, comboScore
