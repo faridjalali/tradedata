@@ -540,11 +540,7 @@ function renderTradingViewChart(ticker) {
                     "length": 50
                 }
             }
-        ],
-        "overrides": {
-            "paneProperties.vertGridProperties.color": "rgba(0, 0, 0, 0)",
-            "paneProperties.horzGridProperties.color": "rgba(0, 0, 0, 0)"
-        }
+        ]
     });
 }
 
