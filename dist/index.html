@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volume Delta</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="icon" type="image/png" href="./voldelta_icon.png">
+    <link rel="apple-touch-icon" href="./voldelta_icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Volume Delta">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="module" crossorigin src="./assets/index-CCmc9yGQ.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <div id="search-container">
+                    <button id="search-toggle" class="icon-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="search-icon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                    </button>
+                    <input type="text" id="search-input" class="glass-input hidden-search" placeholder="Search ticker...">
+                </div>
+            </div>
+            <nav class="main-nav">
+                <button id="nav-live" class="nav-btn active">Live</button>
+                <button id="nav-leaderboard" class="nav-btn">Leaders</button>
+            </nav>
+        </header>
+
+        <!-- CONTROLS -->
+        <div id="controls-bar">
+             <!-- Live Feed Controls -->
+             <div id="live-controls">
+                <div class="feed-controls-group">
+                     <button class="tf-btn active" id="btn-30" data-tooltip="Alerts from last 30 days">30</button>
+                     <button class="tf-btn" id="btn-7" data-tooltip="Alerts from last 7 days">7</button>
+                     <button class="tf-btn" id="btn-week" data-tooltip="Alerts from this week">W</button>
+                     <button class="tf-btn" id="btn-month" data-tooltip="Alerts from this month">M</button>
+                     <input type="week" id="history-week" class="glass-input hidden">
+                     <input type="month" id="history-month" class="glass-input hidden">
+                 </div>
+                 <button id="reset-filter" class="hidden">← Back</button>
+              </div>
+              <!-- Leaderboard Controls -->
+              <div id="leaderboard-controls" class="hidden">
+                 <div class="timeframe-buttons">
+                     <button class="tf-btn" data-days="1">1</button>
+                     <button class="tf-btn" data-days="7">7</button>
+                     <button class="tf-btn" data-days="14">14</button>
+                     <button class="tf-btn active" data-days="30">30</button>
+                     <button class="tf-btn" data-days="60">60</button>
+                     <button class="tf-btn" data-days="90">90</button>
+                     <button class="tf-btn" data-days="0">∞</button>
+                 </div>
+              </div>
+         </div>
+         
+         <!-- LIVE FEED VIEW -->
+         <main id="view-live">
+             <!-- Ticker Detail View (Hidden by default) -->
+             <div id="ticker-view" class="hidden">
+                 
+                 <div class="ticker-history-section">
+                     <div class="history-controls">
+                         <button class="tf-btn active" data-sort="time">Date</button>
+                         <button class="tf-btn" data-sort="volume">Vol</button>
+                         <button class="tf-btn" data-sort="intensity">Force</button>
+                         <button class="tf-btn" data-sort="combo">Score</button>
+                     </div>
+                     
+                     <div class="split-view">
+                         <div class="column">
+                             <div class="column-header">
+                                 <h2>Daily</h2>
+                                 <div id="ticker-daily-avg"></div>
+                             </div>
+                             <div id="ticker-daily-container" class="alerts-list">
+                                 <div class="loading">Loading...</div>
+                             </div>
+                         </div>
+                         
+                         <div class="column">
+                             <div class="column-header">
+                                 <h2>Weekly</h2>
+                                 <div id="ticker-weekly-avg"></div>
+                             </div>
+                             <div id="ticker-weekly-container" class="alerts-list">
+                                 <div class="loading">Loading...</div>
+                             </div>
+                         </div>
+                     </div>
+                 
+                 <!-- TradingView Widget Container -->
+                 <div id="tv-chart-container" class="tradingview-widget-container" style="height: 600px; width: 100%; margin-top: 20px;">
+                    <div id="tradingview_chart" style="height: 100%; width: 100%;"></div>
+                 </div>
+                 </div>
+             </div>
+ 
+             <!-- Main Dashboard Split View -->
+             <div id="dashboard-view" class="split-view">
+                 <div class="column">
+                     <div class="column-header">
+                         <h2>Daily</h2>
+                         <div class="header-sort-controls">
+                            <button class="icon-btn active" onclick="setDailySort('time')" title="Sort Oldest/Newest">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                     <circle cx="12" cy="12" r="10"></circle>
+                                     <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </button>
+                            <button class="icon-btn" onclick="setDailySort('ticker')" title="Sort A-Z">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                     <polyline points="5 21 12 4 19 21"></polyline>
+                                     <line x1="8.5" y1="14" x2="15.5" y2="14"></line>
+                                </svg>
+                            </button>
+                         </div>
+                     </div>
+                     <div id="daily-container" class="alerts-list">
+                         <div class="loading">Loading...</div>
+                     </div>
+                 </div>
+                 
+                 <div class="column">
+                     <div class="column-header">
+                         <h2>Weekly</h2>
+                         <div class="header-sort-controls">
+                             <button class="icon-btn active" onclick="setWeeklySort('time')" title="Sort Oldest/Newest">
+                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <circle cx="12" cy="12" r="10"></circle>
+                                      <polyline points="12 6 12 12 16 14"></polyline>
+                                 </svg>
+                             </button>
+                             <button class="icon-btn" onclick="setWeeklySort('ticker')" title="Sort A-Z">
+                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <polyline points="5 21 12 4 19 21"></polyline>
+                                      <line x1="8.5" y1="14" x2="15.5" y2="14"></line>
+                                 </svg>
+                             </button>
+                          </div>
+                     </div>
+                     <div id="weekly-container" class="alerts-list">
+                         <div class="loading">Loading...</div>
+                     </div>
+                 </div>
+             </div>
+         </main>
+
+        <!-- LEADERBOARD VIEW -->
+        <main id="view-leaderboard" class="hidden">
+            <div class="leaderboard-container">
+                <!-- Daily Bullish -->
+                <div class="rank-container">
+                    <div class="rank-header bull-header">Daily Bullish</div>
+                    <table id="lb-daily-bull"></table>
+                </div>
+                
+                <!-- Daily Bearish -->
+                <div class="rank-container">
+                    <div class="rank-header bear-header">Daily Bearish</div>
+                    <table id="lb-daily-bear"></table>
+                </div>
+
+                <!-- Weekly Bullish -->
+                <div class="rank-container">
+                    <div class="rank-header bull-header">Weekly Bullish</div>
+                    <table id="lb-weekly-bull"></table>
+                </div>
+
+                <!-- Weekly Bearish -->
+                <div class="rank-container">
+                    <div class="rank-header bear-header">Weekly Bearish</div>
+                    <table id="lb-weekly-bear"></table>
+                </div>
+            </div>
+        </main>
+
+    </div>
+</body>
+</html>
