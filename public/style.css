@@ -53,11 +53,15 @@ header {
     position: relative;
     cursor: pointer;
     min-width: 100px;
+    height: 36px; /* Explicit height to match nav */
 }
 
 #search-toggle {
     border: none;
-    padding: 5px;
+    padding: 0 5px; /* Adjust padding for fixed height */
+    height: 100%; /* Fill container */
+    display: flex;
+    align-items: center;
     color: var(--text-secondary);
 }
 #search-toggle:hover { color: var(--text-primary); }
@@ -65,17 +69,19 @@ header {
 #search-input {
     width: 0;
     opacity: 0;
-    padding: 5px 0; /* Hide padding when closed */
+    padding: 0; 
     border-width: 0;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
     background: transparent;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 #search-input.active {
     width: 100px;
     opacity: 1;
-    padding: 5px 10px;
+    padding: 0 10px;
     border-width: 1px;
     pointer-events: all;
     background: rgba(22, 27, 34, 0.6);
@@ -96,6 +102,10 @@ h2 { margin: 0; font-size: 1.2rem; }
     border-radius: 6px;
     font-weight: 500;
     font-size: 0.85rem;
+    height: 36px; /* Explicit height */
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
 }
 .nav-btn.active {
     background: var(--highlight);
