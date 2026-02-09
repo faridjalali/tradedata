@@ -13,6 +13,8 @@ import { renderTickerView, setTickerSort } from './ticker';
 import { SortMode, LiveFeedMode } from './types';
 
 let currentView: 'live' | 'leaderboard' = 'live'; 
+let dashboardScrollY = 0;
+ 
 
 // Expose globals for HTML onclick attributes
 // Note: We declared the Window interface in liveFeed.ts (or global.d.ts ideally), 
@@ -25,20 +27,29 @@ window.showTickerView = function(ticker: string) {
     if (currentView !== 'live') {
         switchView('live');
     }
+    // Save current scroll position before switching
+    dashboardScrollY = window.scrollY;
+
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
         tickerView.dataset.ticker = ticker;
         document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
         tickerView.classList.remove('hidden');
+        tickerView.classList.remove('hidden');
         renderTickerView(ticker);
+        window.scrollTo(0, 0); // Scroll to top of ticker view
     }
 }
 
 window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
+    if (tickerView) delete tickerView.dataset.ticker;
     renderOverview();
+    // Restore scroll position
+    window.scrollTo(0, dashboardScrollY);
+
 }
 
 function switchView(view: 'live' | 'leaderboard') {
