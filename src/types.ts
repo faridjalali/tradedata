@@ -16,5 +16,5 @@ export interface AppState {
     alerts: Alert[];
 }
 
-export type LiveFeedMode = '30' | '7' | 'week' | 'month';
+export type LiveFeedMode = '30' | '7' | '1' | 'week' | 'month';
 export type SortMode = 'time' | 'ticker' | 'volume' | 'intensity' | 'combo';

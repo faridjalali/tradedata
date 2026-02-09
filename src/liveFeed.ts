@@ -4,7 +4,7 @@ import { setAlerts, getAlerts } from './state';
 import { createAlertCard } from './components';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
-let liveFeedMode: LiveFeedMode = '30'; 
+let liveFeedMode: LiveFeedMode = '1'; 
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 
@@ -28,7 +28,7 @@ export function setLiveFeedModeState(mode: LiveFeedMode): void {
 }
 
 export function isCurrentTimeframe(): boolean {
-    if (liveFeedMode === '30' || liveFeedMode === '7') return true; 
+    if (liveFeedMode === '30' || liveFeedMode === '7' || liveFeedMode === '1') return true; 
     if (liveFeedMode === 'week') {
         const val = (document.getElementById('history-week') as HTMLInputElement).value;
         return val === getCurrentWeekISO();
@@ -53,6 +53,12 @@ export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
             const end = new Date();
             const start = new Date();
             start.setDate(end.getDate() - 7);
+            endDate = end.toISOString();
+            startDate = start.toISOString();
+        } else if (liveFeedMode === '1') {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 1);
             endDate = end.toISOString();
             startDate = start.toISOString();
         } else if (liveFeedMode === 'week') {

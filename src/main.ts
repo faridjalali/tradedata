@@ -78,6 +78,7 @@ function setLiveFeedMode(mode: LiveFeedMode) {
     
     const btn30 = document.getElementById('btn-30');
     const btn7 = document.getElementById('btn-7');
+    const btn1 = document.getElementById('btn-1');
     const btnWeek = document.getElementById('btn-week');
     const btnMonth = document.getElementById('btn-month');
     
@@ -85,7 +86,7 @@ function setLiveFeedMode(mode: LiveFeedMode) {
     const inputMonth = document.getElementById('history-month');
 
     // Reset all
-    [btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    [btn30, btn7, btn1, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
     inputWeek?.classList.add('hidden');
     inputMonth?.classList.add('hidden');
 
@@ -93,6 +94,8 @@ function setLiveFeedMode(mode: LiveFeedMode) {
         btn30?.classList.add('active');
     } else if (mode === '7') {
         btn7?.classList.add('active');
+    } else if (mode === '1') {
+        btn1?.classList.add('active');
     } else if (mode === 'week') {
         btnWeek?.classList.add('active');
         inputWeek?.classList.remove('hidden');
@@ -187,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Live Feed Controls
     document.getElementById('btn-30')?.addEventListener('click', () => setLiveFeedMode('30'));
     document.getElementById('btn-7')?.addEventListener('click', () => setLiveFeedMode('7'));
+    document.getElementById('btn-1')?.addEventListener('click', () => setLiveFeedMode('1'));
     document.getElementById('btn-week')?.addEventListener('click', () => setLiveFeedMode('week'));
     document.getElementById('btn-month')?.addEventListener('click', () => setLiveFeedMode('month'));
     
@@ -219,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Initial Load
-    setLiveFeedMode('30'); 
+    setLiveFeedMode('1'); 
     
     setInterval(() => {
         // Poll if current
