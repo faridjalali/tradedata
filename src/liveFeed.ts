@@ -100,33 +100,7 @@ export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
     }
 }
 
-export function setDailySort(mode: SortMode): void {
-    dailySortMode = mode;
-    updateSortIcons('daily', mode);
-    renderOverview();
-}
 
-export function setWeeklySort(mode: SortMode): void {
-    weeklySortMode = mode;
-    updateSortIcons('weekly', mode);
-    renderOverview();
-}
-
-function updateSortIcons(context: 'daily' | 'weekly', mode: SortMode): void {
-    const colIndex = context === 'daily' ? 0 : 1;
-    const containers = document.querySelectorAll('#dashboard-view .column-header');
-    const container = containers[colIndex] as HTMLElement;
-    if (!container) return;
-    
-    const buttons = container.querySelectorAll('.icon-btn');
-    if (mode === 'time') {
-        buttons[0].classList.add('active');
-        buttons[1].classList.remove('active');
-    } else {
-        buttons[0].classList.remove('active');
-        buttons[1].classList.add('active');
-    }
-}
 
 export function renderOverview(): void {
     const allAlerts = getAlerts();
@@ -142,10 +116,14 @@ export function renderOverview(): void {
     
     const applySort = (list: Alert[], mode: SortMode) => {
         list.sort((a, b) => {
-            if (mode === 'time') {
-                const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-                const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-                return tB - tA;
+            if (mode === 'volume') {
+                return (b.signal_volume || 0) - (a.signal_volume || 0);
+            } else if (mode === 'intensity') {
+                return (b.intensity_score || 0) - (a.intensity_score || 0);
+            } else if (mode === 'combo') {
+                return (b.combo_score || 0) - (a.combo_score || 0);
+            } else if (mode === 'time') {
+                return (b.timestamp || '').localeCompare(a.timestamp || '');
             } else {
                 return (a.ticker || '').localeCompare(b.ticker || '');
             }
@@ -175,4 +153,32 @@ export function setupLiveFeedDelegation(): void {
             }
         }
     });
+}
+
+export function setDailySort(mode: SortMode): void {
+    dailySortMode = mode;
+    // Update active button state in daily column
+    const dailyHeader = document.querySelector('#dashboard-view .column:first-child .header-sort-controls');
+    if (dailyHeader) {
+        dailyHeader.querySelectorAll('.tf-btn').forEach(btn => {
+            const el = btn as HTMLElement;
+            if (el.dataset.sort === mode) el.classList.add('active');
+            else el.classList.remove('active');
+        });
+    }
+    renderOverview();
+}
+
+export function setWeeklySort(mode: SortMode): void {
+    weeklySortMode = mode;
+    // Update active button state in weekly column
+    const weeklyHeader = document.querySelector('#dashboard-view .column:last-child .header-sort-controls');
+    if (weeklyHeader) {
+        weeklyHeader.querySelectorAll('.tf-btn').forEach(btn => {
+            const el = btn as HTMLElement;
+            if (el.dataset.sort === mode) el.classList.add('active');
+            else el.classList.remove('active');
+        });
+    }
+    renderOverview();
 }

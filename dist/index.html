@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Volume Delta</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./style.css?v=6">
     <link rel="icon" type="image/png" href="./voldelta_icon.png">
     <link rel="apple-touch-icon" href="./voldelta_icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-title" content="Volume Delta">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="module" crossorigin src="./assets/index-Bo-zCvkP.js"></script>
+  <script type="module" crossorigin src="./assets/index-pB_6eW6C.js"></script>
 </head>
 <body>
     <div class="container">
@@ -25,7 +25,7 @@
                             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                         </svg>
                     </button>
-                    <input type="text" id="search-input" class="glass-input hidden-search" placeholder="Search ticker...">
+                    <input type="text" id="search-input" class="glass-input hidden-search" placeholder="">
                 </div>
             </div>
             <nav class="main-nav">
@@ -69,10 +69,10 @@
                  
                  <div class="ticker-history-section">
                      <div class="history-controls">
-                         <button class="tf-btn active" data-sort="time">Date</button>
-                         <button class="tf-btn" data-sort="volume">Vol</button>
-                         <button class="tf-btn" data-sort="intensity">Force</button>
-                         <button class="tf-btn" data-sort="combo">Score</button>
+                         <button class="tf-btn active" data-sort="time">D</button>
+                         <button class="tf-btn" data-sort="volume">V</button>
+                         <button class="tf-btn" data-sort="intensity">F</button>
+                         <button class="tf-btn" data-sort="combo">S</button>
                      </div>
                      
                      <div class="split-view">
@@ -110,18 +110,10 @@
                      <div class="column-header">
                          <h2>Daily</h2>
                          <div class="header-sort-controls">
-                            <button class="icon-btn active" onclick="setDailySort('time')" title="Sort Oldest/Newest">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                     <circle cx="12" cy="12" r="10"></circle>
-                                     <polyline points="12 6 12 12 16 14"></polyline>
-                                </svg>
-                            </button>
-                            <button class="icon-btn" onclick="setDailySort('ticker')" title="Sort A-Z">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                     <polyline points="5 21 12 4 19 21"></polyline>
-                                     <line x1="8.5" y1="14" x2="15.5" y2="14"></line>
-                                </svg>
-                            </button>
+                            <button class="tf-btn active" onclick="setDailySort('time')" data-sort="time">D</button>
+                            <button class="tf-btn" onclick="setDailySort('volume')" data-sort="volume">V</button>
+                            <button class="tf-btn" onclick="setDailySort('intensity')" data-sort="intensity">F</button>
+                            <button class="tf-btn" onclick="setDailySort('combo')" data-sort="combo">S</button>
                          </div>
                      </div>
                      <div id="daily-container" class="alerts-list">
@@ -133,18 +125,10 @@
                      <div class="column-header">
                          <h2>Weekly</h2>
                          <div class="header-sort-controls">
-                             <button class="icon-btn active" onclick="setWeeklySort('time')" title="Sort Oldest/Newest">
-                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                      <circle cx="12" cy="12" r="10"></circle>
-                                      <polyline points="12 6 12 12 16 14"></polyline>
-                                 </svg>
-                             </button>
-                             <button class="icon-btn" onclick="setWeeklySort('ticker')" title="Sort A-Z">
-                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                      <polyline points="5 21 12 4 19 21"></polyline>
-                                      <line x1="8.5" y1="14" x2="15.5" y2="14"></line>
-                                 </svg>
-                             </button>
+                             <button class="tf-btn active" onclick="setWeeklySort('time')" data-sort="time">D</button>
+                             <button class="tf-btn" onclick="setWeeklySort('volume')" data-sort="volume">V</button>
+                             <button class="tf-btn" onclick="setWeeklySort('intensity')" data-sort="intensity">F</button>
+                             <button class="tf-btn" onclick="setWeeklySort('combo')" data-sort="combo">S</button>
                           </div>
                      </div>
                      <div id="weekly-container" class="alerts-list">

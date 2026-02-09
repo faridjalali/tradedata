@@ -52,12 +52,16 @@ header {
     gap: 10px;
     position: relative;
     cursor: pointer;
-    padding-right: 20px; /* Expand click area */
+    min-width: 100px;
+    height: 30px; /* Explicit height to match nav */
 }
 
 #search-toggle {
     border: none;
-    padding: 5px;
+    padding: 0 5px; /* Adjust padding for fixed height */
+    height: 100%; /* Fill container */
+    display: flex;
+    align-items: center;
     color: var(--text-secondary);
 }
 #search-toggle:hover { color: var(--text-primary); }
@@ -65,20 +69,23 @@ header {
 #search-input {
     width: 0;
     opacity: 0;
-    padding: 5px 0; /* Hide padding when closed */
+    padding: 0; 
     border-width: 0;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
     background: transparent;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 #search-input.active {
-    width: 150px;
+    width: 100px;
     opacity: 1;
-    padding: 5px 10px;
+    padding: 0 10px;
     border-width: 1px;
     pointer-events: all;
     background: rgba(22, 27, 34, 0.6);
+    cursor: text;
 }
 
 h1 { margin: 0; font-size: 1.5rem; white-space: nowrap; }
@@ -95,6 +102,10 @@ h2 { margin: 0; font-size: 1.2rem; }
     border-radius: 6px;
     font-weight: 500;
     font-size: 0.85rem;
+    height: 30px; /* Explicit height */
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
 }
 .nav-btn.active {
     background: var(--highlight);
@@ -434,4 +445,32 @@ button:hover { opacity: 0.9; }
     .alert-card {
         gap: 60px; /* Mobile spacing */
     }
+}
+
+/* Sort Buttons (Ticker & Live Feed) */
+.tf-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 2px 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    text-align: center;
+    line-height: 20px; /* Vertically center */
+}
+
+.tf-btn:hover {
+    background: rgba(48, 54, 61, 0.5);
+    color: var(--text-primary);
+}
+
+.tf-btn.active {
+    background: var(--highlight);
+    color: #ffffff;
+    border-color: var(--highlight);
 }
