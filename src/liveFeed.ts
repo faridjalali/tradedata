@@ -38,7 +38,7 @@ export function isCurrentTimeframe(): boolean {
     }
 }
 
-export async function fetchLiveAlerts(force: boolean = false): Promise<Alert[]> {
+export async function fetchLiveAlerts(): Promise<Alert[]> {
     try {
         let params = '';
         let startDate = '', endDate = '';

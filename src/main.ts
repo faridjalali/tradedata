@@ -89,7 +89,7 @@ function setLiveFeedMode(mode: LiveFeedMode) {
         inputMonth?.classList.remove('hidden');
     }
 
-    fetchLiveAlerts(true).then(() => {
+    fetchLiveAlerts().then(() => {
         const tickerView = document.getElementById('ticker-view');
         const ticker = tickerView?.dataset.ticker;
         if (ticker && !tickerView?.classList.contains('hidden')) {
@@ -167,8 +167,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (weekInput) weekInput.value = getCurrentWeekISO();
     if (monthInput) monthInput.value = getCurrentMonthISO();
 
-    weekInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
-    monthInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
+    weekInput?.addEventListener('change', () => fetchLiveAlerts().then(renderOverview));
+    monthInput?.addEventListener('change', () => fetchLiveAlerts().then(renderOverview));
 
     // Timeframe Buttons (Leaderboard)
     document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(btn => {
