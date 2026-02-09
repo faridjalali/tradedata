@@ -89,7 +89,7 @@ function setLiveFeedMode(mode: LiveFeedMode) {
         inputMonth?.classList.remove('hidden');
     }
 
-    fetchLiveAlerts().then(() => {
+    fetchLiveAlerts(true).then(() => {
         const tickerView = document.getElementById('ticker-view');
         const ticker = tickerView?.dataset.ticker;
         if (ticker && !tickerView?.classList.contains('hidden')) {
@@ -101,16 +101,12 @@ function setLiveFeedMode(mode: LiveFeedMode) {
 }
 
 function initSearch() {
+    const toggleBtn = document.getElementById('search-toggle');
     const input = document.getElementById('search-input') as HTMLInputElement;
     
-    const container = document.getElementById('search-container');
-    if (!container || !input) return;
-
-    // Toggle on container click
-    container.addEventListener('click', (e) => {
-        // Don't toggle if clicking inside the input itself
-        if (e.target === input) return;
-        
+    if (!toggleBtn || !input) return;
+    
+    toggleBtn.addEventListener('click', () => {
         const isActive = input.classList.contains('active');
         if (isActive) {
             input.classList.remove('active');
@@ -167,8 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (weekInput) weekInput.value = getCurrentWeekISO();
     if (monthInput) monthInput.value = getCurrentMonthISO();
 
-    weekInput?.addEventListener('change', () => fetchLiveAlerts().then(renderOverview));
-    monthInput?.addEventListener('change', () => fetchLiveAlerts().then(renderOverview));
+    weekInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
+    monthInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
 
     // Timeframe Buttons (Leaderboard)
     document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(btn => {
