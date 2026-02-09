@@ -137,6 +137,28 @@ function initSearch() {
             }
         }
     });
+
+    // Type-to-search functionality
+    document.addEventListener('keydown', (e) => {
+        // Ignore if focus is already on an input or other editable element
+        if (document.activeElement instanceof HTMLInputElement || 
+            document.activeElement instanceof HTMLTextAreaElement ||
+            (document.activeElement as HTMLElement).isContentEditable) {
+            return;
+        }
+        
+        // Ignore modifier keys and non-character keys
+        if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
+
+        // Check for alphanumeric characters
+        if (/^[a-zA-Z0-9]$/.test(e.key)) {
+            if (!input.classList.contains('active')) {
+                input.classList.add('active');
+            }
+            input.focus();
+            // Note: Focusing during keydown usually allows the keypress to naturally enter the input.
+        }
+    });
 }
 
 // Initialization
