@@ -101,12 +101,16 @@ function setLiveFeedMode(mode: LiveFeedMode) {
 }
 
 function initSearch() {
-    const toggleBtn = document.getElementById('search-toggle');
     const input = document.getElementById('search-input') as HTMLInputElement;
     
-    if (!toggleBtn || !input) return;
-    
-    toggleBtn.addEventListener('click', () => {
+    const container = document.getElementById('search-container');
+    if (!container || !input) return;
+
+    // Toggle on container click
+    container.addEventListener('click', (e) => {
+        // Don't toggle if clicking inside the input itself
+        if (e.target === input) return;
+        
         const isActive = input.classList.contains('active');
         if (isActive) {
             input.classList.remove('active');

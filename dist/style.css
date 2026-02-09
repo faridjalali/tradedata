@@ -51,6 +51,8 @@ header {
     align-items: center;
     gap: 10px;
     position: relative;
+    cursor: pointer;
+    padding-right: 20px; /* Expand click area */
 }
 
 #search-toggle {
