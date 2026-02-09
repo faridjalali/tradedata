@@ -38,7 +38,7 @@ export function isCurrentTimeframe(): boolean {
     }
 }
 
-export async function fetchLiveAlerts(): Promise<Alert[]> {
+export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
     try {
         let params = '';
         let startDate = '', endDate = '';
@@ -158,16 +158,21 @@ export function renderOverview(): void {
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     
-    attachClickHandlers();
+    // The previous `attachClickHandlers` function is replaced by event delegation
+    // set up in `setupLiveFeedDelegation` which should be called once.
 }
 
-function attachClickHandlers(): void {
-    document.querySelectorAll('.alert-card').forEach(card => {
-        card.addEventListener('click', () => {
+export function setupLiveFeedDelegation(): void {
+    const dashboard = document.getElementById('dashboard-view');
+    if (!dashboard) return;
+
+    dashboard.addEventListener('click', (e) => {
+        const card = (e.target as HTMLElement).closest('.alert-card');
+        if (card) {
             const ticker = (card as HTMLElement).dataset.ticker;
             if (ticker && window.showTickerView) {
                 window.showTickerView(ticker);
             }
-        });
+        }
     });
 }

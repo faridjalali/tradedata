@@ -34,3 +34,51 @@ export function formatVolume(vol?: number): string {
     if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K';
     return vol.toString();
 }
+
+export function getDateRangeForMode(mode: string, weekVal: string, monthVal: string): { startDate: string, endDate: string } {
+    let startDate = '', endDate = '';
+    
+    if (mode === '30') {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 30);
+        endDate = end.toISOString();
+        startDate = start.toISOString();
+    } else if (mode === '7') {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 7);
+        endDate = end.toISOString();
+        startDate = start.toISOString();
+    } else if (mode === 'week') {
+        if (!weekVal) return { startDate: '', endDate: '' };
+        const parts = weekVal.split('-W');
+        const yearStr = parts[0];
+        const weekStr = parts[1];
+        
+        const year = parseInt(yearStr);
+        const week = parseInt(weekStr);
+        const d = new Date(year, 0, 4);
+        const dayShift = d.getDay() === 0 ? 6 : d.getDay() - 1;
+        const week1Monday = new Date(d.setDate(d.getDate() - dayShift));
+        const monday = new Date(week1Monday.setDate(week1Monday.getDate() + (week - 1) * 7));
+        monday.setHours(0,0,0,0);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        sunday.setHours(23,59,59,999);
+        startDate = monday.toISOString();
+        endDate = sunday.toISOString();
+    } else {
+        if (!monthVal) return { startDate: '', endDate: '' };
+        const parts = monthVal.split('-');
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        
+        const start = new Date(year, month - 1, 1);
+        const end = new Date(year, month, 0); 
+        end.setHours(23,59,59,999);
+        startDate = start.toISOString();
+        endDate = end.toISOString();
+    }
+    return { startDate, endDate };
+}

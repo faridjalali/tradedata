@@ -5,7 +5,8 @@ import {
     setLiveFeedModeState, 
     isCurrentTimeframe,
     setDailySort,
-    setWeeklySort
+    setWeeklySort,
+    setupLiveFeedDelegation
 } from './liveFeed';
 import { fetchLeaderboardData } from './leaderboard';
 import { renderTickerView, setTickerSort } from './ticker';
@@ -226,4 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Setup Search
     initSearch();
+    
+    // Setup Event Delegation
+    setupLiveFeedDelegation();
 });
