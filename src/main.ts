@@ -103,15 +103,24 @@ function setLiveFeedMode(mode: LiveFeedMode) {
 function initSearch() {
     const toggleBtn = document.getElementById('search-toggle');
     const input = document.getElementById('search-input') as HTMLInputElement;
+    const container = document.getElementById('search-container');
     
-    if (!toggleBtn || !input) return;
+    if (!toggleBtn || !input || !container) return;
     
-    toggleBtn.addEventListener('click', () => {
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const isActive = input.classList.contains('active');
         if (isActive) {
             input.classList.remove('active');
             input.blur();
         } else {
+            input.classList.add('active');
+            input.focus();
+        }
+    });
+
+    container.addEventListener('click', () => {
+        if (!input.classList.contains('active')) {
             input.classList.add('active');
             input.focus();
         }
