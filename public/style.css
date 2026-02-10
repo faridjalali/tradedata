@@ -629,7 +629,8 @@ button:hover {
 
 /* Sort Buttons (Ticker & Live Feed) */
 .header-sort-controls .tf-btn,
-#live-controls .tf-btn {
+#live-controls .tf-btn,
+#leaderboard-controls .tf-btn {
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -642,14 +643,16 @@ button:hover {
 
 @media (hover: hover) {
   .header-sort-controls .tf-btn:hover,
-  #live-controls .tf-btn:hover {
+  #live-controls .tf-btn:hover,
+  #leaderboard-controls .tf-btn:hover {
     background: rgba(48, 54, 61, 0.5);
     color: var(--text-primary);
   }
 }
 
 .header-sort-controls .tf-btn.active,
-#live-controls .tf-btn.active {
+#live-controls .tf-btn.active,
+#leaderboard-controls .tf-btn.active {
   background: var(--highlight);
   color: #ffffff;
   border-color: var(--highlight);
