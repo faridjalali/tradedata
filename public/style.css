@@ -301,11 +301,17 @@ h2 {
   margin-bottom: 8px;
   
   display: grid !important;
-  /* Icon | Ticker | Metrics (Flexible) | Time */
-  grid-template-columns: min-content min-content 1fr min-content !important;
+  /* Icon | Ticker | Metrics (Centered/Fixed) | Time (Right-Aligned) */
+  /* The 4th column (Time) is 1fr to push it right, or we use auto and justify-self: end */
+  grid-template-columns: min-content min-content max-content 1fr !important;
   align-items: center !important;
-  gap: 4px; /* Reduced gap as requested */
+  gap: 4px; /* Reduced gap between Icon and Ticker */
   
+  /* Reduced Width as Requested (approx 30% reduction from full width) */
+  width: 75%; 
+  margin-left: auto;
+  margin-right: auto;
+
   height: 40px; /* Enforce fixed height */
   box-sizing: border-box;
   transition: all 0.2s;
@@ -398,7 +404,8 @@ h2 {
   justify-content: center; /* Center in the grid cell */
   white-space: nowrap !important;
   overflow: hidden; /* Truncate if too loose */
-  margin-left: 8px; /* Extra spacing from ticker if grid gap is small */
+  /* Decent space from Ticker */
+  margin-left: 32px; 
 }
 
 .metric-item {
@@ -444,6 +451,8 @@ h2 {
   white-space: nowrap !important;
   text-align: right;
   margin: 0 !important;
+  /* Push to the far right of the grid cell */
+  justify-self: end; 
 }
 .stat-box {
   background: var(--card-bg);
