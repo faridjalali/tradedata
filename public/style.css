@@ -304,7 +304,7 @@ h2 {
   /* Icon | Ticker | Metrics (Flexible) | Time */
   grid-template-columns: min-content min-content 1fr min-content !important;
   align-items: center !important;
-  gap: 12px; /* Consistent gap between grid columns */
+  gap: 4px; /* Reduced gap as requested */
   
   height: 40px; /* Enforce fixed height */
   box-sizing: border-box;
@@ -398,6 +398,7 @@ h2 {
   justify-content: center; /* Center in the grid cell */
   white-space: nowrap !important;
   overflow: hidden; /* Truncate if too loose */
+  margin-left: 8px; /* Extra spacing from ticker if grid gap is small */
 }
 
 .metric-item {
