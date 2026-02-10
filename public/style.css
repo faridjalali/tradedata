@@ -263,6 +263,10 @@ h2 {
   gap: 8px;
 }
 
+.ticker-history-section .header-sort-controls {
+  margin-bottom: 20px;
+}
+
 .icon-btn {
   background: transparent;
   border: 1px solid var(--border-color);
