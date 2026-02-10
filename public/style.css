@@ -291,45 +291,55 @@ h2 {
 }
 
 /* Alert Cards */
+/* Alert Cards - CONSTANT SINGLE LINE */
 .alert-card {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
   margin-bottom: 8px;
-  display: flex;
-  flex-direction: row; /* Explicitly set row */
-  justify-content: space-between; 
-  align-items: center;
-  flex-wrap: nowrap; /* Never wrap */
+  
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  
+  height: 40px; /* Enforce fixed height for consistency */
+  box-sizing: border-box;
   transition: all 0.2s;
   cursor: pointer;
+  overflow: hidden; /* Prevent overflow */
+}
+
+/* Sections */
+.ac-left, .ac-middle, .ac-right {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  height: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .ac-left {
-  display: flex;
-  flex-direction: row; /* Force row */
-  align-items: center;
-  gap: 10px;
   flex: 0 0 auto;
-  flex-wrap: nowrap; /* Prevent wrapping */
+  gap: 12px;
 }
 
 .ac-middle {
-  display: flex;
-  align-items: center;
+  flex: 1 1 auto;
   justify-content: center;
-  flex: 1; /* Take up remaining space */
+  min-width: 0; /* Allow shrinking */
+  padding: 0 10px !important;
 }
 
 .ac-right {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
   flex: 0 0 auto;
-  min-width: 80px; 
-  text-align: right;
-  margin-left: auto; /* Ensure it pushes right */
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: fit-content;
 }
 
 /* Favorite Icon (Checkbox Style) */
@@ -389,30 +399,33 @@ h2 {
 }
 
 /* Compact Layout */
+/* Compact Layout */
 .alert-card h3 {
-  margin: 0;
-  padding: 0;
+  margin: 0 !important;
+  padding: 0 !important;
   font-size: 1rem;
-  line-height: 1; /* Prevent extra height */
+  line-height: normal !important;
   color: var(--text-primary);
   font-weight: 600;
-  width: 80px; 
-  flex-shrink: 0; 
+  white-space: nowrap !important;
 }
 
 /* New Metrics Layout */
 .metrics-container {
-  display: flex;
-  align-items: center;
+  display: flex !important;
+  align-items: center !important;
   gap: 12px;
+  flex-wrap: nowrap !important;
 }
 
 .metric-item {
-  display: flex;
-  align-items: center;
+  display: flex !important;
+  align-items: center !important;
   gap: 4px;
   font-size: 0.75rem;
   color: var(--text-secondary);
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
 }
 
 .volume-text {
@@ -445,10 +458,9 @@ h2 {
 .alert-time {
   font-size: 0.75rem;
   color: var(--text-secondary);
-  white-space: nowrap;
-  min-width: 50px;
+  white-space: nowrap !important;
   text-align: right;
-  margin-left: auto; /* Push to right */
+  margin: 0 !important;
 }
 .stat-box {
   background: var(--card-bg);
