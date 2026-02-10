@@ -164,17 +164,29 @@ export function setupLiveFeedDelegation(): void {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
             if (id) {
+                // Optimistic UI Update
+                const isCurrentlyFilled = starBtn!.classList.contains('filled');
+                if (isCurrentlyFilled) {
+                    starBtn!.classList.remove('filled');
+                } else {
+                    starBtn!.classList.add('filled');
+                }
+
                 toggleFavorite(Number(id)).then(updatedAlert => {
                     const allAlerts = getAlerts();
                     // Update local state
                     const idx = allAlerts.findIndex(a => a.id === updatedAlert.id);
                     if (idx !== -1) {
                          allAlerts[idx].is_favorite = updatedAlert.is_favorite;
-                         setAlerts(allAlerts); // Trigger re-render or manual update?
-                         // For now, re-render implies re-sorting if needed. 
-                         // To avoid full re-render flickering, we could just toggle class if sort mode isn't 'favorite'.
-                         renderOverview();
+                         setAlerts(allAlerts); 
+                         // If sort mode is 'favorite', we might need to re-render to correct order,
+                         // but for now we prioritize visual toggle stability.
+                         // renderOverview(); // Skipped to avoid flickering sort
                     }
+                }).catch(() => {
+                    // Revert on failure
+                    if (isCurrentlyFilled) starBtn!.classList.add('filled');
+                    else starBtn!.classList.remove('filled');
                 });
             }
             return;

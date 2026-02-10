@@ -323,7 +323,8 @@ h2 {
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
-  min-width: 60px;
+  min-width: 80px; /* Increase width for safety */
+  text-align: right;
 }
 
 .star-icon {
@@ -340,8 +341,8 @@ h2 {
 }
 
 .star-icon.filled {
-  fill: #e3b341; /* Gold fill */
-  color: #e3b341; /* Gold stroke */
+  fill: #e3b341 !important; /* Force fill */
+  color: #e3b341 !important; /* Force stroke color */
 }
 
 .alert-card.bullish-card {
