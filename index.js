@@ -366,12 +366,12 @@ app.get('/api/breadth', async (req, res) => {
         yf.chart('SPY', {
           period1: formatDate(today),
           period2: formatDate(tomorrow),
-          interval: '1h'
+          interval: '30m'
         }),
         yf.chart(compTicker, {
           period1: formatDate(today),
           period2: formatDate(tomorrow),
-          interval: '1h'
+          interval: '30m'
         })
       ]);
 
@@ -390,10 +390,10 @@ app.get('/api/breadth', async (req, res) => {
         return totalMin >= 570 && totalMin <= 960; // 9:30 AM to 4:00 PM
       };
 
-      // Key by rounded hour timestamp for matching
-      const roundToHour = (d) => {
+      // Key by rounded 30-min timestamp for matching
+      const roundTo30Min = (d) => {
         const rounded = new Date(d);
-        rounded.setMinutes(0, 0, 0);
+        rounded.setMinutes(rounded.getMinutes() < 30 ? 0 : 30, 0, 0);
         return rounded.getTime();
       };
 
@@ -401,7 +401,7 @@ app.get('/api/breadth', async (req, res) => {
       for (const q of spyQuotes) {
         const d = new Date(q.date);
         if (isRegularHours(d)) {
-          spyMap.set(roundToHour(d), q.close);
+          spyMap.set(roundTo30Min(d), q.close);
         }
       }
 
@@ -409,7 +409,7 @@ app.get('/api/breadth', async (req, res) => {
       for (const q of compQuotes) {
         const d = new Date(q.date);
         if (isRegularHours(d)) {
-          compMap.set(roundToHour(d), q.close);
+          compMap.set(roundTo30Min(d), q.close);
         }
       }
 
