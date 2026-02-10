@@ -146,6 +146,13 @@ async function renderGexChart(ticker: string): Promise<void> {
     const errorEl = document.getElementById('gex-error');
     const totalEl = document.getElementById('gex-total');
     const canvas = document.getElementById('gex-chart') as HTMLCanvasElement;
+    
+    // Update external link
+    const linkEl = document.getElementById('gex-external-link') as HTMLAnchorElement;
+    if (linkEl) {
+        linkEl.href = `https://unusualwhales.com/stock/${ticker}/greek-exposure`;
+        linkEl.style.display = 'flex';
+    }
 
     if (!container || !canvas) return;
 
