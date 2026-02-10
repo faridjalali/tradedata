@@ -254,4 +254,29 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup Event Delegation
     setupLiveFeedDelegation();
+
+    // Mobile Collapse Toggle (only on mobile)
+    setupMobileCollapse();
 });
+
+function setupMobileCollapse(): void {
+    // Use event delegation on #view-live so it works for both dashboard and ticker views
+    const viewLive = document.getElementById('view-live');
+    if (!viewLive) return;
+
+    viewLive.addEventListener('click', (e) => {
+        // Only activate on mobile
+        if (window.innerWidth > 768) return;
+
+        const target = e.target as HTMLElement;
+        // Check if click is on an h2 within a column-header or header-title-group
+        if (target.tagName !== 'H2') return;
+        const isInHeader = target.closest('.column-header') || target.closest('.header-title-group');
+        if (!isInHeader) return;
+
+        const column = target.closest('.column');
+        if (column) {
+            column.classList.toggle('collapsed');
+        }
+    });
+}
