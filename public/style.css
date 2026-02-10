@@ -412,12 +412,12 @@ h2 {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
-  justify-content: center;
+  justify-content: flex-start;
   white-space: nowrap;
 
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0 auto;
+  padding-left: 12px;
 }
 
 .metric-item {
