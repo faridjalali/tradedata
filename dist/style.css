@@ -696,3 +696,107 @@ button:hover {
   color: var(--text-secondary);
   font-size: 0.9rem;
 }
+
+/* ===== BREADTH PAGE ===== */
+#breadth-controls {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.breadth-controls-inner {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#breadth-metric-btns .tf-btn {
+  padding: 0 14px;
+  min-width: auto;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+#breadth-controls .tf-btn,
+#breadth-metric-btns .tf-btn {
+  width: auto;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 20px;
+}
+
+@media (hover: hover) {
+  #breadth-controls .tf-btn:hover {
+    background: rgba(48, 54, 61, 0.5);
+    color: var(--text-primary);
+  }
+}
+
+#breadth-controls .tf-btn.active {
+  background: var(--highlight);
+  color: #ffffff;
+  border-color: var(--highlight);
+}
+
+.breadth-chart-container {
+  background: rgba(22, 27, 34, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 10px;
+}
+
+.breadth-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.breadth-chart-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.breadth-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.breadth-chart-wrapper {
+  height: 450px;
+  position: relative;
+}
+
+.breadth-status {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .breadth-chart-wrapper {
+    height: 300px;
+  }
+
+  .breadth-controls-inner {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+}

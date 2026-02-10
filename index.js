@@ -197,7 +197,29 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
 
 // --- GEX (Gamma Exposure) API ---
 const YahooFinance = require("yahoo-finance2").default;
-const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+// Proxy setup: route yahoo-finance2 through residential IP proxy when configured
+const yfOptions = { suppressNotices: ['yahooSurvey'] };
+
+if (process.env.YAHOO_PROXY_URL && process.env.YAHOO_PROXY_SECRET) {
+  const { ProxyAgent, fetch: undiciFetch } = require("undici");
+  const proxyAgent = new ProxyAgent({
+    uri: process.env.YAHOO_PROXY_URL,
+    token: `Bearer ${process.env.YAHOO_PROXY_SECRET}`,
+  });
+
+  // Custom fetch that routes through our residential proxy
+  const proxiedFetch = (url, opts = {}) => {
+    return undiciFetch(url, { ...opts, dispatcher: proxyAgent });
+  };
+
+  yfOptions.fetch = proxiedFetch;
+  console.log(`Yahoo Finance proxy enabled: ${process.env.YAHOO_PROXY_URL}`);
+} else {
+  console.log("Yahoo Finance proxy not configured, using direct connection");
+}
+
+const yf = new YahooFinance(yfOptions);
 
 // In-memory GEX cache (24h TTL)
 const gexCache = new Map();
