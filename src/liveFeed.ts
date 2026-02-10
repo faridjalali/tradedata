@@ -168,13 +168,17 @@ export function setupLiveFeedDelegation(): void {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
             if (id) {
-                // Optimistic UI Update
-                const isCurrentlyFilled = starBtn!.classList.contains('filled');
-                if (isCurrentlyFilled) {
-                    starBtn!.classList.remove('filled');
-                } else {
-                    starBtn!.classList.add('filled');
-                }
+                // Optimistic UI Update: Find ALL instances of this alert's star icon
+                const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"]`);
+                const isCurrentlyFilled = starBtn.classList.contains('filled');
+                
+                allStars.forEach(star => {
+                    if (isCurrentlyFilled) {
+                        star.classList.remove('filled');
+                    } else {
+                        star.classList.add('filled');
+                    }
+                });
 
                 toggleFavorite(Number(id)).then(updatedAlert => {
                     const allAlerts = getAlerts();
@@ -183,14 +187,19 @@ export function setupLiveFeedDelegation(): void {
                     if (idx !== -1) {
                          allAlerts[idx].is_favorite = updatedAlert.is_favorite;
                          setAlerts(allAlerts); 
-                         // If sort mode is 'favorite', we might need to re-render to correct order,
-                         // but for now we prioritize visual toggle stability.
-                         // renderOverview(); // Skipped to avoid flickering sort
+                         
+                         // Re-enforce visual state from server response to be sure
+                         allStars.forEach(star => {
+                             if (updatedAlert.is_favorite) star.classList.add('filled');
+                             else star.classList.remove('filled');
+                         });
                     }
                 }).catch(() => {
                     // Revert on failure
-                    if (isCurrentlyFilled) starBtn!.classList.add('filled');
-                    else starBtn!.classList.remove('filled');
+                    allStars.forEach(star => {
+                        if (isCurrentlyFilled) star.classList.add('filled');
+                        else star.classList.remove('filled');
+                    });
                 });
             }
             return;
