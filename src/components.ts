@@ -28,25 +28,22 @@ export function createAlertCard(alert: Alert): string {
     const intStyle = `background: conic-gradient(${fillColor} ${intScore}%, ${emptyColor} 0%);`;
     const cmbStyle = `background: conic-gradient(${fillColor} ${cmbScore}%, ${emptyColor} 0%);`;
 
-    const intLabel = `Intensity: ${intScore}`;
-    const cmbLabel = `Combo: ${cmbScore}`;
-    
-    // Debugging: Check what is actually coming from the DB
-    // console.log(`Alert ${alert.ticker}: is_favorite =`, alert.is_favorite, typeof alert.is_favorite);
-
-    // Strict check to handle potential string 'false' from some DB drivers or JSON serialization quirks
+    // Strict boolean check
     const isFav = alert.is_favorite === true || String(alert.is_favorite).toLowerCase() === 'true';
     const starClass = isFav ? 'filled' : '';
+    
+    // Explicit HTML for Checked vs Unchecked states
+    const checkmarkVisibility = isFav ? 'visible' : 'hidden';
+    const checkmarkOpacity = isFav ? '1' : '0';
 
-    // Checkbox style: Rect for box, Polyline for checkmark
+    // Checkbox Icon
     const starIcon = `
         <svg class="fav-icon ${starClass}" data-id="${alert.id}" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <polyline class="check-mark" points="9 12 11 14 15 10"></polyline>
+            <polyline class="check-mark" points="9 12 11 14 15 10" style="visibility: ${checkmarkVisibility}; opacity: ${checkmarkOpacity};"></polyline>
         </svg>
     `;
 
-    // Single row structure: Left (Star+Ticker), Middle (Metrics), Right (Time)
     return `
         <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
             <div class="ac-left">
@@ -56,10 +53,10 @@ export function createAlertCard(alert: Alert): string {
             
             <div class="ac-middle">
                 <div class="metrics-container">
-                    <div class="metric-item" title="${intLabel}">
+                    <div class="metric-item" title="Intensity: ${intScore}">
                         <div class="score-circle" style="${intStyle}"></div>
                     </div>
-                    <div class="metric-item" title="${cmbLabel}">
+                    <div class="metric-item" title="Combo: ${cmbScore}">
                         <div class="score-circle" style="${cmbStyle}"></div>
                     </div>
                     <div class="metric-item" title="Signal Volume">

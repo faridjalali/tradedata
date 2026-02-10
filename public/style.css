@@ -342,13 +342,14 @@ h2 {
   min-width: fit-content;
 }
 
-/* Favorite Icon (Checkbox Style) */
+/* Favorite Icon (Checkbox Style) - STRICT VISIBILITY */
 .fav-icon {
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform 0.1s; /* Reduced transition */
   width: 16px;
   height: 16px;
+  flex: 0 0 16px; /* Prevent resizing */
 }
 
 .fav-icon:hover {
@@ -360,24 +361,27 @@ h2 {
   transform: scale(0.9);
 }
 
-/* Checkmark visibility */
+/* Checkmark visibility controlled by inline styles for initial load, 
+   but classes handle updates */
 .fav-icon .check-mark {
-  opacity: 0;
-  transform: scale(0);
-  transform-origin: center;
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  visibility: hidden; /* Ensure it's not clickable or visible */
+  transition: all 0.1s; /* Faster transition */
 }
 
 .fav-icon.filled .check-mark {
-  opacity: 1;
+  visibility: visible !important;
+  opacity: 1 !important;
   transform: scale(1);
-  visibility: visible;
+}
+
+/* When not filled, hide explicitly */
+.fav-icon:not(.filled) .check-mark {
+  visibility: hidden !important; 
+  opacity: 0 !important;
+  transform: scale(0);
 }
 
 .fav-icon.filled {
-  color: var(--text-primary) !important; /* Match font color as requested */
-  /* Remove fill logic since we use checkmark now */
+  color: var(--text-primary) !important;
   fill: none !important;
 }
 
@@ -408,6 +412,8 @@ h2 {
   color: var(--text-primary);
   font-weight: 600;
   white-space: nowrap !important;
+  /* Removed fixed width to allow flex growth if needed, but min-width ensures readability */
+  min-width: 60px; 
 }
 
 /* New Metrics Layout */
