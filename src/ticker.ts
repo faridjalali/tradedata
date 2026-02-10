@@ -184,6 +184,10 @@ async function renderGexChart(ticker: string): Promise<void> {
         const wrapper = canvas.parentElement;
         if (wrapper) wrapper.style.height = chartHeight + 'px';
 
+        // Reverse data for display (Highest strike at top)
+        data.strikes.reverse();
+        data.gex.reverse();
+
         // Format total net gamma
         if (totalEl) {
             const totalFormatted = formatGamma(data.total_gex);
@@ -262,6 +266,7 @@ async function renderGexChart(ticker: string): Promise<void> {
                         }
                     }
                 },
+
                 scales: {
                     x: {
                         position: 'bottom',
