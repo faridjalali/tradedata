@@ -41,16 +41,16 @@ export function createAlertCard(alert: Alert): string {
     return `
         <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
             <div class="card-header">
-                <h3>${alert.ticker}</h3>
                 ${starIcon}
+                <h3>${alert.ticker}</h3>
             </div>
             
             <div class="metrics-container">
                 <div class="metric-item" title="${intLabel}">
-                    <div class="intensity-score" style="${intStyle}"></div>
+                    <div class="score-circle" style="${intStyle}"></div>
                 </div>
                 <div class="metric-item" title="${cmbLabel}">
-                    <div class="combo-score" style="${cmbStyle}"></div>
+                    <div class="score-circle" style="${cmbStyle}"></div>
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>

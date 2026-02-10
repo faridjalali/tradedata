@@ -10,11 +10,11 @@ export interface Alert {
     signal_volume?: number;
     intensity_score?: number;
     combo_score?: number;
+    is_favorite?: boolean;
 }
 
 export interface AppState {
     alerts: Alert[];
-    is_favorite?: boolean;
 }
 
 export type LiveFeedMode = '30' | '7' | '1' | 'week' | 'month';
