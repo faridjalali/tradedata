@@ -355,11 +355,81 @@ app.get('/api/breadth', async (req, res) => {
   }
 
   try {
-    const interval = isIntraday ? '1h' : '1d';
+    if (isIntraday) {
+      // Use yahoo-finance2 with 1h interval for today's data
+      const today = new Date();
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const formatDate = (d) => d.toISOString().split('T')[0];
 
-    // For intraday, fetch last 2 calendar days to ensure we have today's data
-    // For daily, use the existing buffer logic
-    const bufferDays = isIntraday ? 3 : Math.ceil(days * 1.8) + 5;
+      const [spyData, compData] = await Promise.all([
+        yf.chart('SPY', {
+          period1: formatDate(today),
+          period2: formatDate(tomorrow),
+          interval: '1h'
+        }),
+        yf.chart(compTicker, {
+          period1: formatDate(today),
+          period2: formatDate(tomorrow),
+          interval: '1h'
+        })
+      ]);
+
+      const spyQuotes = (spyData.quotes || []).filter(q => q.close != null);
+      const compQuotes = (compData.quotes || []).filter(q => q.close != null);
+
+      if (spyQuotes.length === 0 || compQuotes.length === 0) {
+        return res.status(404).json({ error: 'No intraday data available (market may be closed)' });
+      }
+
+      // Filter to regular trading hours (9:30-16:00 ET)
+      const isRegularHours = (date) => {
+        const etStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+        const et = new Date(etStr);
+        const totalMin = et.getHours() * 60 + et.getMinutes();
+        return totalMin >= 570 && totalMin <= 960; // 9:30 AM to 4:00 PM
+      };
+
+      // Key by rounded hour timestamp for matching
+      const roundToHour = (d) => {
+        const rounded = new Date(d);
+        rounded.setMinutes(0, 0, 0);
+        return rounded.getTime();
+      };
+
+      const spyMap = new Map();
+      for (const q of spyQuotes) {
+        const d = new Date(q.date);
+        if (isRegularHours(d)) {
+          spyMap.set(roundToHour(d), q.close);
+        }
+      }
+
+      const compMap = new Map();
+      for (const q of compQuotes) {
+        const d = new Date(q.date);
+        if (isRegularHours(d)) {
+          compMap.set(roundToHour(d), q.close);
+        }
+      }
+
+      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort((a, b) => a - b);
+
+      const result = {
+        intraday: true,
+        points: commonKeys.map(k => ({
+          date: new Date(k).toISOString(),
+          spy: Math.round(spyMap.get(k) * 100) / 100,
+          comparison: Math.round(compMap.get(k) * 100) / 100
+        }))
+      };
+
+      breadthCache.set(cacheKey, { ts: Date.now(), data: result });
+      return res.json(result);
+    }
+
+    // Daily logic — use yahoo-finance2
+    const bufferDays = Math.ceil(days * 1.8) + 5;
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - bufferDays);
@@ -370,12 +440,12 @@ app.get('/api/breadth', async (req, res) => {
       yf.chart('SPY', {
         period1: formatDate(startDate),
         period2: formatDate(endDate),
-        interval
+        interval: '1d'
       }),
       yf.chart(compTicker, {
         period1: formatDate(startDate),
         period2: formatDate(endDate),
-        interval
+        interval: '1d'
       })
     ]);
 
@@ -384,58 +454,6 @@ app.get('/api/breadth', async (req, res) => {
 
     if (spyQuotes.length === 0 || compQuotes.length === 0) {
       return res.status(404).json({ error: 'No price data available' });
-    }
-
-    if (isIntraday) {
-      // For intraday: key by ISO timestamp, filter to regular trading hours (9:30-16:00 ET)
-      const spyMap = new Map();
-      const compMap = new Map();
-
-      const isRegularHours = (date) => {
-        // Convert to ET (Eastern Time)
-        const etStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
-        const et = new Date(etStr);
-        const hours = et.getHours();
-        const minutes = et.getMinutes();
-        const totalMin = hours * 60 + minutes;
-        // Regular hours: 9:30 AM (570 min) to 4:00 PM (960 min)
-        return totalMin >= 570 && totalMin <= 960;
-      };
-
-      // Get today's date in ET
-      const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-
-      for (const q of spyQuotes) {
-        const d = new Date(q.date);
-        const dayET = d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-        if (dayET === todayET && isRegularHours(d)) {
-          const key = d.toISOString();
-          spyMap.set(key, q.close);
-        }
-      }
-
-      for (const q of compQuotes) {
-        const d = new Date(q.date);
-        const dayET = d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-        if (dayET === todayET && isRegularHours(d)) {
-          const key = d.toISOString();
-          compMap.set(key, q.close);
-        }
-      }
-
-      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort();
-
-      const result = {
-        intraday: true,
-        points: commonKeys.map(k => ({
-          date: k,
-          spy: Math.round(spyMap.get(k) * 100) / 100,
-          comparison: Math.round(compMap.get(k) * 100) / 100
-        }))
-      };
-
-      breadthCache.set(cacheKey, { ts: Date.now(), data: result });
-      return res.json(result);
     }
 
     // Daily logic (unchanged)
