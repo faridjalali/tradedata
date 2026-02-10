@@ -196,8 +196,8 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
 });
 
 // --- GEX (Gamma Exposure) API ---
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY || "pig0ix6gPImcxdqhUmvTCUnjVPKVmkC0";
-const POLYGON_BASE = "https://api.polygon.io";
+const YahooFinance = require("yahoo-finance2").default;
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 // In-memory GEX cache (5 min TTL)
 const gexCache = new Map();
@@ -209,8 +209,7 @@ function normalPdf(x) {
 }
 
 function bsGamma(S, K, T, r, sigma) {
-  // S=spot, K=strike, T=time to expiry in years, r=risk-free rate, sigma=IV
-  if (T <= 0 || sigma <= 0) return 0;
+  if (T <= 0 || sigma <= 0 || S <= 0 || K <= 0) return 0;
   const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
   return normalPdf(d1) / (S * sigma * Math.sqrt(T));
 }
@@ -225,93 +224,82 @@ app.get('/api/gex/:ticker', async (req, res) => {
   }
 
   try {
-    // 1. Get spot price via previous-day close (free plan)
-    const prevRes = await fetch(`${POLYGON_BASE}/v2/aggs/ticker/${ticker}/prev?apiKey=${POLYGON_API_KEY}`);
-    const prevData = await prevRes.json();
-    
-    if (!prevData.results || prevData.results.length === 0) {
+    // 1. Fetch first expiration to get spot price and expiration list
+    const firstChain = await yf.options(ticker);
+    const spotPrice = firstChain.quote.regularMarketPrice;
+
+    if (!spotPrice) {
       return res.status(404).json({ error: `No price data for ${ticker}` });
     }
-    const spotPrice = prevData.results[0].c; // closing price
 
-    // 2. Get options contracts (paginated, free plan)
-    // Filter to expirations within 60 days
+    // 2. Collect all expirations (up to 6 nearest)
+    const expirationDates = (firstChain.expirationDates || []).slice(0, 6);
     const now = new Date();
-    const maxExpiry = new Date(now);
-    maxExpiry.setDate(maxExpiry.getDate() + 60);
-    const nowStr = now.toISOString().split('T')[0];
-    const maxStr = maxExpiry.toISOString().split('T')[0];
+    const riskFreeRate = 0.045;
 
-    let allContracts = [];
-    let nextUrl = `${POLYGON_BASE}/v3/reference/options/contracts?underlying_ticker=${ticker}&expiration_date.gte=${nowStr}&expiration_date.lte=${maxStr}&limit=250&apiKey=${POLYGON_API_KEY}`;
+    // Net gamma per strike: gamma * OI * 100  (calls positive, puts negative)
+    const gexByStrike = {};
 
-    while (nextUrl) {
-      const chainRes = await fetch(nextUrl);
-      const chainData = await chainRes.json();
+    // Process first expiration
+    function processChain(options, expiryDate) {
+      const T = Math.max((expiryDate - now) / (365.25 * 24 * 60 * 60 * 1000), 1 / 365);
 
-      if (chainData.results) {
-        allContracts = allContracts.concat(chainData.results);
+      for (const opt of (options.calls || [])) {
+        if (!opt.openInterest || opt.openInterest === 0) continue;
+        const iv = opt.impliedVolatility || 0.3;
+        const gamma = bsGamma(spotPrice, opt.strike, T, riskFreeRate, iv);
+        if (!gamma || isNaN(gamma)) continue;
+        const gex = gamma * opt.openInterest * 100;
+        gexByStrike[opt.strike] = (gexByStrike[opt.strike] || 0) + gex;
       }
 
-      nextUrl = chainData.next_url
-        ? `${chainData.next_url}&apiKey=${POLYGON_API_KEY}`
-        : null;
+      for (const opt of (options.puts || [])) {
+        if (!opt.openInterest || opt.openInterest === 0) continue;
+        const iv = opt.impliedVolatility || 0.3;
+        const gamma = bsGamma(spotPrice, opt.strike, T, riskFreeRate, iv);
+        if (!gamma || isNaN(gamma)) continue;
+        const gex = gamma * opt.openInterest * 100;
+        gexByStrike[opt.strike] = (gexByStrike[opt.strike] || 0) - gex; // puts negative
+      }
     }
 
-    if (allContracts.length === 0) {
+    // Process first expiration (already fetched)
+    if (firstChain.options && firstChain.options[0]) {
+      const expDate = expirationDates[0] instanceof Date
+        ? expirationDates[0]
+        : new Date(expirationDates[0] * 1000);
+      processChain(firstChain.options[0], expDate);
+    }
+
+    // Fetch remaining expirations
+    for (let i = 1; i < expirationDates.length; i++) {
+      try {
+        const expEpoch = expirationDates[i] instanceof Date
+          ? Math.floor(expirationDates[i].getTime() / 1000)
+          : expirationDates[i];
+        const chain = await yf.options(ticker, { date: new Date(expEpoch * 1000) });
+        if (chain.options && chain.options[0]) {
+          processChain(chain.options[0], new Date(expEpoch * 1000));
+        }
+      } catch (e) {
+        // Skip failed expirations
+        console.error(`GEX: failed to fetch expiration ${i} for ${ticker}:`, e.message);
+      }
+    }
+
+    // 3. Sort strikes and build response
+    const allStrikes = Object.keys(gexByStrike).map(Number).sort((a, b) => a - b);
+
+    if (allStrikes.length === 0) {
       return res.json({ spot_price: spotPrice, strikes: [], gex: [], total_gex: 0, message: 'No options data available' });
     }
 
-    // 3. Calculate GEX per strike using Black-Scholes gamma
-    // Since OI isn't available on the free plan, we use a uniform OI estimate
-    // weighted by proximity to the money (ATM options have higher OI)
-    const riskFreeRate = 0.05;  // approximate
-    const impliedVol = 0.30;    // approximate average IV
-    const baseOI = 1000;        // uniform OI estimate
-    const gexByStrike = {};
-
-    for (const c of allContracts) {
-      const strike = c.strike_price;
-      const contractType = c.contract_type;
-      const expiryDate = new Date(c.expiration_date);
-      const T = Math.max((expiryDate - now) / (365.25 * 24 * 60 * 60 * 1000), 1/365); // years
-
-      // Filter to spot ±15%
-      if (strike < spotPrice * 0.85 || strike > spotPrice * 1.15) continue;
-
-      // Compute Black-Scholes gamma
-      const gamma = bsGamma(spotPrice, strike, T, riskFreeRate, impliedVol);
-      if (gamma === 0 || isNaN(gamma)) continue;
-
-      // Weight OI by moneyness (ATM gets 3x, deep OTM gets ~0.3x)
-      const moneyness = Math.abs(spotPrice - strike) / spotPrice;
-      const oiWeight = Math.max(0.3, 1 - moneyness * 5) * (moneyness < 0.05 ? 3 : 1);
-      const estimatedOI = baseOI * oiWeight;
-
-      // GEX = gamma * OI * 100 * spot * (spot * 0.01)
-      let gexNotional = gamma * estimatedOI * 100 * spotPrice * (spotPrice * 0.01);
-
-      // Flip sign for puts
-      if (contractType === 'put') gexNotional *= -1;
-
-      gexByStrike[strike] = (gexByStrike[strike] || 0) + gexNotional;
-    }
-
-    // 4. Filter to spot ±10% and sort
-    const lower = spotPrice * 0.90;
-    const upper = spotPrice * 1.10;
-
-    const strikes = Object.keys(gexByStrike)
-      .map(Number)
-      .filter(s => s >= lower && s <= upper)
-      .sort((a, b) => a - b);
-
-    const gex = strikes.map(s => gexByStrike[s]);
+    const gex = allStrikes.map(s => Math.round(gexByStrike[s]));
     const totalGex = gex.reduce((sum, v) => sum + v, 0);
 
     const result = {
       spot_price: spotPrice,
-      strikes,
+      strikes: allStrikes,
       gex,
       total_gex: totalGex
     };

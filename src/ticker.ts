@@ -179,11 +179,16 @@ async function renderGexChart(ticker: string): Promise<void> {
         // Show canvas
         canvas.style.display = 'block';
 
-        // Format total GEX
+        // Adjust canvas height based on number of strikes
+        const chartHeight = Math.max(400, data.strikes.length * 22);
+        const wrapper = canvas.parentElement;
+        if (wrapper) wrapper.style.height = chartHeight + 'px';
+
+        // Format total net gamma
         if (totalEl) {
-            const totalFormatted = formatGexValue(data.total_gex);
+            const totalFormatted = formatGamma(data.total_gex);
             const totalColor = data.total_gex >= 0 ? '#00E396' : '#FF4560';
-            totalEl.innerHTML = `Total GEX: <span style="color:${totalColor};font-weight:600">${totalFormatted}</span>`;
+            totalEl.innerHTML = `Net Gamma: <span style="color:${totalColor};font-weight:600">${totalFormatted}</span>`;
         }
 
         // Find spot price index for annotation
@@ -198,34 +203,36 @@ async function renderGexChart(ticker: string): Promise<void> {
             }
         }
 
-        // Bar colors: green for positive, red for negative
-        const barColors = data.gex.map((v: number) => v >= 0 ? '#00E396' : '#FF4560');
-        const barBorders = data.gex.map((v: number) => v >= 0 ? '#00C07B' : '#E03A4E');
+        // Pink/magenta bars like Unusual Whales
+        const barColors = data.gex.map((v: number) =>
+            v >= 0 ? 'rgba(235, 87, 130, 0.85)' : 'rgba(235, 87, 130, 0.55)');
 
-        // Create chart
+        // Create horizontal bar chart
         const ctx = canvas.getContext('2d');
         gexChartInstance = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: data.strikes.map((s: number) => '$' + s.toFixed(0)),
+                labels: data.strikes.map((s: number) => s.toFixed(2)),
                 datasets: [{
-                    label: 'GEX ($)',
+                    label: 'Net Gamma',
                     data: data.gex,
                     backgroundColor: barColors,
-                    borderColor: barBorders,
-                    borderWidth: 1,
-                    borderRadius: 2,
+                    borderColor: 'rgba(235, 87, 130, 1)',
+                    borderWidth: 0.5,
+                    borderRadius: 1,
+                    borderSkipped: false,
                 }]
             },
             options: {
+                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            title: (items: any[]) => `Strike: ${items[0].label}`,
-                            label: (item: any) => `GEX: ${formatGexValue(item.raw)}`,
+                            title: (items: any[]) => `Strike: $${items[0].label}`,
+                            label: (item: any) => `Net Gamma: ${formatGamma(item.raw)}`,
                         },
                         backgroundColor: '#21262d',
                         borderColor: '#30363d',
@@ -237,15 +244,15 @@ async function renderGexChart(ticker: string): Promise<void> {
                         annotations: {
                             spotLine: {
                                 type: 'line',
-                                xMin: spotIndex,
-                                xMax: spotIndex,
+                                yMin: spotIndex,
+                                yMax: spotIndex,
                                 borderColor: '#f0f6fc',
                                 borderWidth: 2,
                                 borderDash: [5, 3],
                                 label: {
                                     display: true,
                                     content: `Spot: $${spotPrice.toFixed(2)}`,
-                                    position: 'start',
+                                    position: 'end',
                                     backgroundColor: '#30363d',
                                     color: '#f0f6fc',
                                     font: { size: 11 },
@@ -257,21 +264,26 @@ async function renderGexChart(ticker: string): Promise<void> {
                 },
                 scales: {
                     x: {
+                        position: 'bottom',
+                        title: {
+                            display: true,
+                            text: 'Gamma',
+                            color: '#8b949e',
+                            font: { size: 12 },
+                        },
                         ticks: {
                             color: '#8b949e',
                             font: { size: 10 },
-                            maxRotation: 45,
-                            autoSkip: true,
-                            maxTicksLimit: 20,
+                            callback: (value: number) => formatGamma(value),
                         },
                         grid: { color: 'rgba(48, 54, 61, 0.3)' },
                     },
                     y: {
                         ticks: {
                             color: '#8b949e',
-                            callback: (value: number) => formatGexValue(value),
+                            font: { size: 10 },
                         },
-                        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+                        grid: { display: false },
                     }
                 }
             }
@@ -286,12 +298,12 @@ async function renderGexChart(ticker: string): Promise<void> {
     }
 }
 
-function formatGexValue(value: number): string {
+function formatGamma(value: number): string {
     const abs = Math.abs(value);
     const sign = value < 0 ? '-' : '';
-    if (abs >= 1e9) return sign + '$' + (abs / 1e9).toFixed(1) + 'B';
-    if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
-    if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(0) + 'K';
-    return sign + '$' + abs.toFixed(0);
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + (abs / 1e3).toFixed(1) + 'K';
+    return sign + abs.toFixed(0);
 }
+
 
