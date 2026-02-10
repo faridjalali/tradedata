@@ -232,8 +232,8 @@ app.get('/api/gex/:ticker', async (req, res) => {
       return res.status(404).json({ error: `No price data for ${ticker}` });
     }
 
-    // 2. Collect all expirations (up to 2 nearest to avoid rate limits)
-    const expirationDates = (firstChain.expirationDates || []).slice(0, 2);
+    // 2. Collect all expirations (up to 6 nearest)
+    const expirationDates = (firstChain.expirationDates || []).slice(0, 6);
     const now = new Date();
     const riskFreeRate = 0.045;
 
