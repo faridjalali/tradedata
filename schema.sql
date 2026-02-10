@@ -4,5 +4,6 @@ CREATE TABLE IF NOT EXISTS alerts (
   signal_type VARCHAR(10) NOT NULL,
   price DECIMAL(15, 2) NOT NULL,
   message TEXT,
-  timestamp TIMESTAMPTZ DEFAULT NOW()
+  timestamp TIMESTAMPTZ DEFAULT NOW(),
+  is_favorite BOOLEAN DEFAULT FALSE
 );

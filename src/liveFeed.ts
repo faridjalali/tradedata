@@ -1,5 +1,5 @@
 import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
-import { fetchAlertsFromApi } from './api';
+import { fetchAlertsFromApi, toggleFavorite } from './api';
 import { setAlerts, getAlerts } from './state';
 import { createAlertCard } from './components';
 import { LiveFeedMode, SortMode, Alert } from './types';
@@ -130,6 +130,12 @@ export function renderOverview(): void {
                 return (b.combo_score || 0) - (a.combo_score || 0);
             } else if (mode === 'time') {
                 return (b.timestamp || '').localeCompare(a.timestamp || '');
+            } else if (mode === 'favorite') {
+                // Secondary sort by time
+                if (a.is_favorite === b.is_favorite) {
+                    return (b.timestamp || '').localeCompare(a.timestamp || '');
+                }
+                return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
             } else {
                 return (a.ticker || '').localeCompare(b.ticker || '');
             }
@@ -151,7 +157,30 @@ export function setupLiveFeedDelegation(): void {
     if (!dashboard) return;
 
     dashboard.addEventListener('click', (e) => {
-        const card = (e.target as HTMLElement).closest('.alert-card');
+        const target = e.target as HTMLElement;
+        const starBtn = target.closest('.star-icon');
+        
+        if (starBtn) {
+            e.stopPropagation();
+            const id = (starBtn as HTMLElement).dataset.id;
+            if (id) {
+                toggleFavorite(Number(id)).then(updatedAlert => {
+                    const allAlerts = getAlerts();
+                    // Update local state
+                    const idx = allAlerts.findIndex(a => a.id === updatedAlert.id);
+                    if (idx !== -1) {
+                         allAlerts[idx].is_favorite = updatedAlert.is_favorite;
+                         setAlerts(allAlerts); // Trigger re-render or manual update?
+                         // For now, re-render implies re-sorting if needed. 
+                         // To avoid full re-render flickering, we could just toggle class if sort mode isn't 'favorite'.
+                         renderOverview();
+                    }
+                });
+            }
+            return;
+        }
+
+        const card = target.closest('.alert-card');
         if (card) {
             const ticker = (card as HTMLElement).dataset.ticker;
             if (ticker && window.showTickerView) {

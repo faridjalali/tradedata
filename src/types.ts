@@ -14,7 +14,8 @@ export interface Alert {
 
 export interface AppState {
     alerts: Alert[];
+    is_favorite?: boolean;
 }
 
 export type LiveFeedMode = '30' | '7' | '1' | 'week' | 'month';
-export type SortMode = 'time' | 'ticker' | 'volume' | 'intensity' | 'combo';
+export type SortMode = 'time' | 'ticker' | 'volume' | 'intensity' | 'combo' | 'favorite';

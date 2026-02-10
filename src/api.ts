@@ -10,3 +10,13 @@ export async function fetchAlertsFromApi(params: string = ''): Promise<Alert[]> 
         return [];
     }
 }
+
+export async function toggleFavorite(id: number): Promise<Alert> {
+    const response = await fetch(`/api/alerts/${id}/favorite`, {
+        method: 'POST'
+    });
+    if (!response.ok) {
+        throw new Error('Network response was not ok');
+    }
+    return await response.json();
+}

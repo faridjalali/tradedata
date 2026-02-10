@@ -24,7 +24,8 @@ const initDB = async () => {
         signal_type VARCHAR(10) NOT NULL,
         price DECIMAL(15, 2) NOT NULL,
         message TEXT,
-        timestamp TIMESTAMPTZ DEFAULT NOW()
+        timestamp TIMESTAMPTZ DEFAULT NOW(),
+        is_favorite BOOLEAN DEFAULT FALSE
       );
     `);
     
@@ -34,7 +35,8 @@ const initDB = async () => {
       "signal_direction INTEGER",
       "signal_volume INTEGER",
       "intensity_score INTEGER",
-      "combo_score INTEGER"
+      "combo_score INTEGER",
+      "is_favorite BOOLEAN DEFAULT FALSE"
     ];
 
     for (const col of columns) {
@@ -138,6 +140,38 @@ app.get('/api/alerts', async (req, res) => {
     console.error(err);
     res.status(500).send('Server Error');
   }
+});
+
+app.post('/api/alerts/:id/favorite', async (req, res) => {
+    const { id } = req.params;
+    const { is_favorite } = req.body; // Expect boolean, or toggle if undefined? Let's be explicit or query first.
+    
+    // Simple toggle logic if is_favorite is not provided would require a read first.
+    // For efficiency, let's assume the frontend sends the DESIRED state.
+    // Or, simpler: update alerts set is_favorite = NOT is_favorite where id = $1 returning *;
+    
+    try {
+        let query;
+        let values;
+        
+        if (typeof is_favorite === 'boolean') {
+            query = 'UPDATE alerts SET is_favorite = $1 WHERE id = $2 RETURNING *';
+            values = [is_favorite, id];
+        } else {
+            // Toggle
+             query = 'UPDATE alerts SET is_favorite = NOT is_favorite WHERE id = $1 RETURNING *';
+             values = [id];
+        }
+        
+        const result = await pool.query(query, values);
+        if (result.rows.length === 0) {
+            return res.status(404).send('Alert not found');
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Error toggling favorite:', err);
+        res.status(500).send('Server Error');
+    }
 });
 
 app.listen(port, () => {
