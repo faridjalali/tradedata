@@ -18,4 +18,4 @@ export interface AppState {
 }
 
 export type LiveFeedMode = '30' | '7' | '1' | 'week' | 'month';
-export type SortMode = 'time' | 'ticker' | 'volume' | 'intensity' | 'combo' | 'favorite';
+export type SortMode = 'time' | 'volume' | 'intensity' | 'combo' | 'favorite';

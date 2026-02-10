@@ -8,7 +8,7 @@ import {
     setWeeklySort,
     setupLiveFeedDelegation
 } from './liveFeed';
-import { fetchLeaderboardData } from './leaderboard';
+import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { SortMode, LiveFeedMode } from './types';
 
@@ -37,7 +37,6 @@ window.showTickerView = function(ticker: string) {
         document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
         tickerView.classList.remove('hidden');
-        tickerView.classList.remove('hidden');
         renderTickerView(ticker);
         window.scrollTo(0, 0); // Scroll to top of ticker view
     }
@@ -45,7 +44,6 @@ window.showTickerView = function(ticker: string) {
 
 window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
-    if (tickerView) delete tickerView.dataset.ticker;
     if (tickerView) delete tickerView.dataset.ticker;
     renderOverview();
     // Restore scroll position
@@ -254,6 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup Event Delegation
     setupLiveFeedDelegation();
+    setupLeaderboardDelegation();
 
     // Mobile Collapse Toggle (only on mobile)
     setupMobileCollapse();

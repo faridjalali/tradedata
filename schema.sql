@@ -5,5 +5,10 @@ CREATE TABLE IF NOT EXISTS alerts (
   price DECIMAL(15, 2) NOT NULL,
   message TEXT,
   timestamp TIMESTAMPTZ DEFAULT NOW(),
+  timeframe VARCHAR(10),
+  signal_direction INTEGER,
+  signal_volume INTEGER,
+  intensity_score INTEGER,
+  combo_score INTEGER,
   is_favorite BOOLEAN DEFAULT FALSE
 );

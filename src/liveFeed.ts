@@ -1,4 +1,4 @@
-import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
+import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn } from './utils';
 import { fetchAlertsFromApi, toggleFavorite } from './api';
 import { setAlerts, getAlerts } from './state';
 import { createAlertCard } from './components';
@@ -41,73 +41,20 @@ export function isCurrentTimeframe(): boolean {
 
 export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
     try {
-        let params = '';
-        let startDate = '', endDate = '';
+        const weekVal = (document.getElementById('history-week') as HTMLInputElement)?.value || '';
+        const monthVal = (document.getElementById('history-month') as HTMLInputElement)?.value || '';
         
-        if (liveFeedMode === '30') {
-            const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate() - 30);
-            endDate = end.toISOString();
-            startDate = start.toISOString();
-        } else if (liveFeedMode === '7') {
-            const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate() - 7);
-            endDate = end.toISOString();
-            startDate = start.toISOString();
-        } else if (liveFeedMode === '1') {
-            const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate() - 1);
-            endDate = end.toISOString();
-            startDate = start.toISOString();
-        } else if (liveFeedMode === 'week') {
-            const val = (document.getElementById('history-week') as HTMLInputElement).value;
-            if (!val) return []; 
-            const parts = val.split('-W');
-            const yearStr = parts[0];
-            const weekStr = parts[1];
-            
-            const year = parseInt(yearStr);
-            const week = parseInt(weekStr);
-            const d = new Date(year, 0, 4);
-            const dayShift = d.getDay() === 0 ? 6 : d.getDay() - 1;
-            const week1Monday = new Date(d.setDate(d.getDate() - dayShift));
-            const monday = new Date(week1Monday.setDate(week1Monday.getDate() + (week - 1) * 7));
-            monday.setHours(0,0,0,0);
-            const sunday = new Date(monday);
-            sunday.setDate(monday.getDate() + 6);
-            sunday.setHours(23,59,59,999);
-            startDate = monday.toISOString();
-            endDate = sunday.toISOString();
-        } else {
-            const val = (document.getElementById('history-month') as HTMLInputElement).value;
-            if (!val) return [];
-            const parts = val.split('-');
-            const year = Number(parts[0]);
-            const month = Number(parts[1]);
-            
-            const start = new Date(year, month - 1, 1);
-            const end = new Date(year, month, 0); 
-            end.setHours(23,59,59,999);
-            startDate = start.toISOString();
-            endDate = end.toISOString();
-        }
+        const { startDate, endDate } = getDateRangeForMode(liveFeedMode, weekVal, monthVal);
+        if (!startDate || !endDate) return [];
         
-        params = `?start_date=${startDate}&end_date=${endDate}`;
-
+        const params = `?start_date=${startDate}&end_date=${endDate}`;
         const data = await fetchAlertsFromApi(params);
         setAlerts(data);
         
         return data; 
     } catch (error) {
         console.error('Error fetching live alerts:', error);
-        // Mock data for verification
-        return [
-             { id: 1, ticker: 'BTCUSDT', signal_type: 'bullish', price: 95000.50, message: 'Test Alert', timestamp: new Date().toISOString(), timeframe: '1d', signal_direction: 1, signal_volume: 100, intensity_score: 80, combo_score: 90, is_favorite: false },
-            { id: 2, ticker: 'ETHUSDT', signal_type: 'bearish', price: 3200.00, message: 'Test Alert 2', timestamp: new Date(Date.now() - 3600000).toISOString(), timeframe: '1d', signal_direction: -1, signal_volume: 50, intensity_score: 40, combo_score: 30, is_favorite: true },
-        ];
+        return [];
     }
 }
 
@@ -122,39 +69,14 @@ export function renderOverview(): void {
     const dailyContainer = document.getElementById('daily-container')!;
     const weeklyContainer = document.getElementById('weekly-container')!;
     
-    let daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
-    let weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
-    
-    const applySort = (list: Alert[], mode: SortMode) => {
-        list.sort((a, b) => {
-            if (mode === 'volume') {
-                return (b.signal_volume || 0) - (a.signal_volume || 0);
-            } else if (mode === 'intensity') {
-                return (b.intensity_score || 0) - (a.intensity_score || 0);
-            } else if (mode === 'combo') {
-                return (b.combo_score || 0) - (a.combo_score || 0);
-            } else if (mode === 'time') {
-                return (b.timestamp || '').localeCompare(a.timestamp || '');
-            } else if (mode === 'favorite') {
-                // Secondary sort by time
-                if (a.is_favorite === b.is_favorite) {
-                    return (b.timestamp || '').localeCompare(a.timestamp || '');
-                }
-                return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
-            } else {
-                return (a.ticker || '').localeCompare(b.ticker || '');
-            }
-        });
-    };
+    const daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
+    const weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
 
-    applySort(daily, dailySortMode);
-    applySort(weekly, weeklySortMode);
+    daily.sort(createAlertSortFn(dailySortMode));
+    weekly.sort(createAlertSortFn(weeklySortMode));
     
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
-    
-    // The previous `attachClickHandlers` function is replaced by event delegation
-    // set up in `setupLiveFeedDelegation` which should be called once.
 }
 
 export function setupLiveFeedDelegation(): void {
@@ -177,14 +99,12 @@ export function setupLiveFeedDelegation(): void {
                     const checkmark = star.querySelector('.check-mark') as HTMLElement;
                     if (isCurrentlyFilled) {
                         star.classList.remove('filled');
-                        // Force hide immediately
                         if (checkmark) {
                             checkmark.style.visibility = 'hidden';
                             checkmark.style.opacity = '0';
                         }
                     } else {
                         star.classList.add('filled');
-                        // Force show immediately
                         if (checkmark) {
                             checkmark.style.visibility = 'visible';
                             checkmark.style.opacity = '1';
@@ -194,13 +114,12 @@ export function setupLiveFeedDelegation(): void {
 
                 toggleFavorite(Number(id)).then(updatedAlert => {
                     const allAlerts = getAlerts();
-                    // Update local state
                     const idx = allAlerts.findIndex(a => a.id === updatedAlert.id);
                     if (idx !== -1) {
                          allAlerts[idx].is_favorite = updatedAlert.is_favorite;
                          setAlerts(allAlerts); 
                          
-                         // Re-enforce visual state from server response to be sure
+                         // Re-enforce visual state from server response
                          allStars.forEach(star => {
                              const checkmark = star.querySelector('.check-mark') as HTMLElement;
                              if (updatedAlert.is_favorite) {
@@ -253,7 +172,6 @@ export function setupLiveFeedDelegation(): void {
 
 export function setDailySort(mode: SortMode): void {
     dailySortMode = mode;
-    // Update active button state in daily column
     const dailyHeader = document.querySelector('#dashboard-view .column:first-child .header-sort-controls');
     if (dailyHeader) {
         dailyHeader.querySelectorAll('.tf-btn').forEach(btn => {
@@ -267,7 +185,6 @@ export function setDailySort(mode: SortMode): void {
 
 export function setWeeklySort(mode: SortMode): void {
     weeklySortMode = mode;
-    // Update active button state in weekly column
     const weeklyHeader = document.querySelector('#dashboard-view .column:last-child .header-sort-controls');
     if (weeklyHeader) {
         weeklyHeader.querySelectorAll('.tf-btn').forEach(btn => {

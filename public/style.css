@@ -128,7 +128,6 @@ h2 {
 }
 
 /* Controls */
-/* Controls */
 #controls-bar {
   margin-bottom: 20px;
   min-height: 40px;
@@ -253,8 +252,6 @@ h2 {
   align-items: center;
   margin-bottom: 15px;
   padding-bottom: 10px;
-  margin-bottom: 15px;
-  padding-bottom: 10px;
   border-bottom: 1px solid var(--border-color);
 }
 .header-title-group {
@@ -310,26 +307,25 @@ h2 {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 0 12px; /* Horizontal padding only, vertical handled by height/align */
+  padding: 0 12px;
   margin-bottom: 8px;
   
-  display: grid !important;
+  display: grid;
   /* Icon | Ticker (fixed 5-char width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
-  grid-template-columns: min-content 5.5ch 1fr auto !important;
-  align-items: center !important;
-  gap: 4px; /* Reduced gap between Icon and Ticker */
+  grid-template-columns: min-content 5.5ch 1fr auto;
+  align-items: center;
+  gap: 4px;
   
-  /* Reduced Width as Requested (100%) */
-  width: 100% !important; 
-  max-width: 100% !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 
-  height: 40px; /* Enforce fixed height */
+  height: 40px;
   box-sizing: border-box;
   transition: all 0.2s;
   cursor: pointer;
-  overflow: hidden; /* Prevent overflow */
+  overflow: hidden;
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
@@ -395,43 +391,40 @@ h2 {
 }
 
 /* Compact Layout */
-/* Compact Layout */
 .alert-card h3 {
-  margin: 0 !important;
-  padding: 0 !important;
+  margin: 0;
+  padding: 0;
   font-size: 1rem;
-  line-height: normal !important;
+  line-height: normal;
   color: var(--text-primary);
   font-weight: 600;
-  white-space: nowrap !important;
-  /* Removed fixed width to allow flex growth if needed, but min-width ensures readability */
+  white-space: nowrap;
   width: 5ch;
   min-width: 5ch; 
 }
 
 /* New Metrics Layout */
 .metrics-container {
-  display: flex !important;
-  align-items: center !important;
+  display: flex;
+  align-items: center;
   gap: 12px;
-  flex-wrap: nowrap !important;
-  justify-content: center; /* Center in the grid cell */
-  white-space: nowrap !important;
+  flex-wrap: nowrap;
+  justify-content: center;
+  white-space: nowrap;
 
-  overflow: hidden; /* Truncate if too loose */
-  text-overflow: ellipsis; /* Add ellipsis */
-  /* Center within the flexible grid cell */
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin: 0 auto;
 }
 
 .metric-item {
-  display: flex !important;
-  align-items: center !important;
+  display: flex;
+  align-items: center;
   gap: 4px;
   font-size: 0.75rem;
   color: var(--text-secondary);
-  white-space: nowrap !important;
-  flex-wrap: nowrap !important;
+  white-space: nowrap;
+  flex-wrap: nowrap;
 }
 
 .volume-text {
@@ -630,28 +623,25 @@ button:hover {
 }
 
 /* Sort Buttons (Ticker & Live Feed) */
-.tf-btn {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  padding: 2px 0;
+.header-sort-controls .tf-btn {
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  cursor: pointer;
+  padding: 2px 0;
   font-size: 0.8rem;
   font-weight: 600;
-  transition: all 0.2s;
   text-align: center;
-  line-height: 20px; /* Vertically center */
+  line-height: 20px;
 }
 
-.tf-btn:hover {
-  background: rgba(48, 54, 61, 0.5);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .header-sort-controls .tf-btn:hover {
+    background: rgba(48, 54, 61, 0.5);
+    color: var(--text-primary);
+  }
 }
 
-.tf-btn.active {
+.header-sort-controls .tf-btn.active {
   background: var(--highlight);
   color: #ffffff;
   border-color: var(--highlight);

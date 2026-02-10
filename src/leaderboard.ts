@@ -1,5 +1,6 @@
 import { fetchAlertsFromApi } from './api';
 import { Alert } from './types';
+import { escapeHtml } from './utils';
 
 interface Stats {
     dailyBull: number;
@@ -69,19 +70,25 @@ function renderTable(elementId: string, items: LeaderboardItem[]): void {
     table.innerHTML = `
         <tbody>
             ${items.map(item => `
-                <tr class="clickable-row">
-                    <td>${item.ticker}</td>
+                <tr class="clickable-row" data-ticker="${escapeHtml(item.ticker)}">
+                    <td>${escapeHtml(item.ticker)}</td>
                     <td>${item.count}</td>
                 </tr>
             `).join('')}
         </tbody>
     `;
+}
 
-    table.querySelectorAll('.clickable-row').forEach((row, index) => {
-        row.addEventListener('click', () => {
-             if (window.showTickerView) {
-                window.showTickerView(items[index].ticker);
-            }
-        });
+// Event delegation for leaderboard — set up once
+export function setupLeaderboardDelegation(): void {
+    const leaderboardView = document.getElementById('view-leaderboard');
+    if (!leaderboardView) return;
+
+    leaderboardView.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const row = target.closest('.clickable-row') as HTMLElement;
+        if (row && row.dataset.ticker && window.showTickerView) {
+            window.showTickerView(row.dataset.ticker);
+        }
     });
 }

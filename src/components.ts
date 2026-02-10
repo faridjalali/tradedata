@@ -1,5 +1,5 @@
 import { Alert } from './types';
-import { getRelativeTime, formatVolume } from './utils';
+import { getRelativeTime, formatVolume, escapeHtml } from './utils';
 
 export function createAlertCard(alert: Alert): string {
     const timeStr = getRelativeTime(alert.timestamp);
@@ -45,9 +45,9 @@ export function createAlertCard(alert: Alert): string {
     `;
 
     return `
-        <div class="alert-card ${cardClass}" data-ticker="${alert.ticker}">
+        <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}">
             ${starIcon}
-            <h3>${alert.ticker}</h3>
+            <h3>${escapeHtml(alert.ticker)}</h3>
             
             <div class="metrics-container">
                 <div class="metric-item" title="Intensity: ${intScore}">

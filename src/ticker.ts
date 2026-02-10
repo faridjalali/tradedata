@@ -1,6 +1,7 @@
 import { getAlerts } from './state';
 import { createAlertCard } from './components';
 import { SortMode, Alert } from './types';
+import { createAlertSortFn } from './utils';
 
 // Declare TradingView global
 declare const TradingView: any;
@@ -37,46 +38,13 @@ function updateSortButtons(selector: string, mode: SortMode): void {
 
 export function renderTickerView(ticker: string): void {
     const allAlerts = getAlerts();
-    // Filter by ticker
-    let alerts = allAlerts.filter(a => a.ticker === ticker);
+    const alerts = allAlerts.filter(a => a.ticker === ticker);
     
-    let daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
-    let weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
-    
-    // Sort Logic
-    const getSortValue = (alert: Alert, mode: SortMode): number => {
-        if (mode === 'volume') return alert.signal_volume || 0;
-        if (mode === 'intensity') return alert.intensity_score || 0;
-        if (mode === 'combo') return alert.combo_score || 0;
-        // For favorite sort: primary logic is boolean (1 or 0), secondary is time
-         if (mode === 'favorite') {
-             // We can return 1 for fav, 0 for non-fav. 
-             // But the main sort function below needs to handle the secondary sort (time) 
-             // so here we just return the boolean value as a number.
-             return (alert.is_favorite ? 1 : 0);
-         }
-        return alert.timestamp ? new Date(alert.timestamp).getTime() : 0;
-    };
+    const daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
+    const weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
 
-    const createSortFn = (mode: SortMode) => (a: Alert, b: Alert) => {
-         if (mode === 'time') {
-               return (b.timestamp || '').localeCompare(a.timestamp || '');
-         }
-         // Favorite sort needs special handling for secondary sort
-         if (mode === 'favorite') {
-             if (a.is_favorite === b.is_favorite) {
-                  return (b.timestamp || '').localeCompare(a.timestamp || '');
-             }
-             return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
-         }
-
-        const valA = getSortValue(a, mode);
-        const valB = getSortValue(b, mode);
-        return valB - valA;
-    };
-
-    daily.sort(createSortFn(tickerDailySortMode));
-    weekly.sort(createSortFn(tickerWeeklySortMode));
+    daily.sort(createAlertSortFn(tickerDailySortMode));
+    weekly.sort(createAlertSortFn(tickerWeeklySortMode));
     
     renderAvg('ticker-daily-avg', daily);
     renderAvg('ticker-weekly-avg', weekly);

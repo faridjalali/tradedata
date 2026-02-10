@@ -6,6 +6,8 @@ require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// NOTE: cors() allows all origins. Restrict in production if needed:
+// app.use(cors({ origin: 'https://yourdomain.com' }));
 app.use(cors());
 app.use(express.json());
 app.use(express.static('dist'));
@@ -13,6 +15,30 @@ app.use(express.static('dist'));
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+// Simple in-memory rate limiter for webhook endpoint
+const webhookRateLimit = new Map();
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const RATE_LIMIT_MAX = 60; // max requests per window per IP
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = webhookRateLimit.get(ip);
+  if (!entry || now - entry.start > RATE_LIMIT_WINDOW_MS) {
+    webhookRateLimit.set(ip, { start: now, count: 1 });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= RATE_LIMIT_MAX;
+}
+
+// Cleanup stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of webhookRateLimit) {
+    if (now - entry.start > RATE_LIMIT_WINDOW_MS) webhookRateLimit.delete(ip);
+  }
+}, 300000);
 
 const initDB = async () => {
   try {
@@ -55,60 +81,54 @@ const initDB = async () => {
 
 initDB();
 
-app.get("/", (req, res) => {
-  res.send("TradingView Alerts API is running");
-});
-
 // Endpoint for TradingView Webhook
 app.post("/webhook", async (req, res) => {
+  // Rate limiting
+  if (!checkRateLimit(req.ip)) {
+    return res.status(429).send("Too many requests");
+  }
+
   const secret = req.query.secret;
   // Simple security check
   if (!process.env.WEBHOOK_SECRET || secret !== process.env.WEBHOOK_SECRET) {
-    // Log for debugging but reject
     console.log("Unauthorized access attempt");
     return res.status(401).send("Unauthorized");
   }
 
   try {
+    // Validate and sanitize inputs
+    const ticker = typeof req.body.ticker === 'string' ? req.body.ticker.trim().substring(0, 20) : '';
+    if (!ticker) {
+        return res.status(400).send("Missing or invalid ticker");
+    }
 
-
-
-
-
-    // Map Pine Script inputs to DB columns
-    // Accepted JSON keys: ticker, time (opt), signalDir, signalVol, finalIntensityScore, comboScore
-    const ticker = req.body.ticker;
-    const signalDir = req.body.signalDir || 0;
+    const signalDir = Number(req.body.signalDir) || 0;
+    if (![1, -1, 0].includes(signalDir)) {
+        return res.status(400).send("Invalid signalDir (must be -1, 0, or 1)");
+    }
     
-    // Infer signal_type from direction for backward compatibility
+    // Infer signal_type from direction
     let signal = 'neutral';
-    if (signalDir == 1) signal = 'bullish';
-    if (signalDir == -1) signal = 'bearish';
+    if (signalDir === 1) signal = 'bullish';
+    if (signalDir === -1) signal = 'bearish';
 
-    // Optional fields with defaults
-    const price = req.body.price || 0;
-    const message = req.body.message || '';
+    const price = Math.max(0, Number(req.body.price) || 0);
+    const message = typeof req.body.message === 'string' ? req.body.message.substring(0, 500) : '';
     
-    // Strict 1d/1w Logic
-    // If input contains 'w' (case-insensitive), it's 1w. Otherwise 1d.
+    // Strict 1d/1w logic
     const rawTf = (req.body.timeframe || '').toString().toLowerCase();
     const timeframe = rawTf.includes('w') ? '1w' : '1d'; 
 
-    const signalDirection = signalDir;
-    const signalVolume = req.body.signalVol || 0;
-    const intensityScore = req.body.finalIntensityScore || 0;
-    const comboScore = req.body.comboScore || 0;
-
-    if (!ticker) {
-        return res.status(400).send("Missing ticker");
-    }
+    const signalVolume = Math.max(0, Math.min(999999, Math.round(Number(req.body.signalVol) || 0)));
+    const intensityScore = Math.max(0, Math.min(100, Math.round(Number(req.body.finalIntensityScore) || 0)));
+    const comboScore = Math.max(0, Math.min(100, Math.round(Number(req.body.comboScore) || 0)));
     
     const query = `
       INSERT INTO alerts(ticker, signal_type, price, message, timeframe, signal_direction, signal_volume, intensity_score, combo_score) 
       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) 
       RETURNING *
     `;
-    const values = [ticker, signal, price, message, timeframe, signalDirection, signalVolume, intensityScore, comboScore];
+    const values = [ticker, signal, price, message, timeframe, signalDir, signalVolume, intensityScore, comboScore];
     const result = await pool.query(query, values);
     console.log('Alert received:', result.rows[0]);
     res.status(200).send('Alert Received');
@@ -124,14 +144,15 @@ app.get('/api/alerts', async (req, res) => {
     const startDate = req.query.start_date;
     const endDate = req.query.end_date;
     
-    let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100'; // Default limit
+    let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100';
     let values = [];
 
     if (startDate && endDate) {
-        query = `SELECT * FROM alerts WHERE timestamp >= $1 AND timestamp <= $2 ORDER BY timestamp DESC`;
+        query = `SELECT * FROM alerts WHERE timestamp >= $1 AND timestamp <= $2 ORDER BY timestamp DESC LIMIT 500`;
         values = [startDate, endDate];
     } else if (days > 0) {
-        query = `SELECT * FROM alerts WHERE timestamp >= NOW() - INTERVAL '${days} days' ORDER BY timestamp DESC`;
+        query = `SELECT * FROM alerts WHERE timestamp >= NOW() - $1::interval ORDER BY timestamp DESC LIMIT 500`;
+        values = [`${days} days`];
     }
     
     const result = await pool.query(query, values);

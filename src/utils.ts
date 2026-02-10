@@ -38,16 +38,11 @@ export function formatVolume(vol?: number): string {
 export function getDateRangeForMode(mode: string, weekVal: string, monthVal: string): { startDate: string, endDate: string } {
     let startDate = '', endDate = '';
     
-    if (mode === '30') {
+    if (mode === '30' || mode === '7' || mode === '1') {
+        const days = parseInt(mode);
         const end = new Date();
         const start = new Date();
-        start.setDate(end.getDate() - 30);
-        endDate = end.toISOString();
-        startDate = start.toISOString();
-    } else if (mode === '7') {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - 7);
+        start.setDate(end.getDate() - days);
         endDate = end.toISOString();
         startDate = start.toISOString();
     } else if (mode === 'week') {
@@ -82,3 +77,39 @@ export function getDateRangeForMode(mode: string, weekVal: string, monthVal: str
     }
     return { startDate, endDate };
 }
+
+export function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+import { SortMode, Alert } from './types';
+
+export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => number {
+    return (a: Alert, b: Alert): number => {
+        if (mode === 'time') {
+            return (b.timestamp || '').localeCompare(a.timestamp || '');
+        }
+        if (mode === 'favorite') {
+            if (a.is_favorite === b.is_favorite) {
+                return (b.timestamp || '').localeCompare(a.timestamp || '');
+            }
+            return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
+        }
+        if (mode === 'volume') {
+            return (b.signal_volume || 0) - (a.signal_volume || 0);
+        }
+        if (mode === 'intensity') {
+            return (b.intensity_score || 0) - (a.intensity_score || 0);
+        }
+        if (mode === 'combo') {
+            return (b.combo_score || 0) - (a.combo_score || 0);
+        }
+        return (b.timestamp || '').localeCompare(a.timestamp || '');
+    };
+}
+
