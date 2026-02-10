@@ -146,7 +146,7 @@ h2 {
 }
 .feed-controls-group {
   display: flex;
-  gap: 10px;
+  gap: 5px;
   align-items: center;
 }
 
@@ -266,7 +266,7 @@ h2 {
 }
 .header-sort-controls {
   display: flex;
-  gap: 8px;
+  gap: 5px;
 }
 
 .ticker-history-section .header-sort-controls {
