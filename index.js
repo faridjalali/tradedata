@@ -345,16 +345,21 @@ const BREADTH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
   const days = Math.min(Math.max(parseInt(req.query.days) || 1, 1), 60);
+  const isIntraday = days === 1;
 
   const cacheKey = `${compTicker}_${days}`;
+  const cacheTTL = isIntraday ? 5 * 60 * 1000 : BREADTH_CACHE_TTL; // 5 min for intraday, 1h for daily
   const cached = breadthCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < BREADTH_CACHE_TTL) {
+  if (cached && Date.now() - cached.ts < cacheTTL) {
     return res.json(cached.data);
   }
 
   try {
-    // Need extra buffer days for weekends/holidays
-    const bufferDays = Math.ceil(days * 1.8) + 5;
+    const interval = isIntraday ? '1h' : '1d';
+
+    // For intraday, fetch last 2 calendar days to ensure we have today's data
+    // For daily, use the existing buffer logic
+    const bufferDays = isIntraday ? 3 : Math.ceil(days * 1.8) + 5;
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - bufferDays);
@@ -365,12 +370,12 @@ app.get('/api/breadth', async (req, res) => {
       yf.chart('SPY', {
         period1: formatDate(startDate),
         period2: formatDate(endDate),
-        interval: '1d'
+        interval
       }),
       yf.chart(compTicker, {
         period1: formatDate(startDate),
         period2: formatDate(endDate),
-        interval: '1d'
+        interval
       })
     ]);
 
@@ -381,7 +386,59 @@ app.get('/api/breadth', async (req, res) => {
       return res.status(404).json({ error: 'No price data available' });
     }
 
-    // Build date-keyed maps
+    if (isIntraday) {
+      // For intraday: key by ISO timestamp, filter to regular trading hours (9:30-16:00 ET)
+      const spyMap = new Map();
+      const compMap = new Map();
+
+      const isRegularHours = (date) => {
+        // Convert to ET (Eastern Time)
+        const etStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+        const et = new Date(etStr);
+        const hours = et.getHours();
+        const minutes = et.getMinutes();
+        const totalMin = hours * 60 + minutes;
+        // Regular hours: 9:30 AM (570 min) to 4:00 PM (960 min)
+        return totalMin >= 570 && totalMin <= 960;
+      };
+
+      // Get today's date in ET
+      const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+
+      for (const q of spyQuotes) {
+        const d = new Date(q.date);
+        const dayET = d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+        if (dayET === todayET && isRegularHours(d)) {
+          const key = d.toISOString();
+          spyMap.set(key, q.close);
+        }
+      }
+
+      for (const q of compQuotes) {
+        const d = new Date(q.date);
+        const dayET = d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+        if (dayET === todayET && isRegularHours(d)) {
+          const key = d.toISOString();
+          compMap.set(key, q.close);
+        }
+      }
+
+      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort();
+
+      const result = {
+        intraday: true,
+        points: commonKeys.map(k => ({
+          date: k,
+          spy: Math.round(spyMap.get(k) * 100) / 100,
+          comparison: Math.round(compMap.get(k) * 100) / 100
+        }))
+      };
+
+      breadthCache.set(cacheKey, { ts: Date.now(), data: result });
+      return res.json(result);
+    }
+
+    // Daily logic (unchanged)
     const spyMap = new Map();
     for (const q of spyQuotes) {
       const d = new Date(q.date).toISOString().split('T')[0];
@@ -394,19 +451,20 @@ app.get('/api/breadth', async (req, res) => {
       compMap.set(d, q.close);
     }
 
-    // Find common dates, sorted ascending
     const commonDates = [...spyMap.keys()]
       .filter(d => compMap.has(d))
       .sort();
 
-    // Take only the last N trading days
     const trimmed = commonDates.slice(-days);
 
-    const result = trimmed.map(d => ({
-      date: d,
-      spy: Math.round(spyMap.get(d) * 100) / 100,
-      comparison: Math.round(compMap.get(d) * 100) / 100
-    }));
+    const result = {
+      intraday: false,
+      points: trimmed.map(d => ({
+        date: d,
+        spy: Math.round(spyMap.get(d) * 100) / 100,
+        comparison: Math.round(compMap.get(d) * 100) / 100
+      }))
+    };
 
     breadthCache.set(cacheKey, { ts: Date.now(), data: result });
     res.json(result);

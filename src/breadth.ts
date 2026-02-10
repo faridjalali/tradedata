@@ -19,7 +19,12 @@ export function getCurrentBreadthMetric(): string {
     return currentMetric;
 }
 
-async function fetchBreadthData(ticker: string, days: number): Promise<BreadthDataPoint[]> {
+interface BreadthResponse {
+    intraday: boolean;
+    points: BreadthDataPoint[];
+}
+
+async function fetchBreadthData(ticker: string, days: number): Promise<BreadthResponse> {
     const response = await fetch(`/api/breadth?ticker=${ticker}&days=${days}`);
     if (!response.ok) {
         throw new Error('Failed to fetch breadth data');
@@ -34,7 +39,7 @@ function normalize(values: number[]): number[] {
     return values.map(v => (v / base) * 100);
 }
 
-function renderBreadthChart(data: BreadthDataPoint[], compLabel: string): void {
+function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intraday: boolean): void {
     const canvas = document.getElementById('breadth-chart') as HTMLCanvasElement;
     if (!canvas) return;
 
@@ -45,8 +50,18 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string): void {
     }
 
     const labels = data.map(d => {
-        const date = new Date(d.date + 'T00:00:00');
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (intraday) {
+            // Format as time: "10:00 AM"
+            const date = new Date(d.date);
+            return date.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZone: 'America/New_York'
+            });
+        } else {
+            const date = new Date(d.date + 'T00:00:00');
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
     });
 
     const spyRaw = data.map(d => d.spy);
@@ -166,10 +181,10 @@ async function loadBreadth(): Promise<void> {
     if (error) error.style.display = 'none';
 
     try {
-        const data = await fetchBreadthData(currentMetric, currentTimeframeDays);
+        const response = await fetchBreadthData(currentMetric, currentTimeframeDays);
         if (loading) loading.style.display = 'none';
 
-        if (data.length === 0) {
+        if (response.points.length === 0) {
             if (error) {
                 error.textContent = 'No data available for this timeframe';
                 error.style.display = 'block';
@@ -177,7 +192,7 @@ async function loadBreadth(): Promise<void> {
             return;
         }
 
-        renderBreadthChart(data, currentMetric);
+        renderBreadthChart(response.points, currentMetric, response.intraday);
     } catch (err) {
         console.error('Breadth load error:', err);
         if (loading) loading.style.display = 'none';
