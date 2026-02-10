@@ -195,6 +195,105 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
     }
 });
 
+// --- GEX (Gamma Exposure) API ---
+const POLYGON_API_KEY = process.env.POLYGON_API_KEY || "pig0ix6gPImcxdqhUmvTCUnjVPKVmkC0";
+const POLYGON_BASE = "https://api.polygon.io";
+
+// In-memory GEX cache (5 min TTL)
+const gexCache = new Map();
+const GEX_CACHE_TTL = 5 * 60 * 1000;
+
+app.get('/api/gex/:ticker', async (req, res) => {
+  const ticker = req.params.ticker.toUpperCase();
+
+  // Check cache
+  const cached = gexCache.get(ticker);
+  if (cached && Date.now() - cached.ts < GEX_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    // 1. Get spot price
+    const quoteRes = await fetch(`${POLYGON_BASE}/v2/last/trade/${ticker}?apiKey=${POLYGON_API_KEY}`);
+    const quoteData = await quoteRes.json();
+    
+    if (!quoteData.results || !quoteData.results.p) {
+      return res.status(404).json({ error: `No price data for ${ticker}` });
+    }
+    const spotPrice = quoteData.results.p;
+
+    // 2. Get options chain (paginated)
+    let allContracts = [];
+    let nextUrl = `${POLYGON_BASE}/v3/snapshot/options/${ticker}?apiKey=${POLYGON_API_KEY}&limit=250`;
+
+    while (nextUrl) {
+      const chainRes = await fetch(nextUrl);
+      const chainData = await chainRes.json();
+
+      if (chainData.results) {
+        allContracts = allContracts.concat(chainData.results);
+      }
+
+      nextUrl = chainData.next_url
+        ? `${chainData.next_url}&apiKey=${POLYGON_API_KEY}`
+        : null;
+    }
+
+    if (allContracts.length === 0) {
+      return res.json({ spot_price: spotPrice, strikes: [], gex: [], total_gex: 0, message: 'No options data available' });
+    }
+
+    // 3. Calculate GEX per strike
+    const gexByStrike = {};
+
+    for (const c of allContracts) {
+      const greeks = c.greeks || {};
+      const details = c.details || {};
+      const gamma = greeks.gamma;
+      const strike = details.strike_price;
+      const contractType = details.contract_type;
+      const oi = c.open_interest || 0;
+
+      if (gamma == null || strike == null || oi === 0) continue;
+
+      // GEX = gamma * OI * 100 * spot * (spot * 0.01)
+      let gexNotional = gamma * oi * 100 * spotPrice * (spotPrice * 0.01);
+
+      // Flip sign for puts
+      if (contractType === 'put') gexNotional *= -1;
+
+      gexByStrike[strike] = (gexByStrike[strike] || 0) + gexNotional;
+    }
+
+    // 4. Filter to spot ±10% and sort
+    const lower = spotPrice * 0.90;
+    const upper = spotPrice * 1.10;
+
+    const strikes = Object.keys(gexByStrike)
+      .map(Number)
+      .filter(s => s >= lower && s <= upper)
+      .sort((a, b) => a - b);
+
+    const gex = strikes.map(s => gexByStrike[s]);
+    const totalGex = gex.reduce((sum, v) => sum + v, 0);
+
+    const result = {
+      spot_price: spotPrice,
+      strikes,
+      gex,
+      total_gex: totalGex
+    };
+
+    // Cache result
+    gexCache.set(ticker, { ts: Date.now(), data: result });
+
+    res.json(result);
+  } catch (err) {
+    console.error('GEX API Error:', err);
+    res.status(500).json({ error: 'Failed to fetch GEX data' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });

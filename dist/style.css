@@ -146,7 +146,7 @@ h2 {
 }
 .feed-controls-group {
   display: flex;
-  gap: 10px;
+  gap: 5px;
   align-items: center;
 }
 
@@ -266,7 +266,7 @@ h2 {
 }
 .header-sort-controls {
   display: flex;
-  gap: 8px;
+  gap: 5px;
 }
 
 .ticker-history-section .header-sort-controls {
@@ -629,7 +629,8 @@ button:hover {
 
 /* Sort Buttons (Ticker & Live Feed) */
 .header-sort-controls .tf-btn,
-#live-controls .tf-btn {
+#live-controls .tf-btn,
+#leaderboard-controls .tf-btn {
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -642,16 +643,56 @@ button:hover {
 
 @media (hover: hover) {
   .header-sort-controls .tf-btn:hover,
-  #live-controls .tf-btn:hover {
+  #live-controls .tf-btn:hover,
+  #leaderboard-controls .tf-btn:hover {
     background: rgba(48, 54, 61, 0.5);
     color: var(--text-primary);
   }
 }
 
 .header-sort-controls .tf-btn.active,
-#live-controls .tf-btn.active {
+#live-controls .tf-btn.active,
+#leaderboard-controls .tf-btn.active {
   background: var(--highlight);
   color: #ffffff;
   border-color: var(--highlight);
 }
 
+/* GEX Chart */
+.gex-chart-container {
+  margin-top: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.gex-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.gex-chart-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.gex-total {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.gex-chart-wrapper {
+  height: 400px;
+  position: relative;
+}
+
+.gex-status {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}

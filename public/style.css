@@ -658,3 +658,41 @@ button:hover {
   border-color: var(--highlight);
 }
 
+/* GEX Chart */
+.gex-chart-container {
+  margin-top: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.gex-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.gex-chart-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.gex-total {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.gex-chart-wrapper {
+  height: 400px;
+  position: relative;
+}
+
+.gex-status {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}

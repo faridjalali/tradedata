@@ -3,12 +3,14 @@ import { createAlertCard } from './components';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
 
-// Declare TradingView global
+// Declare TradingView and Chart.js globals
 declare const TradingView: any;
+declare const Chart: any;
 
 let tickerDailySortMode: SortMode = 'time';
 let tickerWeeklySortMode: SortMode = 'time';
 let currentChartTicker: string | null = null;
+let gexChartInstance: any = null;
 
 export function setTickerDailySort(mode: SortMode): void {
     tickerDailySortMode = mode;
@@ -68,6 +70,7 @@ export function renderTickerView(ticker: string): void {
     }
     
     renderTradingViewChart(ticker);
+    renderGexChart(ticker);
 }
 
 function renderAvg(containerId: string, list: Alert[]): void {
@@ -132,3 +135,163 @@ function renderTradingViewChart(ticker: string): void {
         ]
     });
 }
+
+async function renderGexChart(ticker: string): Promise<void> {
+    const container = document.getElementById('gex-chart-container');
+    const loading = document.getElementById('gex-loading');
+    const errorEl = document.getElementById('gex-error');
+    const totalEl = document.getElementById('gex-total');
+    const canvas = document.getElementById('gex-chart') as HTMLCanvasElement;
+
+    if (!container || !canvas) return;
+
+    // Show container and loading state
+    container.style.display = 'block';
+    if (loading) loading.style.display = 'block';
+    if (errorEl) errorEl.style.display = 'none';
+    canvas.style.display = 'none';
+
+    // Destroy previous chart
+    if (gexChartInstance) {
+        gexChartInstance.destroy();
+        gexChartInstance = null;
+    }
+
+    try {
+        const res = await fetch(`/api/gex/${ticker}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Failed to fetch GEX data' }));
+            throw new Error(err.error || 'Server error');
+        }
+
+        const data = await res.json();
+        
+        if (loading) loading.style.display = 'none';
+
+        if (!data.strikes || data.strikes.length === 0) {
+            if (errorEl) {
+                errorEl.textContent = 'No options data available for this ticker';
+                errorEl.style.display = 'block';
+            }
+            return;
+        }
+
+        // Show canvas
+        canvas.style.display = 'block';
+
+        // Format total GEX
+        if (totalEl) {
+            const totalFormatted = formatGexValue(data.total_gex);
+            const totalColor = data.total_gex >= 0 ? '#00E396' : '#FF4560';
+            totalEl.innerHTML = `Total GEX: <span style="color:${totalColor};font-weight:600">${totalFormatted}</span>`;
+        }
+
+        // Find spot price index for annotation
+        const spotPrice = data.spot_price;
+        let spotIndex = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < data.strikes.length; i++) {
+            const diff = Math.abs(data.strikes[i] - spotPrice);
+            if (diff < minDiff) {
+                minDiff = diff;
+                spotIndex = i;
+            }
+        }
+
+        // Bar colors: green for positive, red for negative
+        const barColors = data.gex.map((v: number) => v >= 0 ? '#00E396' : '#FF4560');
+        const barBorders = data.gex.map((v: number) => v >= 0 ? '#00C07B' : '#E03A4E');
+
+        // Create chart
+        const ctx = canvas.getContext('2d');
+        gexChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.strikes.map((s: number) => '$' + s.toFixed(0)),
+                datasets: [{
+                    label: 'GEX ($)',
+                    data: data.gex,
+                    backgroundColor: barColors,
+                    borderColor: barBorders,
+                    borderWidth: 1,
+                    borderRadius: 2,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items: any[]) => `Strike: ${items[0].label}`,
+                            label: (item: any) => `GEX: ${formatGexValue(item.raw)}`,
+                        },
+                        backgroundColor: '#21262d',
+                        borderColor: '#30363d',
+                        borderWidth: 1,
+                        titleColor: '#e6edf3',
+                        bodyColor: '#8b949e',
+                    },
+                    annotation: {
+                        annotations: {
+                            spotLine: {
+                                type: 'line',
+                                xMin: spotIndex,
+                                xMax: spotIndex,
+                                borderColor: '#f0f6fc',
+                                borderWidth: 2,
+                                borderDash: [5, 3],
+                                label: {
+                                    display: true,
+                                    content: `Spot: $${spotPrice.toFixed(2)}`,
+                                    position: 'start',
+                                    backgroundColor: '#30363d',
+                                    color: '#f0f6fc',
+                                    font: { size: 11 },
+                                    padding: 4,
+                                }
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#8b949e',
+                            font: { size: 10 },
+                            maxRotation: 45,
+                            autoSkip: true,
+                            maxTicksLimit: 20,
+                        },
+                        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+                    },
+                    y: {
+                        ticks: {
+                            color: '#8b949e',
+                            callback: (value: number) => formatGexValue(value),
+                        },
+                        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+                    }
+                }
+            }
+        });
+
+    } catch (err: any) {
+        if (loading) loading.style.display = 'none';
+        if (errorEl) {
+            errorEl.textContent = err.message || 'Failed to load GEX data';
+            errorEl.style.display = 'block';
+        }
+    }
+}
+
+function formatGexValue(value: number): string {
+    const abs = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + '$' + (abs / 1e9).toFixed(1) + 'B';
+    if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(0) + 'K';
+    return sign + '$' + abs.toFixed(0);
+}
+

@@ -18,11 +18,13 @@
       content="black-translucent"
     />
     <meta name="apple-mobile-web-app-title" content="Volume Delta" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <script
       type="text/javascript"
       src="https://s3.tradingview.com/tv.js"
     ></script>
-    <script type="module" crossorigin src="./assets/index-CVrg3PDB.js"></script>
+    <script type="module" crossorigin src="./assets/index-C8-rFhWE.js"></script>
   </head>
   <body>
     <div class="container">
@@ -132,11 +134,11 @@
                     <div id="ticker-daily-avg" class="avg-score-inline"></div>
                   </div>
                   <div class="header-sort-controls ticker-daily-sort">
-                    <button class="tf-btn" data-sort="favorite">★</button>
-                    <button class="tf-btn active" data-sort="time">D</button>
-                    <button class="tf-btn" data-sort="volume">V</button>
-                    <button class="tf-btn" data-sort="intensity">F</button>
-                    <button class="tf-btn" data-sort="combo">S</button>
+                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
+                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="tf-btn" data-sort="intensity" title="Sort by Force">F</button>
+                    <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-daily-container" class="alerts-list">
@@ -152,11 +154,11 @@
                     <div id="ticker-weekly-avg" class="avg-score-inline"></div>
                   </div>
                   <div class="header-sort-controls ticker-weekly-sort">
-                    <button class="tf-btn" data-sort="favorite">★</button>
-                    <button class="tf-btn active" data-sort="time">D</button>
-                    <button class="tf-btn" data-sort="volume">V</button>
-                    <button class="tf-btn" data-sort="intensity">F</button>
-                    <button class="tf-btn" data-sort="combo">S</button>
+                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
+                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="tf-btn" data-sort="intensity" title="Sort by Force">F</button>
+                    <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-weekly-container" class="alerts-list">
@@ -176,6 +178,19 @@
                 style="height: 100%; width: 100%"
               ></div>
             </div>
+
+            <!-- GEX Chart Container -->
+            <div id="gex-chart-container" class="gex-chart-container" style="display:none;">
+              <div class="gex-chart-header">
+                <h3>Gamma Exposure (GEX) Profile</h3>
+                <span id="gex-total" class="gex-total"></span>
+              </div>
+              <div class="gex-chart-wrapper">
+                <canvas id="gex-chart"></canvas>
+              </div>
+              <div id="gex-loading" class="gex-status">Loading GEX data...</div>
+              <div id="gex-error" class="gex-status" style="display:none;"></div>
+            </div>
           </div>
         </div>
 
@@ -185,35 +200,11 @@
             <div class="column-header">
               <h2>Daily</h2>
               <div class="header-sort-controls">
-                <button class="tf-btn" onclick="setDailySort('favorite')" data-sort="favorite">★</button>
-                <button
-                  class="tf-btn active"
-                  onclick="setDailySort('time')"
-                  data-sort="time"
-                >
-                  D
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setDailySort('volume')"
-                  data-sort="volume"
-                >
-                  V
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setDailySort('intensity')"
-                  data-sort="intensity"
-                >
-                  F
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setDailySort('combo')"
-                  data-sort="combo"
-                >
-                  S
-                </button>
+                <button class="tf-btn" onclick="setDailySort('favorite')" data-sort="favorite" title="Sort by Favorites">★</button>
+                <button class="tf-btn active" onclick="setDailySort('time')" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" onclick="setDailySort('volume')" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn" onclick="setDailySort('intensity')" data-sort="intensity" title="Sort by Force">F</button>
+                <button class="tf-btn" onclick="setDailySort('combo')" data-sort="combo" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="daily-container" class="alerts-list">
@@ -225,35 +216,11 @@
             <div class="column-header">
               <h2>Weekly</h2>
               <div class="header-sort-controls">
-                <button class="tf-btn" onclick="setWeeklySort('favorite')" data-sort="favorite">★</button>
-                <button
-                  class="tf-btn active"
-                  onclick="setWeeklySort('time')"
-                  data-sort="time"
-                >
-                  D
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setWeeklySort('volume')"
-                  data-sort="volume"
-                >
-                  V
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setWeeklySort('intensity')"
-                  data-sort="intensity"
-                >
-                  F
-                </button>
-                <button
-                  class="tf-btn"
-                  onclick="setWeeklySort('combo')"
-                  data-sort="combo"
-                >
-                  S
-                </button>
+                <button class="tf-btn" onclick="setWeeklySort('favorite')" data-sort="favorite" title="Sort by Favorites">★</button>
+                <button class="tf-btn active" onclick="setWeeklySort('time')" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" onclick="setWeeklySort('volume')" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn" onclick="setWeeklySort('intensity')" data-sort="intensity" title="Sort by Force">F</button>
+                <button class="tf-btn" onclick="setWeeklySort('combo')" data-sort="combo" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="weekly-container" class="alerts-list">
