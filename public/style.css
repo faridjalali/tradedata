@@ -338,6 +338,7 @@ h2 {
   width: 18px;
   height: 18px;
   flex: 0 0 16px; /* Prevent resizing */
+  padding-right: 2px;
 }
 
 .fav-icon:hover {
