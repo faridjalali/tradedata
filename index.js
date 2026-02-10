@@ -338,6 +338,84 @@ app.get('/api/gex/:ticker', async (req, res) => {
   }
 });
 
+// --- Breadth API (historical price comparison) ---
+const breadthCache = new Map();
+const BREADTH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+app.get('/api/breadth', async (req, res) => {
+  const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
+  const days = Math.min(Math.max(parseInt(req.query.days) || 1, 1), 60);
+
+  const cacheKey = `${compTicker}_${days}`;
+  const cached = breadthCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < BREADTH_CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    // Need extra buffer days for weekends/holidays
+    const bufferDays = Math.ceil(days * 1.8) + 5;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - bufferDays);
+
+    const formatDate = (d) => d.toISOString().split('T')[0];
+
+    const [spyData, compData] = await Promise.all([
+      yf.chart('SPY', {
+        period1: formatDate(startDate),
+        period2: formatDate(endDate),
+        interval: '1d'
+      }),
+      yf.chart(compTicker, {
+        period1: formatDate(startDate),
+        period2: formatDate(endDate),
+        interval: '1d'
+      })
+    ]);
+
+    const spyQuotes = (spyData.quotes || []).filter(q => q.close != null);
+    const compQuotes = (compData.quotes || []).filter(q => q.close != null);
+
+    if (spyQuotes.length === 0 || compQuotes.length === 0) {
+      return res.status(404).json({ error: 'No price data available' });
+    }
+
+    // Build date-keyed maps
+    const spyMap = new Map();
+    for (const q of spyQuotes) {
+      const d = new Date(q.date).toISOString().split('T')[0];
+      spyMap.set(d, q.close);
+    }
+
+    const compMap = new Map();
+    for (const q of compQuotes) {
+      const d = new Date(q.date).toISOString().split('T')[0];
+      compMap.set(d, q.close);
+    }
+
+    // Find common dates, sorted ascending
+    const commonDates = [...spyMap.keys()]
+      .filter(d => compMap.has(d))
+      .sort();
+
+    // Take only the last N trading days
+    const trimmed = commonDates.slice(-days);
+
+    const result = trimmed.map(d => ({
+      date: d,
+      spy: Math.round(spyMap.get(d) * 100) / 100,
+      comparison: Math.round(compMap.get(d) * 100) / 100
+    }));
+
+    breadthCache.set(cacheKey, { ts: Date.now(), data: result });
+    res.json(result);
+  } catch (err) {
+    console.error('Breadth API Error:', err);
+    res.status(500).json({ error: 'Failed to fetch breadth data' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });

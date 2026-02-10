@@ -10,9 +10,10 @@ import {
 } from './liveFeed';
 import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
+import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { SortMode, LiveFeedMode } from './types';
 
-let currentView: 'live' | 'leaderboard' = 'live'; 
+let currentView: 'live' | 'leaderboard' | 'breadth' = 'live'; 
 let dashboardScrollY = 0;
  
 
@@ -51,24 +52,32 @@ window.showOverview = function() {
 
 }
 
-function switchView(view: 'live' | 'leaderboard') {
+function switchView(view: 'live' | 'leaderboard' | 'breadth') {
     currentView = view;
     // Update Tabs
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`nav-${view}`)?.classList.add('active');
 
-    // Toggle Main Views
+    // Hide all views and controls
+    document.getElementById('view-live')?.classList.add('hidden');
+    document.getElementById('view-leaderboard')?.classList.add('hidden');
+    document.getElementById('view-breadth')?.classList.add('hidden');
+    document.getElementById('live-controls')?.classList.add('hidden');
+    document.getElementById('leaderboard-controls')?.classList.add('hidden');
+    document.getElementById('breadth-controls')?.classList.add('hidden');
+
+    // Show the selected view and controls
     if (view === 'live') {
         document.getElementById('view-live')?.classList.remove('hidden');
-        document.getElementById('view-leaderboard')?.classList.add('hidden');
         document.getElementById('live-controls')?.classList.remove('hidden');
-        document.getElementById('leaderboard-controls')?.classList.add('hidden');
-    } else {
-        document.getElementById('view-live')?.classList.add('hidden');
+    } else if (view === 'leaderboard') {
         document.getElementById('view-leaderboard')?.classList.remove('hidden');
-        document.getElementById('live-controls')?.classList.add('hidden');
         document.getElementById('leaderboard-controls')?.classList.remove('hidden');
         fetchLeaderboardData(); 
+    } else if (view === 'breadth') {
+        document.getElementById('view-breadth')?.classList.remove('hidden');
+        document.getElementById('breadth-controls')?.classList.remove('hidden');
+        initBreadth();
     }
 }
 
@@ -182,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nav-leaderboard')?.addEventListener('click', () => {
         switchView('leaderboard');
     });
+    document.getElementById('nav-breadth')?.addEventListener('click', () => switchView('breadth'));
 
     // Inputs
     document.getElementById('reset-filter')?.addEventListener('click', window.showOverview);
@@ -226,6 +236,24 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(b => b.classList.remove('active'));
             (e.target as HTMLElement).classList.add('active');
             fetchLeaderboardData();
+        });
+    });
+
+    // Breadth Controls
+    document.querySelectorAll('#breadth-tf-btns .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const days = Number((btn as HTMLElement).dataset.days);
+            setBreadthTimeframe(days);
+        });
+    });
+
+    document.querySelectorAll('#breadth-metric-btns .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP';
+            setBreadthMetric(metric);
+            // Update subtitle
+            const subtitle = document.getElementById('breadth-subtitle');
+            if (subtitle) subtitle.textContent = `SPY vs ${metric} — Normalized`;
         });
     });
 

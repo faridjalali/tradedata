@@ -55,6 +55,7 @@
           </div>
         </div>
         <nav class="main-nav">
+          <button id="nav-breadth" class="nav-btn">Breadth</button>
           <button id="nav-live" class="nav-btn active">Live</button>
           <button id="nav-leaderboard" class="nav-btn">Leaders</button>
         </nav>
@@ -115,6 +116,23 @@
             <button class="tf-btn" data-days="60">60</button>
             <button class="tf-btn" data-days="90">90</button>
             <button class="tf-btn" data-days="0">∞</button>
+          </div>
+        </div>
+        <!-- Breadth Controls -->
+        <div id="breadth-controls" class="hidden">
+          <div class="breadth-controls-inner">
+            <div id="breadth-tf-btns" class="feed-controls-group">
+              <button class="tf-btn active" data-days="1">T</button>
+              <button class="tf-btn" data-days="2">2</button>
+              <button class="tf-btn" data-days="5">5</button>
+              <button class="tf-btn" data-days="10">10</button>
+              <button class="tf-btn" data-days="20">20</button>
+              <button class="tf-btn" data-days="30">30</button>
+            </div>
+            <div id="breadth-metric-btns" class="feed-controls-group">
+              <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
+              <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
+            </div>
           </div>
         </div>
       </div>
@@ -255,6 +273,21 @@
             <div class="rank-header bear-header">Weekly Bearish</div>
             <table id="lb-weekly-bear"></table>
           </div>
+        </div>
+      </main>
+
+      <!-- BREADTH VIEW -->
+      <main id="view-breadth" class="hidden">
+        <div class="breadth-chart-container">
+          <div class="breadth-chart-header">
+            <h3>Market Breadth</h3>
+            <span id="breadth-subtitle" class="breadth-subtitle">SPY vs SVIX — Normalized</span>
+          </div>
+          <div class="breadth-chart-wrapper">
+            <canvas id="breadth-chart"></canvas>
+          </div>
+          <div id="breadth-loading" class="breadth-status">Loading breadth data…</div>
+          <div id="breadth-error" class="breadth-status" style="display:none;"></div>
         </div>
       </main>
     </div>
