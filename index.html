@@ -123,29 +123,41 @@
         <!-- Ticker Detail View (Hidden by default) -->
         <div id="ticker-view" class="hidden">
           <div class="ticker-history-section">
-            <div class="header-sort-controls">
-              <button class="tf-btn" onclick="setDailySort('favorite')" data-sort="favorite">★</button>
-              <button class="tf-btn active" onclick="setDailySort('time')" data-sort="time">D</button>
-              <button class="tf-btn" onclick="setDailySort('volume')" data-sort="volume">V</button>
-              <button class="tf-btn" data-sort="intensity">F</button>
-              <button class="tf-btn" data-sort="combo">S</button>
-            </div>
-
             <div class="split-view">
+              <!-- Daily Column -->
               <div class="column">
                 <div class="column-header">
-                  <h2>Daily</h2>
-                  <div id="ticker-daily-avg"></div>
+                  <div class="header-title-group">
+                    <h2>Daily</h2>
+                    <div id="ticker-daily-avg" class="avg-score-inline"></div>
+                  </div>
+                  <div class="header-sort-controls ticker-daily-sort">
+                    <button class="tf-btn" data-sort="favorite">★</button>
+                    <button class="tf-btn active" data-sort="time">D</button>
+                    <button class="tf-btn" data-sort="volume">V</button>
+                    <button class="tf-btn" data-sort="intensity">F</button>
+                    <button class="tf-btn" data-sort="combo">S</button>
+                  </div>
                 </div>
                 <div id="ticker-daily-container" class="alerts-list">
                   <div class="loading">Loading...</div>
                 </div>
               </div>
 
+              <!-- Weekly Column -->
               <div class="column">
                 <div class="column-header">
-                  <h2>Weekly</h2>
-                  <div id="ticker-weekly-avg"></div>
+                  <div class="header-title-group">
+                    <h2>Weekly</h2>
+                    <div id="ticker-weekly-avg" class="avg-score-inline"></div>
+                  </div>
+                  <div class="header-sort-controls ticker-weekly-sort">
+                    <button class="tf-btn" data-sort="favorite">★</button>
+                    <button class="tf-btn active" data-sort="time">D</button>
+                    <button class="tf-btn" data-sort="volume">V</button>
+                    <button class="tf-btn" data-sort="intensity">F</button>
+                    <button class="tf-btn" data-sort="combo">S</button>
+                  </div>
                 </div>
                 <div id="ticker-weekly-container" class="alerts-list">
                   <div class="loading">Loading...</div>

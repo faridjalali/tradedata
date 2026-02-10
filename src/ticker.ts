@@ -5,22 +5,34 @@ import { SortMode, Alert } from './types';
 // Declare TradingView global
 declare const TradingView: any;
 
-let tickerSortMode: SortMode = 'time';
+let tickerDailySortMode: SortMode = 'time';
+let tickerWeeklySortMode: SortMode = 'time';
 let currentChartTicker: string | null = null;
 
-export function setTickerSort(mode: SortMode): void {
-    tickerSortMode = mode;
-    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
+export function setTickerDailySort(mode: SortMode): void {
+    tickerDailySortMode = mode;
+    updateSortButtons('.ticker-daily-sort', mode);
+    const tickerContainer = document.getElementById('ticker-view');
+    if (!tickerContainer) return;
+    const currentTicker = tickerContainer.dataset.ticker;
+    if (currentTicker) renderTickerView(currentTicker);
+}
+
+export function setTickerWeeklySort(mode: SortMode): void {
+    tickerWeeklySortMode = mode;
+    updateSortButtons('.ticker-weekly-sort', mode);
+    const tickerContainer = document.getElementById('ticker-view');
+    if (!tickerContainer) return;
+    const currentTicker = tickerContainer.dataset.ticker;
+    if (currentTicker) renderTickerView(currentTicker);
+}
+
+// Helper to update active class on buttons
+function updateSortButtons(selector: string, mode: SortMode): void {
+    document.querySelectorAll(`${selector} .tf-btn`).forEach(btn => {
         const el = btn as HTMLElement;
         el.classList.toggle('active', el.dataset.sort === mode);
     });
-    const tickerContainer = document.getElementById('ticker-view');
-    if (!tickerContainer) return;
-    
-    const currentTicker = tickerContainer.dataset.ticker;
-    if (currentTicker) {
-         renderTickerView(currentTicker);
-    }
 }
 
 export function renderTickerView(ticker: string): void {
@@ -36,17 +48,35 @@ export function renderTickerView(ticker: string): void {
         if (mode === 'volume') return alert.signal_volume || 0;
         if (mode === 'intensity') return alert.intensity_score || 0;
         if (mode === 'combo') return alert.combo_score || 0;
+        // For favorite sort: primary logic is boolean (1 or 0), secondary is time
+         if (mode === 'favorite') {
+             // We can return 1 for fav, 0 for non-fav. 
+             // But the main sort function below needs to handle the secondary sort (time) 
+             // so here we just return the boolean value as a number.
+             return (alert.is_favorite ? 1 : 0);
+         }
         return alert.timestamp ? new Date(alert.timestamp).getTime() : 0;
     };
 
-    const sortFn = (a: Alert, b: Alert) => {
-        const valA = getSortValue(a, tickerSortMode);
-        const valB = getSortValue(b, tickerSortMode);
+    const createSortFn = (mode: SortMode) => (a: Alert, b: Alert) => {
+         if (mode === 'time') {
+               return (b.timestamp || '').localeCompare(a.timestamp || '');
+         }
+         // Favorite sort needs special handling for secondary sort
+         if (mode === 'favorite') {
+             if (a.is_favorite === b.is_favorite) {
+                  return (b.timestamp || '').localeCompare(a.timestamp || '');
+             }
+             return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
+         }
+
+        const valA = getSortValue(a, mode);
+        const valB = getSortValue(b, mode);
         return valB - valA;
     };
 
-    daily.sort(sortFn);
-    weekly.sort(sortFn);
+    daily.sort(createSortFn(tickerDailySortMode));
+    weekly.sort(createSortFn(tickerWeeklySortMode));
     
     renderAvg('ticker-daily-avg', daily);
     renderAvg('ticker-weekly-avg', weekly);

@@ -257,7 +257,16 @@ h2 {
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border-color);
 }
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
+.avg-score-inline {
+  display: flex;
+  align-items: center;
+}
 .header-sort-controls {
   display: flex;
   gap: 8px;

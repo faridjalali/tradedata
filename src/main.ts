@@ -9,7 +9,7 @@ import {
     setupLiveFeedDelegation
 } from './liveFeed';
 import { fetchLeaderboardData } from './leaderboard';
-import { renderTickerView, setTickerSort } from './ticker';
+import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { SortMode, LiveFeedMode } from './types';
 
 let currentView: 'live' | 'leaderboard' = 'live'; 
@@ -21,7 +21,8 @@ let dashboardScrollY = 0;
 // but we need to assign them here.
 window.setDailySort = setDailySort;
 window.setWeeklySort = setWeeklySort;
-window.setTickerSort = setTickerSort;
+window.setTickerDailySort = setTickerDailySort;
+window.setTickerWeeklySort = setTickerWeeklySort;
 
 window.showTickerView = function(ticker: string) {
     if (currentView !== 'live') {
@@ -198,11 +199,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const weekInput = document.getElementById('history-week') as HTMLInputElement;
     const monthInput = document.getElementById('history-month') as HTMLInputElement;
 
-    // Ticker View Sort Buttons
-    document.querySelectorAll('.history-controls .tf-btn').forEach(btn => {
+    // Ticker View Daily Sort Buttons
+    document.querySelectorAll('.ticker-daily-sort .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mode = (btn as HTMLElement).dataset.sort as SortMode;
-            setTickerSort(mode);
+            setTickerDailySort(mode);
+        });
+    });
+
+    // Ticker View Weekly Sort Buttons
+    document.querySelectorAll('.ticker-weekly-sort .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setTickerWeeklySort(mode);
         });
     });
 

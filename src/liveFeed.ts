@@ -15,7 +15,8 @@ declare global {
         showOverview: () => void;
         setDailySort: (mode: SortMode) => void;
         setWeeklySort: (mode: SortMode) => void;
-        setTickerSort: (mode: SortMode) => void;
+        setTickerDailySort: (mode: SortMode) => void;
+        setTickerWeeklySort: (mode: SortMode) => void;
     }
 }
 
