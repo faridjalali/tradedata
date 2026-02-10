@@ -9,7 +9,7 @@ interface BreadthDataPoint {
 
 let breadthChart: any = null;
 let currentTimeframeDays = 1;
-let currentMetric: 'SVIX' | 'RSP' = 'SVIX';
+let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
 
 export function getCurrentBreadthTimeframe(): number {
     return currentTimeframeDays;
@@ -199,7 +199,7 @@ export function setBreadthTimeframe(days: number): void {
     loadBreadth();
 }
 
-export function setBreadthMetric(metric: 'SVIX' | 'RSP'): void {
+export function setBreadthMetric(metric: 'SVIX' | 'RSP' | 'MAGS'): void {
     currentMetric = metric;
 
     // Update active button

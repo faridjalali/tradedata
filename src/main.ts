@@ -249,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('#breadth-metric-btns .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP';
+            const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
             setBreadthMetric(metric);
             // Update subtitle
             const subtitle = document.getElementById('breadth-subtitle');
