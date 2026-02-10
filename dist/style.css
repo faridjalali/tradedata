@@ -311,8 +311,8 @@ h2 {
   margin-bottom: 8px;
   
   display: grid;
-  /* Icon | Ticker (fixed 5-char width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
-  grid-template-columns: min-content 5.5ch 1fr auto;
+  /* Icon | Ticker (fixed pixel width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
+  grid-template-columns: min-content 52px 1fr auto;
   align-items: center;
   gap: 4px;
   
@@ -335,9 +335,10 @@ h2 {
   color: var(--text-secondary);
   cursor: pointer;
   transition: transform 0.1s; /* Reduced transition */
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 16px; /* Prevent resizing */
+  padding-right: 10px;
 }
 
 .fav-icon:hover {
@@ -399,8 +400,11 @@ h2 {
   color: var(--text-primary);
   font-weight: 600;
   white-space: nowrap;
-  width: 5ch;
-  min-width: 5ch; 
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  letter-spacing: 0.02em;
+  width: 52px;
+  min-width: 52px;
+  overflow: hidden;
 }
 
 /* New Metrics Layout */
@@ -428,8 +432,9 @@ h2 {
 }
 
 .volume-text {
-  font-family: inherit;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-weight: 500;
+  white-space: pre;
 }
 
 /* Score Circles */
@@ -623,7 +628,8 @@ button:hover {
 }
 
 /* Sort Buttons (Ticker & Live Feed) */
-.header-sort-controls .tf-btn {
+.header-sort-controls .tf-btn,
+#live-controls .tf-btn {
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -635,14 +641,17 @@ button:hover {
 }
 
 @media (hover: hover) {
-  .header-sort-controls .tf-btn:hover {
+  .header-sort-controls .tf-btn:hover,
+  #live-controls .tf-btn:hover {
     background: rgba(48, 54, 61, 0.5);
     color: var(--text-primary);
   }
 }
 
-.header-sort-controls .tf-btn.active {
+.header-sort-controls .tf-btn.active,
+#live-controls .tf-btn.active {
   background: var(--highlight);
   color: #ffffff;
   border-color: var(--highlight);
 }
+

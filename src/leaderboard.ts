@@ -2,16 +2,20 @@ import { fetchAlertsFromApi } from './api';
 import { Alert } from './types';
 import { escapeHtml } from './utils';
 
-interface Stats {
-    dailyBull: number;
-    dailyBear: number;
-    weeklyBull: number;
-    weeklyBear: number;
+interface TickerStats {
+    dailyBullSum: number;
+    dailyBullCount: number;
+    dailyBearSum: number;
+    dailyBearCount: number;
+    weeklyBullSum: number;
+    weeklyBullCount: number;
+    weeklyBearSum: number;
+    weeklyBearCount: number;
 }
 
 interface LeaderboardItem {
     ticker: string;
-    count: number;
+    avgScore: number;
 }
 
 export async function fetchLeaderboardData(): Promise<void> {
@@ -27,36 +31,45 @@ export async function fetchLeaderboardData(): Promise<void> {
 }
 
 function calculateAndRenderLeaderboard(data: Alert[]): void {
-    const stats: Record<string, Stats> = {};
+    const stats: Record<string, TickerStats> = {};
 
     data.forEach(a => {
-        if (!stats[a.ticker]) stats[a.ticker] = { dailyBull: 0, dailyBear: 0, weeklyBull: 0, weeklyBear: 0 };
+        if (!stats[a.ticker]) stats[a.ticker] = {
+            dailyBullSum: 0, dailyBullCount: 0,
+            dailyBearSum: 0, dailyBearCount: 0,
+            weeklyBullSum: 0, weeklyBullCount: 0,
+            weeklyBearSum: 0, weeklyBearCount: 0,
+        };
+        const score = a.combo_score || 0;
         const isBull = a.signal_type && a.signal_type.toLowerCase().includes('bull');
         const isWeekly = a.timeframe === '1w';
         
         if (isWeekly) {
-            if (isBull) stats[a.ticker].weeklyBull++;
-            else stats[a.ticker].weeklyBear++;
+            if (isBull) { stats[a.ticker].weeklyBullSum += score; stats[a.ticker].weeklyBullCount++; }
+            else { stats[a.ticker].weeklyBearSum += score; stats[a.ticker].weeklyBearCount++; }
         } else {
-            if (isBull) stats[a.ticker].dailyBull++;
-            else stats[a.ticker].dailyBear++;
+            if (isBull) { stats[a.ticker].dailyBullSum += score; stats[a.ticker].dailyBullCount++; }
+            else { stats[a.ticker].dailyBearSum += score; stats[a.ticker].dailyBearCount++; }
         }
     });
 
     const tickers = Object.keys(stats);
 
-    const getTop = (key: keyof Stats): LeaderboardItem[] => {
+    const getTop = (sumKey: keyof TickerStats, countKey: keyof TickerStats): LeaderboardItem[] => {
         return tickers
-            .map(t => ({ ticker: t, count: stats[t][key] }))
-            .filter(x => x.count > 0)
-            .sort((a, b) => b.count - a.count)
+            .filter(t => (stats[t][countKey] as number) > 0)
+            .map(t => ({
+                ticker: t,
+                avgScore: Math.round((stats[t][sumKey] as number) / (stats[t][countKey] as number)),
+            }))
+            .sort((a, b) => b.avgScore - a.avgScore)
             .slice(0, 10);
     };
 
-    renderTable('lb-daily-bull', getTop('dailyBull'));
-    renderTable('lb-daily-bear', getTop('dailyBear'));
-    renderTable('lb-weekly-bull', getTop('weeklyBull'));
-    renderTable('lb-weekly-bear', getTop('weeklyBear'));
+    renderTable('lb-daily-bull', getTop('dailyBullSum', 'dailyBullCount'));
+    renderTable('lb-daily-bear', getTop('dailyBearSum', 'dailyBearCount'));
+    renderTable('lb-weekly-bull', getTop('weeklyBullSum', 'weeklyBullCount'));
+    renderTable('lb-weekly-bear', getTop('weeklyBearSum', 'weeklyBearCount'));
 }
 
 function renderTable(elementId: string, items: LeaderboardItem[]): void {
@@ -72,7 +85,7 @@ function renderTable(elementId: string, items: LeaderboardItem[]): void {
             ${items.map(item => `
                 <tr class="clickable-row" data-ticker="${escapeHtml(item.ticker)}">
                     <td>${escapeHtml(item.ticker)}</td>
-                    <td>${item.count}</td>
+                    <td>${item.avgScore}</td>
                 </tr>
             `).join('')}
         </tbody>
