@@ -157,10 +157,10 @@ export function renderOverview(): void {
 }
 
 export function setupLiveFeedDelegation(): void {
-    const dashboard = document.getElementById('dashboard-view');
-    if (!dashboard) return;
+    const mainView = document.getElementById('view-live');
+    if (!mainView) return;
 
-    dashboard.addEventListener('click', (e) => {
+    mainView.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const starBtn = target.closest('.fav-icon');
         
