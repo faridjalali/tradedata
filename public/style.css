@@ -292,55 +292,28 @@ h2 {
 
 /* Alert Cards */
 /* Alert Cards - CONSTANT SINGLE LINE */
+/* Alert Cards - CSS GRID LAYOUT */
 .alert-card {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 0 12px; /* Horizontal padding only, vertical handled by height/align */
   margin-bottom: 8px;
   
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
+  display: grid !important;
+  /* Icon | Ticker | Metrics (Flexible) | Time */
+  grid-template-columns: min-content min-content 1fr min-content !important;
   align-items: center !important;
-  justify-content: space-between !important;
+  gap: 12px; /* Consistent gap between grid columns */
   
-  height: 40px; /* Enforce fixed height for consistency */
+  height: 40px; /* Enforce fixed height */
   box-sizing: border-box;
   transition: all 0.2s;
   cursor: pointer;
   overflow: hidden; /* Prevent overflow */
 }
 
-/* Sections */
-.ac-left, .ac-middle, .ac-right {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  flex-wrap: nowrap !important;
-  height: 100%;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-.ac-left {
-  flex: 0 0 auto;
-  gap: 12px;
-}
-
-.ac-middle {
-  flex: 1 1 auto;
-  justify-content: center;
-  min-width: 0; /* Allow shrinking */
-  padding: 0 10px !important;
-}
-
-.ac-right {
-  flex: 0 0 auto;
-  justify-content: flex-end;
-  margin-left: auto;
-  min-width: fit-content;
-}
+/* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
 
 /* Favorite Icon (Checkbox Style) - STRICT VISIBILITY */
 .fav-icon {
@@ -422,6 +395,9 @@ h2 {
   align-items: center !important;
   gap: 12px;
   flex-wrap: nowrap !important;
+  justify-content: center; /* Center in the grid cell */
+  white-space: nowrap !important;
+  overflow: hidden; /* Truncate if too loose */
 }
 
 .metric-item {
