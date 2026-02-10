@@ -30,9 +30,11 @@ export function getRelativeTime(timestamp?: string): string {
 }
 
 export function formatVolume(vol?: number): string {
-    if (!vol) return '0';
-    if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K';
-    return vol.toString();
+    if (!vol) return '0'.padEnd(7);
+    let str: string;
+    if (vol >= 1000) str = (vol / 1000).toFixed(1) + 'K';
+    else str = vol.toString();
+    return str.padEnd(7);
 }
 
 export function getDateRangeForMode(mode: string, weekVal: string, monthVal: string): { startDate: string, endDate: string } {

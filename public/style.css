@@ -431,8 +431,9 @@ h2 {
 }
 
 .volume-text {
-  font-family: inherit;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-weight: 500;
+  white-space: pre;
 }
 
 /* Score Circles */
