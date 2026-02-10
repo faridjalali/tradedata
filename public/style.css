@@ -323,8 +323,9 @@ h2 {
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
-  min-width: 80px; /* Increase width for safety */
+  min-width: 80px; 
   text-align: right;
+  margin-left: auto; /* Ensure it pushes right */
 }
 
 .star-icon {
@@ -341,8 +342,8 @@ h2 {
 }
 
 .star-icon.filled {
-  fill: #e3b341 !important; /* Force fill */
-  color: #e3b341 !important; /* Force stroke color */
+  fill: #6e7681 !important; /* Gray fill */
+  color: #6e7681 !important; /* Gray stroke */
 }
 
 .alert-card.bullish-card {
@@ -420,7 +421,7 @@ h2 {
   white-space: nowrap;
   min-width: 50px;
   text-align: right;
-  margin-left: 0; /* Reset margin */
+  margin-left: auto; /* Push to right */
 }
 .stat-box {
   background: var(--card-bg);
@@ -565,10 +566,6 @@ button:hover {
 
   .split-view {
     grid-template-columns: 1fr;
-  }
-
-  .alert-card {
-    gap: 60px; /* Mobile spacing */
   }
 }
 

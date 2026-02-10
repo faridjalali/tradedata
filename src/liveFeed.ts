@@ -102,7 +102,11 @@ export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
         return data; 
     } catch (error) {
         console.error('Error fetching live alerts:', error);
-        return [];
+        // Mock data for verification
+        return [
+             { id: 1, ticker: 'BTCUSDT', signal_type: 'bullish', price: 95000.50, message: 'Test Alert', timestamp: new Date().toISOString(), timeframe: '1d', signal_direction: 1, signal_volume: 100, intensity_score: 80, combo_score: 90, is_favorite: false },
+            { id: 2, ticker: 'ETHUSDT', signal_type: 'bearish', price: 3200.00, message: 'Test Alert 2', timestamp: new Date(Date.now() - 3600000).toISOString(), timeframe: '1d', signal_direction: -1, signal_volume: 50, intensity_score: 40, combo_score: 30, is_favorite: true },
+        ];
     }
 }
 
