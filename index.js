@@ -287,19 +287,42 @@ app.get('/api/gex/:ticker', async (req, res) => {
       }
     }
 
-    // 3. Sort strikes and build response
+    // 3. Sort strikes and filter to 50 around spot
     const allStrikes = Object.keys(gexByStrike).map(Number).sort((a, b) => a - b);
 
     if (allStrikes.length === 0) {
       return res.json({ spot_price: spotPrice, strikes: [], gex: [], total_gex: 0, message: 'No options data available' });
     }
 
-    const gex = allStrikes.map(s => Math.round(gexByStrike[s]));
-    const totalGex = gex.reduce((sum, v) => sum + v, 0);
+    // Calculate total GEX across ALL strikes
+    const totalGex = Object.values(gexByStrike).reduce((sum, v) => sum + v, 0);
+
+    // Find index of strike closest to spot
+    let closestIndex = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < allStrikes.length; i++) {
+        const diff = Math.abs(allStrikes[i] - spotPrice);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIndex = i;
+        }
+    }
+
+    // Slice 25 below and 25 above (total 50)
+    let start = Math.max(0, closestIndex - 25);
+    let end = Math.min(allStrikes.length, start + 50);
+
+    // Adjust start if we hit the limit
+    if (end - start < 50) {
+        start = Math.max(0, end - 50);
+    }
+
+    const strikes = allStrikes.slice(start, end);
+    const gex = strikes.map(s => Math.round(gexByStrike[s]));
 
     const result = {
       spot_price: spotPrice,
-      strikes: allStrikes,
+      strikes,
       gex,
       total_gex: totalGex
     };
