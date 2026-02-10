@@ -314,9 +314,8 @@ h2 {
   margin-bottom: 8px;
   
   display: grid !important;
-  /* Icon | Ticker | Metrics (Centered/Fixed) | Time (Right-Aligned) */
-  /* The 4th column (Time) is 1fr to push it right, or we use auto and justify-self: end */
-  grid-template-columns: min-content min-content max-content 1fr !important;
+  /* Icon | Ticker | Metrics (Centered/Flexible) | Time (Right-Aligned) */
+  grid-template-columns: min-content min-content 1fr auto !important;
   align-items: center !important;
   gap: 4px; /* Reduced gap between Icon and Ticker */
   
@@ -420,8 +419,8 @@ h2 {
 
   overflow: hidden; /* Truncate if too loose */
   text-overflow: ellipsis; /* Add ellipsis */
-  /* Decent space from Ticker */
-  margin-left: 60px; 
+  /* Center within the flexible grid cell */
+  margin: 0 auto;
 }
 
 .metric-item {
