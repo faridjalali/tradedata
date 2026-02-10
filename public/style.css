@@ -298,17 +298,21 @@ h2 {
   padding: 8px 12px;
   margin-bottom: 8px;
   display: flex;
-  justify-content: space-between; /* Space out left, middle, right sections */
+  flex-direction: row; /* Explicitly set row */
+  justify-content: space-between; 
   align-items: center;
+  flex-wrap: nowrap; /* Never wrap */
   transition: all 0.2s;
   cursor: pointer;
 }
 
 .ac-left {
   display: flex;
+  flex-direction: row; /* Force row */
   align-items: center;
-  gap: 10px; /* Space between star and ticker */
+  gap: 10px;
   flex: 0 0 auto;
+  flex-wrap: nowrap; /* Prevent wrapping */
 }
 
 .ac-middle {
@@ -385,11 +389,13 @@ h2 {
 /* Compact Layout */
 .alert-card h3 {
   margin: 0;
+  padding: 0;
   font-size: 1rem;
+  line-height: 1; /* Prevent extra height */
   color: var(--text-primary);
   font-weight: 600;
-  width: 80px; /* Fixed 5-letter allowance (increased for safety) */
-  flex-shrink: 0; /* Prevent shrinking */
+  width: 80px; 
+  flex-shrink: 0; 
 }
 
 /* New Metrics Layout */
