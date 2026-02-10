@@ -310,7 +310,7 @@ app.get('/api/gex/:ticker', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('GEX API Error:', err);
-    res.status(500).json({ error: 'Failed to fetch GEX data: ' + err.message });
+    res.status(500).json({ error: 'Failed to fetch GEX data' });
   }
 });
 
