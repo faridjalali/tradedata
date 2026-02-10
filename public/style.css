@@ -314,8 +314,8 @@ h2 {
   margin-bottom: 8px;
   
   display: grid !important;
-  /* Icon | Ticker | Metrics (Centered/Flexible) | Time (Right-Aligned) */
-  grid-template-columns: min-content min-content 1fr auto !important;
+  /* Icon | Ticker (fixed 5-char width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
+  grid-template-columns: min-content 5.5ch 1fr auto !important;
   align-items: center !important;
   gap: 4px; /* Reduced gap between Icon and Ticker */
   
