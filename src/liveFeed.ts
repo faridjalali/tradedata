@@ -162,7 +162,7 @@ export function setupLiveFeedDelegation(): void {
 
     dashboard.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        const starBtn = target.closest('.star-icon');
+        const starBtn = target.closest('.fav-icon');
         
         if (starBtn) {
             e.stopPropagation();

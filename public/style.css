@@ -328,22 +328,41 @@ h2 {
   margin-left: auto; /* Ensure it pushes right */
 }
 
-.star-icon {
+/* Favorite Icon (Checkbox Style) */
+.fav-icon {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s;
-  width: 16px; /* Smaller size requested */
+  width: 16px;
   height: 16px;
 }
 
-.star-icon:hover {
+.fav-icon:hover {
   color: var(--text-primary);
   transform: scale(1.1);
 }
 
-.star-icon.filled {
-  fill: #6e7681 !important; /* Gray fill */
-  color: #6e7681 !important; /* Gray stroke */
+.fav-icon:active {
+  transform: scale(0.9);
+}
+
+/* Checkmark visibility */
+.fav-icon .check-mark {
+  opacity: 0;
+  transform: scale(0);
+  transform-origin: center;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.fav-icon.filled .check-mark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.fav-icon.filled {
+  color: var(--text-primary) !important; /* Match font color as requested */
+  /* Remove fill logic since we use checkmark now */
+  fill: none !important;
 }
 
 .alert-card.bullish-card {
