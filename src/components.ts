@@ -30,8 +30,14 @@ export function createAlertCard(alert: Alert): string {
 
     const intLabel = `Intensity: ${intScore}`;
     const cmbLabel = `Combo: ${cmbScore}`;
+    
+    // Debugging: Check what is actually coming from the DB
+    // console.log(`Alert ${alert.ticker}: is_favorite =`, alert.is_favorite, typeof alert.is_favorite);
 
-    const starClass = alert.is_favorite ? 'filled' : '';
+    // Strict check to handle potential string 'false' from some DB drivers or JSON serialization quirks
+    const isFav = alert.is_favorite === true || String(alert.is_favorite).toLowerCase() === 'true';
+    const starClass = isFav ? 'filled' : '';
+
     // Checkbox style: Rect for box, Polyline for checkmark
     const starIcon = `
         <svg class="fav-icon ${starClass}" data-id="${alert.id}" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
