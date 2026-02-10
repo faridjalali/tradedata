@@ -622,20 +622,7 @@ button:hover {
     -webkit-user-select: none;
   }
 
-  .column-header h2::after,
-  .header-title-group h2::after {
-    content: '▾';
-    margin-left: 6px;
-    font-size: 0.7em;
-    color: var(--text-secondary);
-    transition: transform 0.2s;
-    display: inline-block;
-  }
 
-  .column.collapsed .column-header h2::after,
-  .column.collapsed .header-title-group h2::after {
-    transform: rotate(-90deg);
-  }
 
   .column.collapsed .alerts-list {
     display: none;
