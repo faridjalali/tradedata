@@ -173,10 +173,21 @@ export function setupLiveFeedDelegation(): void {
                 const isCurrentlyFilled = starBtn.classList.contains('filled');
                 
                 allStars.forEach(star => {
+                    const checkmark = star.querySelector('.check-mark') as HTMLElement;
                     if (isCurrentlyFilled) {
                         star.classList.remove('filled');
+                        // Force hide immediately
+                        if (checkmark) {
+                            checkmark.style.visibility = 'hidden';
+                            checkmark.style.opacity = '0';
+                        }
                     } else {
                         star.classList.add('filled');
+                        // Force show immediately
+                        if (checkmark) {
+                            checkmark.style.visibility = 'visible';
+                            checkmark.style.opacity = '1';
+                        }
                     }
                 });
 
@@ -190,15 +201,39 @@ export function setupLiveFeedDelegation(): void {
                          
                          // Re-enforce visual state from server response to be sure
                          allStars.forEach(star => {
-                             if (updatedAlert.is_favorite) star.classList.add('filled');
-                             else star.classList.remove('filled');
+                             const checkmark = star.querySelector('.check-mark') as HTMLElement;
+                             if (updatedAlert.is_favorite) {
+                                 star.classList.add('filled');
+                                 if (checkmark) {
+                                     checkmark.style.visibility = 'visible';
+                                     checkmark.style.opacity = '1';
+                                 }
+                             } else {
+                                 star.classList.remove('filled');
+                                 if (checkmark) {
+                                     checkmark.style.visibility = 'hidden';
+                                     checkmark.style.opacity = '0';
+                                 }
+                             }
                          });
                     }
                 }).catch(() => {
                     // Revert on failure
                     allStars.forEach(star => {
-                        if (isCurrentlyFilled) star.classList.add('filled');
-                        else star.classList.remove('filled');
+                        const checkmark = star.querySelector('.check-mark') as HTMLElement;
+                        if (isCurrentlyFilled) {
+                             star.classList.add('filled');
+                             if (checkmark) {
+                                 checkmark.style.visibility = 'visible';
+                                 checkmark.style.opacity = '1';
+                             }
+                        } else {
+                             star.classList.remove('filled');
+                             if (checkmark) {
+                                 checkmark.style.visibility = 'hidden';
+                                 checkmark.style.opacity = '0';
+                             }
+                        }
                     });
                 });
             }
