@@ -10,6 +10,7 @@ declare const Chart: any;
 let tickerDailySortMode: SortMode = 'time';
 let tickerWeeklySortMode: SortMode = 'time';
 let currentChartTicker: string | null = null;
+let currentGexTicker: string | null = null;
 let gexChartInstance: any = null;
 
 export function setTickerDailySort(mode: SortMode): void {
@@ -137,6 +138,9 @@ function renderTradingViewChart(ticker: string): void {
 }
 
 async function renderGexChart(ticker: string): Promise<void> {
+    if (currentGexTicker === ticker) return;
+    currentGexTicker = ticker;
+
     const container = document.getElementById('gex-chart-container');
     const loading = document.getElementById('gex-loading');
     const errorEl = document.getElementById('gex-error');

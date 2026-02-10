@@ -199,9 +199,9 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
 const YahooFinance = require("yahoo-finance2").default;
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
-// In-memory GEX cache (5 min TTL)
+// In-memory GEX cache (24h TTL)
 const gexCache = new Map();
-const GEX_CACHE_TTL = 5 * 60 * 1000;
+const GEX_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 // --- Black-Scholes helpers ---
 function normalPdf(x) {
@@ -232,8 +232,8 @@ app.get('/api/gex/:ticker', async (req, res) => {
       return res.status(404).json({ error: `No price data for ${ticker}` });
     }
 
-    // 2. Collect all expirations (up to 6 nearest)
-    const expirationDates = (firstChain.expirationDates || []).slice(0, 6);
+    // 2. Collect all expirations (up to 2 nearest to avoid rate limits)
+    const expirationDates = (firstChain.expirationDates || []).slice(0, 2);
     const now = new Date();
     const riskFreeRate = 0.045;
 
@@ -271,8 +271,9 @@ app.get('/api/gex/:ticker', async (req, res) => {
       processChain(firstChain.options[0], expDate);
     }
 
-    // Fetch remaining expirations
+    // Fetch remaining expirations with delay
     for (let i = 1; i < expirationDates.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1s delay to avoid rate limits
       try {
         const expEpoch = expirationDates[i] instanceof Date
           ? Math.floor(expirationDates[i].getTime() / 1000)
