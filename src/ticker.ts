@@ -71,7 +71,7 @@ export function renderTickerView(ticker: string): void {
     }
     
     renderTradingViewChart(ticker);
-    renderGexChart(ticker);
+    // renderGexChart(ticker); // Hidden until API upgrade
 }
 
 function renderAvg(containerId: string, list: Alert[]): void {
