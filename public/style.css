@@ -311,8 +311,8 @@ h2 {
   margin-bottom: 8px;
   
   display: grid;
-  /* Icon | Ticker (fixed 5-char width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
-  grid-template-columns: min-content 5.5ch 1fr auto;
+  /* Icon | Ticker (fixed pixel width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
+  grid-template-columns: min-content 52px 1fr auto;
   align-items: center;
   gap: 4px;
   
@@ -399,8 +399,11 @@ h2 {
   color: var(--text-primary);
   font-weight: 600;
   white-space: nowrap;
-  width: 5ch;
-  min-width: 5ch; 
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  letter-spacing: 0.02em;
+  width: 52px;
+  min-width: 52px;
+  overflow: hidden;
 }
 
 /* New Metrics Layout */
