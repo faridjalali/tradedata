@@ -1,5 +1,5 @@
 export interface Alert {
-    id?: number;
+    id: number;
     ticker: string;
     signal_type: string;
     price?: number;
@@ -10,7 +10,7 @@ export interface Alert {
     signal_volume?: number;
     intensity_score?: number;
     combo_score?: number;
-    is_favorite?: boolean;
+    is_favorite: boolean;
 }
 
 export interface AppState {
