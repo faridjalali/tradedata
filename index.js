@@ -203,6 +203,18 @@ const POLYGON_BASE = "https://api.polygon.io";
 const gexCache = new Map();
 const GEX_CACHE_TTL = 5 * 60 * 1000;
 
+// --- Black-Scholes helpers ---
+function normalPdf(x) {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+
+function bsGamma(S, K, T, r, sigma) {
+  // S=spot, K=strike, T=time to expiry in years, r=risk-free rate, sigma=IV
+  if (T <= 0 || sigma <= 0) return 0;
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  return normalPdf(d1) / (S * sigma * Math.sqrt(T));
+}
+
 app.get('/api/gex/:ticker', async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
 
@@ -213,18 +225,25 @@ app.get('/api/gex/:ticker', async (req, res) => {
   }
 
   try {
-    // 1. Get spot price
-    const quoteRes = await fetch(`${POLYGON_BASE}/v2/last/trade/${ticker}?apiKey=${POLYGON_API_KEY}`);
-    const quoteData = await quoteRes.json();
+    // 1. Get spot price via previous-day close (free plan)
+    const prevRes = await fetch(`${POLYGON_BASE}/v2/aggs/ticker/${ticker}/prev?apiKey=${POLYGON_API_KEY}`);
+    const prevData = await prevRes.json();
     
-    if (!quoteData.results || !quoteData.results.p) {
+    if (!prevData.results || prevData.results.length === 0) {
       return res.status(404).json({ error: `No price data for ${ticker}` });
     }
-    const spotPrice = quoteData.results.p;
+    const spotPrice = prevData.results[0].c; // closing price
 
-    // 2. Get options chain (paginated)
+    // 2. Get options contracts (paginated, free plan)
+    // Filter to expirations within 60 days
+    const now = new Date();
+    const maxExpiry = new Date(now);
+    maxExpiry.setDate(maxExpiry.getDate() + 60);
+    const nowStr = now.toISOString().split('T')[0];
+    const maxStr = maxExpiry.toISOString().split('T')[0];
+
     let allContracts = [];
-    let nextUrl = `${POLYGON_BASE}/v3/snapshot/options/${ticker}?apiKey=${POLYGON_API_KEY}&limit=250`;
+    let nextUrl = `${POLYGON_BASE}/v3/reference/options/contracts?underlying_ticker=${ticker}&expiration_date.gte=${nowStr}&expiration_date.lte=${maxStr}&limit=250&apiKey=${POLYGON_API_KEY}`;
 
     while (nextUrl) {
       const chainRes = await fetch(nextUrl);
@@ -243,21 +262,34 @@ app.get('/api/gex/:ticker', async (req, res) => {
       return res.json({ spot_price: spotPrice, strikes: [], gex: [], total_gex: 0, message: 'No options data available' });
     }
 
-    // 3. Calculate GEX per strike
+    // 3. Calculate GEX per strike using Black-Scholes gamma
+    // Since OI isn't available on the free plan, we use a uniform OI estimate
+    // weighted by proximity to the money (ATM options have higher OI)
+    const riskFreeRate = 0.05;  // approximate
+    const impliedVol = 0.30;    // approximate average IV
+    const baseOI = 1000;        // uniform OI estimate
     const gexByStrike = {};
 
     for (const c of allContracts) {
-      const greeks = c.greeks || {};
-      const details = c.details || {};
-      const gamma = greeks.gamma;
-      const strike = details.strike_price;
-      const contractType = details.contract_type;
-      const oi = c.open_interest || 0;
+      const strike = c.strike_price;
+      const contractType = c.contract_type;
+      const expiryDate = new Date(c.expiration_date);
+      const T = Math.max((expiryDate - now) / (365.25 * 24 * 60 * 60 * 1000), 1/365); // years
 
-      if (gamma == null || strike == null || oi === 0) continue;
+      // Filter to spot ±15%
+      if (strike < spotPrice * 0.85 || strike > spotPrice * 1.15) continue;
+
+      // Compute Black-Scholes gamma
+      const gamma = bsGamma(spotPrice, strike, T, riskFreeRate, impliedVol);
+      if (gamma === 0 || isNaN(gamma)) continue;
+
+      // Weight OI by moneyness (ATM gets 3x, deep OTM gets ~0.3x)
+      const moneyness = Math.abs(spotPrice - strike) / spotPrice;
+      const oiWeight = Math.max(0.3, 1 - moneyness * 5) * (moneyness < 0.05 ? 3 : 1);
+      const estimatedOI = baseOI * oiWeight;
 
       // GEX = gamma * OI * 100 * spot * (spot * 0.01)
-      let gexNotional = gamma * oi * 100 * spotPrice * (spotPrice * 0.01);
+      let gexNotional = gamma * estimatedOI * 100 * spotPrice * (spotPrice * 0.01);
 
       // Flip sign for puts
       if (contractType === 'put') gexNotional *= -1;
