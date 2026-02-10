@@ -7,7 +7,9 @@ export async function fetchAlertsFromApi(params: string = ''): Promise<Alert[]> 
         return await response.json();
     } catch (error) {
         console.error('Error fetching alerts:', error);
-        return [];
+    } catch (error) {
+        console.error('Error fetching alerts:', error);
+        throw error; // Re-throw to allow caller to handle fallback
     }
 }
 
