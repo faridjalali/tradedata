@@ -497,7 +497,6 @@ h2 {
 /* Ticker History */
 .ticker-history-section {
   margin-top: 20px;
-  border-top: 1px solid var(--border-color);
   padding-top: 20px;
 }
 
