@@ -308,9 +308,10 @@ h2 {
   gap: 4px; /* Reduced gap between Icon and Ticker */
   
   /* Reduced Width as Requested (approx 30% reduction from full width) */
-  width: 75%; 
-  margin-left: auto;
-  margin-right: auto;
+  width: 70% !important; 
+  max-width: 70% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 
   height: 40px; /* Enforce fixed height */
   box-sizing: border-box;
@@ -403,7 +404,9 @@ h2 {
   flex-wrap: nowrap !important;
   justify-content: center; /* Center in the grid cell */
   white-space: nowrap !important;
+  white-space: nowrap !important;
   overflow: hidden; /* Truncate if too loose */
+  text-overflow: ellipsis; /* Add ellipsis */
   /* Decent space from Ticker */
   margin-left: 32px; 
 }
