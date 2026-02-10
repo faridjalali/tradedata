@@ -308,8 +308,8 @@ h2 {
   gap: 4px; /* Reduced gap between Icon and Ticker */
   
   /* Reduced Width as Requested (90%) */
-  width: 90% !important; 
-  max-width: 90% !important;
+  width: 100% !important; 
+  max-width: 100% !important;
   margin-left: auto !important;
   margin-right: auto !important;
 
