@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Catvue</title>
-    <link rel="stylesheet" href="/style.css?v=7" />
+    <script>
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/style.css?v=' + new Date().getTime();
+      document.head.appendChild(link);
+    </script>
     <link rel="icon" type="image/png" href="/voldelta_icon.png?v=1" />
     <link rel="apple-touch-icon" href="/voldelta_icon.png?v=1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
