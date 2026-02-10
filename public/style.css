@@ -335,8 +335,8 @@ h2 {
   color: var(--text-secondary);
   cursor: pointer;
   transition: transform 0.1s; /* Reduced transition */
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 16px; /* Prevent resizing */
 }
 
