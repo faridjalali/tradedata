@@ -50,6 +50,7 @@ export class RSIChart {
   private timelineSeries: any = null;
   private midlineCrossIndex: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
+  private midlineOverlayEl: HTMLDivElement | null = null;
   private markerResizeObserver: ResizeObserver | null = null;
   private suppressExternalSync: boolean = false;
   private onTrendLineDrawn?: () => void;
@@ -265,6 +266,18 @@ export class RSIChart {
       this.container.style.position = 'relative';
     }
 
+    this.midlineOverlayEl = document.createElement('div');
+    this.midlineOverlayEl.style.position = 'absolute';
+    this.midlineOverlayEl.style.left = '0';
+    this.midlineOverlayEl.style.right = '0';
+    this.midlineOverlayEl.style.height = '0';
+    this.midlineOverlayEl.style.borderTop = `1px ${this.midlineStyle === 'solid' ? 'solid' : 'dotted'} ${this.midlineColor}`;
+    this.midlineOverlayEl.style.pointerEvents = 'none';
+    this.midlineOverlayEl.style.display = 'none';
+    // Above month gridline overlay (z=6), below cross marker (z=8).
+    this.midlineOverlayEl.style.zIndex = '7';
+    this.container.appendChild(this.midlineOverlayEl);
+
     this.midlineCrossMarkerEl = document.createElement('div');
     this.midlineCrossMarkerEl.style.position = 'absolute';
     this.midlineCrossMarkerEl.style.top = '0';
@@ -277,6 +290,7 @@ export class RSIChart {
     this.container.appendChild(this.midlineCrossMarkerEl);
 
     this.markerResizeObserver = new ResizeObserver(() => {
+      this.updateMidlineOverlayPosition();
       this.updateMidlineCrossMarkerPosition();
     });
     this.markerResizeObserver.observe(this.container);
@@ -333,6 +347,22 @@ export class RSIChart {
 
     this.midlineCrossMarkerEl.style.left = `${x}px`;
     this.midlineCrossMarkerEl.style.display = 'block';
+  }
+
+  private updateMidlineOverlayPosition(): void {
+    if (!this.midlineOverlayEl || !this.series) return;
+    const y = this.series.priceToCoordinate?.(50);
+    if (!Number.isFinite(y)) {
+      this.midlineOverlayEl.style.display = 'none';
+      return;
+    }
+    const height = this.container.clientHeight;
+    if (y < 0 || y > height) {
+      this.midlineOverlayEl.style.display = 'none';
+      return;
+    }
+    this.midlineOverlayEl.style.top = `${y}px`;
+    this.midlineOverlayEl.style.display = 'block';
   }
 
   isSyncSuppressed(): boolean {
@@ -506,6 +536,7 @@ export class RSIChart {
         this.midlinePriceLine = priceLine;
       }
     });
+    this.updateMidlineOverlayPosition();
   }
 
   setDisplayMode(mode: RSIDisplayMode): void {
@@ -548,6 +579,10 @@ export class RSIChart {
         lineStyle
       });
     }
+    if (this.midlineOverlayEl) {
+      this.midlineOverlayEl.style.borderTop = `1px ${this.midlineStyle === 'solid' ? 'solid' : 'dotted'} ${this.midlineColor}`;
+    }
+    this.updateMidlineOverlayPosition();
   }
 
   setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
@@ -577,6 +612,7 @@ export class RSIChart {
     }
 
     this.updateTimelineSeriesData();
+    this.updateMidlineOverlayPosition();
 
 
   }
@@ -852,6 +888,10 @@ export class RSIChart {
   destroy(): void {
     this.markerResizeObserver?.disconnect();
     this.markerResizeObserver = null;
+    if (this.midlineOverlayEl?.parentElement) {
+      this.midlineOverlayEl.parentElement.removeChild(this.midlineOverlayEl);
+    }
+    this.midlineOverlayEl = null;
     if (this.midlineCrossMarkerEl?.parentElement) {
       this.midlineCrossMarkerEl.parentElement.removeChild(this.midlineCrossMarkerEl);
     }
