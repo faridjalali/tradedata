@@ -625,7 +625,14 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="font-weight:600; margin-bottom:8px;">Price Settings</div>
+    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span>Vertical gridlines</span>
+      <input type="checkbox" data-price-setting="v-grid" />
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span>Horizontal gridlines</span>
+      <input type="checkbox" data-price-setting="h-grid" />
+    </label>
     <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
       <span>MA Source</span>
       <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
@@ -633,15 +640,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <option value="timeframe">Chart</option>
       </select>
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <span>Vertical month lines</span>
-      <input type="checkbox" data-price-setting="v-grid" />
-    </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <span>Horizontal gridlines</span>
-      <input type="checkbox" data-price-setting="h-grid" />
-    </label>
-    <div style="font-weight:600; margin-bottom:6px;">Moving Averages (max 4)</div>
+    <div style="font-weight:600; margin-bottom:6px;">Moving Averages</div>
     ${priceChartSettings.ma.map((_, i) => `
       <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; margin-bottom:6px;">
         <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
