@@ -12,6 +12,7 @@ let currentTicker: string | null = null;
 let currentInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
+let smaSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let priceLineTools: any = null;
 let isLoading = false;
@@ -86,6 +87,16 @@ function initializeCharts(): void {
       borderVisible: false,
       wickUpColor: '#3fb950',
       wickDownColor: '#f85149'
+    });
+
+    // Add 50-period SMA line series
+    smaSeries = priceChart.addLineSeries({
+      color: '#ffa500',  // Orange color
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: true,
+      title: 'SMA 50'
     });
 
     // No line tools for price chart - divergence tool only on RSI chart
@@ -184,6 +195,11 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Update price chart
     if (candleSeries) {
       candleSeries.setData(bars);
+    }
+
+    // Update SMA
+    if (smaSeries && data.sma) {
+      smaSeries.setData(data.sma);
     }
 
     // Initialize or update RSI chart
