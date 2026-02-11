@@ -117,7 +117,7 @@ function setLiveFeedMode(mode: LiveFeedMode) {
         const tickerView = document.getElementById('ticker-view');
         const ticker = tickerView?.dataset.ticker;
         if (ticker && !tickerView?.classList.contains('hidden')) {
-            renderTickerView(ticker);
+            renderTickerView(ticker, { refreshCharts: false });
         } else {
             renderOverview();
         }
@@ -268,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tickerView = document.getElementById('ticker-view');
                 const ticker = tickerView?.dataset.ticker;
                 if (ticker && !tickerView?.classList.contains('hidden')) {
-                    renderTickerView(ticker);
+                    renderTickerView(ticker, { refreshCharts: false });
                 } else {
                     renderOverview();
                 }

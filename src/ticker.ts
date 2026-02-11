@@ -12,13 +12,17 @@ let tickerDailySortMode: SortMode = 'time';
 let tickerWeeklySortMode: SortMode = 'time';
 let currentChartTicker: string | null = null;
 
+interface RenderTickerViewOptions {
+    refreshCharts?: boolean;
+}
+
 export function setTickerDailySort(mode: SortMode): void {
     tickerDailySortMode = mode;
     updateSortButtons('.ticker-daily-sort', mode);
     const tickerContainer = document.getElementById('ticker-view');
     if (!tickerContainer) return;
     const currentTicker = tickerContainer.dataset.ticker;
-    if (currentTicker) renderTickerView(currentTicker);
+    if (currentTicker) renderTickerView(currentTicker, { refreshCharts: false });
 }
 
 export function setTickerWeeklySort(mode: SortMode): void {
@@ -27,7 +31,7 @@ export function setTickerWeeklySort(mode: SortMode): void {
     const tickerContainer = document.getElementById('ticker-view');
     if (!tickerContainer) return;
     const currentTicker = tickerContainer.dataset.ticker;
-    if (currentTicker) renderTickerView(currentTicker);
+    if (currentTicker) renderTickerView(currentTicker, { refreshCharts: false });
 }
 
 // Helper to update active class on buttons
@@ -38,7 +42,8 @@ function updateSortButtons(selector: string, mode: SortMode): void {
     });
 }
 
-export function renderTickerView(ticker: string): void {
+export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
+    const refreshCharts = options.refreshCharts !== false;
     const allAlerts = getAlerts();
     const alerts = allAlerts.filter(a => a.ticker === ticker);
     
@@ -69,8 +74,10 @@ export function renderTickerView(ticker: string): void {
         }
     }
 
-    renderTradingViewChart(ticker);
-    renderCustomChart(ticker);
+    if (refreshCharts) {
+        renderTradingViewChart(ticker);
+        renderCustomChart(ticker);
+    }
 }
 
 function renderAvg(containerId: string, list: Alert[]): void {
