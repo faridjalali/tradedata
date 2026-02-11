@@ -60,8 +60,8 @@ function initializeCharts(): void {
         textColor: '#c9d1d9'
       },
       grid: {
-        vertLines: { color: '#21262d' },
-        horzLines: { color: '#21262d' }
+        vertLines: { visible: false },
+        horzLines: { visible: false }
       },
       timeScale: {
         timeVisible: true,

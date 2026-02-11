@@ -25,14 +25,14 @@ export class RSIChart {
 
     // Create RSI chart
     this.chart = LightweightCharts.createChart(options.container, {
-      height: 150,
+      height: 400,
       layout: {
         background: { color: '#0d1117' },
         textColor: '#c9d1d9'
       },
       grid: {
-        vertLines: { color: '#21262d' },
-        horzLines: { color: '#21262d' }
+        vertLines: { visible: false },
+        horzLines: { visible: false }
       },
       timeScale: {
         timeVisible: true,
@@ -161,7 +161,7 @@ export class RSIChart {
 
   resize(): void {
     if (this.chart) {
-      this.chart.resize(this.chart.options().width, 150);
+      this.chart.resize(this.chart.options().width, 400);
     }
   }
 
