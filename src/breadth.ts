@@ -20,7 +20,6 @@ export function getCurrentBreadthMetric(): string {
 }
 
 interface BreadthResponse {
-    intraday: boolean;
     points: BreadthDataPoint[];
 }
 
@@ -39,7 +38,7 @@ function normalize(values: number[]): number[] {
     return values.map(v => (v / base) * 100);
 }
 
-function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intraday: boolean): void {
+function renderBreadthChart(data: BreadthDataPoint[], compLabel: string): void {
     const canvas = document.getElementById('breadth-chart') as HTMLCanvasElement;
     if (!canvas) return;
 
@@ -50,18 +49,8 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
     }
 
     const labels = data.map(d => {
-        if (intraday) {
-            // Format as time: "10:00 AM"
-            const date = new Date(d.date);
-            return date.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                timeZone: 'America/New_York'
-            });
-        } else {
-            const date = new Date(d.date + 'T00:00:00');
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        }
+        const date = new Date(d.date + 'T00:00:00');
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
 
     const spyRaw = data.map(d => d.spy);
@@ -192,7 +181,7 @@ async function loadBreadth(): Promise<void> {
             return;
         }
 
-        renderBreadthChart(response.points, currentMetric, response.intraday);
+        renderBreadthChart(response.points, currentMetric);
     } catch (err) {
         console.error('Breadth load error:', err);
         if (loading) loading.style.display = 'none';

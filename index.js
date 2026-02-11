@@ -195,121 +195,82 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
     }
 });
 
-// --- Finnhub helper ---
-const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || '';
+// --- Alpha Vantage helper ---
+const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_KEY || '';
+const AV_BASE = 'https://www.alphavantage.co/query';
 
-async function finnhubCandles(symbol, resolution, from, to) {
-  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
+async function avDaily(symbol) {
+  const url = `${AV_BASE}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${ALPHA_VANTAGE_KEY}`;
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Finnhub ${resp.status}`);
+  if (!resp.ok) throw new Error(`Alpha Vantage ${resp.status}`);
   const data = await resp.json();
-  if (data.s !== 'ok') return null; // no_data
-  return data; // { c, h, l, o, t, v, s }
+  if (data['Error Message']) throw new Error(data['Error Message']);
+  if (data['Information']) throw new Error(data['Information']);
+  const series = data['Time Series (Daily)'];
+  if (!series) return null;
+  return Object.entries(series).map(([date, vals]) => ({
+    date,
+    close: parseFloat(vals['4. close'])
+  }));
 }
 
-// --- Breadth API (historical price comparison via Finnhub) ---
+// --- Cache that expires at next 4:01 PM ET each day ---
 const breadthCache = new Map();
-const BREADTH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
+function getNextCacheExpiry() {
+  // Calculate the next 4:01 PM ET timestamp
+  const now = new Date();
+  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const etNow = new Date(etStr);
+
+  // Build today's 4:01 PM ET
+  const target = new Date(etNow);
+  target.setHours(16, 1, 0, 0);
+
+  // If we're already past 4:01 PM ET today, next expiry is tomorrow 4:01 PM ET
+  if (etNow >= target) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  // Convert back to system time by computing the offset
+  const diffMs = target.getTime() - etNow.getTime();
+  return now.getTime() + diffMs;
+}
+
+function isCacheValid(entry) {
+  if (!entry) return false;
+  return Date.now() < entry.expiresAt;
+}
+
+// --- Breadth API (daily price comparison via Alpha Vantage) ---
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
   const days = Math.min(Math.max(parseInt(req.query.days) || 1, 1), 60);
-  const isIntraday = days === 1;
 
   const cacheKey = `${compTicker}_${days}`;
-  const cacheTTL = isIntraday ? 5 * 60 * 1000 : BREADTH_CACHE_TTL; // 5 min for intraday, 1h for daily
   const cached = breadthCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < cacheTTL) {
+  if (isCacheValid(cached)) {
     return res.json(cached.data);
   }
 
   try {
-    const nowEpoch = Math.floor(Date.now() / 1000);
+    // Sequential calls to respect Alpha Vantage 1 req/sec rate limit
+    const spyBars = await avDaily('SPY');
+    await new Promise(r => setTimeout(r, 1500));
+    const compBars = await avDaily(compTicker);
 
-    if (isIntraday) {
-      // Intraday: 30-minute bars for today
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const fromEpoch = Math.floor(todayStart.getTime() / 1000);
-
-      const [spyData, compData] = await Promise.all([
-        finnhubCandles('SPY', '30', fromEpoch, nowEpoch),
-        finnhubCandles(compTicker, '30', fromEpoch, nowEpoch)
-      ]);
-
-      if (!spyData || !compData) {
-        return res.status(404).json({ error: 'No intraday data available (market may be closed)' });
-      }
-
-      // Filter to regular trading hours (9:30-16:00 ET)
-      const isRegularHours = (epochSec) => {
-        const d = new Date(epochSec * 1000);
-        const etStr = d.toLocaleString('en-US', { timeZone: 'America/New_York' });
-        const et = new Date(etStr);
-        const totalMin = et.getHours() * 60 + et.getMinutes();
-        return totalMin >= 570 && totalMin <= 960; // 9:30 AM to 4:00 PM
-      };
-
-      // Round to 30-min bucket for matching
-      const roundTo30Min = (epochSec) => {
-        const d = new Date(epochSec * 1000);
-        d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0);
-        return d.getTime();
-      };
-
-      const spyMap = new Map();
-      for (let i = 0; i < spyData.t.length; i++) {
-        if (isRegularHours(spyData.t[i])) {
-          spyMap.set(roundTo30Min(spyData.t[i]), spyData.c[i]);
-        }
-      }
-
-      const compMap = new Map();
-      for (let i = 0; i < compData.t.length; i++) {
-        if (isRegularHours(compData.t[i])) {
-          compMap.set(roundTo30Min(compData.t[i]), compData.c[i]);
-        }
-      }
-
-      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort((a, b) => a - b);
-
-      const result = {
-        intraday: true,
-        points: commonKeys.map(k => ({
-          date: new Date(k).toISOString(),
-          spy: Math.round(spyMap.get(k) * 100) / 100,
-          comparison: Math.round(compMap.get(k) * 100) / 100
-        }))
-      };
-
-      breadthCache.set(cacheKey, { ts: Date.now(), data: result });
-      return res.json(result);
-    }
-
-    // Daily logic — use Finnhub daily candles
-    const bufferDays = Math.ceil(days * 1.8) + 5;
-    const fromEpoch = nowEpoch - bufferDays * 86400;
-
-    const [spyData, compData] = await Promise.all([
-      finnhubCandles('SPY', 'D', fromEpoch, nowEpoch),
-      finnhubCandles(compTicker, 'D', fromEpoch, nowEpoch)
-    ]);
-
-    if (!spyData || !compData) {
+    if (!spyBars || !compBars) {
       return res.status(404).json({ error: 'No price data available' });
     }
 
-    // Build date-keyed maps from Finnhub arrays
     const spyMap = new Map();
-    for (let i = 0; i < spyData.t.length; i++) {
-      const d = new Date(spyData.t[i] * 1000).toISOString().split('T')[0];
-      spyMap.set(d, spyData.c[i]);
+    for (const bar of spyBars) {
+      spyMap.set(bar.date, bar.close);
     }
 
     const compMap = new Map();
-    for (let i = 0; i < compData.t.length; i++) {
-      const d = new Date(compData.t[i] * 1000).toISOString().split('T')[0];
-      compMap.set(d, compData.c[i]);
+    for (const bar of compBars) {
+      compMap.set(bar.date, bar.close);
     }
 
     const commonDates = [...spyMap.keys()]
@@ -327,7 +288,7 @@ app.get('/api/breadth', async (req, res) => {
       }))
     };
 
-    breadthCache.set(cacheKey, { ts: Date.now(), data: result });
+    breadthCache.set(cacheKey, { expiresAt: getNextCacheExpiry(), data: result });
     res.json(result);
   } catch (err) {
     console.error('Breadth API Error:', err);
