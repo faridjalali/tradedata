@@ -29,7 +29,7 @@ export class RSIChart {
 
   constructor(options: RSIChartOptions) {
     this.displayMode = options.displayMode;
-    this.data = options.data;
+    this.data = this.normalizeRSIData(options.data);
     this.priceData = options.priceData || [];
 
     // Create RSI chart
@@ -78,6 +78,14 @@ export class RSIChart {
         this.detectAndHighlightDivergence(param.time);
       }
     });
+  }
+
+  private normalizeRSIData(data: RSIPoint[]): RSIPoint[] {
+    return data.filter((point) => (
+      point &&
+      (typeof point.time === 'string' || typeof point.time === 'number') &&
+      Number.isFinite(Number(point.value))
+    ));
   }
 
   private addReferenceLine(value: number, label: string, color: string): void {
@@ -157,16 +165,16 @@ export class RSIChart {
   }
 
   setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
-    this.data = data;
+    this.data = this.normalizeRSIData(data);
     if (priceData) {
       this.priceData = priceData;
     }
 
     if (this.series) {
       if (this.displayMode === 'line') {
-        this.series.setData(data);
+        this.series.setData(this.data);
       } else {
-        this.series.setData(data.map(d => ({
+        this.series.setData(this.data.map(d => ({
           time: d.time,
           value: d.value,
           color: '#58a6ff'

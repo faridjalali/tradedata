@@ -702,23 +702,32 @@ app.get('/api/chart', async (req, res) => {
       bars = intradayBars;
     }
 
-    // Convert to LA timezone and reverse to chronological order
-    const convertedBars = convertToLATime(bars, interval).reverse();
+    // Convert to LA timezone and sort chronologically.
+    const convertedBars = convertToLATime(bars, interval).sort((a, b) => {
+      if (interval === '1day') {
+        return String(a.time).localeCompare(String(b.time));
+      }
+      return Number(a.time) - Number(b.time);
+    });
+
+    if (convertedBars.length === 0) {
+      return res.status(404).json({ error: 'No valid chart bars available for this ticker' });
+    }
 
     // Calculate RSI
     const closePrices = convertedBars.map(b => b.close);
     const rsiValues = calculateRSI(closePrices, 14);
 
-    // Padding RSI with nulls to match bar length
-    const rsi = convertedBars.map((bar, i) => {
-      if (i < 14) {
-        return { time: bar.time, value: NaN };
-      }
-      return {
-        time: bar.time,
-        value: Math.round(rsiValues[i - 14] * 100) / 100
-      };
-    });
+    // RSI values begin after the warmup period. Keep only finite points.
+    const rsi = [];
+    for (let i = 14; i < convertedBars.length; i++) {
+      const raw = rsiValues[i - 14];
+      if (!Number.isFinite(raw)) continue;
+      rsi.push({
+        time: convertedBars[i].time,
+        value: Math.round(raw * 100) / 100
+      });
+    }
 
     const result = {
       interval,

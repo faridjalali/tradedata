@@ -1,12 +1,14 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import { fetchChartData, ChartInterval, RSIPoint } from './chartApi';
+import { fetchChartData, ChartInterval } from './chartApi';
 import { RSIChart } from './rsi';
 
 let currentChartTicker: string | null = null;
+let currentChartInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
-let isLoading = false;
+let chartResizeObserver: ResizeObserver | null = null;
+let latestRenderRequestId = 0;
 
 // Create price chart
 function createPriceChart(container: HTMLElement) {
@@ -44,9 +46,43 @@ function createPriceChart(container: HTMLElement) {
   return { chart, series };
 }
 
-export async function renderCustomChart(ticker: string, interval: ChartInterval = '1day') {
-  if (isLoading) return;
-  isLoading = true;
+function normalizeCandleBars(bars: any[]): any[] {
+  return bars.filter((bar) => (
+    bar &&
+    (typeof bar.time === 'string' || typeof bar.time === 'number') &&
+    Number.isFinite(Number(bar.open)) &&
+    Number.isFinite(Number(bar.high)) &&
+    Number.isFinite(Number(bar.low)) &&
+    Number.isFinite(Number(bar.close))
+  ));
+}
+
+function ensureResizeObserver(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
+  if (chartResizeObserver) return;
+
+  chartResizeObserver = new ResizeObserver(() => {
+    if (!priceChart) return;
+
+    const chartRect = chartContainer.getBoundingClientRect();
+    const rsiRect = rsiContainer.getBoundingClientRect();
+    const priceWidth = Math.max(1, Math.floor(chartRect.width));
+    const priceHeight = Math.max(1, Math.floor(chartRect.height));
+    const rsiWidth = Math.max(1, Math.floor(rsiRect.width));
+    const rsiHeight = Math.max(1, Math.floor(rsiRect.height));
+
+    priceChart.applyOptions({ width: priceWidth, height: priceHeight });
+    if (rsiChart) {
+      rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
+    }
+  });
+
+  chartResizeObserver.observe(chartContainer);
+  chartResizeObserver.observe(rsiContainer);
+}
+
+export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
+  const requestId = ++latestRenderRequestId;
+  currentChartInterval = interval;
 
   const chartContainer = document.getElementById('price-chart-container');
   const rsiContainer = document.getElementById('rsi-chart-container');
@@ -54,7 +90,6 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
   if (!chartContainer || !rsiContainer || !errorContainer) {
     console.error('Chart containers not found');
-    isLoading = false;
     return;
   }
 
@@ -70,12 +105,18 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     setupChartSync();
   }
 
+  ensureResizeObserver(chartContainer, rsiContainer);
+
   try {
     // Fetch data from API
     const data = await fetchChartData(ticker, interval);
+    if (requestId !== latestRenderRequestId) return;
 
     // Retrieve bars and RSI directly (backend handles aggregation)
-    const bars = data.bars;
+    const bars = normalizeCandleBars(data.bars || []);
+    if (bars.length === 0) {
+      throw new Error('No valid chart bars returned for this ticker/interval');
+    }
     const rsiData = data.rsi;
 
     // Update price chart
@@ -98,25 +139,11 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     }
 
     currentChartTicker = ticker;
-
-    // Handle resize
-    const resizeObserver = new ResizeObserver(entries => {
-      if (entries.length === 0 || !entries[0].contentRect) return;
-      const { width, height } = entries[0].contentRect;
-      priceChart.applyOptions({ width, height });
-      if (rsiChart) {
-        rsiChart.getChart().applyOptions({ width, height });
-      }
-    });
-    resizeObserver.observe(chartContainer);
-    resizeObserver.observe(rsiContainer);
-
   } catch (err: any) {
+    if (requestId !== latestRenderRequestId) return;
     console.error('Failed to load chart:', err);
     errorContainer.textContent = `Error loading chart: ${err.message}`;
     errorContainer.style.display = 'block';
-  } finally {
-    isLoading = false;
   }
 }
 
@@ -217,8 +244,9 @@ export function initChartControls() {
   // Interval buttons
   controls.querySelectorAll('button[data-interval]').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
+      const target = e.currentTarget as HTMLElement;
       const interval = target.getAttribute('data-interval') as ChartInterval;
+      if (!interval) return;
 
       // Update active state
       controls.querySelectorAll('button[data-interval]').forEach(b => b.classList.remove('active'));
@@ -242,8 +270,9 @@ export function initChartControls() {
   // RSI Display Mode
   controls.querySelectorAll('button[data-mode]').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
+      const target = e.currentTarget as HTMLElement;
       const mode = target.getAttribute('data-mode') as any;
+      if (!mode) return;
 
       controls.querySelectorAll('button[data-mode]').forEach(b => b.classList.remove('active'));
       target.classList.add('active');
