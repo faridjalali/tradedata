@@ -28,8 +28,8 @@ function createPriceChart(container: HTMLElement) {
       borderColor: '#2b2b43',
     },
     timeScale: {
-      borderColor: '#2b2b43',
-      timeVisible: true,
+      visible: false,
+      borderVisible: false,
     },
   });
 
