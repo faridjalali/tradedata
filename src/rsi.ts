@@ -148,6 +148,18 @@ export class RSIChart {
       return;
     }
 
+    const visibleLogical = this.chart.timeScale().getVisibleLogicalRange();
+    if (
+      !visibleLogical ||
+      !Number.isFinite(visibleLogical.from) ||
+      !Number.isFinite(visibleLogical.to) ||
+      this.midlineCrossLogical < visibleLogical.from ||
+      this.midlineCrossLogical > visibleLogical.to
+    ) {
+      this.midlineCrossMarkerEl.style.display = 'none';
+      return;
+    }
+
     const x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossLogical);
     if (!Number.isFinite(x)) {
       this.midlineCrossMarkerEl.style.display = 'none';
@@ -446,6 +458,7 @@ export class RSIChart {
 
     // Create trend line data points extending to the right edge
     const trendLineData: RSIPoint[] = [];
+    let maxTrendIndex = index1;
 
     // Start from first point and extend to the last data point
     for (let i = index1; i < this.data.length; i++) {
@@ -454,6 +467,7 @@ export class RSIChart {
       if (projectedValue < 0 || projectedValue > 100) {
         break;
       }
+      maxTrendIndex = i;
       trendLineData.push({
         time: this.data[i].time,
         value: projectedValue
@@ -484,7 +498,7 @@ export class RSIChart {
     }
 
     const crossIndex = index1 + (midlineValue - value1) / slope;
-    if (!Number.isFinite(crossIndex) || crossIndex < index1 || crossIndex > this.data.length - 1) {
+    if (!Number.isFinite(crossIndex) || crossIndex < index1 || crossIndex > maxTrendIndex) {
       this.setMidlineCrossLogical(null);
       return;
     }
