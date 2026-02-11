@@ -9,6 +9,12 @@ let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let chartResizeObserver: ResizeObserver | null = null;
 let latestRenderRequestId = 0;
+let priceByTime = new Map<string, number>();
+let rsiByTime = new Map<string, number>();
+
+function timeKey(time: string | number): string {
+  return typeof time === 'number' ? String(time) : time;
+}
 
 // Create price chart
 function createPriceChart(container: HTMLElement) {
@@ -118,6 +124,14 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       throw new Error('No valid chart bars returned for this ticker/interval');
     }
     const rsiData = data.rsi;
+    priceByTime = new Map(
+      bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
+    );
+    rsiByTime = new Map(
+      (rsiData || [])
+        .filter((point) => Number.isFinite(Number(point.value)))
+        .map((point) => [timeKey(point.time), Number(point.value)])
+    );
 
     // Update price chart
     if (candleSeries) {
@@ -153,7 +167,11 @@ function syncChartsToPriceRange(): void {
   if (!priceChart || !rsiChart) return;
   const priceRange = priceChart.timeScale().getVisibleRange();
   if (!priceRange) return;
-  rsiChart.getChart().timeScale().setVisibleRange(priceRange);
+  try {
+    rsiChart.getChart().timeScale().setVisibleRange(priceRange);
+  } catch {
+    // Ignore transient range sync errors during live updates.
+  }
 }
 
 // Setup sync between price and RSI charts
@@ -188,10 +206,18 @@ function setupChartSync() {
       rsiChartInstance.clearCrosshairPosition();
       return;
     }
-    // Sync vertical line only (price=NaN)
+    const mappedValue = rsiByTime.get(timeKey(param.time));
+    if (!Number.isFinite(mappedValue)) {
+      rsiChartInstance.clearCrosshairPosition();
+      return;
+    }
     const rsiSeries = rsiChart?.getSeries();
     if (rsiSeries) {
-      rsiChartInstance.setCrosshairPosition(NaN, param.time, rsiSeries);
+      try {
+        rsiChartInstance.setCrosshairPosition(mappedValue, param.time, rsiSeries);
+      } catch {
+        rsiChartInstance.clearCrosshairPosition();
+      }
     }
   });
 
@@ -200,9 +226,17 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       return;
     }
-    // Sync vertical line only (price=NaN)
+    const mappedValue = priceByTime.get(timeKey(param.time));
+    if (!Number.isFinite(mappedValue)) {
+      priceChart.clearCrosshairPosition();
+      return;
+    }
     if (candleSeries) {
-      priceChart.setCrosshairPosition(NaN, param.time, candleSeries);
+      try {
+        priceChart.setCrosshairPosition(mappedValue, param.time, candleSeries);
+      } catch {
+        priceChart.clearCrosshairPosition();
+      }
     }
   });
 }
