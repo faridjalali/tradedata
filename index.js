@@ -315,22 +315,20 @@ function convertToLATime(bars, interval) {
       };
     }
 
-    // Intraday: Convert ET to LA timezone
+    // Intraday: Convert ET to LA timezone and use Unix timestamp
     // FMP returns datetime like "2025-08-10 09:30:00" in ET
     const etDate = new Date(bar.datetime + ' GMT-0500'); // ET is GMT-5 (or GMT-4 during DST)
+
+    // Convert to LA timezone
     const laDate = new Date(etDate.toLocaleString('en-US', {
       timeZone: 'America/Los_Angeles'
     }));
 
-    // Format for Lightweight Charts: "YYYY-MM-DD HH:MM"
-    const yyyy = laDate.getFullYear();
-    const mm = String(laDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(laDate.getDate()).padStart(2, '0');
-    const hh = String(laDate.getHours()).padStart(2, '0');
-    const min = String(laDate.getMinutes()).padStart(2, '0');
+    // Use Unix timestamp (seconds) for Lightweight Charts intraday data
+    const timestamp = Math.floor(laDate.getTime() / 1000);
 
     return {
-      time: `${yyyy}-${mm}-${dd} ${hh}:${min}`,
+      time: timestamp,
       open: bar.open,
       high: bar.high,
       low: bar.low,
