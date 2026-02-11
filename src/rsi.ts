@@ -92,9 +92,11 @@ export class RSIChart {
         borderColor: '#21262d',
         minimumWidth: RSIChart.SCALE_MIN_WIDTH_PX,
         entireTextOnly: true,
+        // Default view: 20-80 range (20% margin top + 20% margin bottom)
+        // User can adjust but won't go beyond 0-100 data bounds
         scaleMargins: {
-          top: 0.1,
-          bottom: 0.1
+          top: 0.2,    // 20% margin = hides 0-20 by default
+          bottom: 0.2  // 20% margin = hides 80-100 by default
         }
       },
       crosshair: {
@@ -166,10 +168,12 @@ export class RSIChart {
   }
 
   private fixedRSIAutoscaleInfoProvider(): any {
+    // Return the FULL valid data range (0-100)
+    // This allows user adjustment but locks to these bounds
     return {
       priceRange: {
-        minValue: RSIChart.RSI_AXIS_MIN,
-        maxValue: RSIChart.RSI_AXIS_MAX
+        minValue: RSIChart.RSI_DATA_MIN,  // 0
+        maxValue: RSIChart.RSI_DATA_MAX   // 100
       }
     };
   }
