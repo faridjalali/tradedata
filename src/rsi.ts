@@ -19,6 +19,7 @@ export class RSIChart {
   private lineTools: any;
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
+  private seriesData: any[] = [];
   private referenceLines: Array<{value: number, label: string, color: string}> = [];
   private priceData: Array<{time: string | number, close: number}> = [];
   private divergenceToolActive: boolean = false;
@@ -31,6 +32,7 @@ export class RSIChart {
     this.displayMode = options.displayMode;
     this.data = this.normalizeRSIData(options.data);
     this.priceData = options.priceData || [];
+    this.seriesData = this.buildSeriesData(this.data, this.priceData);
 
     // Create RSI chart
     this.chart = LightweightCharts.createChart(options.container, {
@@ -88,6 +90,27 @@ export class RSIChart {
     ));
   }
 
+  private buildSeriesData(
+    data: RSIPoint[],
+    priceData: Array<{time: string | number, close: number}>
+  ): any[] {
+    if (!priceData || priceData.length === 0) return data;
+
+    const rsiByTime = new Map<string, number>();
+    for (const point of data) {
+      rsiByTime.set(String(point.time), Number(point.value));
+    }
+
+    return priceData.map((pricePoint) => {
+      const value = rsiByTime.get(String(pricePoint.time));
+      if (Number.isFinite(value)) {
+        return { time: pricePoint.time, value };
+      }
+      // Whitespace data keeps timeline aligned without drawing a value.
+      return { time: pricePoint.time };
+    });
+  }
+
   private addReferenceLine(value: number, label: string, color: string): void {
     // Store config for later series recreations
     this.referenceLines.push({ value, label, color });
@@ -135,14 +158,19 @@ export class RSIChart {
 
     // Set data
     if (this.displayMode === 'line') {
-      this.series.setData(this.data);
+      this.series.setData(this.seriesData);
     } else {
       // For histogram (points mode), convert to histogram format
-      this.series.setData(this.data.map(d => ({
-        time: d.time,
-        value: d.value,
-        color: '#58a6ff'
-      })));
+      this.series.setData(this.seriesData.map(d => {
+        if (Number.isFinite(Number(d.value))) {
+          return {
+            time: d.time,
+            value: d.value,
+            color: '#58a6ff'
+          };
+        }
+        return { time: d.time };
+      }));
     }
 
     // Add reference lines (midline) to the new series
@@ -169,16 +197,22 @@ export class RSIChart {
     if (priceData) {
       this.priceData = priceData;
     }
+    this.seriesData = this.buildSeriesData(this.data, this.priceData);
 
     if (this.series) {
       if (this.displayMode === 'line') {
-        this.series.setData(this.data);
+        this.series.setData(this.seriesData);
       } else {
-        this.series.setData(this.data.map(d => ({
-          time: d.time,
-          value: d.value,
-          color: '#58a6ff'
-        })));
+        this.series.setData(this.seriesData.map(d => {
+          if (Number.isFinite(Number(d.value))) {
+            return {
+              time: d.time,
+              value: d.value,
+              color: '#58a6ff'
+            };
+          }
+          return { time: d.time };
+        }));
       }
     }
 

@@ -162,13 +162,23 @@ function setupChartSync() {
 
   const rsiChartInstance = rsiChart.getChart();
   let isSyncingFromPrice = false;
+  let isSyncingFromRSI = false;
 
   // Sync price chart → RSI chart by visible time range to avoid drift when datasets differ.
   priceChart.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
-    if (timeRange && !isSyncingFromPrice) {
+    if (timeRange && !isSyncingFromRSI) {
       isSyncingFromPrice = true;
       rsiChartInstance.timeScale().setVisibleRange(timeRange);
       isSyncingFromPrice = false;
+    }
+  });
+
+  // Sync RSI chart → price chart.
+  rsiChartInstance.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
+    if (timeRange && !isSyncingFromPrice) {
+      isSyncingFromRSI = true;
+      priceChart.timeScale().setVisibleRange(timeRange);
+      isSyncingFromRSI = false;
     }
   });
 
