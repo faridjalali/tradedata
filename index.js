@@ -432,6 +432,109 @@ function isFmpSubscriptionRestrictedError(err) {
   return /Restricted Endpoint|Legacy Endpoint|current subscription/i.test(message);
 }
 
+const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
+const VD_RSI_LOWER_TF_CACHE = new Map();
+const VD_RSI_RESULT_CACHE = new Map();
+
+function easternLocalToUtcMs(year, month, day, hour, minute) {
+  const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const etOffset = probe.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    timeZoneName: 'short'
+  }).includes('EST') ? -5 : -4;
+  return Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
+}
+
+function isEtWeekday(dateEt) {
+  const day = dateEt.getDay();
+  return day >= 1 && day <= 5;
+}
+
+function isEtRegularHours(dateEt) {
+  if (!isEtWeekday(dateEt)) return false;
+  const totalMinutes = dateEt.getHours() * 60 + dateEt.getMinutes();
+  return totalMinutes >= 570 && totalMinutes < 960; // 09:30-15:59 ET
+}
+
+function nextEtMarketOpenUtcMs(nowUtc = new Date()) {
+  const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const candidate = new Date(nowEt);
+  const totalMinutes = candidate.getHours() * 60 + candidate.getMinutes();
+
+  if (!(isEtWeekday(candidate) && totalMinutes < 570)) {
+    candidate.setDate(candidate.getDate() + 1);
+    while (!isEtWeekday(candidate)) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+  }
+
+  return easternLocalToUtcMs(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    candidate.getDate(),
+    9,
+    30
+  );
+}
+
+function todayEtMarketCloseUtcMs(nowUtc = new Date()) {
+  const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  return easternLocalToUtcMs(
+    nowEt.getFullYear(),
+    nowEt.getMonth() + 1,
+    nowEt.getDate(),
+    16,
+    0
+  );
+}
+
+function getVdRsiCacheExpiryMs(nowUtc = new Date()) {
+  const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (isEtRegularHours(nowEt)) {
+    const plusTwoHoursMs = nowUtc.getTime() + VD_RSI_REGULAR_HOURS_CACHE_MS;
+    const closeTodayMs = todayEtMarketCloseUtcMs(nowUtc);
+    if (plusTwoHoursMs <= closeTodayMs) {
+      return plusTwoHoursMs;
+    }
+    return nextEtMarketOpenUtcMs(nowUtc);
+  }
+  return nextEtMarketOpenUtcMs(nowUtc);
+}
+
+function getTimedCacheValue(cacheMap, key) {
+  const entry = cacheMap.get(key);
+  if (!entry) return null;
+  if (!Number.isFinite(entry.expiresAt) || entry.expiresAt <= Date.now()) {
+    cacheMap.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setTimedCacheValue(cacheMap, key, value, expiresAt) {
+  cacheMap.set(key, {
+    value,
+    expiresAt: Number.isFinite(expiresAt) ? expiresAt : getVdRsiCacheExpiryMs(new Date())
+  });
+}
+
+function sweepExpiredTimedCache(cacheMap) {
+  const now = Date.now();
+  for (const [key, entry] of cacheMap.entries()) {
+    if (!entry || !Number.isFinite(entry.expiresAt) || entry.expiresAt <= now) {
+      cacheMap.delete(key);
+    }
+  }
+}
+
+const vdRsiCacheCleanupTimer = setInterval(() => {
+  sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
+  sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
+}, 15 * 60 * 1000);
+if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
+  vdRsiCacheCleanupTimer.unref();
+}
+
 async function fmpIntraday(symbol, interval, options = {}) {
   const { from, to } = options;
   const symbolEncoded = encodeURIComponent(symbol);
@@ -1014,19 +1117,36 @@ app.get('/api/chart', async (req, res) => {
     }
 
     let volumeDeltaRsi = { rsi: [] };
+    const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
+    const firstBarTime = convertedBars[0]?.time ?? '';
+    const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
+    const vdRsiResultCacheKey = `${ticker}|${interval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+    const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
+    if (cachedVolumeDeltaRsi) {
+      volumeDeltaRsi = cachedVolumeDeltaRsi;
+    } else {
     try {
       let lowerTfBars = [];
       if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
         // Reuse already-fetched bars when chart interval matches the lower timeframe.
         lowerTfBars = convertedBars;
       } else {
-        const lowerTfRows = await fmpIntradayChartHistory(
-          ticker,
-          VOLUME_DELTA_RSI_LOWER_TF,
-          VOLUME_DELTA_RSI_LOOKBACK_DAYS
-        );
-        lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-          .sort((a, b) => Number(a.time) - Number(b.time));
+        const lowerTfCacheKey = `${ticker}|${VOLUME_DELTA_RSI_LOWER_TF}|${VOLUME_DELTA_RSI_LOOKBACK_DAYS}`;
+        const cachedLowerTfBars = getTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey);
+        if (cachedLowerTfBars) {
+          lowerTfBars = cachedLowerTfBars;
+        } else {
+          const lowerTfRows = await fmpIntradayChartHistory(
+            ticker,
+            VOLUME_DELTA_RSI_LOWER_TF,
+            VOLUME_DELTA_RSI_LOOKBACK_DAYS
+          );
+          lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+            .sort((a, b) => Number(a.time) - Number(b.time));
+          if (lowerTfBars.length > 0) {
+            setTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey, lowerTfBars, cacheExpiryMs);
+          }
+        }
       }
       if (lowerTfBars.length > 0) {
         volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
@@ -1035,10 +1155,12 @@ app.get('/api/chart', async (req, res) => {
           interval,
           { rsiLength: vdRsiLength }
         );
+        setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
       }
     } catch (volumeDeltaErr) {
       const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
       console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
+    }
     }
 
     const result = {
