@@ -332,7 +332,8 @@ async function fmpDaily(symbol) {
   const normalized = rows.map((row) => {
     const dateRaw = typeof row.date === 'string' ? row.date.trim() : '';
     const date = dateRaw ? dateRaw.slice(0, 10) : null;
-    const close = toNumberOrNull(row.price ?? row.close);
+    // Prefer explicit OHLC values from full endpoints.
+    const close = toNumberOrNull(row.close ?? row.price);
     const open = toNumberOrNull(row.open) ?? close;
     const high = toNumberOrNull(row.high) ?? close;
     const low = toNumberOrNull(row.low) ?? close;
@@ -342,7 +343,9 @@ async function fmpDaily(symbol) {
       return null;
     }
 
-    return { date, open, high, low, close, volume };
+    const boundedHigh = Math.max(high, open, close);
+    const boundedLow = Math.min(low, open, close);
+    return { date, open, high: boundedHigh, low: boundedLow, close, volume };
   }).filter(Boolean);
 
   return normalized.length ? normalized : null;
