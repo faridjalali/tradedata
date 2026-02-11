@@ -223,7 +223,7 @@ function handleDrawingTool(tool: string): void {
       document.querySelectorAll('#drawing-tools .tf-btn').forEach(btn => {
         btn.classList.remove('active');
         if (btn.getAttribute('data-tool') === 'trend') {
-            btn.innerHTML = '🔍';
+            btn.innerHTML = '/';
         }
       });
     } else if (tool === 'trend') {
@@ -232,12 +232,12 @@ function handleDrawingTool(tool: string): void {
         // Deactivate
         rsiChart.deactivateDivergenceTool();
         btn.classList.remove('active');
-        btn.innerHTML = '🔍';
+        btn.innerHTML = '/';
       } else {
         // Activate
         rsiChart.activateDivergenceTool();
         btn?.classList.add('active');
-        if (btn) btn.innerHTML = '✨Scanner Active';
+        if (btn) btn.innerHTML = '/';
       }
     }
   } catch (error) {
