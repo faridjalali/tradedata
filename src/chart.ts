@@ -5,6 +5,7 @@ import { RSIChart } from './rsi';
 
 // Declare Lightweight Charts global
 declare const LightweightCharts: any;
+declare const LightweightChartsLineTools: any;
 
 // Chart state
 let currentTicker: string | null = null;
@@ -12,6 +13,7 @@ let currentInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
+let priceLineTools: any = null;
 let isLoading = false;
 
 // DOM elements
@@ -82,6 +84,11 @@ function initializeCharts(): void {
       wickUpColor: '#3fb950',
       wickDownColor: '#f85149'
     });
+
+    // Initialize line tools for price chart
+    if (typeof LightweightChartsLineTools !== 'undefined') {
+      priceLineTools = new LightweightChartsLineTools.LineTools(priceChart);
+    }
   }
 }
 
@@ -94,6 +101,18 @@ function setupEventListeners(): void {
       const interval = target.dataset.interval as ChartInterval;
       if (interval && currentTicker) {
         setTimeframe(interval);
+      }
+    });
+  });
+
+  // Drawing tools
+  const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
+  drawingButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const tool = target.dataset.tool;
+      if (tool) {
+        handleDrawingTool(tool);
       }
     });
   });
@@ -178,6 +197,9 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
 
     // Hide loading, show content
     hideLoading();
+
+    // Load saved drawings after a short delay to ensure charts are fully rendered
+    setTimeout(() => loadDrawings(), 100);
   } catch (error) {
     console.error('Failed to load chart data:', error);
     showError(error instanceof Error ? error.message : 'Failed to load chart data');
@@ -221,6 +243,112 @@ function synchronizeCharts(): void {
     }
     priceChart.setCrosshairPosition(param.logical, param.time);
   });
+}
+
+function handleDrawingTool(tool: string): void {
+  if (!priceLineTools) return;
+
+  if (tool === 'clear') {
+    // Clear all drawings from both price and RSI charts
+    priceLineTools.clearDrawings();
+    if (rsiChart) {
+      const rsiLineTools = rsiChart.getLineTools();
+      if (rsiLineTools) {
+        rsiLineTools.clearDrawings();
+      }
+    }
+
+    // Clear from localStorage
+    if (currentTicker && currentInterval) {
+      localStorage.removeItem(`drawings_price_${currentTicker}_${currentInterval}`);
+      localStorage.removeItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
+    }
+
+    // Remove active state from all tool buttons
+    const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
+    drawingButtons.forEach(btn => btn.classList.remove('active'));
+
+    return;
+  }
+
+  // Activate drawing tool
+  const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
+  drawingButtons.forEach(btn => {
+    if ((btn as HTMLElement).dataset.tool === tool) {
+      btn.classList.toggle('active');
+    } else if ((btn as HTMLElement).dataset.tool !== 'clear') {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Activate the appropriate tool
+  switch (tool) {
+    case 'trend':
+      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.TREND_LINE);
+      break;
+    case 'horizontal':
+      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.HORIZONTAL_LINE);
+      break;
+    case 'ray':
+      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.RAY);
+      break;
+  }
+
+  // Set up auto-save on drawing complete
+  setupDrawingSaveHandler();
+}
+
+function setupDrawingSaveHandler(): void {
+  if (!priceLineTools) return;
+
+  // Save drawings when a drawing is added or modified
+  priceLineTools.onDrawingAdded(() => saveDrawings());
+  priceLineTools.onDrawingModified(() => saveDrawings());
+  priceLineTools.onDrawingRemoved(() => saveDrawings());
+}
+
+function saveDrawings(): void {
+  if (!currentTicker || !currentInterval || !priceLineTools) return;
+
+  try {
+    const priceDrawings = priceLineTools.exportDrawings();
+    localStorage.setItem(`drawings_price_${currentTicker}_${currentInterval}`, priceDrawings);
+
+    if (rsiChart) {
+      const rsiLineTools = rsiChart.getLineTools();
+      if (rsiLineTools) {
+        const rsiDrawings = rsiLineTools.exportDrawings();
+        localStorage.setItem(`drawings_rsi_${currentTicker}_${currentInterval}`, rsiDrawings);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to save drawings:', error);
+  }
+}
+
+function loadDrawings(): void {
+  if (!currentTicker || !currentInterval || !priceLineTools) return;
+
+  try {
+    // Load price chart drawings
+    const priceDrawingsStr = localStorage.getItem(`drawings_price_${currentTicker}_${currentInterval}`);
+    if (priceDrawingsStr) {
+      priceLineTools.importDrawings(priceDrawingsStr);
+    }
+
+    // Load RSI chart drawings
+    if (rsiChart) {
+      const rsiLineTools = rsiChart.getLineTools();
+      if (rsiLineTools) {
+        const rsiDrawingsStr = localStorage.getItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
+        if (rsiDrawingsStr) {
+          rsiLineTools.importDrawings(rsiDrawingsStr);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load drawings:', error);
+  }
 }
 
 function showLoading(): void {

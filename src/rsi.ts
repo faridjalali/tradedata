@@ -4,6 +4,7 @@ import { RSIPoint, RSIDisplayMode } from './chartApi';
 
 // Declare Lightweight Charts global
 declare const LightweightCharts: any;
+declare const LightweightChartsLineTools: any;
 
 export interface RSIChartOptions {
   container: HTMLElement;
@@ -14,6 +15,7 @@ export interface RSIChartOptions {
 export class RSIChart {
   private chart: any;
   private series: any;
+  private lineTools: any;
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
 
@@ -55,6 +57,11 @@ export class RSIChart {
 
     // Add RSI series based on display mode
     this.updateSeries();
+
+    // Initialize line tools for RSI chart
+    if (typeof LightweightChartsLineTools !== 'undefined') {
+      this.lineTools = new LightweightChartsLineTools.LineTools(this.chart);
+    }
   }
 
   private addReferenceLine(value: number, label: string, color: string): void {
@@ -142,6 +149,10 @@ export class RSIChart {
 
   getSeries(): any {
     return this.series;
+  }
+
+  getLineTools(): any {
+    return this.lineTools;
   }
 
   resize(): void {
