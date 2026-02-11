@@ -382,7 +382,9 @@ export class RSIChart {
         index: clickedIndex
       };
 
-      // Find all future points with divergence (lower RSI, higher price)
+      // Find all future points with divergence in either direction:
+      // 1) lower RSI + higher price (bearish)
+      // 2) higher RSI + lower price (bullish)
       this.divergencePoints = [];
 
       for (let i = clickedIndex + 1; i < this.data.length; i++) {
@@ -392,8 +394,9 @@ export class RSIChart {
         if (currentPricePoint) {
           const currentPrice = currentPricePoint.close;
 
-          // Check divergence conditions: RSI lower AND price higher
-          if (currentRSI < clickedRSI && currentPrice > clickedPrice) {
+          const bearishDivergence = currentRSI < clickedRSI && currentPrice > clickedPrice;
+          const bullishDivergence = currentRSI > clickedRSI && currentPrice < clickedPrice;
+          if (bearishDivergence || bullishDivergence) {
             this.divergencePoints.push(this.data[i]);
           }
         }
