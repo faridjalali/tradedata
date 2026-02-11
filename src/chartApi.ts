@@ -22,6 +22,10 @@ export interface ChartData {
   timezone: 'America/Los_Angeles';
   bars: CandleBar[];
   rsi: RSIPoint[];
+  volumeDeltaRsi: {
+    rsi: RSIPoint[];
+    signal: RSIPoint[];
+  };
 
 }
 

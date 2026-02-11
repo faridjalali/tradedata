@@ -816,6 +816,7 @@ button:hover {
 }
 
 #price-chart-container,
+#vd-rsi-chart-container,
 #rsi-chart-container {
   position: relative;
   border-radius: 6px;
@@ -824,6 +825,10 @@ button:hover {
 }
 
 #price-chart-container {
+  border: 1px solid var(--border-color);
+}
+
+#vd-rsi-chart-container {
   border: 1px solid var(--border-color);
 }
 
@@ -842,6 +847,10 @@ button:hover {
 
   #price-chart-container {
     height: 300px !important;
+  }
+
+  #vd-rsi-chart-container {
+    height: 200px !important;
   }
 
   #rsi-chart-container {

@@ -427,6 +427,11 @@ function addUtcDays(date, days) {
   return next;
 }
 
+function isFmpSubscriptionRestrictedError(err) {
+  const message = String(err && err.message ? err.message : err || '');
+  return /Restricted Endpoint|Legacy Endpoint|current subscription/i.test(message);
+}
+
 async function fmpIntraday(symbol, interval, options = {}) {
   const { from, to } = options;
   const symbolEncoded = encodeURIComponent(symbol);
@@ -464,6 +469,7 @@ async function fmpIntraday(symbol, interval, options = {}) {
 
 const CHART_INTRADAY_LOOKBACK_DAYS = 365;
 const CHART_INTRADAY_SLICE_DAYS = {
+  '1min': 3,
   '5min': 7,
   '15min': 30,
   '30min': 30,
@@ -500,6 +506,9 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       lastSliceError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
+      if (isFmpSubscriptionRestrictedError(err)) {
+        throw err;
+      }
     }
 
     cursor = addUtcDays(sliceEnd, 1);
@@ -607,6 +616,215 @@ function calculateRSI(closePrices, period = 14) {
 
   rsiValues[0] = rsiValues[1] ?? 50;
   return rsiValues;
+}
+
+function calculateSMA(values, length = 1) {
+  const period = Math.max(1, Math.floor(length));
+  const out = new Array(values.length).fill(null);
+  let sum = 0;
+  let count = 0;
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (Number.isFinite(value)) {
+      sum += value;
+      count += 1;
+    }
+
+    if (i >= period) {
+      const dropped = values[i - period];
+      if (Number.isFinite(dropped)) {
+        sum -= dropped;
+        count -= 1;
+      }
+    }
+
+    if (i >= period - 1 && count === period) {
+      out[i] = sum / period;
+    }
+  }
+
+  return out;
+}
+
+function calculateEMA(values, length = 9) {
+  const period = Math.max(1, Math.floor(length));
+  const out = new Array(values.length).fill(null);
+  const alpha = 2 / (period + 1);
+  let ema = null;
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!Number.isFinite(value)) continue;
+    if (ema === null) {
+      ema = value;
+    } else {
+      ema = (value * alpha) + (ema * (1 - alpha));
+    }
+    out[i] = ema;
+  }
+  return out;
+}
+
+function calculateRMA(values, length = 14) {
+  const period = Math.max(1, Math.floor(length));
+  const out = new Array(values.length).fill(null);
+  let rma = null;
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    if (rma === null) {
+      rma = value;
+    } else {
+      rma = ((rma * (period - 1)) + value) / period;
+    }
+    out[i] = rma;
+  }
+
+  return out;
+}
+
+function getIntervalSeconds(interval) {
+  const map = {
+    '1min': 60,
+    '5min': 5 * 60,
+    '15min': 15 * 60,
+    '30min': 30 * 60,
+    '1hour': 60 * 60,
+    '4hour': 4 * 60 * 60
+  };
+  return map[interval] || 60;
+}
+
+function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval) {
+  if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
+  if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
+    return parentBars.map((bar) => ({ time: bar.time, delta: null }));
+  }
+
+  const intervalSeconds = getIntervalSeconds(interval);
+  const parentTimes = parentBars.map((bar) => Number(bar.time));
+  const intrabarsPerParent = parentBars.map(() => []);
+  let parentIndex = 0;
+
+  for (const bar of lowerTimeframeBars) {
+    const t = Number(bar.time);
+    if (!Number.isFinite(t)) continue;
+
+    while (parentIndex + 1 < parentTimes.length && t >= parentTimes[parentIndex + 1]) {
+      parentIndex += 1;
+    }
+
+    const currentParentStart = parentTimes[parentIndex];
+    if (!Number.isFinite(currentParentStart)) continue;
+    if (t < currentParentStart || t >= (currentParentStart + intervalSeconds)) continue;
+
+    const open = Number(bar.open);
+    const close = Number(bar.close);
+    const volume = Number(bar.volume);
+    if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(volume)) continue;
+
+    intrabarsPerParent[parentIndex].push({ open, close, volume });
+  }
+
+  let lastClose = null;
+  let lastBull = true;
+  const deltas = [];
+
+  for (let i = 0; i < parentBars.length; i++) {
+    const stream = intrabarsPerParent[i];
+    if (!stream || stream.length === 0) {
+      deltas.push({ time: parentBars[i].time, delta: null });
+      continue;
+    }
+
+    let runningDelta = 0;
+    let streamLastClose = lastClose;
+    let streamLastBull = lastBull;
+
+    for (let j = 0; j < stream.length; j++) {
+      const ib = stream[j];
+      let isBull = ib.close > ib.open ? true : (ib.close < ib.open ? false : null);
+      if (isBull === null) {
+        const prevClose = (j === 0) ? streamLastClose : stream[j - 1].close;
+        if (Number.isFinite(prevClose)) {
+          if (ib.close > prevClose) {
+            isBull = true;
+          } else if (ib.close < prevClose) {
+            isBull = false;
+          } else {
+            isBull = streamLastBull;
+          }
+        } else {
+          isBull = streamLastBull;
+        }
+      }
+
+      streamLastBull = Boolean(isBull);
+      runningDelta += streamLastBull ? ib.volume : -ib.volume;
+      if (j === stream.length - 1) {
+        streamLastClose = ib.close;
+      }
+    }
+
+    lastClose = Number.isFinite(streamLastClose) ? streamLastClose : lastClose;
+    lastBull = streamLastBull;
+    deltas.push({ time: parentBars[i].time, delta: runningDelta });
+  }
+
+  return deltas;
+}
+
+function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
+  const rsiLength = Math.max(1, Math.floor(Number(options.rsiLength) || 14));
+  const rsiSmoothing = Math.max(1, Math.floor(Number(options.rsiSmoothing) || 1));
+  const signalLength = Math.max(1, Math.floor(Number(options.signalLength) || 9));
+
+  const deltaByBar = computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval);
+  const gains = deltaByBar.map((point) => {
+    if (!Number.isFinite(point.delta)) return null;
+    return Math.max(Number(point.delta), 0);
+  });
+  const losses = deltaByBar.map((point) => {
+    if (!Number.isFinite(point.delta)) return null;
+    return Math.max(-Number(point.delta), 0);
+  });
+
+  const avgGains = calculateRMA(gains, rsiLength);
+  const avgLosses = calculateRMA(losses, rsiLength);
+  const vdRsiRaw = new Array(deltaByBar.length).fill(null);
+
+  for (let i = 0; i < deltaByBar.length; i++) {
+    const avgGain = avgGains[i];
+    const avgLoss = avgLosses[i];
+    if (!Number.isFinite(avgGain) || !Number.isFinite(avgLoss)) {
+      continue;
+    }
+    const rs = avgLoss === 0 ? 100 : (avgGain / avgLoss);
+    const value = 100 - (100 / (1 + rs));
+    vdRsiRaw[i] = Number.isFinite(value) ? value : null;
+  }
+
+  const vdRsiSmoothed = rsiSmoothing > 1 ? calculateSMA(vdRsiRaw, rsiSmoothing) : vdRsiRaw.slice();
+  const signalRaw = calculateEMA(vdRsiSmoothed, signalLength);
+
+  const rsi = [];
+  const signal = [];
+  for (let i = 0; i < deltaByBar.length; i++) {
+    const time = deltaByBar[i].time;
+    const rsiValue = vdRsiSmoothed[i];
+    const signalValue = signalRaw[i];
+    if (Number.isFinite(rsiValue)) {
+      rsi.push({ time, value: Math.round(rsiValue * 100) / 100 });
+    }
+    if (Number.isFinite(signalValue)) {
+      signal.push({ time, value: Math.round(signalValue * 100) / 100 });
+    }
+  }
+
+  return { rsi, signal };
 }
 
 // Convert ET timezone bars to LA timezone
@@ -814,6 +1032,8 @@ app.get('/api/breadth', async (req, res) => {
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
+  const VOLUME_DELTA_RSI_LOWER_TF = '5min';
+  const VOLUME_DELTA_RSI_LOOKBACK_DAYS = 120;
 
   // Validate interval
   const validIntervals = ['5min', '15min', '30min', '1hour', '4hour'];
@@ -849,11 +1069,44 @@ app.get('/api/chart', async (req, res) => {
       });
     }
 
+    let volumeDeltaRsi = { rsi: [], signal: [] };
+    try {
+      let lowerTfBars = [];
+      if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
+        // Reuse already-fetched bars when chart interval matches the lower timeframe.
+        lowerTfBars = convertedBars;
+      } else {
+        const lowerTfRows = await fmpIntradayChartHistory(
+          ticker,
+          VOLUME_DELTA_RSI_LOWER_TF,
+          VOLUME_DELTA_RSI_LOOKBACK_DAYS
+        );
+        lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+          .sort((a, b) => Number(a.time) - Number(b.time));
+      }
+      if (lowerTfBars.length > 0) {
+        volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
+          convertedBars,
+          lowerTfBars,
+          interval,
+          {
+            rsiLength: 14,
+            rsiSmoothing: 1,
+            signalLength: 9
+          }
+        );
+      }
+    } catch (volumeDeltaErr) {
+      const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
+      console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
+    }
+
     const result = {
       interval,
       timezone: 'America/Los_Angeles',
       bars: convertedBars,
-      rsi
+      rsi,
+      volumeDeltaRsi
     };
 
     res.json(result);
