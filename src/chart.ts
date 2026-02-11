@@ -19,8 +19,8 @@ let priceSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
-const SCALE_LABEL_CHARS = 5;
-const SCALE_MIN_WIDTH_PX = 80;
+const SCALE_LABEL_CHARS = 4;
+const SCALE_MIN_WIDTH_PX = 64;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
@@ -703,10 +703,20 @@ function isNoDataTickerError(err: unknown): boolean {
 
 function formatPriceScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
-  const label = value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  const abs = Math.abs(value);
+  let label = '';
+  if (abs >= 100) {
+    label = String(Math.round(value));
+  } else if (abs >= 10) {
+    const rounded = Math.round(value * 10) / 10;
+    if (Math.abs(rounded) >= 100) {
+      label = String(Math.round(rounded));
+    } else {
+      label = rounded.toFixed(1);
+    }
+  } else {
+    label = (Math.round(value * 100) / 100).toFixed(2);
+  }
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 

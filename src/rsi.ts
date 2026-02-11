@@ -18,10 +18,12 @@ export interface RSIChartOptions {
 }
 
 export class RSIChart {
-  private static readonly SCALE_LABEL_CHARS = 5;
-  private static readonly SCALE_MIN_WIDTH_PX = 80;
-  private static readonly RSI_MIN = 0;
-  private static readonly RSI_MAX = 99;
+  private static readonly SCALE_LABEL_CHARS = 4;
+  private static readonly SCALE_MIN_WIDTH_PX = 64;
+  private static readonly RSI_DATA_MIN = 0;
+  private static readonly RSI_DATA_MAX = 99;
+  private static readonly RSI_AXIS_MIN = 20;
+  private static readonly RSI_AXIS_MAX = 80;
   private container: HTMLElement;
   private chart: any;
   private series: any;
@@ -148,19 +150,15 @@ export class RSIChart {
       .map((point) => ({
         ...point,
         value: Math.max(
-          RSIChart.RSI_MIN,
-          Math.min(RSIChart.RSI_MAX, Number(point.value))
+          RSIChart.RSI_DATA_MIN,
+          Math.min(RSIChart.RSI_DATA_MAX, Number(point.value))
         )
       }));
   }
 
   private formatRSIScaleLabel(value: number): string {
     if (!Number.isFinite(value)) return '';
-    const clamped = Math.max(
-      RSIChart.RSI_MIN,
-      Math.min(RSIChart.RSI_MAX, value)
-    );
-    const label = String(Math.round(clamped));
+    const label = Number(value).toFixed(1);
     return label.length >= RSIChart.SCALE_LABEL_CHARS
       ? label
       : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
@@ -169,8 +167,8 @@ export class RSIChart {
   private fixedRSIAutoscaleInfoProvider(): any {
     return {
       priceRange: {
-        minValue: RSIChart.RSI_MIN,
-        maxValue: RSIChart.RSI_MAX
+        minValue: RSIChart.RSI_AXIS_MIN,
+        maxValue: RSIChart.RSI_AXIS_MAX
       }
     };
   }
@@ -747,7 +745,7 @@ export class RSIChart {
     for (let i = index1; i <= maxIndex; i++) {
       const projectedValue = value1 + slope * (i - index1);
       // Prevent this helper line from blowing out RSI autoscale.
-      if (projectedValue < RSIChart.RSI_MIN || projectedValue > RSIChart.RSI_MAX) {
+      if (projectedValue < RSIChart.RSI_DATA_MIN || projectedValue > RSIChart.RSI_DATA_MAX) {
         break;
       }
       maxTrendIndex = i;
