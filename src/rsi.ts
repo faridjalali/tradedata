@@ -126,7 +126,7 @@ export class RSIChart {
     this.midlineCrossMarkerEl.style.top = '0';
     this.midlineCrossMarkerEl.style.bottom = '0';
     this.midlineCrossMarkerEl.style.width = '0';
-    this.midlineCrossMarkerEl.style.borderLeft = '1px dotted #f5c542';
+    this.midlineCrossMarkerEl.style.borderLeft = '1px dotted #ffa500';
     this.midlineCrossMarkerEl.style.pointerEvents = 'none';
     this.midlineCrossMarkerEl.style.display = 'none';
     this.midlineCrossMarkerEl.style.zIndex = '8';
@@ -489,7 +489,7 @@ export class RSIChart {
 
     this.trendLineSeries = this.chart.addLineSeries({
       color: '#ffa500',  // Orange color for trend line
-      lineWidth: 2,
+      lineWidth: 1,
       lineStyle: 0, // Solid line
       priceLineVisible: false,
       lastValueVisible: false,
