@@ -570,7 +570,19 @@ async function fmpIntraday(symbol, interval, options = {}) {
   return normalized.length ? normalized : null;
 }
 
-const CHART_INTRADAY_LOOKBACK_DAYS = 365;
+// Smarter lookback days based on chart interval
+function getIntradayLookbackDays(interval) {
+  const lookbackMap = {
+    '5min': 5,      // 5 days of 5-min bars (~390 bars)
+    '15min': 10,    // 10 days of 15-min bars (~260 bars)
+    '30min': 20,    // 20 days of 30-min bars (~260 bars)
+    '1hour': 60,    // 60 days of 1-hour bars (~390 bars)
+    '4hour': 120    // 120 days of 4-hour bars (~240 bars)
+  };
+  return lookbackMap[interval] || 30;
+}
+
+const CHART_INTRADAY_LOOKBACK_DAYS = 365; // Legacy fallback
 const CHART_INTRADAY_SLICE_DAYS = {
   '1min': 3,
   '5min': 7,
@@ -1105,9 +1117,6 @@ app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
   const VOLUME_DELTA_RSI_LOWER_TF = '5min';
-  // Force VD-RSI to always be derived from 5-minute volume-delta bars
-  // across the full chart history window.
-  const VOLUME_DELTA_RSI_LOOKBACK_DAYS = CHART_INTRADAY_LOOKBACK_DAYS;
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
 
   // Validate interval
@@ -1116,8 +1125,15 @@ app.get('/api/chart', async (req, res) => {
     return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, or 4hour' });
   }
 
+  // Use smart lookback based on interval (much faster!)
+  const lookbackDays = getIntradayLookbackDays(interval);
+
   try {
-    const bars = await fmpIntradayChartHistory(ticker, interval, CHART_INTRADAY_LOOKBACK_DAYS);
+    // Fetch parent bars and 5-min bars IN PARALLEL for speed
+    const [bars, lowerTfRows] = await Promise.all([
+      fmpIntradayChartHistory(ticker, interval, lookbackDays),
+      fmpIntradayChartHistory(ticker, VOLUME_DELTA_RSI_LOWER_TF, lookbackDays)
+    ]);
     if (!bars || bars.length === 0) {
       return res.status(404).json({ error: `No ${interval} data available for this ticker` });
     }
@@ -1154,23 +1170,9 @@ app.get('/api/chart', async (req, res) => {
       volumeDeltaRsi = cachedVolumeDeltaRsi;
     } else {
     try {
-      let lowerTfBars = [];
-      const lowerTfCacheKey = `${ticker}|${VOLUME_DELTA_RSI_LOWER_TF}|${VOLUME_DELTA_RSI_LOOKBACK_DAYS}`;
-      const cachedLowerTfBars = getTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey);
-      if (cachedLowerTfBars) {
-        lowerTfBars = cachedLowerTfBars;
-      } else {
-        const lowerTfRows = await fmpIntradayChartHistory(
-          ticker,
-          VOLUME_DELTA_RSI_LOWER_TF,
-          VOLUME_DELTA_RSI_LOOKBACK_DAYS
-        );
-        lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-          .sort((a, b) => Number(a.time) - Number(b.time));
-        if (lowerTfBars.length > 0) {
-          setTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey, lowerTfBars, cacheExpiryMs);
-        }
-      }
+      // Convert 5-min bars (already fetched in parallel above)
+      const lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+        .sort((a, b) => Number(a.time) - Number(b.time));
       if (lowerTfBars.length > 0) {
         const firstParentTime = Number(firstBarTime);
         const lastParentTime = Number(lastBarTime);
