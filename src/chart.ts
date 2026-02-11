@@ -17,6 +17,7 @@ let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let priceSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
+let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
@@ -24,6 +25,7 @@ const SCALE_MIN_WIDTH_PX = 64;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
+const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -49,6 +51,23 @@ interface RSISettings {
   lineColor: string;
   midlineColor: string;
   midlineStyle: MidlineStyle;
+}
+
+interface PersistedMASetting {
+  enabled: boolean;
+  type: MAType;
+  length: number;
+  color: string;
+}
+
+interface PersistedChartSettings {
+  price: {
+    maSourceMode: MASourceMode;
+    verticalGridlines: boolean;
+    horizontalGridlines: boolean;
+    ma: PersistedMASetting[];
+  };
+  rsi: RSISettings;
 }
 
 const rsiSettings: RSISettings = {
@@ -204,6 +223,81 @@ function buildRSISeriesFromBars(bars: any[], period: number): Array<{ time: stri
   return out;
 }
 
+function persistSettingsToStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload: PersistedChartSettings = {
+      price: {
+        maSourceMode: priceChartSettings.maSourceMode,
+        verticalGridlines: priceChartSettings.verticalGridlines,
+        horizontalGridlines: priceChartSettings.horizontalGridlines,
+        ma: priceChartSettings.ma.map((ma) => ({
+          enabled: ma.enabled,
+          type: ma.type,
+          length: ma.length,
+          color: ma.color
+        }))
+      },
+      rsi: {
+        length: rsiSettings.length,
+        lineColor: rsiSettings.lineColor,
+        midlineColor: rsiSettings.midlineColor,
+        midlineStyle: rsiSettings.midlineStyle
+      }
+    };
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage errors (private mode/quota/etc.)
+  }
+}
+
+function ensureSettingsLoadedFromStorage(): void {
+  if (hasLoadedSettingsFromStorage || typeof window === 'undefined') return;
+  hasLoadedSettingsFromStorage = true;
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Partial<PersistedChartSettings>;
+
+    const persistedPrice = parsed?.price;
+    if (persistedPrice) {
+      priceChartSettings.maSourceMode = persistedPrice.maSourceMode === 'timeframe' ? 'timeframe' : 'daily';
+      if (typeof persistedPrice.verticalGridlines === 'boolean') {
+        priceChartSettings.verticalGridlines = persistedPrice.verticalGridlines;
+      }
+      if (typeof persistedPrice.horizontalGridlines === 'boolean') {
+        priceChartSettings.horizontalGridlines = persistedPrice.horizontalGridlines;
+      }
+      if (Array.isArray(persistedPrice.ma)) {
+        for (let i = 0; i < priceChartSettings.ma.length; i++) {
+          const persisted = persistedPrice.ma[i];
+          if (!persisted) continue;
+          priceChartSettings.ma[i].enabled = Boolean(persisted.enabled);
+          priceChartSettings.ma[i].type = persisted.type === 'EMA' ? 'EMA' : 'SMA';
+          priceChartSettings.ma[i].length = Math.max(1, Math.floor(Number(persisted.length) || priceChartSettings.ma[i].length));
+          if (typeof persisted.color === 'string' && persisted.color.trim()) {
+            priceChartSettings.ma[i].color = persisted.color;
+          }
+        }
+      }
+    }
+
+    const persistedRSI = parsed?.rsi;
+    if (persistedRSI) {
+      rsiSettings.length = Math.max(1, Math.floor(Number(persistedRSI.length) || rsiSettings.length));
+      if (typeof persistedRSI.lineColor === 'string' && persistedRSI.lineColor.trim()) {
+        rsiSettings.lineColor = persistedRSI.lineColor;
+      }
+      if (typeof persistedRSI.midlineColor === 'string' && persistedRSI.midlineColor.trim()) {
+        rsiSettings.midlineColor = persistedRSI.midlineColor;
+      }
+      rsiSettings.midlineStyle = persistedRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
+    }
+  } catch {
+    // Ignore malformed storage content.
+  }
+}
+
 function computeSMA(values: number[], length: number): Array<number | null> {
   const period = Math.max(1, Math.floor(length));
   const out: Array<number | null> = new Array(values.length).fill(null);
@@ -221,6 +315,41 @@ function computeSMA(values: number[], length: number): Array<number | null> {
     }
   }
   return out;
+}
+
+function buildDailyMAValuesForBars(bars: any[], type: MAType, length: number): Array<number | null> {
+  const dayOrder: string[] = [];
+  const dayCloseByKey = new Map<string, number>();
+  const seen = new Set<string>();
+
+  for (const bar of bars) {
+    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
+    const close = Number(bar?.close);
+    if (unixSeconds === null || !Number.isFinite(close)) continue;
+    const key = dayKeyInLA(unixSeconds);
+    if (!seen.has(key)) {
+      seen.add(key);
+      dayOrder.push(key);
+    }
+    // Sorted bars => last assignment is the day close.
+    dayCloseByKey.set(key, close);
+  }
+
+  const dailyCloses = dayOrder.map((day) => Number(dayCloseByKey.get(day)));
+  const dailyMA = type === 'EMA'
+    ? computeEMA(dailyCloses, length)
+    : computeSMA(dailyCloses, length);
+
+  const dailyMAByKey = new Map<string, number | null>();
+  for (let i = 0; i < dayOrder.length; i++) {
+    dailyMAByKey.set(dayOrder[i], dailyMA[i] ?? null);
+  }
+
+  return bars.map((bar) => {
+    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
+    if (unixSeconds === null) return null;
+    return dailyMAByKey.get(dayKeyInLA(unixSeconds)) ?? null;
+  });
 }
 
 function computeEMA(values: number[], length: number): Array<number | null> {
@@ -243,28 +372,6 @@ function computeEMA(values: number[], length: number): Array<number | null> {
   return out;
 }
 
-function buildMASourceValues(bars: any[]): number[] {
-  if (priceChartSettings.maSourceMode === 'timeframe') {
-    return bars.map((bar) => Number(bar.close));
-  }
-
-  // Daily mode: derive daily close from currently loaded timeframe bars.
-  const dailyCloseByDay = new Map<string, number>();
-  for (const bar of bars) {
-    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
-    const close = Number(bar?.close);
-    if (unixSeconds === null || !Number.isFinite(close)) continue;
-    dailyCloseByDay.set(dayKeyInLA(unixSeconds), close);
-  }
-
-  return bars.map((bar) => {
-    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
-    if (unixSeconds === null) return Number.NaN;
-    const close = dailyCloseByDay.get(dayKeyInLA(unixSeconds));
-    return Number(close);
-  });
-}
-
 function clearMovingAverageSeries(): void {
   if (!priceChart) return;
   for (const setting of priceChartSettings.ma) {
@@ -280,8 +387,6 @@ function applyMovingAverages(): void {
     clearMovingAverageSeries();
     return;
   }
-
-  const sourceValues = buildMASourceValues(currentBars);
 
   for (const setting of priceChartSettings.ma) {
     const validLength = Math.max(1, Math.floor(Number(setting.length) || 1));
@@ -306,9 +411,13 @@ function applyMovingAverages(): void {
       setting.series.applyOptions({ color: setting.color });
     }
 
-    const values = setting.type === 'EMA'
-      ? computeEMA(sourceValues, validLength)
-      : computeSMA(sourceValues, validLength);
+    const values = priceChartSettings.maSourceMode === 'daily'
+      ? buildDailyMAValuesForBars(currentBars, setting.type, validLength)
+      : (
+        setting.type === 'EMA'
+          ? computeEMA(currentBars.map((bar) => Number(bar.close)), validLength)
+          : computeSMA(currentBars.map((bar) => Number(bar.close)), validLength)
+      );
 
     const maData = currentBars.map((bar, index) => {
       const value = values[index];
@@ -437,7 +546,7 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'rsi'): HT
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
   btn.style.left = '8px';
-  btn.style.bottom = '8px';
+  btn.style.top = '8px';
   btn.style.zIndex = '30';
   btn.style.width = '24px';
   btn.style.height = '24px';
@@ -456,7 +565,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.className = 'pane-settings-panel price-settings-panel';
   panel.style.position = 'absolute';
   panel.style.left = '8px';
-  panel.style.bottom = '38px';
+  panel.style.top = '38px';
   panel.style.zIndex = '31';
   panel.style.width = '280px';
   panel.style.maxWidth = 'calc(100% - 16px)';
@@ -474,8 +583,8 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
       <span>MA Source</span>
       <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
-        <option value="daily">Daily close (derived)</option>
-        <option value="timeframe">Chart timeframe</option>
+        <option value="daily">Daily close</option>
+        <option value="timeframe">Chart</option>
       </select>
     </label>
     <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -508,16 +617,19 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     if (setting === 'ma-source') {
       priceChartSettings.maSourceMode = ((target as HTMLSelectElement).value === 'timeframe') ? 'timeframe' : 'daily';
       applyMovingAverages();
+      persistSettingsToStorage();
       return;
     }
     if (setting === 'v-grid') {
       priceChartSettings.verticalGridlines = (target as HTMLInputElement).checked;
       refreshMonthGridLines();
+      persistSettingsToStorage();
       return;
     }
     if (setting === 'h-grid') {
       priceChartSettings.horizontalGridlines = (target as HTMLInputElement).checked;
       applyPriceGridOptions();
+      persistSettingsToStorage();
       return;
     }
 
@@ -538,6 +650,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
       ma.color = (target as HTMLInputElement).value || ma.color;
     }
     applyMovingAverages();
+    persistSettingsToStorage();
   });
 
   container.appendChild(panel);
@@ -549,7 +662,7 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.className = 'pane-settings-panel rsi-settings-panel';
   panel.style.position = 'absolute';
   panel.style.left = '8px';
-  panel.style.bottom = '38px';
+  panel.style.top = '38px';
   panel.style.zIndex = '31';
   panel.style.width = '230px';
   panel.style.maxWidth = 'calc(100% - 16px)';
@@ -592,21 +705,25 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
     if (setting === 'length') {
       rsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
       applyRSISettings();
+      persistSettingsToStorage();
       return;
     }
     if (setting === 'line-color') {
       rsiSettings.lineColor = target.value || rsiSettings.lineColor;
       rsiChart?.setLineColor(rsiSettings.lineColor);
+      persistSettingsToStorage();
       return;
     }
     if (setting === 'midline-color') {
       rsiSettings.midlineColor = target.value || rsiSettings.midlineColor;
       rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+      persistSettingsToStorage();
       return;
     }
     if (setting === 'midline-style') {
       rsiSettings.midlineStyle = (target.value === 'solid') ? 'solid' : 'dotted';
       rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+      persistSettingsToStorage();
       return;
     }
   });
@@ -835,6 +952,7 @@ function ensureResizeObserver(chartContainer: HTMLElement, rsiContainer: HTMLEle
 }
 
 export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
+  ensureSettingsLoadedFromStorage();
   const requestId = ++latestRenderRequestId;
   currentChartInterval = interval;
 
