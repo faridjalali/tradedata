@@ -573,11 +573,16 @@ app.get('/api/chart', async (req, res) => {
     const closePrices = convertedBars.map(b => b.close);
     const rsiValues = calculateRSI(closePrices, 14);
 
-    // Align RSI with bars (RSI starts after 14 periods)
-    const rsi = convertedBars.slice(14).map((bar, i) => ({
-      time: bar.time,
-      value: Math.round(rsiValues[i] * 100) / 100 // Round to 2 decimals
-    }));
+    // Align RSI with bars (pad first 14 periods with null to match length)
+    const rsi = convertedBars.map((bar, i) => {
+      if (i < 14) {
+        return { time: bar.time, value: NaN }; // Use NaN for missing RSI values
+      }
+      return {
+        time: bar.time,
+        value: Math.round(rsiValues[i - 14] * 100) / 100 // Shift index back
+      };
+    });
 
 
 

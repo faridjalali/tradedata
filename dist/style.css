@@ -840,15 +840,3 @@ button:hover {
     gap: 10px;
   }
 }
-
-/* Hide Lightweight Charts Attribution */
-.tv-lightweight-charts {
-  display: none !important;
-}
-#price-chart-container a[href*="tradingview.com"],
-#rsi-chart-container a[href*="tradingview.com"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
