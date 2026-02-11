@@ -13,8 +13,8 @@ let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
-const SCALE_LABEL_CHARS = 7;
-const SCALE_MIN_WIDTH_PX = 96;
+const SCALE_LABEL_CHARS = 5;
+const SCALE_MIN_WIDTH_PX = 80;
 
 function formatPriceScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';

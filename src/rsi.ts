@@ -15,8 +15,8 @@ export interface RSIChartOptions {
 }
 
 export class RSIChart {
-  private static readonly SCALE_LABEL_CHARS = 7;
-  private static readonly SCALE_MIN_WIDTH_PX = 96;
+  private static readonly SCALE_LABEL_CHARS = 5;
+  private static readonly SCALE_MIN_WIDTH_PX = 80;
   private static readonly RSI_MIN = 0;
   private static readonly RSI_MAX = 99;
   private container: HTMLElement;

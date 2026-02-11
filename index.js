@@ -258,6 +258,30 @@ function toArrayPayload(payload) {
   return null;
 }
 
+function normalizeTickerSymbol(rawSymbol) {
+  return String(rawSymbol || '').trim().toUpperCase();
+}
+
+function getFmpSymbolCandidates(rawSymbol) {
+  const symbol = normalizeTickerSymbol(rawSymbol);
+  const candidates = [];
+  const pushUnique = (value) => {
+    const next = normalizeTickerSymbol(value);
+    if (!next || candidates.includes(next)) return;
+    candidates.push(next);
+  };
+
+  pushUnique(symbol);
+  if (symbol.includes('.')) pushUnique(symbol.replace(/\./g, '-'));
+  if (symbol.includes('-')) pushUnique(symbol.replace(/-/g, '.'));
+  if (symbol.includes('/')) {
+    pushUnique(symbol.replace(/\//g, '.'));
+    pushUnique(symbol.replace(/\//g, '-'));
+  }
+
+  return candidates;
+}
+
 function assertFmpKey() {
   if (!FMP_KEY) {
     throw new Error('FMP_API_KEY is not configured on the server');
@@ -317,7 +341,7 @@ async function fetchFmpArrayWithFallback(label, urls) {
   throw lastError || new Error(`${label} request failed`);
 }
 
-async function fmpDaily(symbol) {
+async function fmpDailySingle(symbol) {
   const symbolEncoded = encodeURIComponent(symbol);
   const urls = [
     // Prefer non-split-adjusted/full endpoints so daily candlesticks match raw OHLC.
@@ -364,6 +388,30 @@ async function fmpDaily(symbol) {
   }
 
   return normalized.length ? normalized : null;
+}
+
+async function fmpDaily(symbol) {
+  const candidates = getFmpSymbolCandidates(symbol);
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const rows = await fmpDailySingle(candidate);
+      if (rows && rows.length > 0) {
+        if (candidate !== normalizeTickerSymbol(symbol)) {
+          console.log(`FMP symbol fallback (daily): ${symbol} -> ${candidate}`);
+        }
+        return rows;
+      }
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP daily failed for ${candidate} (requested ${symbol}): ${message}`);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
 }
 
 function formatDateUTC(date) {
@@ -423,7 +471,7 @@ const CHART_INTRADAY_SLICE_DAYS = {
   '4hour': 120
 };
 
-async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
+async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
   const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
@@ -468,6 +516,30 @@ async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_IN
   }
 
   return Array.from(byDateTime.values()).sort((a, b) => String(a.datetime).localeCompare(String(b.datetime)));
+}
+
+async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
+  const candidates = getFmpSymbolCandidates(symbol);
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const rows = await fmpIntradayChartHistorySingle(candidate, interval, lookbackDays);
+      if (rows && rows.length > 0) {
+        if (candidate !== normalizeTickerSymbol(symbol)) {
+          console.log(`FMP symbol fallback (${interval}): ${symbol} -> ${candidate}`);
+        }
+        return rows;
+      }
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return [];
 }
 
 async function fmpIntraday30(symbol) {
