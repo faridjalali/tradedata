@@ -15,6 +15,10 @@ export interface RSIChartOptions {
 }
 
 export class RSIChart {
+  private static readonly SCALE_LABEL_CHARS = 7;
+  private static readonly SCALE_MIN_WIDTH_PX = 96;
+  private static readonly RSI_MIN = 0;
+  private static readonly RSI_MAX = 99;
   private container: HTMLElement;
   private chart: any;
   private series: any;
@@ -56,6 +60,7 @@ export class RSIChart {
       layout: {
         background: { color: '#0d1117' },
         textColor: '#c9d1d9',
+        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
         attributionLogo: false
       },
       grid: {
@@ -76,6 +81,8 @@ export class RSIChart {
       },
       rightPriceScale: {
         borderColor: '#21262d',
+        minimumWidth: RSIChart.SCALE_MIN_WIDTH_PX,
+        entireTextOnly: true,
         scaleMargins: {
           top: 0.1,
           bottom: 0.1
@@ -122,11 +129,40 @@ export class RSIChart {
   }
 
   private normalizeRSIData(data: RSIPoint[]): RSIPoint[] {
-    return data.filter((point) => (
-      point &&
-      (typeof point.time === 'string' || typeof point.time === 'number') &&
-      Number.isFinite(Number(point.value))
-    ));
+    return data
+      .filter((point) => (
+        point &&
+        (typeof point.time === 'string' || typeof point.time === 'number') &&
+        Number.isFinite(Number(point.value))
+      ))
+      .map((point) => ({
+        ...point,
+        value: Math.max(
+          RSIChart.RSI_MIN,
+          Math.min(RSIChart.RSI_MAX, Number(point.value))
+        )
+      }));
+  }
+
+  private formatRSIScaleLabel(value: number): string {
+    if (!Number.isFinite(value)) return '';
+    const clamped = Math.max(
+      RSIChart.RSI_MIN,
+      Math.min(RSIChart.RSI_MAX, value)
+    );
+    const label = String(Math.round(clamped));
+    return label.length >= RSIChart.SCALE_LABEL_CHARS
+      ? label
+      : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
+  }
+
+  private fixedRSIAutoscaleInfoProvider(): any {
+    return {
+      priceRange: {
+        minValue: RSIChart.RSI_MIN,
+        maxValue: RSIChart.RSI_MAX
+      }
+    };
   }
 
   private timeKey(time: string | number): string {
@@ -377,6 +413,12 @@ export class RSIChart {
       this.series = this.chart.addLineSeries({
         color: '#58a6ff',
         lineWidth: 1,
+        priceFormat: {
+          type: 'custom',
+          minMove: 1,
+          formatter: (value: number) => this.formatRSIScaleLabel(Number(value))
+        },
+        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
         lastValueVisible: false
       });
@@ -385,10 +427,11 @@ export class RSIChart {
       this.series = this.chart.addHistogramSeries({
         color: '#58a6ff',
         priceFormat: {
-          type: 'price',
-          precision: 2,
-          minMove: 0.01
+          type: 'custom',
+          minMove: 1,
+          formatter: (value: number) => this.formatRSIScaleLabel(Number(value))
         },
+        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
         lastValueVisible: false
       });
@@ -587,7 +630,8 @@ export class RSIChart {
       color: '#ff6b6b',  // Red color for bearish divergence
       lineVisible: false,
       pointMarkersVisible: true,
-      pointMarkersRadius: 2
+      pointMarkersRadius: 2,
+      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider()
     });
 
     const step = Math.max(1, Math.ceil(points.length / RSIChart.MAX_HIGHLIGHT_POINTS));
@@ -633,7 +677,7 @@ export class RSIChart {
     for (let i = index1; i <= maxIndex; i++) {
       const projectedValue = value1 + slope * (i - index1);
       // Prevent this helper line from blowing out RSI autoscale.
-      if (projectedValue < 0 || projectedValue > 100) {
+      if (projectedValue < RSIChart.RSI_MIN || projectedValue > RSIChart.RSI_MAX) {
         break;
       }
       maxTrendIndex = i;
@@ -655,6 +699,7 @@ export class RSIChart {
       color: '#ffa500',  // Orange color for trend line
       lineWidth: 1,
       lineStyle: 0, // Solid line
+      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false

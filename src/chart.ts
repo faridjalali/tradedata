@@ -13,6 +13,17 @@ let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
+const SCALE_LABEL_CHARS = 7;
+const SCALE_MIN_WIDTH_PX = 96;
+
+function formatPriceScaleLabel(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  const label = value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
+}
 
 function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
@@ -29,6 +40,7 @@ function createPriceChart(container: HTMLElement) {
     layout: {
       background: { color: '#1e222d' },
       textColor: '#d1d4dc',
+      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       attributionLogo: false,
     },
     grid: {
@@ -52,6 +64,8 @@ function createPriceChart(container: HTMLElement) {
     },
     rightPriceScale: {
       borderColor: '#2b2b43',
+      minimumWidth: SCALE_MIN_WIDTH_PX,
+      entireTextOnly: true,
     },
     timeScale: {
       visible: false,
@@ -67,7 +81,12 @@ function createPriceChart(container: HTMLElement) {
     downColor: '#ef5350',
     borderVisible: false,
     wickUpColor: '#26a69a',
-    wickDownColor: '#ef5350'
+    wickDownColor: '#ef5350',
+    priceFormat: {
+      type: 'custom',
+      minMove: 0.01,
+      formatter: (price: number) => formatPriceScaleLabel(Number(price))
+    }
   });
 
   // No line tools for price chart - divergence tool only on RSI chart
