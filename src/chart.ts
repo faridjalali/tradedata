@@ -187,7 +187,6 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Update price chart
     if (candleSeries) {
       candleSeries.setData(bars);
-      priceChart.timeScale().fitContent();
     }
 
     // Initialize or update RSI chart
@@ -202,6 +201,15 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
       synchronizeCharts();
     } else if (rsiChart) {
       rsiChart.setData(data.rsi);
+    }
+
+    // After both charts have data, fit content and scroll to show most recent data on right
+    if (priceChart && rsiChart) {
+      priceChart.timeScale().fitContent();
+      // Small delay to ensure fitContent completes, then scroll to show rightmost data
+      setTimeout(() => {
+        priceChart.timeScale().scrollToRealTime();
+      }, 50);
     }
 
     // Hide loading, show content
@@ -222,21 +230,28 @@ function synchronizeCharts(): void {
 
   const rsiChartInstance = rsiChart.getChart();
 
-  // Sync price chart → RSI chart
+  let isPriceChartChanging = false;
+  let isRSIChartChanging = false;
+
+  // Sync price chart → RSI chart (bidirectional with guards to prevent loops)
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
-    if (timeRange) {
+    if (timeRange && !isRSIChartChanging) {
+      isPriceChartChanging = true;
       rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
+      isPriceChartChanging = false;
     }
   });
 
   // Sync RSI chart → price chart
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
-    if (timeRange) {
+    if (timeRange && !isPriceChartChanging) {
+      isRSIChartChanging = true;
       priceChart.timeScale().setVisibleLogicalRange(timeRange);
+      isRSIChartChanging = false;
     }
   });
 
-  // Sync crosshair
+  // Sync crosshair between charts
   priceChart.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       rsiChartInstance.clearCrosshairPosition();
