@@ -11,11 +11,110 @@ let chartResizeObserver: ResizeObserver | null = null;
 let latestRenderRequestId = 0;
 let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
+let monthBoundaryTimes: number[] = [];
+let priceMonthGridOverlayEl: HTMLDivElement | null = null;
+let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 5;
 const SCALE_MIN_WIDTH_PX = 80;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
+const MONTH_GRIDLINE_COLOR = '#21262d';
+
+const MONTH_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric',
+  month: '2-digit'
+});
+
+function ensureMonthGridOverlay(container: HTMLElement, isPricePane: boolean): HTMLDivElement {
+  const existing = isPricePane ? priceMonthGridOverlayEl : rsiMonthGridOverlayEl;
+  if (existing && existing.parentElement === container) return existing;
+
+  const overlay = document.createElement('div');
+  overlay.className = isPricePane ? 'month-grid-overlay month-grid-overlay-price' : 'month-grid-overlay month-grid-overlay-rsi';
+  overlay.style.position = 'absolute';
+  overlay.style.top = '0';
+  overlay.style.right = '0';
+  overlay.style.bottom = '0';
+  overlay.style.left = '0';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.zIndex = '6';
+  container.appendChild(overlay);
+
+  if (isPricePane) {
+    priceMonthGridOverlayEl = overlay;
+  } else {
+    rsiMonthGridOverlayEl = overlay;
+  }
+  return overlay;
+}
+
+function unixSecondsFromTimeValue(time: string | number | null | undefined): number | null {
+  if (typeof time === 'number' && Number.isFinite(time)) return time;
+  if (typeof time === 'string' && time.trim()) {
+    const parsed = Date.parse(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
+    if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
+  }
+  return null;
+}
+
+function monthKeyInLA(unixSeconds: number): string {
+  const parts = MONTH_KEY_FORMATTER.formatToParts(new Date(unixSeconds * 1000));
+  const year = parts.find((p) => p.type === 'year')?.value || '';
+  const month = parts.find((p) => p.type === 'month')?.value || '';
+  return `${year}-${month}`;
+}
+
+function buildMonthBoundaryTimes(bars: any[]): number[] {
+  const result: number[] = [];
+  let lastMonthKey = '';
+  for (const bar of bars) {
+    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
+    if (unixSeconds === null) continue;
+    const monthKey = monthKeyInLA(unixSeconds);
+    if (monthKey !== lastMonthKey) {
+      result.push(unixSeconds);
+      lastMonthKey = monthKey;
+    }
+  }
+  return result;
+}
+
+function clearMonthGridOverlay(overlayEl: HTMLDivElement | null): void {
+  if (!overlayEl) return;
+  overlayEl.innerHTML = '';
+}
+
+function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): void {
+  if (!chart || !overlayEl) return;
+
+  overlayEl.innerHTML = '';
+  if (!monthBoundaryTimes.length) return;
+
+  const width = overlayEl.clientWidth || overlayEl.offsetWidth;
+  if (!Number.isFinite(width) || width <= 0) return;
+
+  for (const time of monthBoundaryTimes) {
+    const x = chart.timeScale().timeToCoordinate(time);
+    if (!Number.isFinite(x)) continue;
+    if (x < 0 || x > width) continue;
+
+    const line = document.createElement('div');
+    line.style.position = 'absolute';
+    line.style.top = '0';
+    line.style.bottom = '0';
+    line.style.left = `${Math.round(x)}px`;
+    line.style.width = '1px';
+    line.style.background = MONTH_GRIDLINE_COLOR;
+    overlayEl.appendChild(line);
+  }
+}
+
+function refreshMonthGridLines(): void {
+  renderMonthGridLines(priceChart, priceMonthGridOverlayEl);
+  renderMonthGridLines(rsiChart?.getChart(), rsiMonthGridOverlayEl);
+}
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
   let messageEl = container.querySelector('.price-pane-message') as HTMLDivElement | null;
@@ -86,7 +185,7 @@ function createPriceChart(container: HTMLElement) {
       attributionLogo: false,
     },
     grid: {
-      vertLines: { visible: true, color: '#21262d' },
+      vertLines: { visible: false },
       horzLines: { visible: false },
     },
     crosshair: {
@@ -162,6 +261,7 @@ function applyChartSizes(chartContainer: HTMLElement, rsiContainer: HTMLElement)
   if (rsiChart) {
     rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
   }
+  refreshMonthGridLines();
 }
 
 function ensureResizeObserver(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
@@ -192,6 +292,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   errorContainer.style.display = 'none';
   errorContainer.textContent = '';
   setPricePaneMessage(chartContainer, null);
+  ensureMonthGridOverlay(chartContainer, true);
+  ensureMonthGridOverlay(rsiContainer, false);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -214,6 +316,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     if (bars.length === 0) {
       throw new Error('No valid chart bars returned for this ticker/interval');
     }
+    monthBoundaryTimes = buildMonthBoundaryTimes(bars);
     const rsiData = data.rsi;
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
@@ -253,6 +356,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
     applyRightMargin();
     syncChartsToPriceRange();
+    refreshMonthGridLines();
 
     currentChartTicker = ticker;
   } catch (err: any) {
@@ -265,6 +369,9 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       if (rsiChart) {
         rsiChart.setData([], []);
       }
+      monthBoundaryTimes = [];
+      clearMonthGridOverlay(priceMonthGridOverlayEl);
+      clearMonthGridOverlay(rsiMonthGridOverlayEl);
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
       errorContainer.style.display = 'none';
       errorContainer.textContent = '';
@@ -282,6 +389,7 @@ function syncChartsToPriceRange(): void {
   if (!priceRange) return;
   try {
     rsiChart.getChart().timeScale().setVisibleLogicalRange(priceRange);
+    refreshMonthGridLines();
   } catch {
     // Ignore transient range sync errors during live updates.
   }
@@ -294,6 +402,7 @@ function applyRightMargin(): void {
   if (rsiChart) {
     rsiChart.getChart().timeScale().applyOptions({ rightOffset });
   }
+  refreshMonthGridLines();
 }
 
 // Setup sync between price and RSI charts
@@ -316,6 +425,7 @@ function setupChartSync() {
     syncLock = 'price';
     try {
       rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
+      refreshMonthGridLines();
     } finally {
       unlockAfterFrame('price');
     }
@@ -329,6 +439,7 @@ function setupChartSync() {
     syncLock = 'rsi';
     try {
       priceChart.timeScale().setVisibleLogicalRange(timeRange);
+      refreshMonthGridLines();
     } finally {
       unlockAfterFrame('rsi');
     }

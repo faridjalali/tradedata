@@ -64,7 +64,7 @@ export class RSIChart {
         attributionLogo: false
       },
       grid: {
-        vertLines: { visible: true, color: '#21262d' },
+        vertLines: { visible: false },
         horzLines: { visible: false }
       },
       timeScale: {
