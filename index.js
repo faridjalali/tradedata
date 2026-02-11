@@ -320,33 +320,48 @@ async function fetchFmpArrayWithFallback(label, urls) {
 async function fmpDaily(symbol) {
   const symbolEncoded = encodeURIComponent(symbol);
   const urls = [
-    // Prefer full endpoints so daily candlesticks have true OHLC bars.
+    // Prefer non-split-adjusted/full endpoints so daily candlesticks match raw OHLC.
+    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/non-split-adjusted', { symbol, apikey: FMP_KEY, timeseries: 250 }),
     buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
     buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 }),
+    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
     // Fall back to light only if full is unavailable for the account/endpoint.
     buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
     buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY })
   ];
 
   const rows = await fetchFmpArrayWithFallback('FMP daily', urls);
+  let hasExplicitOHLC = false;
   const normalized = rows.map((row) => {
     const dateRaw = typeof row.date === 'string' ? row.date.trim() : '';
     const date = dateRaw ? dateRaw.slice(0, 10) : null;
     // Prefer explicit OHLC values from full endpoints.
     const close = toNumberOrNull(row.close ?? row.price);
-    const open = toNumberOrNull(row.open) ?? close;
-    const high = toNumberOrNull(row.high) ?? close;
-    const low = toNumberOrNull(row.low) ?? close;
+    const openRaw = toNumberOrNull(row.open);
+    const highRaw = toNumberOrNull(row.high);
+    const lowRaw = toNumberOrNull(row.low);
+    const open = openRaw ?? close;
+    const high = highRaw ?? close;
+    const low = lowRaw ?? close;
     const volume = toNumberOrNull(row.volume) ?? 0;
 
     if (!date || close === null || open === null || high === null || low === null) {
       return null;
     }
 
+    if (openRaw !== null && highRaw !== null && lowRaw !== null) {
+      hasExplicitOHLC = true;
+    }
+
     const boundedHigh = Math.max(high, open, close);
     const boundedLow = Math.min(low, open, close);
     return { date, open, high: boundedHigh, low: boundedLow, close, volume };
   }).filter(Boolean);
+
+  // Close-only "light" data renders misleading daily candlesticks. Force real OHLC for daily candles.
+  if (normalized.length > 0 && !hasExplicitOHLC) {
+    throw new Error(`FMP daily for ${symbol} returned close-only data; OHLC endpoint unavailable`);
+  }
 
   return normalized.length ? normalized : null;
 }
@@ -527,6 +542,7 @@ const breadthIntradayCache = new Map();
 
 // --- Chart API Cache ---
 const chartCache = new Map();
+const CHART_CACHE_VERSION = 'v2';
 
 async function getSpyDaily() {
   if (spyDailyCache.bars && Date.now() < spyDailyCache.expiresAt) return spyDailyCache.bars;
@@ -677,7 +693,7 @@ app.get('/api/chart', async (req, res) => {
     return res.status(400).json({ error: 'Invalid interval. Use: 1hour, 4hour, or 1day' });
   }
 
-  const cacheKey = `${ticker}_${interval}`;
+  const cacheKey = `${CHART_CACHE_VERSION}_${ticker}_${interval}`;
 
   try {
     // Check cache first
