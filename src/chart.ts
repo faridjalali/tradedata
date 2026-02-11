@@ -100,8 +100,8 @@ const DEFAULT_PRICE_SETTINGS: {
   ma: [
     { enabled: false, type: 'SMA', length: 20, color: '#ffa500' },
     { enabled: false, type: 'SMA', length: 50, color: '#8a2be2' },
-    { enabled: false, type: 'EMA', length: 100, color: '#00bcd4' },
-    { enabled: false, type: 'EMA', length: 200, color: '#90ee90' }
+    { enabled: false, type: 'SMA', length: 100, color: '#00bcd4' },
+    { enabled: false, type: 'SMA', length: 200, color: '#90ee90' }
   ]
 };
 
@@ -720,7 +720,6 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <option value="timeframe">Chart</option>
       </select>
     </label>
-    <div style="font-weight:600; min-height:18px; margin:0 0 6px;">Moving Averages</div>
     ${priceChartSettings.ma.map((_, i) => `
       <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; min-height:26px; margin-bottom:6px;">
         <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
