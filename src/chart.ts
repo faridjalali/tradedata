@@ -138,6 +138,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
+    syncChartsToPriceRange();
+
     currentChartTicker = ticker;
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
@@ -145,6 +147,13 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     errorContainer.textContent = `Error loading chart: ${err.message}`;
     errorContainer.style.display = 'block';
   }
+}
+
+function syncChartsToPriceRange(): void {
+  if (!priceChart || !rsiChart) return;
+  const priceRange = priceChart.timeScale().getVisibleRange();
+  if (!priceRange) return;
+  rsiChart.getChart().timeScale().setVisibleRange(priceRange);
 }
 
 // Setup sync between price and RSI charts
@@ -155,20 +164,20 @@ function setupChartSync() {
   let isPriceChartChanging = false;
   let isRSIChartChanging = false;
 
-  // Sync price chart → RSI chart (bidirectional with guards to prevent loops)
-  priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
+  // Sync price chart → RSI chart by visible time range to avoid drift when datasets differ.
+  priceChart.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
     if (timeRange && !isRSIChartChanging) {
       isPriceChartChanging = true;
-      rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
+      rsiChartInstance.timeScale().setVisibleRange(timeRange);
       isPriceChartChanging = false;
     }
   });
 
-  // Sync RSI chart → price chart
-  rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
+  // Sync RSI chart → price chart by visible time range.
+  rsiChartInstance.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
     if (timeRange && !isPriceChartChanging) {
       isRSIChartChanging = true;
-      priceChart.timeScale().setVisibleLogicalRange(timeRange);
+      priceChart.timeScale().setVisibleRange(timeRange);
       isRSIChartChanging = false;
     }
   });
