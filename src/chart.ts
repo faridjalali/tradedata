@@ -11,6 +11,7 @@ let chartResizeObserver: ResizeObserver | null = null;
 let latestRenderRequestId = 0;
 let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
+const TREND_ICON = '✎';
 
 function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
@@ -164,7 +165,14 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
         container: rsiContainer,
         data: rsiData,
         displayMode: 'line',
-        priceData: bars.map(b => ({ time: b.time, close: b.close }))
+        priceData: bars.map(b => ({ time: b.time, close: b.close })),
+        onTrendLineDrawn: () => {
+          const trendBtn = document.querySelector('#drawing-tools button[data-tool="trend"]') as HTMLElement | null;
+          if (trendBtn) {
+            trendBtn.classList.remove('active');
+            trendBtn.innerHTML = TREND_ICON;
+          }
+        }
       });
       setupChartSync();
     } else if (rsiChart) {
@@ -288,7 +296,7 @@ function handleDrawingTool(tool: string): void {
       document.querySelectorAll('#drawing-tools .tf-btn').forEach(btn => {
         btn.classList.remove('active');
         if (btn.getAttribute('data-tool') === 'trend') {
-            btn.innerHTML = '→';
+            btn.innerHTML = TREND_ICON;
         }
       });
     } else if (tool === 'trend') {
@@ -297,12 +305,12 @@ function handleDrawingTool(tool: string): void {
         // Deactivate
         rsiChart.deactivateDivergenceTool();
         btn.classList.remove('active');
-        btn.innerHTML = '→';
+        btn.innerHTML = TREND_ICON;
       } else {
         // Activate
         rsiChart.activateDivergenceTool();
         btn?.classList.add('active');
-        if (btn) btn.innerHTML = '→';
+        if (btn) btn.innerHTML = TREND_ICON;
       }
     }
   } catch (error) {

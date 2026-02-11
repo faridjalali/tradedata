@@ -11,6 +11,7 @@ export interface RSIChartOptions {
   data: RSIPoint[];
   displayMode: RSIDisplayMode;
   priceData?: Array<{time: string | number, close: number}>; // For divergence detection
+  onTrendLineDrawn?: () => void;
 }
 
 export class RSIChart {
@@ -31,6 +32,7 @@ export class RSIChart {
   private midlineCrossIndex: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
   private markerResizeObserver: ResizeObserver | null = null;
+  private onTrendLineDrawn?: () => void;
 
   constructor(options: RSIChartOptions) {
     this.container = options.container;
@@ -38,6 +40,7 @@ export class RSIChart {
     this.data = this.normalizeRSIData(options.data);
     this.priceData = options.priceData || [];
     this.seriesData = this.buildSeriesData(this.data, this.priceData);
+    this.onTrendLineDrawn = options.onTrendLineDrawn;
 
     // Create RSI chart
     this.chart = LightweightCharts.createChart(options.container, {
@@ -415,9 +418,9 @@ export class RSIChart {
       // Clear highlights after drawing the line
       this.clearHighlights();
 
-      // Reset for next trend line
-      this.firstPoint = null;
-      this.divergencePoints = [];
+      // Auto-toggle tool off after drawing one line.
+      this.deactivateDivergenceTool();
+      this.onTrendLineDrawn?.();
     }
   }
 
