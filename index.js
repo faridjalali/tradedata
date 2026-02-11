@@ -807,6 +807,73 @@ function getIntervalSeconds(interval) {
   return map[interval] || 60;
 }
 
+function dayKeyInLA(unixSeconds) {
+  if (!Number.isFinite(unixSeconds)) return '';
+  return new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+}
+
+function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
+  if (!Array.isArray(bars) || bars.length < 2) return bars || [];
+
+  const normalized = bars.map((bar) => ({ ...bar, volume: Number(bar.volume) || 0 }));
+
+  const maybeNormalizeDayRange = (startIndex, endIndex) => {
+    if (endIndex - startIndex < 3) return;
+
+    let nonDecreasing = 0;
+    let steps = 0;
+    const positiveDiffs = [];
+    let maxVolume = Number.NEGATIVE_INFINITY;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      maxVolume = Math.max(maxVolume, Number(normalized[i].volume) || 0);
+    }
+
+    for (let i = startIndex + 1; i <= endIndex; i++) {
+      const prev = Number(normalized[i - 1].volume) || 0;
+      const curr = Number(normalized[i].volume) || 0;
+      steps += 1;
+      if (curr >= prev) nonDecreasing += 1;
+      if (curr > prev) positiveDiffs.push(curr - prev);
+    }
+
+    if (steps === 0 || positiveDiffs.length === 0) return;
+    const monotonicRatio = nonDecreasing / steps;
+    if (monotonicRatio < 0.9) return;
+
+    const avgDiff = positiveDiffs.reduce((sum, value) => sum + value, 0) / positiveDiffs.length;
+    if (!Number.isFinite(avgDiff) || avgDiff <= 0) return;
+
+    // Cumulative series tends to have absolute values much larger than per-bar differences.
+    if ((maxVolume / avgDiff) < 4) return;
+
+    for (let i = startIndex + 1; i <= endIndex; i++) {
+      const prev = Number(normalized[i - 1].volume) || 0;
+      const curr = Number(normalized[i].volume) || 0;
+      normalized[i].volume = Math.max(0, curr - prev);
+    }
+    normalized[startIndex].volume = Math.max(0, Number(normalized[startIndex].volume) || 0);
+  };
+
+  let dayStart = 0;
+  let currentDayKey = dayKeyInLA(Number(normalized[0].time));
+  for (let i = 1; i < normalized.length; i++) {
+    const key = dayKeyInLA(Number(normalized[i].time));
+    if (key === currentDayKey) continue;
+    maybeNormalizeDayRange(dayStart, i - 1);
+    dayStart = i;
+    currentDayKey = key;
+  }
+  maybeNormalizeDayRange(dayStart, normalized.length - 1);
+
+  return normalized;
+}
+
 function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval) {
   if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
   if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
@@ -1293,8 +1360,10 @@ app.get('/api/chart', async (req, res) => {
       });
     }
 
-    const lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-      .sort((a, b) => Number(a.time) - Number(b.time));
+    const lowerTfBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
+      convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+        .sort((a, b) => Number(a.time) - Number(b.time))
+    );
     const volumeDeltaBarsLast10 = computeVolumeDeltaCandlesByParentBars(
       lowerTfBars,
       lowerTfBars,
