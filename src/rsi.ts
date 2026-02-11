@@ -504,28 +504,23 @@ export class RSIChart {
     }
     const slope = (value2 - value1) / (index2 - index1);
 
-    const lastIndex = this.data.length - 1;
-    let maxByBounds = Number.POSITIVE_INFINITY;
-    if (slope > 0) {
-      maxByBounds = index1 + ((100 - value1) / slope);
-    } else if (slope < 0) {
-      maxByBounds = index1 + ((0 - value1) / slope);
-    }
-    if (!Number.isFinite(maxByBounds)) {
-      this.setMidlineCrossIndex(null);
-      return;
-    }
-    const maxTrendIndex = Math.min(lastIndex, Math.floor(maxByBounds));
-    if (!Number.isFinite(maxTrendIndex) || maxTrendIndex <= index1) {
-      this.setMidlineCrossIndex(null);
-      return;
-    }
+    // Create trend line data points extending to the right edge
+    const trendLineData: RSIPoint[] = [];
+    let maxTrendIndex = index1;
 
-    const trendEndValue = Math.max(0, Math.min(100, value1 + slope * (maxTrendIndex - index1)));
-    const trendLineData: RSIPoint[] = [
-      { time: this.data[index1].time, value: value1 },
-      { time: this.data[maxTrendIndex].time, value: trendEndValue }
-    ];
+    // Start from first point and extend to the last data point
+    for (let i = index1; i < this.data.length; i++) {
+      const projectedValue = value1 + slope * (i - index1);
+      // Prevent this helper line from blowing out RSI autoscale.
+      if (projectedValue < 0 || projectedValue > 100) {
+        break;
+      }
+      maxTrendIndex = i;
+      trendLineData.push({
+        time: this.data[i].time,
+        value: projectedValue
+      });
+    }
 
     // Create new trend line series (keep existing lines on chart)
     const trendLineSeries = this.chart.addLineSeries({
