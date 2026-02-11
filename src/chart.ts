@@ -86,23 +86,27 @@ function normalizeCandleBars(bars: any[]): any[] {
   ));
 }
 
+function applyChartSizes(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
+  if (!priceChart) return;
+
+  const chartRect = chartContainer.getBoundingClientRect();
+  const rsiRect = rsiContainer.getBoundingClientRect();
+  const priceWidth = Math.max(1, Math.floor(chartRect.width));
+  const priceHeight = Math.max(1, Math.floor(chartRect.height));
+  const rsiWidth = Math.max(1, Math.floor(rsiRect.width));
+  const rsiHeight = Math.max(1, Math.floor(rsiRect.height));
+
+  priceChart.applyOptions({ width: priceWidth, height: priceHeight });
+  if (rsiChart) {
+    rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
+  }
+}
+
 function ensureResizeObserver(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
   if (chartResizeObserver) return;
 
   chartResizeObserver = new ResizeObserver(() => {
-    if (!priceChart) return;
-
-    const chartRect = chartContainer.getBoundingClientRect();
-    const rsiRect = rsiContainer.getBoundingClientRect();
-    const priceWidth = Math.max(1, Math.floor(chartRect.width));
-    const priceHeight = Math.max(1, Math.floor(chartRect.height));
-    const rsiWidth = Math.max(1, Math.floor(rsiRect.width));
-    const rsiHeight = Math.max(1, Math.floor(rsiRect.height));
-
-    priceChart.applyOptions({ width: priceWidth, height: priceHeight });
-    if (rsiChart) {
-      rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
-    }
+    applyChartSizes(chartContainer, rsiContainer);
   });
 
   chartResizeObserver.observe(chartContainer);
@@ -135,6 +139,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   }
 
   ensureResizeObserver(chartContainer, rsiContainer);
+  applyChartSizes(chartContainer, rsiContainer);
 
   try {
     // Fetch data from API
@@ -178,6 +183,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
         }
       });
       setupChartSync();
+      applyChartSizes(chartContainer, rsiContainer);
     } else if (rsiChart) {
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
