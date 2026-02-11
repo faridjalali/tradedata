@@ -610,13 +610,29 @@ function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
   panel.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   panel.style.fontSize = '12px';
   panel.style.fontWeight = '500';
-  panel.style.lineHeight = '1.25';
+  panel.style.lineHeight = '1.3';
   panel.querySelectorAll<HTMLElement>('div, span, label, input, select, button').forEach((el) => {
     el.style.fontFamily = 'inherit';
     el.style.fontSize = 'inherit';
     el.style.fontWeight = 'inherit';
     el.style.fontStyle = 'normal';
     el.style.letterSpacing = 'normal';
+  });
+  panel.querySelectorAll<HTMLElement>('label').forEach((label) => {
+    label.style.display = 'flex';
+    label.style.justifyContent = 'space-between';
+    label.style.alignItems = 'center';
+    label.style.gap = '8px';
+    label.style.minHeight = '28px';
+  });
+  panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((checkbox) => {
+    checkbox.style.width = '14px';
+    checkbox.style.height = '14px';
+    checkbox.style.margin = '0';
+  });
+  panel.querySelectorAll<HTMLElement>('input, select, button').forEach((control) => {
+    control.style.boxSizing = 'border-box';
+    control.style.lineHeight = '1.25';
   });
 }
 
@@ -638,28 +654,28 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; min-height:28px; margin-bottom:10px;">
       <div style="font-weight:600;">Chart Settings</div>
       <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
-    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+    <label style="margin-bottom:8px;">
       <span>Vertical gridlines</span>
       <input type="checkbox" data-price-setting="v-grid" />
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+    <label style="margin-bottom:8px;">
       <span>Horizontal gridlines</span>
       <input type="checkbox" data-price-setting="h-grid" />
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+    <label style="margin-bottom:8px;">
       <span>MA Source</span>
       <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
         <option value="daily">Daily close</option>
         <option value="timeframe">Chart</option>
       </select>
     </label>
-    <div style="font-weight:600; margin-bottom:6px;">Moving Averages</div>
+    <div style="font-weight:600; min-height:20px; margin:2px 0 8px;">Moving Averages</div>
     ${priceChartSettings.ma.map((_, i) => `
-      <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; margin-bottom:6px;">
+      <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; min-height:28px; margin-bottom:8px;">
         <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
         <select data-price-setting="ma-type-${i}" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
           <option value="SMA">SMA</option>
@@ -746,23 +762,23 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; min-height:28px; margin-bottom:10px;">
       <div style="font-weight:600;">RSI Settings</div>
       <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
-    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+    <label style="margin-bottom:8px;">
       <span>Length</span>
       <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+    <label style="margin-bottom:8px;">
       <span>Line color</span>
       <input data-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+    <label style="margin-bottom:8px;">
       <span>Midline color</span>
       <input data-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
     </label>
-    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+    <label style="margin-bottom:8px;">
       <span>Midline style</span>
       <select data-rsi-setting="midline-style" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
         <option value="dotted">Dotted</option>
