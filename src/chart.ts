@@ -46,7 +46,7 @@ const VOLUME_DELTA_MIDLINE = 50;
 const VOLUME_DELTA_AXIS_MIN = 20;
 const VOLUME_DELTA_AXIS_MAX = 80;
 const VOLUME_DELTA_DATA_MIN = 0;
-const VOLUME_DELTA_DATA_MAX = 99;
+const VOLUME_DELTA_DATA_MAX = 100;
 const VOLUME_DELTA_MAX_HIGHLIGHT_POINTS = 2000;
 const DIVERGENCE_HIGHLIGHT_COLOR = '#ff6b6b';
 const TRENDLINE_COLOR = '#ffa500';
@@ -1532,8 +1532,14 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     handleScale: {
       mouseWheel: true,
       pinch: true,
-      axisPressedMouseMove: true,
-      axisDoubleClickReset: true,
+      axisPressedMouseMove: {
+        time: true,
+        price: false,
+      },
+      axisDoubleClickReset: {
+        time: true,
+        price: false,
+      },
     },
     rightPriceScale: {
       borderColor: '#21262d',

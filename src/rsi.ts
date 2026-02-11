@@ -21,7 +21,7 @@ export class RSIChart {
   private static readonly SCALE_LABEL_CHARS = 4;
   private static readonly SCALE_MIN_WIDTH_PX = 56;
   private static readonly RSI_DATA_MIN = 0;
-  private static readonly RSI_DATA_MAX = 99;
+  private static readonly RSI_DATA_MAX = 100;
   private static readonly RSI_AXIS_MIN = 20;
   private static readonly RSI_AXIS_MAX = 80;
   private container: HTMLElement;
@@ -109,8 +109,14 @@ export class RSIChart {
       handleScale: {
         mouseWheel: true,
         pinch: true,
-        axisPressedMouseMove: true,
-        axisDoubleClickReset: true
+        axisPressedMouseMove: {
+          time: true,
+          price: false
+        },
+        axisDoubleClickReset: {
+          time: true,
+          price: false
+        }
       }
     });
 
