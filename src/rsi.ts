@@ -34,6 +34,7 @@ export class RSIChart {
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
   private trendLineSeriesList: any[] = [];
   private midlineCrossIndex: number | null = null;
+  private midlineCrossTimeSeconds: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
   private markerResizeObserver: ResizeObserver | null = null;
   private onTrendLineDrawn?: () => void;
@@ -165,6 +166,20 @@ export class RSIChart {
     return null;
   }
 
+  private toUnixSeconds(time: string | number | null | undefined): number | null {
+    if (typeof time === 'number' && Number.isFinite(time)) {
+      return time;
+    }
+    if (typeof time !== 'string' || !time.trim()) {
+      return null;
+    }
+    const normalized = time.includes('T') ? time : `${time.replace(' ', 'T')}Z`;
+    const parsed = new Date(normalized);
+    const ms = parsed.getTime();
+    if (!Number.isFinite(ms)) return null;
+    return Math.floor(ms / 1000);
+  }
+
   private formatTickMark(time: any, tickMarkType: number): string {
     const date = this.toDateFromScaleTime(time);
     if (!date) return '';
@@ -217,19 +232,26 @@ export class RSIChart {
     this.markerResizeObserver.observe(this.container);
   }
 
-  private setMidlineCrossIndex(index: number | null): void {
+  private setMidlineCrossIndex(index: number | null, timeSeconds: number | null = null): void {
     this.midlineCrossIndex = index;
+    this.midlineCrossTimeSeconds = timeSeconds;
     this.updateMidlineCrossMarkerPosition();
   }
 
   private updateMidlineCrossMarkerPosition(): void {
     if (!this.midlineCrossMarkerEl) return;
-    if (this.midlineCrossIndex === null || this.midlineCrossIndex === undefined) {
+    if ((this.midlineCrossIndex === null || this.midlineCrossIndex === undefined) && !Number.isFinite(this.midlineCrossTimeSeconds)) {
       this.midlineCrossMarkerEl.style.display = 'none';
       return;
     }
 
-    const x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossIndex);
+    let x = Number.NaN;
+    if (Number.isFinite(this.midlineCrossTimeSeconds)) {
+      x = this.chart.timeScale().timeToCoordinate(this.midlineCrossTimeSeconds);
+    }
+    if (!Number.isFinite(x) && this.midlineCrossIndex !== null && this.midlineCrossIndex !== undefined) {
+      x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossIndex);
+    }
     if (!Number.isFinite(x)) {
       this.midlineCrossMarkerEl.style.display = 'none';
       return;
@@ -574,6 +596,7 @@ export class RSIChart {
     const maxIndex = lastHistoricalIndex + futureBars;
     const stepSeconds = this.inferBarStepSeconds();
     const lastHistoricalTime = this.data[lastHistoricalIndex]?.time;
+    const lastHistoricalTimeSeconds = this.toUnixSeconds(lastHistoricalTime);
 
     // Start from first point and extend to historical + future points.
     for (let i = index1; i <= maxIndex; i++) {
@@ -586,8 +609,8 @@ export class RSIChart {
       let pointTime: string | number | null = null;
       if (i <= lastHistoricalIndex) {
         pointTime = this.data[i]?.time ?? null;
-      } else if (typeof lastHistoricalTime === 'number') {
-        pointTime = lastHistoricalTime + ((i - lastHistoricalIndex) * stepSeconds);
+      } else if (lastHistoricalTimeSeconds !== null) {
+        pointTime = lastHistoricalTimeSeconds + ((i - lastHistoricalIndex) * stepSeconds);
       }
       if (pointTime === null || pointTime === undefined) continue;
       trendLineData.push({
@@ -607,7 +630,15 @@ export class RSIChart {
     });
     this.trendLineSeriesList.push(trendLineSeries);
 
+    const visibleRangeBefore = this.chart.timeScale().getVisibleLogicalRange();
     trendLineSeries.setData(trendLineData);
+    if (visibleRangeBefore) {
+      try {
+        this.chart.timeScale().setVisibleLogicalRange(visibleRangeBefore);
+      } catch {
+        // Ignore transient errors while chart is recomputing scale.
+      }
+    }
 
     // Mark where this trendline crosses RSI midline (50) on the time axis.
     const midlineValue = 50;
@@ -621,7 +652,30 @@ export class RSIChart {
       this.setMidlineCrossIndex(null);
       return;
     }
-    this.setMidlineCrossIndex(crossIndex);
+
+    const projectTimeAtIndex = (idx: number): number | null => {
+      if (idx <= lastHistoricalIndex) {
+        return this.toUnixSeconds(this.data[idx]?.time);
+      }
+      if (lastHistoricalTimeSeconds === null) return null;
+      return lastHistoricalTimeSeconds + ((idx - lastHistoricalIndex) * stepSeconds);
+    };
+
+    const lowerCrossIndex = Math.floor(crossIndex);
+    const upperCrossIndex = Math.ceil(crossIndex);
+    const t0 = projectTimeAtIndex(lowerCrossIndex);
+    const t1 = projectTimeAtIndex(upperCrossIndex);
+    let crossTimeSeconds: number | null = null;
+    if (t0 !== null && t1 !== null) {
+      const weight = upperCrossIndex === lowerCrossIndex ? 0 : (crossIndex - lowerCrossIndex) / (upperCrossIndex - lowerCrossIndex);
+      crossTimeSeconds = t0 + ((t1 - t0) * weight);
+    } else if (t0 !== null) {
+      crossTimeSeconds = t0;
+    } else if (t1 !== null) {
+      crossTimeSeconds = t1;
+    }
+
+    this.setMidlineCrossIndex(crossIndex, crossTimeSeconds);
   }
 
   clearDivergence(): void {
