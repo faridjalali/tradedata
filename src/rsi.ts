@@ -32,7 +32,9 @@ export class RSIChart {
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
+  private static readonly FUTURE_TIMELINE_DAYS = 370;
   private trendLineSeriesList: any[] = [];
+  private timelineSeries: any = null;
   private midlineCrossIndex: number | null = null;
   private midlineCrossTimeSeconds: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
@@ -297,6 +299,33 @@ export class RSIChart {
   private futureBarsForOneYear(): number {
     const stepSeconds = this.inferBarStepSeconds();
     return this.barsPerTradingDayFromStep(stepSeconds) * 252;
+  }
+
+  private ensureTimelineSeries(): void {
+    if (this.timelineSeries) return;
+    this.timelineSeries = this.chart.addLineSeries({
+      color: 'rgba(0, 0, 0, 0)',
+      lineVisible: false,
+      pointMarkersVisible: false,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false
+    });
+  }
+
+  private updateTimelineSeriesData(): void {
+    this.ensureTimelineSeries();
+    if (!this.timelineSeries || this.data.length === 0) return;
+
+    const lastTimeSeconds = this.toUnixSeconds(this.data[this.data.length - 1]?.time);
+    if (lastTimeSeconds === null) return;
+
+    const timelinePoints: Array<{ time: number }> = [{ time: lastTimeSeconds }];
+    for (let day = 1; day <= RSIChart.FUTURE_TIMELINE_DAYS; day++) {
+      timelinePoints.push({ time: lastTimeSeconds + (day * 86400) });
+    }
+
+    this.timelineSeries.setData(timelinePoints);
   }
 
   private buildSeriesData(
