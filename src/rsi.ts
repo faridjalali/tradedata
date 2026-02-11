@@ -105,6 +105,7 @@ export class RSIChart {
 
     // Add RSI series based on display mode
     this.updateSeries();
+    this.updateTimelineSeriesData();
 
     // Set up click handler for divergence detection
     this.chart.subscribeCrosshairMove((param: any) => {
@@ -202,9 +203,9 @@ export class RSIChart {
       });
     }
 
-    // Zoomed in (day/time): show month + day.
+    // Zoomed in (day/time): show numeric month/day.
     return date.toLocaleDateString('en-US', {
-      month: 'short',
+      month: 'numeric',
       day: 'numeric',
       timeZone: 'America/Los_Angeles'
     });
@@ -455,6 +456,8 @@ export class RSIChart {
         }));
       }
     }
+
+    this.updateTimelineSeriesData();
 
 
   }
