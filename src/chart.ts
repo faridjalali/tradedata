@@ -1,6 +1,6 @@
 // Main chart rendering and management
 
-import { fetchChartData, aggregate2HourBars, ChartInterval, RSIDisplayMode, CandleBar } from './chartApi';
+import { fetchChartData, aggregate2HourBars, aggregate2HourRSI, ChartInterval, RSIDisplayMode, CandleBar, RSIPoint } from './chartApi';
 import { RSIChart } from './rsi';
 
 // Declare Lightweight Charts global
@@ -69,9 +69,7 @@ function initializeCharts(): void {
         horzLines: { visible: false }
       },
       timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: '#21262d'
+        visible: false  // Hide price chart time scale
       },
       rightPriceScale: {
         borderColor: '#21262d'
@@ -171,10 +169,13 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Fetch data from API
     const data = await fetchChartData(ticker, interval);
 
-    // Handle 2-hour aggregation
+    // Handle 2-hour aggregation for both bars and RSI
     let bars = data.bars;
+    let rsiData: RSIPoint[] = data.rsi;
+
     if (interval === '2hour') {
       bars = aggregate2HourBars(bars);
+      rsiData = aggregate2HourRSI(data.rsi);
     }
 
     // Update price chart
@@ -186,7 +187,7 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     if (!rsiChart && rsiContainer) {
       rsiChart = new RSIChart({
         container: rsiContainer,
-        data: data.rsi,
+        data: rsiData,
         displayMode: 'line',
         priceData: bars.map(b => ({ time: b.time, close: b.close }))
       });
@@ -194,7 +195,7 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
       // Synchronize time scales
       synchronizeCharts();
     } else if (rsiChart) {
-      rsiChart.setData(data.rsi, bars.map(b => ({ time: b.time, close: b.close })));
+      rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
     // After both charts have data, fit content and scroll to show most recent data on right

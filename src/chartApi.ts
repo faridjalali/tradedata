@@ -58,3 +58,23 @@ export function aggregate2HourBars(hourlyBars: CandleBar[]): CandleBar[] {
 
   return twoHourBars;
 }
+
+// Aggregate RSI data to match 2-hour bars (take every other point)
+export function aggregate2HourRSI(hourlyRSI: RSIPoint[]): RSIPoint[] {
+  const twoHourRSI: RSIPoint[] = [];
+
+  for (let i = 0; i < hourlyRSI.length; i += 2) {
+    // Use the second bar's RSI value (the closing value of the 2-hour period)
+    if (i + 1 < hourlyRSI.length) {
+      twoHourRSI.push({
+        time: hourlyRSI[i].time,  // Use first bar's time to match aggregated bars
+        value: hourlyRSI[i + 1].value  // Use second bar's RSI (closing RSI of 2hr period)
+      });
+    } else {
+      // If odd number, include the last one as-is
+      twoHourRSI.push(hourlyRSI[i]);
+    }
+  }
+
+  return twoHourRSI;
+}

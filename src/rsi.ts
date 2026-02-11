@@ -41,7 +41,9 @@ export class RSIChart {
         horzLines: { visible: false }
       },
       timeScale: {
-        visible: false  // Hide RSI time scale - only show price chart's time axis
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: '#21262d'  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
         borderColor: '#21262d',
