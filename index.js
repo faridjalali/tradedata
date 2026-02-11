@@ -195,172 +195,19 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
     }
 });
 
-// --- GEX (Gamma Exposure) API ---
-const YahooFinance = require("yahoo-finance2").default;
+// --- Finnhub helper ---
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY || '';
 
-// Proxy setup: route yahoo-finance2 through residential IP proxy when configured
-const yfOptions = { suppressNotices: ['yahooSurvey'] };
-
-if (process.env.YAHOO_PROXY_URL && process.env.YAHOO_PROXY_SECRET) {
-  const { ProxyAgent, fetch: undiciFetch } = require("undici");
-  const proxyAgent = new ProxyAgent({
-    uri: process.env.YAHOO_PROXY_URL,
-    token: `Bearer ${process.env.YAHOO_PROXY_SECRET}`,
-  });
-
-  // Custom fetch that routes through our residential proxy
-  const proxiedFetch = (url, opts = {}) => {
-    return undiciFetch(url, { ...opts, dispatcher: proxyAgent });
-  };
-
-  yfOptions.fetch = proxiedFetch;
-  console.log(`Yahoo Finance proxy enabled: ${process.env.YAHOO_PROXY_URL}`);
-} else {
-  console.log("Yahoo Finance proxy not configured, using direct connection");
+async function finnhubCandles(symbol, resolution, from, to) {
+  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Finnhub ${resp.status}`);
+  const data = await resp.json();
+  if (data.s !== 'ok') return null; // no_data
+  return data; // { c, h, l, o, t, v, s }
 }
 
-const yf = new YahooFinance(yfOptions);
-
-// In-memory GEX cache (24h TTL)
-const gexCache = new Map();
-const GEX_CACHE_TTL = 24 * 60 * 60 * 1000;
-
-// --- Black-Scholes helpers ---
-function normalPdf(x) {
-  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
-}
-
-function bsGamma(S, K, T, r, sigma) {
-  if (T <= 0 || sigma <= 0 || S <= 0 || K <= 0) return 0;
-  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-  return normalPdf(d1) / (S * sigma * Math.sqrt(T));
-}
-
-app.get('/api/gex/:ticker', async (req, res) => {
-  const ticker = req.params.ticker.toUpperCase();
-
-  // Check cache
-  const cached = gexCache.get(ticker);
-  if (cached && Date.now() - cached.ts < GEX_CACHE_TTL) {
-    return res.json(cached.data);
-  }
-
-  try {
-    // 1. Fetch first expiration to get spot price and expiration list
-    const firstChain = await yf.options(ticker);
-    const spotPrice = firstChain.quote.regularMarketPrice;
-
-    if (!spotPrice) {
-      return res.status(404).json({ error: `No price data for ${ticker}` });
-    }
-
-    // 2. Collect all expirations (up to 6 nearest)
-    const expirationDates = (firstChain.expirationDates || []).slice(0, 6);
-    const now = new Date();
-    const riskFreeRate = 0.045;
-
-    // Net gamma per strike: gamma * OI * 100  (calls positive, puts negative)
-    const gexByStrike = {};
-
-    // Process first expiration
-    function processChain(options, expiryDate) {
-      const T = Math.max((expiryDate - now) / (365.25 * 24 * 60 * 60 * 1000), 1 / 365);
-
-      for (const opt of (options.calls || [])) {
-        if (!opt.openInterest || opt.openInterest === 0) continue;
-        const iv = opt.impliedVolatility || 0.3;
-        const gamma = bsGamma(spotPrice, opt.strike, T, riskFreeRate, iv);
-        if (!gamma || isNaN(gamma)) continue;
-        const gex = gamma * opt.openInterest * 100;
-        gexByStrike[opt.strike] = (gexByStrike[opt.strike] || 0) + gex;
-      }
-
-      for (const opt of (options.puts || [])) {
-        if (!opt.openInterest || opt.openInterest === 0) continue;
-        const iv = opt.impliedVolatility || 0.3;
-        const gamma = bsGamma(spotPrice, opt.strike, T, riskFreeRate, iv);
-        if (!gamma || isNaN(gamma)) continue;
-        const gex = gamma * opt.openInterest * 100;
-        gexByStrike[opt.strike] = (gexByStrike[opt.strike] || 0) - gex; // puts negative
-      }
-    }
-
-    // Process first expiration (already fetched)
-    if (firstChain.options && firstChain.options[0]) {
-      const expDate = expirationDates[0] instanceof Date
-        ? expirationDates[0]
-        : new Date(expirationDates[0] * 1000);
-      processChain(firstChain.options[0], expDate);
-    }
-
-    // Fetch remaining expirations with delay
-    for (let i = 1; i < expirationDates.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1s delay to avoid rate limits
-      try {
-        const expEpoch = expirationDates[i] instanceof Date
-          ? Math.floor(expirationDates[i].getTime() / 1000)
-          : expirationDates[i];
-        const chain = await yf.options(ticker, { date: new Date(expEpoch * 1000) });
-        if (chain.options && chain.options[0]) {
-          processChain(chain.options[0], new Date(expEpoch * 1000));
-        }
-      } catch (e) {
-        // Skip failed expirations
-        console.error(`GEX: failed to fetch expiration ${i} for ${ticker}:`, e.message);
-      }
-    }
-
-    // 3. Sort strikes and filter to 50 around spot
-    const allStrikes = Object.keys(gexByStrike).map(Number).sort((a, b) => a - b);
-
-    if (allStrikes.length === 0) {
-      return res.json({ spot_price: spotPrice, strikes: [], gex: [], total_gex: 0, message: 'No options data available' });
-    }
-
-    // Calculate total GEX across ALL strikes
-    const totalGex = Object.values(gexByStrike).reduce((sum, v) => sum + v, 0);
-
-    // Find index of strike closest to spot
-    let closestIndex = 0;
-    let minDiff = Infinity;
-    for (let i = 0; i < allStrikes.length; i++) {
-        const diff = Math.abs(allStrikes[i] - spotPrice);
-        if (diff < minDiff) {
-            minDiff = diff;
-            closestIndex = i;
-        }
-    }
-
-    // Slice 25 below and 25 above (total 50)
-    let start = Math.max(0, closestIndex - 25);
-    let end = Math.min(allStrikes.length, start + 50);
-
-    // Adjust start if we hit the limit
-    if (end - start < 50) {
-        start = Math.max(0, end - 50);
-    }
-
-    const strikes = allStrikes.slice(start, end);
-    const gex = strikes.map(s => Math.round(gexByStrike[s]));
-
-    const result = {
-      spot_price: spotPrice,
-      strikes,
-      gex,
-      total_gex: totalGex
-    };
-
-    // Cache result
-    gexCache.set(ticker, { ts: Date.now(), data: result });
-
-    res.json(result);
-  } catch (err) {
-    console.error('GEX API Error:', err);
-    res.status(500).json({ error: 'Failed to fetch GEX data' });
-  }
-});
-
-// --- Breadth API (historical price comparison) ---
+// --- Breadth API (historical price comparison via Finnhub) ---
 const breadthCache = new Map();
 const BREADTH_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
@@ -377,61 +224,50 @@ app.get('/api/breadth', async (req, res) => {
   }
 
   try {
+    const nowEpoch = Math.floor(Date.now() / 1000);
+
     if (isIntraday) {
-      // Use yahoo-finance2 with 1h interval for today's data
-      const today = new Date();
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const formatDate = (d) => d.toISOString().split('T')[0];
+      // Intraday: 30-minute bars for today
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const fromEpoch = Math.floor(todayStart.getTime() / 1000);
 
       const [spyData, compData] = await Promise.all([
-        yf.chart('SPY', {
-          period1: formatDate(today),
-          period2: formatDate(tomorrow),
-          interval: '30m'
-        }),
-        yf.chart(compTicker, {
-          period1: formatDate(today),
-          period2: formatDate(tomorrow),
-          interval: '30m'
-        })
+        finnhubCandles('SPY', '30', fromEpoch, nowEpoch),
+        finnhubCandles(compTicker, '30', fromEpoch, nowEpoch)
       ]);
 
-      const spyQuotes = (spyData.quotes || []).filter(q => q.close != null);
-      const compQuotes = (compData.quotes || []).filter(q => q.close != null);
-
-      if (spyQuotes.length === 0 || compQuotes.length === 0) {
+      if (!spyData || !compData) {
         return res.status(404).json({ error: 'No intraday data available (market may be closed)' });
       }
 
       // Filter to regular trading hours (9:30-16:00 ET)
-      const isRegularHours = (date) => {
-        const etStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      const isRegularHours = (epochSec) => {
+        const d = new Date(epochSec * 1000);
+        const etStr = d.toLocaleString('en-US', { timeZone: 'America/New_York' });
         const et = new Date(etStr);
         const totalMin = et.getHours() * 60 + et.getMinutes();
         return totalMin >= 570 && totalMin <= 960; // 9:30 AM to 4:00 PM
       };
 
-      // Key by rounded 30-min timestamp for matching
-      const roundTo30Min = (d) => {
-        const rounded = new Date(d);
-        rounded.setMinutes(rounded.getMinutes() < 30 ? 0 : 30, 0, 0);
-        return rounded.getTime();
+      // Round to 30-min bucket for matching
+      const roundTo30Min = (epochSec) => {
+        const d = new Date(epochSec * 1000);
+        d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0);
+        return d.getTime();
       };
 
       const spyMap = new Map();
-      for (const q of spyQuotes) {
-        const d = new Date(q.date);
-        if (isRegularHours(d)) {
-          spyMap.set(roundTo30Min(d), q.close);
+      for (let i = 0; i < spyData.t.length; i++) {
+        if (isRegularHours(spyData.t[i])) {
+          spyMap.set(roundTo30Min(spyData.t[i]), spyData.c[i]);
         }
       }
 
       const compMap = new Map();
-      for (const q of compQuotes) {
-        const d = new Date(q.date);
-        if (isRegularHours(d)) {
-          compMap.set(roundTo30Min(d), q.close);
+      for (let i = 0; i < compData.t.length; i++) {
+        if (isRegularHours(compData.t[i])) {
+          compMap.set(roundTo30Min(compData.t[i]), compData.c[i]);
         }
       }
 
@@ -450,45 +286,30 @@ app.get('/api/breadth', async (req, res) => {
       return res.json(result);
     }
 
-    // Daily logic — use yahoo-finance2
+    // Daily logic — use Finnhub daily candles
     const bufferDays = Math.ceil(days * 1.8) + 5;
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - bufferDays);
-
-    const formatDate = (d) => d.toISOString().split('T')[0];
+    const fromEpoch = nowEpoch - bufferDays * 86400;
 
     const [spyData, compData] = await Promise.all([
-      yf.chart('SPY', {
-        period1: formatDate(startDate),
-        period2: formatDate(endDate),
-        interval: '1d'
-      }),
-      yf.chart(compTicker, {
-        period1: formatDate(startDate),
-        period2: formatDate(endDate),
-        interval: '1d'
-      })
+      finnhubCandles('SPY', 'D', fromEpoch, nowEpoch),
+      finnhubCandles(compTicker, 'D', fromEpoch, nowEpoch)
     ]);
 
-    const spyQuotes = (spyData.quotes || []).filter(q => q.close != null);
-    const compQuotes = (compData.quotes || []).filter(q => q.close != null);
-
-    if (spyQuotes.length === 0 || compQuotes.length === 0) {
+    if (!spyData || !compData) {
       return res.status(404).json({ error: 'No price data available' });
     }
 
-    // Daily logic (unchanged)
+    // Build date-keyed maps from Finnhub arrays
     const spyMap = new Map();
-    for (const q of spyQuotes) {
-      const d = new Date(q.date).toISOString().split('T')[0];
-      spyMap.set(d, q.close);
+    for (let i = 0; i < spyData.t.length; i++) {
+      const d = new Date(spyData.t[i] * 1000).toISOString().split('T')[0];
+      spyMap.set(d, spyData.c[i]);
     }
 
     const compMap = new Map();
-    for (const q of compQuotes) {
-      const d = new Date(q.date).toISOString().split('T')[0];
-      compMap.set(d, q.close);
+    for (let i = 0; i < compData.t.length; i++) {
+      const d = new Date(compData.t[i] * 1000).toISOString().split('T')[0];
+      compMap.set(d, compData.c[i]);
     }
 
     const commonDates = [...spyMap.keys()]
