@@ -12,7 +12,6 @@ let currentTicker: string | null = null;
 let currentInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
-let smaSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let priceLineTools: any = null;
 let isLoading = false;
@@ -89,15 +88,7 @@ function initializeCharts(): void {
       wickDownColor: '#f85149'
     });
 
-    // Add 50-period SMA line series
-    smaSeries = priceChart.addLineSeries({
-      color: '#ffa500',  // Orange color
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-      title: 'SMA 50'
-    });
+
 
     // No line tools for price chart - divergence tool only on RSI chart
   }
@@ -183,7 +174,7 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Handle 2-hour aggregation for bars, then filter RSI and SMA to match
     let bars = data.bars;
     let rsiData: RSIPoint[] = data.rsi;
-    let smaData = data.sma;
+
 
     if (interval === '2hour') {
       bars = aggregate2HourBars(bars);
@@ -191,7 +182,6 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
       // Filter RSI and SMA data to only include points that have matching times in aggregated bars
       const barTimes = new Set(bars.map(b => b.time));
       rsiData = data.rsi.filter(r => barTimes.has(r.time));
-      smaData = data.sma.filter(s => barTimes.has(s.time));
     }
 
     // Update price chart
@@ -199,10 +189,7 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
       candleSeries.setData(bars);
     }
 
-    // Update SMA
-    if (smaSeries && smaData) {
-      smaSeries.setData(smaData);
-    }
+
 
     // Initialize or update RSI chart
     if (!rsiChart && rsiContainer) {

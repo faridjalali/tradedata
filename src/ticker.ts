@@ -124,14 +124,6 @@ function renderTradingViewChart(ticker: string): void {
         "toolbar_bg": "#f1f3f6",
         "enable_publishing": false,
         "allow_symbol_change": false,
-        "container_id": "tradingview_chart",
-        "studies": [
-            {
-                "id": "MASimple@tv-basicstudies",
-                "inputs": {
-                    "length": 50
-                }
-            }
-        ]
+        "container_id": "tradingview_chart"
     });
 }

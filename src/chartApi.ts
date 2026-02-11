@@ -22,7 +22,7 @@ export interface ChartData {
   timezone: 'America/Los_Angeles';
   bars: CandleBar[];
   rsi: RSIPoint[];
-  sma: Array<{time: string | number, value: number}>;
+
 }
 
 export async function fetchChartData(ticker: string, interval: ChartInterval): Promise<ChartData> {

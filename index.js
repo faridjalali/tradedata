@@ -258,26 +258,7 @@ async function fmpIntraday4Hour(symbol) {
   }));
 }
 
-// Calculate Simple Moving Average
-function calculateSMA(prices, period) {
-  const sma = [];
 
-  for (let i = 0; i < prices.length; i++) {
-    if (i < period - 1) {
-      // Not enough data points yet, push null
-      sma.push(null);
-    } else {
-      // Calculate average of last 'period' prices
-      let sum = 0;
-      for (let j = 0; j < period; j++) {
-        sum += prices[i - j];
-      }
-      sma.push(sum / period);
-    }
-  }
-
-  return sma;
-}
 
 // Calculate RSI (Relative Strength Index) with smoothed averages
 function calculateRSI(closePrices, period = 14) {
@@ -598,66 +579,14 @@ app.get('/api/chart', async (req, res) => {
       value: Math.round(rsiValues[i] * 100) / 100 // Round to 2 decimals
     }));
 
-    // Calculate 50-day SMA (always from daily data)
-    let sma = [];
 
-    if (interval === '1day') {
-      // For daily data, calculate SMA directly
-      const smaValues = calculateSMA(closePrices, 50);
-      sma = convertedBars
-        .map((bar, i) => ({
-          time: bar.time,
-          value: smaValues[i] !== null ? Math.round(smaValues[i] * 100) / 100 : null
-        }))
-        .filter(point => point.value !== null);
-    } else {
-      // For intraday data, fetch daily data and calculate 50-day SMA
-      const dailyBars = await fmpDaily(ticker);
-      if (dailyBars && dailyBars.length > 0) {
-        // Calculate SMA from daily close prices
-        const dailyClosePrices = dailyBars.map(b => b.close);
-        const dailySMAValues = calculateSMA(dailyClosePrices, 50);
-
-        // Create a map of date -> SMA value
-        const smaByDate = new Map();
-        dailyBars.forEach((bar, i) => {
-          if (dailySMAValues[i] !== null) {
-            smaByDate.set(bar.date, Math.round(dailySMAValues[i] * 100) / 100);
-          }
-        });
-
-        // For each intraday bar, find its date and assign the daily SMA value
-        sma = convertedBars
-          .map(bar => {
-            // Extract date from intraday timestamp (in LA timezone)
-            const date = new Date(bar.time * 1000);
-            const laDateStr = date.toLocaleString('en-US', {
-              timeZone: 'America/Los_Angeles',
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit'
-            });
-
-            // Parse LA date string (MM/DD/YYYY) to YYYY-MM-DD format
-            const [month, day, year] = laDateStr.split(/[/,\s]+/);
-            const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-
-            const smaValue = smaByDate.get(dateStr);
-            if (smaValue !== undefined) {
-              return { time: bar.time, value: smaValue };
-            }
-            return null;
-          })
-          .filter(point => point !== null);
-      }
-    }
 
     const result = {
       interval,
       timezone: 'America/Los_Angeles',
       bars: convertedBars,
       rsi,
-      sma
+
     };
 
     // Cache with appropriate expiry
