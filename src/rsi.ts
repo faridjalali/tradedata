@@ -18,6 +18,7 @@ export class RSIChart {
   private lineTools: any;
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
+  private referenceLines: Array<{line: any, value: number}> = [];
 
   constructor(options: RSIChartOptions) {
     this.displayMode = options.displayMode;
@@ -35,9 +36,7 @@ export class RSIChart {
         horzLines: { visible: false }
       },
       timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: '#21262d'
+        visible: false  // Hide RSI time scale - only show price chart's time axis
       },
       rightPriceScale: {
         borderColor: '#21262d',
@@ -78,11 +77,9 @@ export class RSIChart {
       crosshairMarkerVisible: false
     });
 
-    // Create a single point at extreme past and future to draw horizontal line
-    line.setData([
-      { time: '2020-01-01', value },
-      { time: '2030-01-01', value }
-    ]);
+    // Store reference to update later with actual data range
+    this.referenceLines = this.referenceLines || [];
+    this.referenceLines.push({ line, value });
   }
 
   private updateSeries(): void {
@@ -124,6 +121,19 @@ export class RSIChart {
         color: '#58a6ff'
       })));
     }
+
+    // Update reference lines to match data range
+    if (this.data.length > 0 && this.referenceLines.length > 0) {
+      const firstTime = this.data[0].time;
+      const lastTime = this.data[this.data.length - 1].time;
+
+      this.referenceLines.forEach(({line, value}) => {
+        line.setData([
+          { time: firstTime, value },
+          { time: lastTime, value }
+        ]);
+      });
+    }
   }
 
   setDisplayMode(mode: RSIDisplayMode): void {
@@ -144,6 +154,19 @@ export class RSIChart {
           color: '#58a6ff'
         })));
       }
+    }
+
+    // Update reference lines to match actual data range
+    if (data.length > 0 && this.referenceLines.length > 0) {
+      const firstTime = data[0].time;
+      const lastTime = data[data.length - 1].time;
+
+      this.referenceLines.forEach(({line, value}) => {
+        line.setData([
+          { time: firstTime, value },
+          { time: lastTime, value }
+        ]);
+      });
     }
   }
 

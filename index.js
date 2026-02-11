@@ -316,16 +316,40 @@ function convertToLATime(bars, interval) {
     }
 
     // Intraday: Convert ET to LA timezone and use Unix timestamp
-    // FMP returns datetime like "2025-08-10 09:30:00" in ET
-    const etDate = new Date(bar.datetime + ' GMT-0500'); // ET is GMT-5 (or GMT-4 during DST)
+    // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
+    // We need to convert this to a Unix timestamp
 
-    // Convert to LA timezone
-    const laDate = new Date(etDate.toLocaleString('en-US', {
-      timeZone: 'America/Los_Angeles'
-    }));
+    // Parse the datetime string and interpret it as being in ET timezone
+    const datetimeStr = bar.datetime.replace(' ', 'T'); // "2025-08-10T09:30:00"
 
-    // Use Unix timestamp (seconds) for Lightweight Charts intraday data
-    const timestamp = Math.floor(laDate.getTime() / 1000);
+    // Create a Date object by parsing as UTC first
+    const utcDate = new Date(datetimeStr + 'Z');
+
+    // Get what this time would be in ET
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+
+    const parts = formatter.formatToParts(utcDate);
+    const etParts = {};
+    parts.forEach(part => {
+      if (part.type !== 'literal') etParts[part.type] = part.value;
+    });
+
+    // Calculate offset between what we want (bar.datetime in ET) and what we got
+    const wantedET = new Date(datetimeStr);
+    const gotET = new Date(`${etParts.year}-${etParts.month}-${etParts.day}T${etParts.hour}:${etParts.minute}:${etParts.second}`);
+    const offset = wantedET.getTime() - gotET.getTime();
+
+    // Apply offset to get correct timestamp
+    const timestamp = Math.floor((utcDate.getTime() + offset) / 1000);
 
     return {
       time: timestamp,
