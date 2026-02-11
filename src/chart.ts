@@ -36,6 +36,11 @@ function sameLogicalRange(a: any, b: any): boolean {
 
 // Create price chart
 function createPriceChart(container: HTMLElement) {
+  const isMobileTouch = (
+    (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) ||
+    (typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0))
+  );
+
   const chart = createChart(container, {
     layout: {
       background: { color: '#1e222d' },
@@ -53,7 +58,8 @@ function createPriceChart(container: HTMLElement) {
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: false,
+      // Required for touch-based price-axis drag on mobile.
+      vertTouchDrag: isMobileTouch,
       mouseWheel: true,
     },
     handleScale: {
