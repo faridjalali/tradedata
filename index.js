@@ -315,41 +315,25 @@ function convertToLATime(bars, interval) {
       };
     }
 
-    // Intraday: Convert ET to LA timezone and use Unix timestamp
+    // Intraday: Convert ET to Unix timestamp
     // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
-    // We need to convert this to a Unix timestamp
 
-    // Parse the datetime string and interpret it as being in ET timezone
-    const datetimeStr = bar.datetime.replace(' ', 'T'); // "2025-08-10T09:30:00"
+    // Parse the datetime string components
+    const [datePart, timePart] = bar.datetime.split(' ');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hour, minute] = timePart.split(':').map(Number);
 
-    // Create a Date object by parsing as UTC first
-    const utcDate = new Date(datetimeStr + 'Z');
-
-    // Get what this time would be in ET
-    const formatter = new Intl.DateTimeFormat('en-US', {
+    // Create a date string that will be interpreted in ET timezone
+    // by using toLocaleString to get the UTC offset
+    const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    const etOffset = testDate.toLocaleString('en-US', {
       timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
+      timeZoneName: 'short'
+    }).includes('EST') ? -5 : -4; // -5 for EST, -4 for EDT
 
-    const parts = formatter.formatToParts(utcDate);
-    const etParts = {};
-    parts.forEach(part => {
-      if (part.type !== 'literal') etParts[part.type] = part.value;
-    });
-
-    // Calculate offset between what we want (bar.datetime in ET) and what we got
-    const wantedET = new Date(datetimeStr);
-    const gotET = new Date(`${etParts.year}-${etParts.month}-${etParts.day}T${etParts.hour}:${etParts.minute}:${etParts.second}`);
-    const offset = wantedET.getTime() - gotET.getTime();
-
-    // Apply offset to get correct timestamp
-    const timestamp = Math.floor((utcDate.getTime() + offset) / 1000);
+    // Create UTC timestamp accounting for ET offset
+    const utcTimestamp = Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
+    const timestamp = Math.floor(utcTimestamp / 1000);
 
     return {
       time: timestamp,

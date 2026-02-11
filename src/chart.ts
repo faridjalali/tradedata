@@ -1,6 +1,6 @@
 // Main chart rendering and management
 
-import { fetchChartData, aggregate2HourBars, aggregate2HourRSI, ChartInterval, RSIDisplayMode, CandleBar, RSIPoint } from './chartApi';
+import { fetchChartData, aggregate2HourBars, ChartInterval, RSIDisplayMode, CandleBar, RSIPoint } from './chartApi';
 import { RSIChart } from './rsi';
 
 // Declare Lightweight Charts global
@@ -169,13 +169,16 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Fetch data from API
     const data = await fetchChartData(ticker, interval);
 
-    // Handle 2-hour aggregation for both bars and RSI
+    // Handle 2-hour aggregation for bars, then filter RSI to match
     let bars = data.bars;
     let rsiData: RSIPoint[] = data.rsi;
 
     if (interval === '2hour') {
       bars = aggregate2HourBars(bars);
-      rsiData = aggregate2HourRSI(data.rsi);
+
+      // Filter RSI data to only include points that have matching times in aggregated bars
+      const barTimes = new Set(bars.map(b => b.time));
+      rsiData = data.rsi.filter(r => barTimes.has(r.time));
     }
 
     // Update price chart
