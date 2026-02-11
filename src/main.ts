@@ -11,6 +11,7 @@ import {
 import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
+import { initChartControls } from './chart';
 import { SortMode, LiveFeedMode } from './types';
 
 let currentView: 'live' | 'leaderboard' | 'breadth' = 'live'; 
@@ -284,6 +285,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Mobile Collapse Toggle (only on mobile)
     setupMobileCollapse();
+    
+    // Initialize Chart Controls
+    initChartControls();
 });
 
 function setupMobileCollapse(): void {

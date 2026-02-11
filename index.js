@@ -519,9 +519,9 @@ app.get('/api/chart', async (req, res) => {
   const interval = (req.query.interval || '1day').toString();
 
   // Validate interval
-  const validIntervals = ['1hour', '2hour', '4hour', '1day'];
+  const validIntervals = ['1hour', '4hour', '1day'];
   if (!validIntervals.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 1hour, 2hour, 4hour, or 1day' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 1hour, 4hour, or 1day' });
   }
 
   const cacheKey = `${ticker}_${interval}`;
@@ -537,71 +537,58 @@ app.get('/api/chart', async (req, res) => {
 
     // Fetch data based on interval
     if (interval === '1day') {
-      // Daily data - up to 6 months (180 days)
       const allBars = await fmpDaily(ticker);
       if (!allBars || allBars.length === 0) {
         return res.status(404).json({ error: 'No daily data available for this ticker' });
       }
-      bars = allBars.slice(-180); // Last 180 days
+      bars = allBars.slice(-180);
     } else if (interval === '1hour') {
-      // 1-hour intraday data
       const intradayBars = await fmpIntraday1Hour(ticker);
       if (!intradayBars || intradayBars.length === 0) {
         return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
       }
       bars = intradayBars;
     } else if (interval === '4hour') {
-      // 4-hour intraday data
       const intradayBars = await fmpIntraday4Hour(ticker);
       if (!intradayBars || intradayBars.length === 0) {
         return res.status(404).json({ error: 'No 4-hour data available for this ticker' });
       }
       bars = intradayBars;
-    } else if (interval === '2hour') {
-      // 2-hour data: Fetch 1-hour and let frontend aggregate
-      const intradayBars = await fmpIntraday1Hour(ticker);
-      if (!intradayBars || intradayBars.length === 0) {
-        return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
-      }
-      bars = intradayBars;
     }
 
-    // Convert to LA timezone and reverse to chronological order (FMP returns newest first)
+    // Convert to LA timezone and reverse to chronological order
     const convertedBars = convertToLATime(bars, interval).reverse();
 
-    // Calculate RSI from close prices
+    // Calculate RSI
     const closePrices = convertedBars.map(b => b.close);
     const rsiValues = calculateRSI(closePrices, 14);
 
-    // Align RSI with bars (pad first 14 periods with null to match length)
+    // Padding RSI with nulls to match bar length
     const rsi = convertedBars.map((bar, i) => {
       if (i < 14) {
-        return { time: bar.time, value: NaN }; // Use NaN for missing RSI values
+        return { time: bar.time, value: NaN };
       }
       return {
         time: bar.time,
-        value: Math.round(rsiValues[i - 14] * 100) / 100 // Shift index back
+        value: Math.round(rsiValues[i - 14] * 100) / 100
       };
     });
-
-
 
     const result = {
       interval,
       timezone: 'America/Los_Angeles',
       bars: convertedBars,
-      rsi,
-
+      rsi
     };
 
-    // Cache with appropriate expiry
-    const expiresAt = interval === '1day'
-      ? getNextCacheExpiry() // Cache until 4:01pm ET next day
-      : Date.now() + 5 * 60 * 1000; // Cache intraday for 5 minutes
+    // Cache
+    const expiresAt = interval === '1day' 
+      ? getNextCacheExpiry() 
+      : Date.now() + 5 * 60 * 1000;
 
     chartCache.set(cacheKey, { expiresAt, data: result });
-
     res.json(result);
+
   } catch (err) {
     console.error('Chart API Error:', err);
     res.status(500).json({ error: 'Failed to fetch chart data' });
@@ -611,5 +598,3 @@ app.get('/api/chart', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-
-

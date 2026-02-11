@@ -1,9 +1,8 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import { fetchChartData, ChartInterval, RSIPoint, aggregate2HourBars } from './chartApi';
+import { fetchChartData, ChartInterval, RSIPoint } from './chartApi';
 import { RSIChart } from './rsi';
 
 let currentChartTicker: string | null = null;
-let currentInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
@@ -75,17 +74,9 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     // Fetch data from API
     const data = await fetchChartData(ticker, interval);
 
-    // Handle 2-hour aggregation for bars, then filter RSI to match
-    let bars = data.bars;
-    let rsiData: RSIPoint[] = data.rsi;
-
-    if (interval === '2hour') {
-      bars = aggregate2HourBars(bars);
-
-      // Filter RSI data to only include points that have matching times in aggregated bars
-      const barTimes = new Set(bars.map(b => b.time));
-      rsiData = data.rsi.filter(r => barTimes.has(r.time));
-    }
+    // Retrieve bars and RSI directly (backend handles aggregation)
+    const bars = data.bars;
+    const rsiData = data.rsi;
 
     // Update price chart
     if (candleSeries) {
@@ -107,7 +98,6 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     }
 
     currentChartTicker = ticker;
-    currentInterval = interval;
 
     // Handle resize
     const resizeObserver = new ResizeObserver(entries => {
