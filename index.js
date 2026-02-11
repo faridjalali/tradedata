@@ -435,6 +435,7 @@ function isFmpSubscriptionRestrictedError(err) {
 const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
 const VD_RSI_LOWER_TF_CACHE = new Map();
 const VD_RSI_RESULT_CACHE = new Map();
+const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
 
 function easternLocalToUtcMs(year, month, day, hour, minute) {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
@@ -530,6 +531,7 @@ function sweepExpiredTimedCache(cacheMap) {
 const vdRsiCacheCleanupTimer = setInterval(() => {
   sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
   sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
+  sweepExpiredTimedCache(CHART_DATA_CACHE);
 }, 15 * 60 * 1000);
 if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
   vdRsiCacheCleanupTimer.unref();
@@ -537,6 +539,14 @@ if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
 
 async function fmpIntraday(symbol, interval, options = {}) {
   const { from, to } = options;
+
+  // Check cache first to avoid redundant API calls
+  const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
+  const cached = getTimedCacheValue(CHART_DATA_CACHE, cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const symbolEncoded = encodeURIComponent(symbol);
   const params = { symbol, apikey: FMP_KEY };
   if (from) params.from = from;
@@ -567,7 +577,15 @@ async function fmpIntraday(symbol, interval, options = {}) {
     return { datetime, open, high, low, close, volume };
   }).filter(Boolean);
 
-  return normalized.length ? normalized : null;
+  const result = normalized.length ? normalized : null;
+
+  // Cache the result with smart expiry
+  if (result) {
+    const expiryMs = getVdRsiCacheExpiryMs(new Date());
+    setTimedCacheValue(CHART_DATA_CACHE, cacheKey, result, expiryMs);
+  }
+
+  return result;
 }
 
 // Fetch 9 months of data to ensure 6 months of valid indicator data
