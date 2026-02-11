@@ -320,10 +320,12 @@ async function fetchFmpArrayWithFallback(label, urls) {
 async function fmpDaily(symbol) {
   const symbolEncoded = encodeURIComponent(symbol);
   const urls = [
-    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
+    // Prefer full endpoints so daily candlesticks have true OHLC bars.
     buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 })
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 }),
+    // Fall back to light only if full is unavailable for the account/endpoint.
+    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY })
   ];
 
   const rows = await fetchFmpArrayWithFallback('FMP daily', urls);
