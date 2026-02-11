@@ -47,7 +47,8 @@ export class RSIChart {
       height: 400,
       layout: {
         background: { color: '#0d1117' },
-        textColor: '#c9d1d9'
+        textColor: '#c9d1d9',
+        attributionLogo: false
       },
       grid: {
         vertLines: { visible: false },

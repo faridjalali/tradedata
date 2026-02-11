@@ -29,6 +29,7 @@ function createPriceChart(container: HTMLElement) {
     layout: {
       background: { color: '#1e222d' },
       textColor: '#d1d4dc',
+      attributionLogo: false,
     },
     grid: {
       vertLines: { visible: false },
