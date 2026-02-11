@@ -16,9 +16,9 @@ function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
 }
 
-function sameTimeRange(a: any, b: any): boolean {
+function sameLogicalRange(a: any, b: any): boolean {
   if (!a || !b) return false;
-  return String(a.from) === String(b.from) && String(a.to) === String(b.to);
+  return Math.abs(Number(a.from) - Number(b.from)) < 1e-6 && Math.abs(Number(a.to) - Number(b.to)) < 1e-6;
 }
 
 // Create price chart
@@ -39,13 +39,13 @@ function createPriceChart(container: HTMLElement) {
       pressedMouseMove: true,
       horzTouchDrag: true,
       vertTouchDrag: false,
-      mouseWheel: false,
+      mouseWheel: true,
     },
     handleScale: {
-      mouseWheel: false,
-      pinch: false,
-      axisPressedMouseMove: false,
-      axisDoubleClickReset: false,
+      mouseWheel: true,
+      pinch: true,
+      axisPressedMouseMove: true,
+      axisDoubleClickReset: true,
     },
     rightPriceScale: {
       borderColor: '#2b2b43',
@@ -53,6 +53,8 @@ function createPriceChart(container: HTMLElement) {
     timeScale: {
       visible: false,
       borderVisible: false,
+      fixRightEdge: false,
+      rightBarStaysOnScroll: false,
     },
   });
 
@@ -182,10 +184,10 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
 function syncChartsToPriceRange(): void {
   if (!priceChart || !rsiChart) return;
-  const priceRange = priceChart.timeScale().getVisibleRange();
+  const priceRange = priceChart.timeScale().getVisibleLogicalRange();
   if (!priceRange) return;
   try {
-    rsiChart.getChart().timeScale().setVisibleRange(priceRange);
+    rsiChart.getChart().timeScale().setVisibleLogicalRange(priceRange);
   } catch {
     // Ignore transient range sync errors during live updates.
   }
@@ -203,27 +205,27 @@ function setupChartSync() {
     });
   };
 
-  // Sync price chart → RSI chart by visible time range to avoid drift when datasets differ.
-  priceChart.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
+  // Sync price chart → RSI chart by logical range.
+  priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'rsi') return;
-    const currentRSIRange = rsiChartInstance.timeScale().getVisibleRange();
-    if (sameTimeRange(currentRSIRange, timeRange)) return;
+    const currentRSIRange = rsiChartInstance.timeScale().getVisibleLogicalRange();
+    if (sameLogicalRange(currentRSIRange, timeRange)) return;
     syncLock = 'price';
     try {
-      rsiChartInstance.timeScale().setVisibleRange(timeRange);
+      rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
     } finally {
       unlockAfterFrame('price');
     }
   });
 
   // Sync RSI chart → price chart.
-  rsiChartInstance.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
+  rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'price') return;
-    const currentPriceRange = priceChart.timeScale().getVisibleRange();
-    if (sameTimeRange(currentPriceRange, timeRange)) return;
+    const currentPriceRange = priceChart.timeScale().getVisibleLogicalRange();
+    if (sameLogicalRange(currentPriceRange, timeRange)) return;
     syncLock = 'rsi';
     try {
-      priceChart.timeScale().setVisibleRange(timeRange);
+      priceChart.timeScale().setVisibleLogicalRange(timeRange);
     } finally {
       unlockAfterFrame('rsi');
     }

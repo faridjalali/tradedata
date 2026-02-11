@@ -56,6 +56,8 @@ export class RSIChart {
         secondsVisible: false,
         borderVisible: true,
         ticksVisible: true,
+        fixRightEdge: false,
+        rightBarStaysOnScroll: false,
         borderColor: '#21262d'  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
@@ -72,13 +74,13 @@ export class RSIChart {
         pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: false,
-        mouseWheel: false
+        mouseWheel: true
       },
       handleScale: {
-        mouseWheel: false,
-        pinch: false,
-        axisPressedMouseMove: false,
-        axisDoubleClickReset: false
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true
       }
     });
 
