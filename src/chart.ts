@@ -161,24 +161,14 @@ function setupChartSync() {
   if (!priceChart || !rsiChart) return;
 
   const rsiChartInstance = rsiChart.getChart();
-  let isPriceChartChanging = false;
-  let isRSIChartChanging = false;
+  let isSyncingFromPrice = false;
 
   // Sync price chart → RSI chart by visible time range to avoid drift when datasets differ.
   priceChart.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
-    if (timeRange && !isRSIChartChanging) {
-      isPriceChartChanging = true;
+    if (timeRange && !isSyncingFromPrice) {
+      isSyncingFromPrice = true;
       rsiChartInstance.timeScale().setVisibleRange(timeRange);
-      isPriceChartChanging = false;
-    }
-  });
-
-  // Sync RSI chart → price chart by visible time range.
-  rsiChartInstance.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
-    if (timeRange && !isPriceChartChanging) {
-      isRSIChartChanging = true;
-      priceChart.timeScale().setVisibleRange(timeRange);
-      isRSIChartChanging = false;
+      isSyncingFromPrice = false;
     }
   });
 
