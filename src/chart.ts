@@ -11,20 +11,75 @@ let chartResizeObserver: ResizeObserver | null = null;
 let latestRenderRequestId = 0;
 let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
+let currentBars: any[] = [];
 let monthBoundaryTimes: number[] = [];
 let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
+let priceSettingsPanelEl: HTMLDivElement | null = null;
+let rsiSettingsPanelEl: HTMLDivElement | null = null;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 5;
 const SCALE_MIN_WIDTH_PX = 80;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
+const SETTINGS_ICON = '⚙';
+
+type MAType = 'SMA' | 'EMA';
+type MASourceMode = 'daily' | 'timeframe';
+type MidlineStyle = 'dotted' | 'solid';
+
+interface MASetting {
+  enabled: boolean;
+  type: MAType;
+  length: number;
+  color: string;
+  series: any | null;
+}
+
+interface PriceChartSettings {
+  maSourceMode: MASourceMode;
+  verticalGridlines: boolean;
+  horizontalGridlines: boolean;
+  ma: MASetting[];
+}
+
+interface RSISettings {
+  length: number;
+  lineColor: string;
+  midlineColor: string;
+  midlineStyle: MidlineStyle;
+}
+
+const rsiSettings: RSISettings = {
+  length: 14,
+  lineColor: '#58a6ff',
+  midlineColor: '#ffffff',
+  midlineStyle: 'dotted'
+};
+
+const priceChartSettings: PriceChartSettings = {
+  maSourceMode: 'daily',
+  verticalGridlines: true,
+  horizontalGridlines: false,
+  ma: [
+    { enabled: false, type: 'SMA', length: 20, color: '#ffa500', series: null },
+    { enabled: false, type: 'SMA', length: 50, color: '#8a2be2', series: null },
+    { enabled: false, type: 'EMA', length: 100, color: '#00bcd4', series: null },
+    { enabled: false, type: 'EMA', length: 200, color: '#90ee90', series: null }
+  ]
+};
 
 const MONTH_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Los_Angeles',
   year: 'numeric',
   month: '2-digit'
+});
+const LA_DAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
 });
 
 function ensureMonthGridOverlay(container: HTMLElement, isPricePane: boolean): HTMLDivElement {
@@ -81,6 +136,194 @@ function buildMonthBoundaryTimes(bars: any[]): number[] {
   return result;
 }
 
+function dayKeyInLA(unixSeconds: number): string {
+  return LA_DAY_FORMATTER.format(new Date(unixSeconds * 1000));
+}
+
+function calculateRSIFromCloses(closePrices: number[], period: number): number[] {
+  if (!Array.isArray(closePrices) || closePrices.length === 0) return [];
+  if (closePrices.length === 1) return [50];
+
+  const safePeriod = Math.max(1, Math.floor(period || 14));
+  const rsiValues = new Array(closePrices.length).fill(50);
+  const gains: number[] = [];
+  const losses: number[] = [];
+  let avgGain = 0;
+  let avgLoss = 0;
+
+  for (let i = 1; i < closePrices.length; i++) {
+    const change = closePrices[i] - closePrices[i - 1];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? Math.abs(change) : 0;
+    gains.push(gain);
+    losses.push(loss);
+
+    if (i < safePeriod) {
+      const window = i;
+      let gainSum = 0;
+      let lossSum = 0;
+      for (let j = 0; j < window; j++) {
+        gainSum += gains[j];
+        lossSum += losses[j];
+      }
+      avgGain = gainSum / window;
+      avgLoss = lossSum / window;
+    } else if (i === safePeriod) {
+      let gainSum = 0;
+      let lossSum = 0;
+      for (let j = i - safePeriod; j < i; j++) {
+        gainSum += gains[j];
+        lossSum += losses[j];
+      }
+      avgGain = gainSum / safePeriod;
+      avgLoss = lossSum / safePeriod;
+    } else {
+      avgGain = ((avgGain * (safePeriod - 1)) + gain) / safePeriod;
+      avgLoss = ((avgLoss * (safePeriod - 1)) + loss) / safePeriod;
+    }
+
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    const rsi = 100 - (100 / (1 + rs));
+    rsiValues[i] = Number.isFinite(rsi) ? rsi : rsiValues[i - 1];
+  }
+
+  rsiValues[0] = rsiValues[1] ?? 50;
+  return rsiValues;
+}
+
+function buildRSISeriesFromBars(bars: any[], period: number): Array<{ time: string | number, value: number }> {
+  if (!bars || bars.length === 0) return [];
+  const closes = bars.map((bar) => Number(bar.close)).filter((value) => Number.isFinite(value));
+  const rsiValues = calculateRSIFromCloses(closes, period);
+  const out: Array<{ time: string | number, value: number }> = [];
+  for (let i = 0; i < bars.length; i++) {
+    const raw = rsiValues[i];
+    if (!Number.isFinite(raw)) continue;
+    out.push({ time: bars[i].time, value: Math.round(raw * 100) / 100 });
+  }
+  return out;
+}
+
+function computeSMA(values: number[], length: number): Array<number | null> {
+  const period = Math.max(1, Math.floor(length));
+  const out: Array<number | null> = new Array(values.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!Number.isFinite(value)) continue;
+    sum += value;
+    if (i >= period) {
+      const drop = values[i - period];
+      if (Number.isFinite(drop)) sum -= drop;
+    }
+    if (i >= period - 1) {
+      out[i] = sum / period;
+    }
+  }
+  return out;
+}
+
+function computeEMA(values: number[], length: number): Array<number | null> {
+  const period = Math.max(1, Math.floor(length));
+  const out: Array<number | null> = new Array(values.length).fill(null);
+  if (values.length === 0) return out;
+  const alpha = 2 / (period + 1);
+  let ema: number | null = null;
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!Number.isFinite(value)) continue;
+    if (ema === null) {
+      ema = value;
+    } else {
+      ema = (value * alpha) + (ema * (1 - alpha));
+    }
+    out[i] = ema;
+  }
+  return out;
+}
+
+function buildMASourceValues(bars: any[]): number[] {
+  if (priceChartSettings.maSourceMode === 'timeframe') {
+    return bars.map((bar) => Number(bar.close));
+  }
+
+  // Daily mode: derive daily close from currently loaded timeframe bars.
+  const dailyCloseByDay = new Map<string, number>();
+  for (const bar of bars) {
+    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
+    const close = Number(bar?.close);
+    if (unixSeconds === null || !Number.isFinite(close)) continue;
+    dailyCloseByDay.set(dayKeyInLA(unixSeconds), close);
+  }
+
+  return bars.map((bar) => {
+    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
+    if (unixSeconds === null) return Number.NaN;
+    const close = dailyCloseByDay.get(dayKeyInLA(unixSeconds));
+    return Number(close);
+  });
+}
+
+function clearMovingAverageSeries(): void {
+  if (!priceChart) return;
+  for (const setting of priceChartSettings.ma) {
+    if (setting.series) {
+      priceChart.removeSeries(setting.series);
+      setting.series = null;
+    }
+  }
+}
+
+function applyMovingAverages(): void {
+  if (!priceChart || !currentBars.length) {
+    clearMovingAverageSeries();
+    return;
+  }
+
+  const sourceValues = buildMASourceValues(currentBars);
+
+  for (const setting of priceChartSettings.ma) {
+    const validLength = Math.max(1, Math.floor(Number(setting.length) || 1));
+    setting.length = validLength;
+    if (!setting.enabled) {
+      if (setting.series) {
+        priceChart.removeSeries(setting.series);
+        setting.series = null;
+      }
+      continue;
+    }
+
+    if (!setting.series) {
+      setting.series = priceChart.addLineSeries({
+        color: setting.color,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false
+      });
+    } else {
+      setting.series.applyOptions({ color: setting.color });
+    }
+
+    const values = setting.type === 'EMA'
+      ? computeEMA(sourceValues, validLength)
+      : computeSMA(sourceValues, validLength);
+
+    const maData = currentBars.map((bar, index) => {
+      const value = values[index];
+      if (!Number.isFinite(Number(value))) {
+        return { time: bar.time };
+      }
+      return {
+        time: bar.time,
+        value: Number(value)
+      };
+    });
+    setting.series.setData(maData);
+  }
+}
+
 function clearMonthGridOverlay(overlayEl: HTMLDivElement | null): void {
   if (!overlayEl) return;
   overlayEl.innerHTML = '';
@@ -90,6 +333,7 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
   if (!chart || !overlayEl) return;
 
   overlayEl.innerHTML = '';
+  if (!priceChartSettings.verticalGridlines) return;
   if (!monthBoundaryTimes.length) return;
 
   const width = overlayEl.clientWidth || overlayEl.offsetWidth;
@@ -114,6 +358,311 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
 function refreshMonthGridLines(): void {
   renderMonthGridLines(priceChart, priceMonthGridOverlayEl);
   renderMonthGridLines(rsiChart?.getChart(), rsiMonthGridOverlayEl);
+}
+
+function applyPriceGridOptions(): void {
+  if (!priceChart) return;
+  priceChart.applyOptions({
+    grid: {
+      vertLines: { visible: false },
+      horzLines: {
+        visible: priceChartSettings.horizontalGridlines,
+        color: MONTH_GRIDLINE_COLOR
+      }
+    }
+  });
+  refreshMonthGridLines();
+}
+
+function syncPriceSettingsPanelValues(): void {
+  if (!priceSettingsPanelEl) return;
+  const sourceSelect = priceSettingsPanelEl.querySelector('[data-price-setting="ma-source"]') as HTMLSelectElement | null;
+  const vGrid = priceSettingsPanelEl.querySelector('[data-price-setting="v-grid"]') as HTMLInputElement | null;
+  const hGrid = priceSettingsPanelEl.querySelector('[data-price-setting="h-grid"]') as HTMLInputElement | null;
+  if (sourceSelect) sourceSelect.value = priceChartSettings.maSourceMode;
+  if (vGrid) vGrid.checked = priceChartSettings.verticalGridlines;
+  if (hGrid) hGrid.checked = priceChartSettings.horizontalGridlines;
+
+  for (let i = 0; i < priceChartSettings.ma.length; i++) {
+    const ma = priceChartSettings.ma[i];
+    const enabled = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-enabled-${i}"]`) as HTMLInputElement | null;
+    const type = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-type-${i}"]`) as HTMLSelectElement | null;
+    const length = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-length-${i}"]`) as HTMLInputElement | null;
+    const color = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-color-${i}"]`) as HTMLInputElement | null;
+    if (enabled) enabled.checked = ma.enabled;
+    if (type) type.value = ma.type;
+    if (length) length.value = String(ma.length);
+    if (color) color.value = ma.color;
+  }
+}
+
+function syncRSISettingsPanelValues(): void {
+  if (!rsiSettingsPanelEl) return;
+  const length = rsiSettingsPanelEl.querySelector('[data-rsi-setting="length"]') as HTMLInputElement | null;
+  const color = rsiSettingsPanelEl.querySelector('[data-rsi-setting="line-color"]') as HTMLInputElement | null;
+  const midlineColor = rsiSettingsPanelEl.querySelector('[data-rsi-setting="midline-color"]') as HTMLInputElement | null;
+  const midlineStyle = rsiSettingsPanelEl.querySelector('[data-rsi-setting="midline-style"]') as HTMLSelectElement | null;
+  if (length) length.value = String(rsiSettings.length);
+  if (color) color.value = rsiSettings.lineColor;
+  if (midlineColor) midlineColor.value = rsiSettings.midlineColor;
+  if (midlineStyle) midlineStyle.value = rsiSettings.midlineStyle;
+}
+
+function hideSettingsPanels(): void {
+  if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = 'none';
+  if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
+}
+
+function applyRSISettings(): void {
+  if (!rsiChart) return;
+  const rsiData = buildRSISeriesFromBars(currentBars, rsiSettings.length);
+  rsiByTime = new Map(
+    rsiData
+      .filter((point) => Number.isFinite(Number(point.value)))
+      .map((point) => [timeKey(point.time), Number(point.value)])
+  );
+  rsiChart.setData(rsiData, currentBars.map((b) => ({ time: b.time, close: b.close })));
+  rsiChart.setLineColor(rsiSettings.lineColor);
+  rsiChart.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+}
+
+function createSettingsButton(container: HTMLElement, pane: 'price' | 'rsi'): HTMLButtonElement {
+  const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
+  if (existing) return existing;
+  const btn = document.createElement('button');
+  btn.className = 'pane-settings-btn';
+  btn.dataset.pane = pane;
+  btn.type = 'button';
+  btn.title = `${pane === 'price' ? 'Price' : 'RSI'} settings`;
+  btn.textContent = SETTINGS_ICON;
+  btn.style.position = 'absolute';
+  btn.style.left = '8px';
+  btn.style.bottom = '8px';
+  btn.style.zIndex = '30';
+  btn.style.width = '24px';
+  btn.style.height = '24px';
+  btn.style.borderRadius = '4px';
+  btn.style.border = '1px solid #30363d';
+  btn.style.background = '#161b22';
+  btn.style.color = '#c9d1d9';
+  btn.style.cursor = 'pointer';
+  btn.style.padding = '0';
+  container.appendChild(btn);
+  return btn;
+}
+
+function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
+  const panel = document.createElement('div');
+  panel.className = 'pane-settings-panel price-settings-panel';
+  panel.style.position = 'absolute';
+  panel.style.left = '8px';
+  panel.style.bottom = '38px';
+  panel.style.zIndex = '31';
+  panel.style.width = '280px';
+  panel.style.maxWidth = 'calc(100% - 16px)';
+  panel.style.background = 'rgba(22, 27, 34, 0.95)';
+  panel.style.border = '1px solid #30363d';
+  panel.style.borderRadius = '6px';
+  panel.style.padding = '10px';
+  panel.style.display = 'none';
+  panel.style.color = '#c9d1d9';
+  panel.style.fontSize = '12px';
+  panel.style.backdropFilter = 'blur(6px)';
+
+  panel.innerHTML = `
+    <div style="font-weight:600; margin-bottom:8px;">Price Settings</div>
+    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+      <span>MA Source</span>
+      <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        <option value="daily">Daily close (derived)</option>
+        <option value="timeframe">Chart timeframe</option>
+      </select>
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span>Vertical month lines</span>
+      <input type="checkbox" data-price-setting="v-grid" />
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span>Horizontal gridlines</span>
+      <input type="checkbox" data-price-setting="h-grid" />
+    </label>
+    <div style="font-weight:600; margin-bottom:6px;">Moving Averages (max 4)</div>
+    ${priceChartSettings.ma.map((_, i) => `
+      <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; margin-bottom:6px;">
+        <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
+        <select data-price-setting="ma-type-${i}" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+          <option value="SMA">SMA</option>
+          <option value="EMA">EMA</option>
+        </select>
+        <input data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" style="width:58px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+        <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
+      </div>
+    `).join('')}
+  `;
+
+  panel.addEventListener('input', (event) => {
+    const target = event.target as HTMLElement;
+    if (!target) return;
+
+    const setting = (target as HTMLInputElement | HTMLSelectElement).dataset.priceSetting || '';
+    if (setting === 'ma-source') {
+      priceChartSettings.maSourceMode = ((target as HTMLSelectElement).value === 'timeframe') ? 'timeframe' : 'daily';
+      applyMovingAverages();
+      return;
+    }
+    if (setting === 'v-grid') {
+      priceChartSettings.verticalGridlines = (target as HTMLInputElement).checked;
+      refreshMonthGridLines();
+      return;
+    }
+    if (setting === 'h-grid') {
+      priceChartSettings.horizontalGridlines = (target as HTMLInputElement).checked;
+      applyPriceGridOptions();
+      return;
+    }
+
+    const maMatch = setting.match(/^ma-(enabled|type|length|color)-(\d)$/);
+    if (!maMatch) return;
+    const key = maMatch[1];
+    const index = Number(maMatch[2]);
+    const ma = priceChartSettings.ma[index];
+    if (!ma) return;
+
+    if (key === 'enabled') {
+      ma.enabled = (target as HTMLInputElement).checked;
+    } else if (key === 'type') {
+      ma.type = ((target as HTMLSelectElement).value === 'EMA') ? 'EMA' : 'SMA';
+    } else if (key === 'length') {
+      ma.length = Math.max(1, Math.floor(Number((target as HTMLInputElement).value) || 14));
+    } else if (key === 'color') {
+      ma.color = (target as HTMLInputElement).value || ma.color;
+    }
+    applyMovingAverages();
+  });
+
+  container.appendChild(panel);
+  return panel;
+}
+
+function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
+  const panel = document.createElement('div');
+  panel.className = 'pane-settings-panel rsi-settings-panel';
+  panel.style.position = 'absolute';
+  panel.style.left = '8px';
+  panel.style.bottom = '38px';
+  panel.style.zIndex = '31';
+  panel.style.width = '230px';
+  panel.style.maxWidth = 'calc(100% - 16px)';
+  panel.style.background = 'rgba(22, 27, 34, 0.95)';
+  panel.style.border = '1px solid #30363d';
+  panel.style.borderRadius = '6px';
+  panel.style.padding = '10px';
+  panel.style.display = 'none';
+  panel.style.color = '#c9d1d9';
+  panel.style.fontSize = '12px';
+  panel.style.backdropFilter = 'blur(6px)';
+
+  panel.innerHTML = `
+    <div style="font-weight:600; margin-bottom:8px;">RSI Settings</div>
+    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+      <span>Length</span>
+      <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+      <span>Line color</span>
+      <input data-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+      <span>Midline color</span>
+      <input data-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <span>Midline style</span>
+      <select data-rsi-setting="midline-style" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        <option value="dotted">Dotted</option>
+        <option value="solid">Solid</option>
+      </select>
+    </label>
+  `;
+
+  panel.addEventListener('input', (event) => {
+    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
+    if (!target) return;
+    const setting = target.dataset.rsiSetting || '';
+    if (setting === 'length') {
+      rsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
+      applyRSISettings();
+      return;
+    }
+    if (setting === 'line-color') {
+      rsiSettings.lineColor = target.value || rsiSettings.lineColor;
+      rsiChart?.setLineColor(rsiSettings.lineColor);
+      return;
+    }
+    if (setting === 'midline-color') {
+      rsiSettings.midlineColor = target.value || rsiSettings.midlineColor;
+      rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+      return;
+    }
+    if (setting === 'midline-style') {
+      rsiSettings.midlineStyle = (target.value === 'solid') ? 'solid' : 'dotted';
+      rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+      return;
+    }
+  });
+
+  container.appendChild(panel);
+  return panel;
+}
+
+function ensureSettingsUI(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
+  const priceBtn = createSettingsButton(chartContainer, 'price');
+  const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
+
+  if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
+    if (priceSettingsPanelEl?.parentElement) {
+      priceSettingsPanelEl.parentElement.removeChild(priceSettingsPanelEl);
+    }
+    priceSettingsPanelEl = createPriceSettingsPanel(chartContainer);
+  }
+  if (!rsiSettingsPanelEl || rsiSettingsPanelEl.parentElement !== rsiContainer) {
+    if (rsiSettingsPanelEl?.parentElement) {
+      rsiSettingsPanelEl.parentElement.removeChild(rsiSettingsPanelEl);
+    }
+    rsiSettingsPanelEl = createRSISettingsPanel(rsiContainer);
+  }
+
+  syncPriceSettingsPanelValues();
+  syncRSISettingsPanelValues();
+
+  if (!priceBtn.dataset.bound) {
+    priceBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextDisplay = priceSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      hideSettingsPanels();
+      if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = nextDisplay;
+    });
+    priceBtn.dataset.bound = '1';
+  }
+  if (!rsiBtn.dataset.bound) {
+    rsiBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextDisplay = rsiSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      hideSettingsPanels();
+      if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = nextDisplay;
+    });
+    rsiBtn.dataset.bound = '1';
+  }
+
+  if (!document.body.dataset.chartSettingsBound) {
+    document.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('.pane-settings-panel') || target.closest('.pane-settings-btn')) return;
+      hideSettingsPanels();
+    });
+    document.body.dataset.chartSettingsBound = '1';
+  }
 }
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
@@ -294,6 +843,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   setPricePaneMessage(chartContainer, null);
   ensureMonthGridOverlay(chartContainer, true);
   ensureMonthGridOverlay(rsiContainer, false);
+  ensureSettingsUI(chartContainer, rsiContainer);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -301,6 +851,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     priceChart = chart;
     candleSeries = series;
     setupChartSync();
+    applyPriceGridOptions();
   }
 
   ensureResizeObserver(chartContainer, rsiContainer);
@@ -317,12 +868,13 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       throw new Error('No valid chart bars returned for this ticker/interval');
     }
     monthBoundaryTimes = buildMonthBoundaryTimes(bars);
-    const rsiData = data.rsi;
+    const rsiData = buildRSISeriesFromBars(bars, rsiSettings.length);
+    currentBars = bars;
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
     );
     rsiByTime = new Map(
-      (rsiData || [])
+      rsiData
         .filter((point) => Number.isFinite(Number(point.value)))
         .map((point) => [timeKey(point.time), Number(point.value)])
     );
@@ -339,6 +891,9 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
         container: rsiContainer,
         data: rsiData,
         displayMode: 'line',
+        lineColor: rsiSettings.lineColor,
+        midlineColor: rsiSettings.midlineColor,
+        midlineStyle: rsiSettings.midlineStyle,
         priceData: bars.map(b => ({ time: b.time, close: b.close })),
         onTrendLineDrawn: () => {
           const trendBtn = document.querySelector('#drawing-tools button[data-tool="trend"]') as HTMLElement | null;
@@ -354,6 +909,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
+    applyRSISettings();
+    applyMovingAverages();
     applyRightMargin();
     syncChartsToPriceRange();
     refreshMonthGridLines();
@@ -369,6 +926,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       if (rsiChart) {
         rsiChart.setData([], []);
       }
+      currentBars = [];
+      clearMovingAverageSeries();
       monthBoundaryTimes = [];
       clearMonthGridOverlay(priceMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);

@@ -11,6 +11,9 @@ export interface RSIChartOptions {
   data: RSIPoint[];
   displayMode: RSIDisplayMode;
   priceData?: Array<{time: string | number, close: number}>; // For divergence detection
+  lineColor?: string;
+  midlineColor?: string;
+  midlineStyle?: 'dotted' | 'solid';
   onTrendLineDrawn?: () => void;
 }
 
@@ -24,9 +27,13 @@ export class RSIChart {
   private series: any;
   private lineTools: any;
   private displayMode: RSIDisplayMode;
+  private lineColor: string = '#58a6ff';
+  private midlineColor: string = '#ffffff';
+  private midlineStyle: 'dotted' | 'solid' = 'dotted';
   private data: RSIPoint[];
   private seriesData: any[] = [];
-  private referenceLines: Array<{value: number, label: string, color: string}> = [];
+  private referenceLines: Array<{value: number, label: string, color: string, lineStyle: number}> = [];
+  private midlinePriceLine: any = null;
   private priceData: Array<{time: string | number, close: number}> = [];
   private priceByTime = new Map<string, number>();
   private indexByTime = new Map<string, number>();
@@ -48,6 +55,9 @@ export class RSIChart {
   constructor(options: RSIChartOptions) {
     this.container = options.container;
     this.displayMode = options.displayMode;
+    this.lineColor = options.lineColor || this.lineColor;
+    this.midlineColor = options.midlineColor || this.midlineColor;
+    this.midlineStyle = options.midlineStyle || this.midlineStyle;
     this.data = this.normalizeRSIData(options.data);
     this.priceData = options.priceData || [];
     this.rebuildLookupMaps();
@@ -106,7 +116,7 @@ export class RSIChart {
     });
 
     // Add midline at 50
-    this.addReferenceLine(50, 'Midline', '#ffffff');
+    this.addReferenceLine(50, 'Midline', this.midlineColor, this.midlineStyleToLineStyle(this.midlineStyle));
     this.initMidlineCrossMarker();
     this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.updateMidlineCrossMarkerPosition());
 
@@ -246,6 +256,10 @@ export class RSIChart {
     });
   }
 
+  private midlineStyleToLineStyle(style: 'dotted' | 'solid'): number {
+    return style === 'solid' ? 0 : 1;
+  }
+
   private initMidlineCrossMarker(): void {
     if (!this.container) return;
     const position = window.getComputedStyle(this.container).position;
@@ -283,12 +297,24 @@ export class RSIChart {
       return;
     }
 
-    let x = Number.NaN;
-    if (Number.isFinite(this.midlineCrossTimeSeconds)) {
-      x = this.chart.timeScale().timeToCoordinate(this.midlineCrossTimeSeconds);
+    const visibleRange = this.chart.timeScale().getVisibleLogicalRange?.();
+    if (
+      this.midlineCrossIndex !== null &&
+      this.midlineCrossIndex !== undefined &&
+      visibleRange &&
+      (this.midlineCrossIndex < Number(visibleRange.from) || this.midlineCrossIndex > Number(visibleRange.to))
+    ) {
+      this.midlineCrossMarkerEl.style.display = 'none';
+      return;
     }
-    if (!Number.isFinite(x) && this.midlineCrossIndex !== null && this.midlineCrossIndex !== undefined) {
+
+    let x = Number.NaN;
+    if (this.midlineCrossIndex !== null && this.midlineCrossIndex !== undefined) {
       x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossIndex);
+    }
+    if (!Number.isFinite(x) && Number.isFinite(this.midlineCrossTimeSeconds)) {
+      const timeX = this.chart.timeScale().timeToCoordinate(this.midlineCrossTimeSeconds);
+      if (Number.isFinite(timeX)) x = timeX;
     }
     if (!Number.isFinite(x)) {
       this.midlineCrossMarkerEl.style.display = 'none';
@@ -385,20 +411,23 @@ export class RSIChart {
     });
   }
 
-  private addReferenceLine(value: number, label: string, color: string): void {
+  private addReferenceLine(value: number, label: string, color: string, lineStyle: number = 2): void {
     // Store config for later series recreations
-    this.referenceLines.push({ value, label, color });
+    this.referenceLines.push({ value, label, color, lineStyle });
 
     // If series exists, add the line immediately
     if (this.series) {
-      this.series.createPriceLine({
+      const priceLine = this.series.createPriceLine({
         price: value,
         color,
         lineWidth: 1,
-        lineStyle: 2, // LineStyle.Dashed
+        lineStyle,
         axisLabelVisible: false,
         title: label
       });
+      if (label === 'Midline') {
+        this.midlinePriceLine = priceLine;
+      }
     }
   }
 
@@ -407,11 +436,12 @@ export class RSIChart {
     if (this.series) {
       this.chart.removeSeries(this.series);
     }
+    this.midlinePriceLine = null;
 
     // Add new series based on display mode
     if (this.displayMode === 'line') {
       this.series = this.chart.addLineSeries({
-        color: '#58a6ff',
+        color: this.lineColor,
         lineWidth: 1,
         priceFormat: {
           type: 'custom',
@@ -425,7 +455,7 @@ export class RSIChart {
     } else {
       // Points mode - using histogram with very thin bars to simulate points
       this.series = this.chart.addHistogramSeries({
-        color: '#58a6ff',
+        color: this.lineColor,
         priceFormat: {
           type: 'custom',
           minMove: 1,
@@ -447,7 +477,7 @@ export class RSIChart {
           return {
             time: d.time,
             value: d.value,
-            color: '#58a6ff'
+            color: this.lineColor
           };
         }
         return { time: d.time };
@@ -456,14 +486,17 @@ export class RSIChart {
 
     // Add reference lines (midline) to the new series
     this.referenceLines.forEach(config => {
-      this.series.createPriceLine({
+      const priceLine = this.series.createPriceLine({
         price: config.value,
         color: config.color,
         lineWidth: 1,
-        lineStyle: 2, // LineStyle.Dashed
+        lineStyle: config.lineStyle,
         axisLabelVisible: false,
         title: config.label
       });
+      if (config.label === 'Midline') {
+        this.midlinePriceLine = priceLine;
+      }
     });
   }
 
@@ -471,6 +504,42 @@ export class RSIChart {
     if (this.displayMode === mode) return;
     this.displayMode = mode;
     this.updateSeries();
+  }
+
+  setLineColor(color: string): void {
+    if (!color) return;
+    this.lineColor = color;
+    if (this.displayMode === 'line' && this.series) {
+      this.series.applyOptions({ color });
+    } else if (this.displayMode !== 'line' && this.series) {
+      this.series.applyOptions({ color });
+      this.series.setData(this.seriesData.map(d => {
+        if (Number.isFinite(Number(d.value))) {
+          return {
+            time: d.time,
+            value: d.value,
+            color: this.lineColor
+          };
+        }
+        return { time: d.time };
+      }));
+    }
+  }
+
+  setMidlineOptions(color: string, style: 'dotted' | 'solid'): void {
+    if (color) this.midlineColor = color;
+    if (style) this.midlineStyle = style;
+    const lineStyle = this.midlineStyleToLineStyle(this.midlineStyle);
+    this.referenceLines = this.referenceLines.map((line) => {
+      if (line.label !== 'Midline') return line;
+      return { ...line, color: this.midlineColor, lineStyle };
+    });
+    if (this.midlinePriceLine) {
+      this.midlinePriceLine.applyOptions({
+        color: this.midlineColor,
+        lineStyle
+      });
+    }
   }
 
   setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
@@ -491,7 +560,7 @@ export class RSIChart {
             return {
               time: d.time,
               value: d.value,
-              color: '#58a6ff'
+              color: this.lineColor
             };
           }
           return { time: d.time };
@@ -647,6 +716,7 @@ export class RSIChart {
   }
 
   private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
+    const visibleRangeBeforeDraw = this.chart.timeScale().getVisibleLogicalRange?.();
     // Find the indices of the two points
     const index1 = this.indexByTime.get(this.timeKey(time1));
     const index2 = this.indexByTime.get(this.timeKey(time2));
@@ -707,6 +777,20 @@ export class RSIChart {
     this.trendLineSeriesList.push(trendLineSeries);
 
     trendLineSeries.setData(trendLineData);
+    if (visibleRangeBeforeDraw) {
+      try {
+        this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeDraw);
+      } catch {
+        // Preserve current viewport if chart is mid-update.
+      }
+      requestAnimationFrame(() => {
+        try {
+          this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeDraw);
+        } catch {
+          // Ignore transient timing errors.
+        }
+      });
+    }
 
     // Mark where this trendline crosses RSI midline (50) on the time axis.
     const midlineValue = 50;
