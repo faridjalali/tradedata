@@ -102,6 +102,14 @@ interface PersistedChartSettings {
   volumeDeltaRsi?: VolumeDeltaRSISettings;
 }
 
+interface VolumeDeltaBarValues {
+  time: string | number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 const DEFAULT_RSI_SETTINGS: RSISettings = {
   length: 14,
   lineColor: '#58a6ff',
@@ -315,6 +323,70 @@ function formatVolumeDeltaScaleLabel(value: number): string {
     label = clamped.toFixed(1);
   }
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
+}
+
+function formatVolumeDeltaValueTime(time: string | number): string {
+  if (typeof time === 'number' && Number.isFinite(time)) {
+    return new Date(time * 1000).toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  }
+  if (typeof time === 'string' && time.trim()) {
+    const parsed = Date.parse(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
+    if (Number.isFinite(parsed)) {
+      return new Date(parsed).toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    }
+    return time;
+  }
+  return '';
+}
+
+function formatVolumeDeltaNumber(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  return Math.round(value).toString();
+}
+
+function renderVolumeDeltaValuesPane(container: HTMLElement, rows: VolumeDeltaBarValues[]): void {
+  const title = '<div class="vd-values-title">5m Volume Delta Candles (Last 10)</div>';
+  if (!rows.length) {
+    container.innerHTML = `${title}<div class="vd-values-empty">No 5m volume-delta values available.</div>`;
+    return;
+  }
+
+  const header = `
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Open</th>
+        <th>High</th>
+        <th>Low</th>
+        <th>Close</th>
+      </tr>
+    </thead>
+  `;
+  const body = rows.map((row) => `
+    <tr>
+      <td>${formatVolumeDeltaValueTime(row.time)}</td>
+      <td>${formatVolumeDeltaNumber(row.open)}</td>
+      <td>${formatVolumeDeltaNumber(row.high)}</td>
+      <td>${formatVolumeDeltaNumber(row.low)}</td>
+      <td>${formatVolumeDeltaNumber(row.close)}</td>
+    </tr>
+  `).join('');
+
+  container.innerHTML = `${title}<table>${header}<tbody>${body}</tbody></table>`;
 }
 
 function persistSettingsToStorage(): void {
@@ -1754,9 +1826,10 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   const chartContainer = document.getElementById('price-chart-container');
   const volumeDeltaContainer = document.getElementById('vd-rsi-chart-container');
   const rsiContainer = document.getElementById('rsi-chart-container');
+  const volumeDeltaValuesContainer = document.getElementById('vd-values-container');
   const errorContainer = document.getElementById('chart-error');
 
-  if (!chartContainer || !volumeDeltaContainer || !rsiContainer || !errorContainer) {
+  if (!chartContainer || !volumeDeltaContainer || !rsiContainer || !volumeDeltaValuesContainer || !errorContainer) {
     console.error('Chart containers not found');
     return;
   }
@@ -1765,6 +1838,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   errorContainer.style.display = 'none';
   errorContainer.textContent = '';
   setPricePaneMessage(chartContainer, null);
+  renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, []);
   ensureMonthGridOverlay(chartContainer, 'price');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureMonthGridOverlay(rsiContainer, 'rsi');
@@ -1807,6 +1881,24 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     const volumeDeltaRsiData = {
       rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
     };
+    const volumeDeltaBarsLast10: VolumeDeltaBarValues[] = Array.isArray(data.volumeDeltaBarsLast10)
+      ? data.volumeDeltaBarsLast10
+        .filter((bar: any) => (
+          bar &&
+          (typeof bar.time === 'number' || typeof bar.time === 'string') &&
+          Number.isFinite(Number(bar.open)) &&
+          Number.isFinite(Number(bar.high)) &&
+          Number.isFinite(Number(bar.low)) &&
+          Number.isFinite(Number(bar.close))
+        ))
+        .map((bar: any) => ({
+          time: bar.time,
+          open: Number(bar.open),
+          high: Number(bar.high),
+          low: Number(bar.low),
+          close: Number(bar.close)
+        }))
+      : [];
     currentBars = bars;
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
@@ -1823,6 +1915,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     }
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
     applyVolumeDeltaRSIVisualSettings();
+    renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, volumeDeltaBarsLast10);
 
 
     // Initialize or update RSI chart
@@ -1887,6 +1980,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       volumeDeltaRsiPoints = [];
       volumeDeltaIndexByTime = new Map();
       volumeDeltaRsiByTime = new Map();
+      renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, []);
       currentBars = [];
       clearMovingAverageSeries();
       monthBoundaryTimes = [];

@@ -25,7 +25,13 @@ export interface ChartData {
   volumeDeltaRsi: {
     rsi: RSIPoint[];
   };
-
+  volumeDeltaBarsLast10?: Array<{
+    time: string | number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }>;
 }
 
 export interface ChartFetchOptions {

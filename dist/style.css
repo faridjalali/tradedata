@@ -822,6 +822,51 @@ button:hover {
   border-radius: 6px;
   overflow: hidden;
   touch-action: pan-y;
+  background-color: #0d1117; /* Match chart background color */
+}
+
+#vd-values-container {
+  position: relative;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: #0d1117;
+  padding: 10px 12px;
+  color: #c9d1d9;
+  font-family: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+#vd-values-container .vd-values-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #8b949e;
+}
+
+#vd-values-container .vd-values-empty {
+  color: #8b949e;
+}
+
+#vd-values-container table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#vd-values-container th,
+#vd-values-container td {
+  padding: 4px 6px;
+  text-align: right;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+  white-space: nowrap;
+}
+
+#vd-values-container th:first-child,
+#vd-values-container td:first-child {
+  text-align: left;
+}
+
+#vd-values-container tbody tr:last-child td {
+  border-bottom: none;
 }
 
 #price-chart-container {
@@ -856,6 +901,11 @@ button:hover {
   #rsi-chart-container {
     height: 300px !important;
     overflow: hidden;
+  }
+
+  #vd-values-container {
+    font-size: 11px;
+    padding: 8px 10px;
   }
 
   .chart-controls-bar {

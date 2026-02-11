@@ -887,6 +887,107 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
   return deltas;
 }
 
+function computeVolumeDeltaCandlesByParentBars(parentBars, lowerTimeframeBars, interval) {
+  if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
+  if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
+    return parentBars.map((bar) => ({
+      time: bar.time,
+      open: 0,
+      high: 0,
+      low: 0,
+      close: 0
+    }));
+  }
+
+  const intervalSeconds = getIntervalSeconds(interval);
+  const parentTimes = parentBars.map((bar) => Number(bar.time));
+  const intrabarsPerParent = parentBars.map(() => []);
+  let parentIndex = 0;
+
+  for (const bar of lowerTimeframeBars) {
+    const t = Number(bar.time);
+    if (!Number.isFinite(t)) continue;
+
+    while (parentIndex + 1 < parentTimes.length && t >= parentTimes[parentIndex + 1]) {
+      parentIndex += 1;
+    }
+
+    const currentParentStart = parentTimes[parentIndex];
+    if (!Number.isFinite(currentParentStart)) continue;
+    if (t < currentParentStart || t >= (currentParentStart + intervalSeconds)) continue;
+
+    const open = Number(bar.open);
+    const close = Number(bar.close);
+    const volume = Number(bar.volume);
+    if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(volume)) continue;
+
+    intrabarsPerParent[parentIndex].push({ open, close, volume });
+  }
+
+  let lastClose = null;
+  let lastBull = true;
+  const candles = [];
+
+  for (let i = 0; i < parentBars.length; i++) {
+    const stream = intrabarsPerParent[i];
+    if (!stream || stream.length === 0) {
+      candles.push({
+        time: parentBars[i].time,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0
+      });
+      continue;
+    }
+
+    let runningDelta = 0;
+    let maxDelta = 0;
+    let minDelta = 0;
+    let streamLastClose = lastClose;
+    let streamLastBull = lastBull;
+
+    for (let j = 0; j < stream.length; j++) {
+      const ib = stream[j];
+      let isBull = ib.close > ib.open ? true : (ib.close < ib.open ? false : null);
+      if (isBull === null) {
+        const prevClose = (j === 0) ? streamLastClose : stream[j - 1].close;
+        if (Number.isFinite(prevClose)) {
+          if (ib.close > prevClose) {
+            isBull = true;
+          } else if (ib.close < prevClose) {
+            isBull = false;
+          } else {
+            isBull = streamLastBull;
+          }
+        } else {
+          isBull = streamLastBull;
+        }
+      }
+
+      streamLastBull = Boolean(isBull);
+      runningDelta += streamLastBull ? ib.volume : -ib.volume;
+      maxDelta = Math.max(maxDelta, runningDelta);
+      minDelta = Math.min(minDelta, runningDelta);
+      if (j === stream.length - 1) {
+        streamLastClose = ib.close;
+      }
+    }
+
+    lastClose = Number.isFinite(streamLastClose) ? streamLastClose : lastClose;
+    lastBull = streamLastBull;
+    candles.push({
+      time: parentBars[i].time,
+      open: 0,
+      high: maxDelta,
+      low: minDelta,
+      close: runningDelta
+    });
+  }
+
+  return candles;
+}
+
 function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
   const rsiLength = Math.max(1, Math.floor(Number(options.rsiLength) || 14));
 
@@ -924,7 +1025,13 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
     }
   }
 
-  return { rsi };
+  // Also return raw volume delta values for verification
+  const deltaValues = deltaByBar.map(d => ({
+    time: d.time,
+    delta: Number.isFinite(d.delta) ? d.delta : 0
+  }));
+
+  return { rsi, deltaValues };
 }
 
 // Convert ET timezone bars to LA timezone
@@ -1132,7 +1239,10 @@ app.get('/api/breadth', async (req, res) => {
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
+
+  // Force 5-minute source bars for Volume Delta / VD-RSI across all chart intervals.
   const VOLUME_DELTA_RSI_LOWER_TF = '5min';
+
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
 
   // Validate interval
@@ -1145,11 +1255,18 @@ app.get('/api/chart', async (req, res) => {
   const lookbackDays = getIntradayLookbackDays(interval);
 
   try {
-    // Fetch parent bars and 5-min bars IN PARALLEL for speed
-    const [bars, lowerTfRows] = await Promise.all([
-      fmpIntradayChartHistory(ticker, interval, lookbackDays),
-      fmpIntradayChartHistory(ticker, VOLUME_DELTA_RSI_LOWER_TF, lookbackDays)
-    ]);
+    let bars;
+    let lowerTfRows;
+    if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
+      bars = await fmpIntradayChartHistory(ticker, interval, lookbackDays);
+      lowerTfRows = bars;
+    } else {
+      // Fetch parent bars and 5-min bars in parallel.
+      [bars, lowerTfRows] = await Promise.all([
+        fmpIntradayChartHistory(ticker, interval, lookbackDays),
+        fmpIntradayChartHistory(ticker, VOLUME_DELTA_RSI_LOWER_TF, lookbackDays)
+      ]);
+    }
     if (!bars || bars.length === 0) {
       return res.status(404).json({ error: `No ${interval} data available for this ticker` });
     }
@@ -1176,19 +1293,38 @@ app.get('/api/chart', async (req, res) => {
       });
     }
 
+    const lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+      .sort((a, b) => Number(a.time) - Number(b.time));
+    const volumeDeltaBarsLast10 = computeVolumeDeltaCandlesByParentBars(
+      lowerTfBars,
+      lowerTfBars,
+      VOLUME_DELTA_RSI_LOWER_TF
+    )
+      .filter((bar) => (
+        Number.isFinite(Number(bar.open)) &&
+        Number.isFinite(Number(bar.high)) &&
+        Number.isFinite(Number(bar.low)) &&
+        Number.isFinite(Number(bar.close))
+      ))
+      .slice(-10)
+      .map((bar) => ({
+        time: bar.time,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close)
+      }));
+
     let volumeDeltaRsi = { rsi: [] };
     const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
     const firstBarTime = convertedBars[0]?.time ?? '';
     const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
-    const vdRsiResultCacheKey = `${ticker}|${interval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+    const vdRsiResultCacheKey = `v2|${ticker}|${interval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
     const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
-    if (cachedVolumeDeltaRsi) {
+    if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
       volumeDeltaRsi = cachedVolumeDeltaRsi;
     } else {
     try {
-      // Convert 5-min bars (already fetched in parallel above)
-      const lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-        .sort((a, b) => Number(a.time) - Number(b.time));
       if (lowerTfBars.length > 0) {
         const firstParentTime = Number(firstBarTime);
         const lastParentTime = Number(lastBarTime);
@@ -1227,7 +1363,9 @@ app.get('/api/chart', async (req, res) => {
       timezone: 'America/Los_Angeles',
       bars: convertedBars,
       rsi,
-      volumeDeltaRsi
+      volumeDeltaRsi,
+      volumeDelta: volumeDeltaRsi.deltaValues || [],
+      volumeDeltaBarsLast10
     };
 
     res.json(result);
