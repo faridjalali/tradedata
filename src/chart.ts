@@ -90,14 +90,7 @@ function initializeCharts(): void {
       wickDownColor: '#f85149'
     });
 
-    // Initialize line tools for price chart
-    try {
-      if (typeof LightweightChartsLineTools !== 'undefined' && LightweightChartsLineTools.LineTools) {
-        priceLineTools = new LightweightChartsLineTools.LineTools(priceChart);
-      }
-    } catch (error) {
-      console.warn('Line tools plugin not available or failed to initialize:', error);
-    }
+    // No line tools for price chart - divergence tool only on RSI chart
   }
 }
 
@@ -194,13 +187,14 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
       rsiChart = new RSIChart({
         container: rsiContainer,
         data: data.rsi,
-        displayMode: 'line'
+        displayMode: 'line',
+        priceData: bars.map(b => ({ time: b.time, close: b.close }))
       });
 
       // Synchronize time scales
       synchronizeCharts();
     } else if (rsiChart) {
-      rsiChart.setData(data.rsi);
+      rsiChart.setData(data.rsi, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
     // After both charts have data, fit content and scroll to show most recent data on right
@@ -214,9 +208,6 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
 
     // Hide loading, show content
     hideLoading();
-
-    // Load saved drawings after a short delay to ensure charts are fully rendered
-    setTimeout(() => loadDrawings(), 100);
   } catch (error) {
     console.error('Failed to load chart data:', error);
     showError(error instanceof Error ? error.message : 'Failed to load chart data');
@@ -270,29 +261,16 @@ function synchronizeCharts(): void {
 }
 
 function handleDrawingTool(tool: string): void {
-  if (!priceLineTools) {
-    console.warn('Line tools not available');
+  if (!rsiChart) {
+    console.warn('RSI chart not available');
     return;
   }
 
   try {
     if (tool === 'clear') {
-      // Clear all drawings from both price and RSI charts
-      if (priceLineTools.clearDrawings) {
-        priceLineTools.clearDrawings();
-      }
-      if (rsiChart) {
-        const rsiLineTools = rsiChart.getLineTools();
-        if (rsiLineTools && rsiLineTools.clearDrawings) {
-          rsiLineTools.clearDrawings();
-        }
-      }
-
-      // Clear from localStorage
-      if (currentTicker && currentInterval) {
-        localStorage.removeItem(`drawings_price_${currentTicker}_${currentInterval}`);
-        localStorage.removeItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
-      }
+      // Clear divergence highlights from RSI chart
+      rsiChart.clearDivergence();
+      rsiChart.deactivateDivergenceTool();
 
       // Remove active state from all tool buttons
       const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
@@ -301,90 +279,32 @@ function handleDrawingTool(tool: string): void {
       return;
     }
 
-    // Activate drawing tool
+    // Activate/deactivate divergence tool
     const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
-    drawingButtons.forEach(btn => {
-      if ((btn as HTMLElement).dataset.tool === tool) {
-        btn.classList.toggle('active');
-      } else if ((btn as HTMLElement).dataset.tool !== 'clear') {
-        btn.classList.remove('active');
-      }
-    });
+    const trendBtn = Array.from(drawingButtons).find(
+      btn => (btn as HTMLElement).dataset.tool === 'trend'
+    ) as HTMLElement;
 
-    // Activate the appropriate tool
-    if (priceLineTools.startDrawing && LightweightChartsLineTools.DrawingType) {
-      switch (tool) {
-        case 'trend':
-          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.TREND_LINE);
-          break;
-        case 'horizontal':
-          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.HORIZONTAL_LINE);
-          break;
-        case 'ray':
-          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.RAY);
-          break;
-      }
+    if (tool === 'trend') {
+      const isActive = trendBtn.classList.contains('active');
 
-      // Set up auto-save on drawing complete
-      setupDrawingSaveHandler();
-    }
-  } catch (error) {
-    console.error('Error activating drawing tool:', error);
-  }
-}
-
-function setupDrawingSaveHandler(): void {
-  if (!priceLineTools) return;
-
-  // Save drawings when a drawing is added or modified
-  priceLineTools.onDrawingAdded(() => saveDrawings());
-  priceLineTools.onDrawingModified(() => saveDrawings());
-  priceLineTools.onDrawingRemoved(() => saveDrawings());
-}
-
-function saveDrawings(): void {
-  if (!currentTicker || !currentInterval || !priceLineTools) return;
-
-  try {
-    const priceDrawings = priceLineTools.exportDrawings();
-    localStorage.setItem(`drawings_price_${currentTicker}_${currentInterval}`, priceDrawings);
-
-    if (rsiChart) {
-      const rsiLineTools = rsiChart.getLineTools();
-      if (rsiLineTools) {
-        const rsiDrawings = rsiLineTools.exportDrawings();
-        localStorage.setItem(`drawings_rsi_${currentTicker}_${currentInterval}`, rsiDrawings);
+      if (isActive) {
+        // Deactivate
+        trendBtn.classList.remove('active');
+        rsiChart.deactivateDivergenceTool();
+      } else {
+        // Activate
+        drawingButtons.forEach(btn => btn.classList.remove('active'));
+        trendBtn.classList.add('active');
+        rsiChart.activateDivergenceTool();
       }
     }
   } catch (error) {
-    console.error('Failed to save drawings:', error);
+    console.error('Error activating divergence tool:', error);
   }
 }
 
-function loadDrawings(): void {
-  if (!currentTicker || !currentInterval || !priceLineTools) return;
-
-  try {
-    // Load price chart drawings
-    const priceDrawingsStr = localStorage.getItem(`drawings_price_${currentTicker}_${currentInterval}`);
-    if (priceDrawingsStr) {
-      priceLineTools.importDrawings(priceDrawingsStr);
-    }
-
-    // Load RSI chart drawings
-    if (rsiChart) {
-      const rsiLineTools = rsiChart.getLineTools();
-      if (rsiLineTools) {
-        const rsiDrawingsStr = localStorage.getItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
-        if (rsiDrawingsStr) {
-          rsiLineTools.importDrawings(rsiDrawingsStr);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load drawings:', error);
-  }
-}
+// Removed drawing save/load functions - using divergence detection instead
 
 function showLoading(): void {
   // Don't show loading text, just dim the charts slightly

@@ -10,6 +10,7 @@ export interface RSIChartOptions {
   container: HTMLElement;
   data: RSIPoint[];
   displayMode: RSIDisplayMode;
+  priceData?: Array<{time: string | number, close: number}>; // For divergence detection
 }
 
 export class RSIChart {
@@ -19,10 +20,14 @@ export class RSIChart {
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
   private referenceLines: Array<{line: any, value: number}> = [];
+  private priceData: Array<{time: string | number, close: number}> = [];
+  private divergenceToolActive: boolean = false;
+  private highlightSeries: any = null;
 
   constructor(options: RSIChartOptions) {
     this.displayMode = options.displayMode;
     this.data = options.data;
+    this.priceData = options.priceData || [];
 
     // Create RSI chart
     this.chart = LightweightCharts.createChart(options.container, {
@@ -57,14 +62,18 @@ export class RSIChart {
     // Add RSI series based on display mode
     this.updateSeries();
 
-    // Initialize line tools for RSI chart
-    try {
-      if (typeof LightweightChartsLineTools !== 'undefined' && LightweightChartsLineTools.LineTools) {
-        this.lineTools = new LightweightChartsLineTools.LineTools(this.chart);
+    // Set up click handler for divergence detection
+    this.chart.subscribeCrosshairMove((param: any) => {
+      if (this.divergenceToolActive && param && param.time) {
+        // We'll handle the actual click in a separate event
       }
-    } catch (error) {
-      console.warn('Line tools plugin not available for RSI chart:', error);
-    }
+    });
+
+    this.chart.subscribeClick((param: any) => {
+      if (this.divergenceToolActive && param && param.time) {
+        this.detectAndHighlightDivergence(param.time);
+      }
+    });
   }
 
   private addReferenceLine(value: number, label: string, color: string): void {
@@ -142,8 +151,12 @@ export class RSIChart {
     this.updateSeries();
   }
 
-  setData(data: RSIPoint[]): void {
+  setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
     this.data = data;
+    if (priceData) {
+      this.priceData = priceData;
+    }
+
     if (this.series) {
       if (this.displayMode === 'line') {
         this.series.setData(data);
@@ -180,6 +193,97 @@ export class RSIChart {
 
   getLineTools(): any {
     return this.lineTools;
+  }
+
+  activateDivergenceTool(): void {
+    this.divergenceToolActive = true;
+    // Change cursor to indicate tool is active
+    const container = this.chart.chartElement();
+    if (container) {
+      container.style.cursor = 'crosshair';
+    }
+  }
+
+  deactivateDivergenceTool(): void {
+    this.divergenceToolActive = false;
+    const container = this.chart.chartElement();
+    if (container) {
+      container.style.cursor = 'default';
+    }
+    // Clear any highlights
+    this.clearHighlights();
+  }
+
+  private detectAndHighlightDivergence(clickedTime: string | number): void {
+    // Find the clicked point in RSI data
+    const clickedIndex = this.data.findIndex(d => d.time === clickedTime);
+    if (clickedIndex === -1) {
+      console.log('Clicked point not found in RSI data');
+      return;
+    }
+
+    const originRSI = this.data[clickedIndex].value;
+
+    // Find corresponding price
+    const originPricePoint = this.priceData.find(p => p.time === clickedTime);
+    if (!originPricePoint) {
+      console.log('Corresponding price data not found');
+      return;
+    }
+
+    const originPrice = originPricePoint.close;
+
+    // Find all future points with divergence (lower RSI, higher price)
+    const divergencePoints: RSIPoint[] = [];
+
+    for (let i = clickedIndex + 1; i < this.data.length; i++) {
+      const currentRSI = this.data[i].value;
+      const currentPricePoint = this.priceData.find(p => p.time === this.data[i].time);
+
+      if (currentPricePoint) {
+        const currentPrice = currentPricePoint.close;
+
+        // Check divergence conditions: RSI lower AND price higher
+        if (currentRSI < originRSI && currentPrice > originPrice) {
+          divergencePoints.push(this.data[i]);
+        }
+      }
+    }
+
+    console.log(`Found ${divergencePoints.length} divergence points from origin (RSI: ${originRSI.toFixed(2)}, Price: ${originPrice.toFixed(2)})`);
+
+    // Highlight the divergence points
+    this.highlightPoints(divergencePoints);
+  }
+
+  private highlightPoints(points: RSIPoint[]): void {
+    // Clear previous highlights
+    this.clearHighlights();
+
+    if (points.length === 0) {
+      return;
+    }
+
+    // Add a marker series to highlight divergence points
+    this.highlightSeries = this.chart.addLineSeries({
+      color: '#ff6b6b',  // Red color for bearish divergence
+      lineWidth: 0,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 5
+    });
+
+    this.highlightSeries.setData(points);
+  }
+
+  private clearHighlights(): void {
+    if (this.highlightSeries) {
+      this.chart.removeSeries(this.highlightSeries);
+      this.highlightSeries = null;
+    }
+  }
+
+  clearDivergence(): void {
+    this.clearHighlights();
   }
 
   resize(): void {
