@@ -21,7 +21,7 @@ let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
-const SCALE_MIN_WIDTH_PX = 64;
+const SCALE_MIN_WIDTH_PX = 56;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
@@ -70,23 +70,39 @@ interface PersistedChartSettings {
   rsi: RSISettings;
 }
 
-const rsiSettings: RSISettings = {
+const DEFAULT_RSI_SETTINGS: RSISettings = {
   length: 14,
   lineColor: '#58a6ff',
   midlineColor: '#ffffff',
   midlineStyle: 'dotted'
 };
 
-const priceChartSettings: PriceChartSettings = {
+const DEFAULT_PRICE_SETTINGS: {
+  maSourceMode: MASourceMode;
+  verticalGridlines: boolean;
+  horizontalGridlines: boolean;
+  ma: PersistedMASetting[];
+} = {
   maSourceMode: 'daily',
   verticalGridlines: true,
   horizontalGridlines: false,
   ma: [
-    { enabled: false, type: 'SMA', length: 20, color: '#ffa500', series: null },
-    { enabled: false, type: 'SMA', length: 50, color: '#8a2be2', series: null },
-    { enabled: false, type: 'EMA', length: 100, color: '#00bcd4', series: null },
-    { enabled: false, type: 'EMA', length: 200, color: '#90ee90', series: null }
+    { enabled: false, type: 'SMA', length: 20, color: '#ffa500' },
+    { enabled: false, type: 'SMA', length: 50, color: '#8a2be2' },
+    { enabled: false, type: 'EMA', length: 100, color: '#00bcd4' },
+    { enabled: false, type: 'EMA', length: 200, color: '#90ee90' }
   ]
+};
+
+const rsiSettings: RSISettings = {
+  ...DEFAULT_RSI_SETTINGS
+};
+
+const priceChartSettings: PriceChartSettings = {
+  maSourceMode: DEFAULT_PRICE_SETTINGS.maSourceMode,
+  verticalGridlines: DEFAULT_PRICE_SETTINGS.verticalGridlines,
+  horizontalGridlines: DEFAULT_PRICE_SETTINGS.horizontalGridlines,
+  ma: DEFAULT_PRICE_SETTINGS.ma.map((ma) => ({ ...ma, series: null }))
 };
 
 const MONTH_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -535,6 +551,36 @@ function applyRSISettings(): void {
   rsiChart.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
 }
 
+function resetPriceSettingsToDefault(): void {
+  clearMovingAverageSeries();
+  priceChartSettings.maSourceMode = DEFAULT_PRICE_SETTINGS.maSourceMode;
+  priceChartSettings.verticalGridlines = DEFAULT_PRICE_SETTINGS.verticalGridlines;
+  priceChartSettings.horizontalGridlines = DEFAULT_PRICE_SETTINGS.horizontalGridlines;
+  for (let i = 0; i < priceChartSettings.ma.length; i++) {
+    const defaults = DEFAULT_PRICE_SETTINGS.ma[i];
+    if (!defaults) continue;
+    priceChartSettings.ma[i].enabled = defaults.enabled;
+    priceChartSettings.ma[i].type = defaults.type;
+    priceChartSettings.ma[i].length = defaults.length;
+    priceChartSettings.ma[i].color = defaults.color;
+    priceChartSettings.ma[i].series = null;
+  }
+  applyPriceGridOptions();
+  applyMovingAverages();
+  syncPriceSettingsPanelValues();
+  persistSettingsToStorage();
+}
+
+function resetRSISettingsToDefault(): void {
+  rsiSettings.length = DEFAULT_RSI_SETTINGS.length;
+  rsiSettings.lineColor = DEFAULT_RSI_SETTINGS.lineColor;
+  rsiSettings.midlineColor = DEFAULT_RSI_SETTINGS.midlineColor;
+  rsiSettings.midlineStyle = DEFAULT_RSI_SETTINGS.midlineStyle;
+  applyRSISettings();
+  syncRSISettingsPanelValues();
+  persistSettingsToStorage();
+}
+
 function createSettingsButton(container: HTMLElement, pane: 'price' | 'rsi'): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
@@ -607,6 +653,9 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
       </div>
     `).join('')}
+    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+      <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
   `;
 
   panel.addEventListener('input', (event) => {
@@ -653,6 +702,14 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     persistSettingsToStorage();
   });
 
+  panel.addEventListener('click', (event) => {
+    const target = event.target as HTMLButtonElement | null;
+    if (!target) return;
+    if (target.dataset.priceSetting !== 'reset') return;
+    event.preventDefault();
+    resetPriceSettingsToDefault();
+  });
+
   container.appendChild(panel);
   return panel;
 }
@@ -696,6 +753,9 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
         <option value="solid">Solid</option>
       </select>
     </label>
+    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+      <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
   `;
 
   panel.addEventListener('input', (event) => {
@@ -726,6 +786,14 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
       persistSettingsToStorage();
       return;
     }
+  });
+
+  panel.addEventListener('click', (event) => {
+    const target = event.target as HTMLButtonElement | null;
+    if (!target) return;
+    if (target.dataset.rsiSetting !== 'reset') return;
+    event.preventDefault();
+    resetRSISettingsToDefault();
   });
 
   container.appendChild(panel);
@@ -1120,6 +1188,7 @@ function setupChartSync() {
 
   // Sync RSI chart → price chart.
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
+    if (rsiChart?.isSyncSuppressed?.()) return;
     if (!timeRange || syncLock === 'price') return;
     const currentPriceRange = priceChart.timeScale().getVisibleLogicalRange();
     if (sameLogicalRange(currentPriceRange, timeRange)) return;
