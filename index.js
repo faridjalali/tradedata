@@ -4,6 +4,7 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const app = express();
+const { calculateRSI, convertToLATime } = require('./serverUtils');
 const port = process.env.PORT || 3000;
 
 // NOTE: cors() allows all origins. Restrict in production if needed:

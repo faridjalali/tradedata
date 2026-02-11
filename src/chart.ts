@@ -88,7 +88,8 @@ export class ChartManager {
           visible: false  // Hide price chart time scale
         },
         rightPriceScale: {
-          borderColor: '#21262d'
+          borderColor: '#21262d',
+          minimumWidth: 60,
         },
         crosshair: {
           mode: CrosshairMode.Normal

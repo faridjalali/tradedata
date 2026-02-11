@@ -59,6 +59,7 @@ export class RSIChart {
       },
       rightPriceScale: {
         borderColor: '#21262d',
+        minimumWidth: 60,
         scaleMargins: {
           top: 0.1,
           bottom: 0.1
