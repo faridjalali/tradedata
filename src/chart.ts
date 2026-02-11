@@ -12,6 +12,7 @@ let latestRenderRequestId = 0;
 let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 const TREND_ICON = '✎';
+const RIGHT_MARGIN_BARS = 10;
 
 function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
@@ -56,6 +57,7 @@ function createPriceChart(container: HTMLElement) {
       borderVisible: false,
       fixRightEdge: false,
       rightBarStaysOnScroll: false,
+      rightOffset: RIGHT_MARGIN_BARS,
     },
   });
 
@@ -179,6 +181,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
+    applyRightMargin();
     syncChartsToPriceRange();
 
     currentChartTicker = ticker;
@@ -198,6 +201,14 @@ function syncChartsToPriceRange(): void {
     rsiChart.getChart().timeScale().setVisibleLogicalRange(priceRange);
   } catch {
     // Ignore transient range sync errors during live updates.
+  }
+}
+
+function applyRightMargin(): void {
+  if (!priceChart) return;
+  priceChart.timeScale().applyOptions({ rightOffset: RIGHT_MARGIN_BARS });
+  if (rsiChart) {
+    rsiChart.getChart().timeScale().applyOptions({ rightOffset: RIGHT_MARGIN_BARS });
   }
 }
 

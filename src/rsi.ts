@@ -61,6 +61,7 @@ export class RSIChart {
         ticksVisible: true,
         fixRightEdge: false,
         rightBarStaysOnScroll: false,
+        rightOffset: 10,
         borderColor: '#21262d'  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
