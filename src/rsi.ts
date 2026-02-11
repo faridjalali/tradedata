@@ -68,6 +68,7 @@ export class RSIChart {
         fixRightEdge: false,
         rightBarStaysOnScroll: false,
         rightOffset: 10,
+        tickMarkFormatter: (time: any, tickMarkType: number) => this.formatTickMark(time, tickMarkType),
         borderColor: '#21262d'  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
@@ -143,6 +144,53 @@ export class RSIChart {
         this.priceByTime.set(this.timeKey(point.time), price);
       }
     }
+  }
+
+  private toDateFromScaleTime(time: any): Date | null {
+    if (typeof time === 'number' && Number.isFinite(time)) {
+      return new Date(time * 1000);
+    }
+
+    if (typeof time === 'string' && time.trim()) {
+      const normalized = time.includes('T') ? time : `${time.replace(' ', 'T')}Z`;
+      const parsed = new Date(normalized);
+      return Number.isFinite(parsed.getTime()) ? parsed : null;
+    }
+
+    if (time && typeof time === 'object' && Number.isFinite(time.year) && Number.isFinite(time.month) && Number.isFinite(time.day)) {
+      // BusinessDay-like object
+      return new Date(Date.UTC(Number(time.year), Number(time.month) - 1, Number(time.day), 0, 0, 0));
+    }
+
+    return null;
+  }
+
+  private formatTickMark(time: any, tickMarkType: number): string {
+    const date = this.toDateFromScaleTime(time);
+    if (!date) return '';
+
+    // TickMarkType enum in lightweight-charts:
+    // 0 Year, 1 Month, 2 DayOfMonth, 3 Time, 4 TimeWithSeconds
+    if (tickMarkType === 0) {
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        timeZone: 'America/Los_Angeles'
+      });
+    }
+
+    if (tickMarkType === 1) {
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        timeZone: 'America/Los_Angeles'
+      });
+    }
+
+    // Zoomed in (day/time): show month + day.
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'America/Los_Angeles'
+    });
   }
 
   private initMidlineCrossMarker(): void {
