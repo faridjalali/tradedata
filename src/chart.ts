@@ -606,6 +606,20 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'rsi'): HT
   return btn;
 }
 
+function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
+  panel.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  panel.style.fontSize = '12px';
+  panel.style.fontWeight = '500';
+  panel.style.lineHeight = '1.25';
+  panel.querySelectorAll<HTMLElement>('div, span, label, input, select, button').forEach((el) => {
+    el.style.fontFamily = 'inherit';
+    el.style.fontSize = 'inherit';
+    el.style.fontWeight = 'inherit';
+    el.style.fontStyle = 'normal';
+    el.style.letterSpacing = 'normal';
+  });
+}
+
 function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
   panel.className = 'pane-settings-panel price-settings-panel';
@@ -621,10 +635,13 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.padding = '10px';
   panel.style.display = 'none';
   panel.style.color = '#c9d1d9';
-  panel.style.fontSize = '12px';
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="font-weight:600;">Chart Settings</div>
+      <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
     <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
       <span>Vertical gridlines</span>
       <input type="checkbox" data-price-setting="v-grid" />
@@ -652,10 +669,8 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
       </div>
     `).join('')}
-    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-      <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
   `;
+  applyUniformSettingsPanelTypography(panel);
 
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLElement;
@@ -728,11 +743,13 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.padding = '10px';
   panel.style.display = 'none';
   panel.style.color = '#c9d1d9';
-  panel.style.fontSize = '12px';
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="font-weight:600; margin-bottom:8px;">RSI Settings</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="font-weight:600;">RSI Settings</div>
+      <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
     <label style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
       <span>Length</span>
       <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
@@ -752,10 +769,8 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
         <option value="solid">Solid</option>
       </select>
     </label>
-    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
-      <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
   `;
+  applyUniformSettingsPanelTypography(panel);
 
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement | HTMLSelectElement | null;
