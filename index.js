@@ -205,7 +205,15 @@ async function fmpDaily(symbol) {
   if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();
   if (!Array.isArray(data) || data.length === 0) return null;
-  return data.map(d => ({ date: d.date, close: d.price }));
+  // Return full OHLCV data for charting (breadth still works with { date, close })
+  return data.map(d => ({
+    date: d.date,
+    close: d.price,
+    open: d.open,
+    high: d.high,
+    low: d.low,
+    volume: d.volume
+  }));
 }
 
 async function fmpIntraday30(symbol) {
@@ -215,6 +223,120 @@ async function fmpIntraday30(symbol) {
   const data = await resp.json();
   if (!Array.isArray(data) || data.length === 0) return null;
   return data.map(d => ({ datetime: d.date, close: d.close }));
+}
+
+async function fmpIntraday1Hour(symbol) {
+  const url = `${FMP_BASE}/historical-chart/1hour?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
+  const data = await resp.json();
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return data.map(d => ({
+    datetime: d.date,
+    open: d.open,
+    high: d.high,
+    low: d.low,
+    close: d.close,
+    volume: d.volume
+  }));
+}
+
+async function fmpIntraday4Hour(symbol) {
+  const url = `${FMP_BASE}/historical-chart/4hour?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
+  const data = await resp.json();
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return data.map(d => ({
+    datetime: d.date,
+    open: d.open,
+    high: d.high,
+    low: d.low,
+    close: d.close,
+    volume: d.volume
+  }));
+}
+
+// Calculate RSI (Relative Strength Index) with smoothed averages
+function calculateRSI(closePrices, period = 14) {
+  if (closePrices.length < period + 1) return [];
+
+  // Calculate price changes
+  const changes = [];
+  for (let i = 1; i < closePrices.length; i++) {
+    changes.push(closePrices[i] - closePrices[i - 1]);
+  }
+
+  // Calculate initial averages for first 'period' changes
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  const rsiValues = [];
+
+  // First RSI value
+  const rs0 = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  rsiValues.push(100 - (100 / (1 + rs0)));
+
+  // Subsequent RSI values using smoothed averages
+  for (let i = period; i < changes.length; i++) {
+    const change = changes[i];
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? Math.abs(change) : 0;
+
+    avgGain = ((avgGain * (period - 1)) + gain) / period;
+    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsiValues.push(100 - (100 / (1 + rs)));
+  }
+
+  return rsiValues;
+}
+
+// Convert ET timezone bars to LA timezone
+function convertToLATime(bars, interval) {
+  return bars.map(bar => {
+    // Daily data: Already in YYYY-MM-DD format
+    if (interval === '1day') {
+      return {
+        time: bar.date,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+        volume: bar.volume || 0
+      };
+    }
+
+    // Intraday: Convert ET to LA timezone
+    // FMP returns datetime like "2025-08-10 09:30:00" in ET
+    const etDate = new Date(bar.datetime + ' GMT-0500'); // ET is GMT-5 (or GMT-4 during DST)
+    const laDate = new Date(etDate.toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles'
+    }));
+
+    // Format for Lightweight Charts: "YYYY-MM-DD HH:MM"
+    const yyyy = laDate.getFullYear();
+    const mm = String(laDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(laDate.getDate()).padStart(2, '0');
+    const hh = String(laDate.getHours()).padStart(2, '0');
+    const min = String(laDate.getMinutes()).padStart(2, '0');
+
+    return {
+      time: `${yyyy}-${mm}-${dd} ${hh}:${min}`,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume
+    };
+  });
 }
 
 // --- Cache expiry helpers ---
@@ -240,6 +362,9 @@ let spyDailyCache = { expiresAt: 0, bars: null };
 let spyIntradayCache = { expiresAt: 0, bars: null };
 const breadthDailyCache = new Map();
 const breadthIntradayCache = new Map();
+
+// --- Chart API Cache ---
+const chartCache = new Map();
 
 async function getSpyDaily() {
   if (spyDailyCache.bars && Date.now() < spyDailyCache.expiresAt) return spyDailyCache.bars;
@@ -376,6 +501,93 @@ app.get('/api/breadth', async (req, res) => {
   } catch (err) {
     console.error('Breadth API Error:', err);
     res.status(500).json({ error: 'Failed to fetch breadth data' });
+  }
+});
+
+// --- Chart API ---
+app.get('/api/chart', async (req, res) => {
+  const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
+  const interval = (req.query.interval || '1day').toString();
+
+  // Validate interval
+  const validIntervals = ['1hour', '2hour', '4hour', '1day'];
+  if (!validIntervals.includes(interval)) {
+    return res.status(400).json({ error: 'Invalid interval. Use: 1hour, 2hour, 4hour, or 1day' });
+  }
+
+  const cacheKey = `${ticker}_${interval}`;
+
+  try {
+    // Check cache first
+    const cached = chartCache.get(cacheKey);
+    if (isCacheValid(cached)) {
+      return res.json(cached.data);
+    }
+
+    let bars = [];
+
+    // Fetch data based on interval
+    if (interval === '1day') {
+      // Daily data - up to 6 months (180 days)
+      const allBars = await fmpDaily(ticker);
+      if (!allBars || allBars.length === 0) {
+        return res.status(404).json({ error: 'No daily data available for this ticker' });
+      }
+      bars = allBars.slice(-180); // Last 180 days
+    } else if (interval === '1hour') {
+      // 1-hour intraday data
+      const intradayBars = await fmpIntraday1Hour(ticker);
+      if (!intradayBars || intradayBars.length === 0) {
+        return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
+      }
+      bars = intradayBars;
+    } else if (interval === '4hour') {
+      // 4-hour intraday data
+      const intradayBars = await fmpIntraday4Hour(ticker);
+      if (!intradayBars || intradayBars.length === 0) {
+        return res.status(404).json({ error: 'No 4-hour data available for this ticker' });
+      }
+      bars = intradayBars;
+    } else if (interval === '2hour') {
+      // 2-hour data: Fetch 1-hour and let frontend aggregate
+      const intradayBars = await fmpIntraday1Hour(ticker);
+      if (!intradayBars || intradayBars.length === 0) {
+        return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
+      }
+      bars = intradayBars;
+    }
+
+    // Convert to LA timezone
+    const convertedBars = convertToLATime(bars, interval);
+
+    // Calculate RSI from close prices
+    const closePrices = convertedBars.map(b => b.close);
+    const rsiValues = calculateRSI(closePrices, 14);
+
+    // Align RSI with bars (RSI starts after 14 periods)
+    const rsi = convertedBars.slice(14).map((bar, i) => ({
+      time: bar.time,
+      value: Math.round(rsiValues[i] * 100) / 100 // Round to 2 decimals
+    }));
+
+    const result = {
+      interval,
+      timezone: 'America/Los_Angeles',
+      bars: convertedBars,
+      rsi
+    };
+
+    // Cache with appropriate expiry
+    const expiresAt = interval === '1day'
+      ? getNextCacheExpiry() // Cache until 4:01pm ET next day
+      : Date.now() + 5 * 60 * 1000; // Cache intraday for 5 minutes
+
+    chartCache.set(cacheKey, { expiresAt, data: result });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Chart API Error:', err);
+    res.status(500).json({ error: 'Failed to fetch chart data' });
   }
 });
 

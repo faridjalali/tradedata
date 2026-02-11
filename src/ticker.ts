@@ -2,6 +2,7 @@ import { getAlerts } from './state';
 import { createAlertCard } from './components';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
+import { renderCustomChart } from './chart';
 
 // Declare TradingView and Chart.js globals
 declare const TradingView: any;
@@ -67,8 +68,9 @@ export function renderTickerView(ticker: string): void {
             weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
         }
     }
-    
+
     renderTradingViewChart(ticker);
+    renderCustomChart(ticker);
 }
 
 function renderAvg(containerId: string, list: Alert[]): void {

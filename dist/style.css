@@ -763,3 +763,74 @@ button:hover {
     align-items: flex-start;
   }
 }
+
+/* ===== Custom Chart Section ===== */
+.custom-chart-section {
+  background: var(--card-bg);
+  border-radius: 6px;
+  padding: 20px;
+  margin-top: 30px;
+}
+
+.chart-controls-bar {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chart-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.chart-error {
+  text-align: center;
+  padding: 40px;
+  color: var(--accent-bearish);
+  font-size: 0.9rem;
+  background: rgba(248, 81, 73, 0.1);
+  border-radius: 6px;
+  margin: 20px 0;
+}
+
+#chart-content {
+  transition: opacity 0.2s ease;
+}
+
+#price-chart-container,
+#rsi-chart-container {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#price-chart-container {
+  border: 1px solid var(--border-color);
+}
+
+#rsi-chart-container {
+  border: 1px solid var(--border-color);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .custom-chart-section {
+    padding: 15px;
+  }
+
+  #price-chart-container {
+    height: 300px !important;
+  }
+
+  #rsi-chart-container {
+    height: 120px !important;
+  }
+
+  .chart-controls-bar {
+    gap: 10px;
+  }
+}
