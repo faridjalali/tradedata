@@ -28,7 +28,7 @@ export class RSIChart {
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
   private trendLineSeries: any = null;
-  private midlineCrossTime: string | number | null = null;
+  private midlineCrossLogical: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
   private markerResizeObserver: ResizeObserver | null = null;
 
@@ -70,7 +70,7 @@ export class RSIChart {
     // Add midline at 50
     this.addReferenceLine(50, 'Midline', '#ffffff');
     this.initMidlineCrossMarker();
-    this.chart.timeScale().subscribeVisibleTimeRangeChange(() => this.updateMidlineCrossMarkerPosition());
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.updateMidlineCrossMarkerPosition());
 
     // Add RSI series based on display mode
     this.updateSeries();
@@ -121,19 +121,19 @@ export class RSIChart {
     this.markerResizeObserver.observe(this.container);
   }
 
-  private setMidlineCrossTime(time: string | number | null): void {
-    this.midlineCrossTime = time;
+  private setMidlineCrossLogical(logical: number | null): void {
+    this.midlineCrossLogical = logical;
     this.updateMidlineCrossMarkerPosition();
   }
 
   private updateMidlineCrossMarkerPosition(): void {
     if (!this.midlineCrossMarkerEl) return;
-    if (this.midlineCrossTime === null || this.midlineCrossTime === undefined) {
+    if (this.midlineCrossLogical === null || this.midlineCrossLogical === undefined) {
       this.midlineCrossMarkerEl.style.display = 'none';
       return;
     }
 
-    const x = this.chart.timeScale().timeToCoordinate(this.midlineCrossTime);
+    const x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossLogical);
     if (!Number.isFinite(x)) {
       this.midlineCrossMarkerEl.style.display = 'none';
       return;
@@ -147,26 +147,6 @@ export class RSIChart {
 
     this.midlineCrossMarkerEl.style.left = `${x}px`;
     this.midlineCrossMarkerEl.style.display = 'block';
-  }
-
-  private getInterpolatedTimeAtIndex(index: number): string | number | null {
-    if (!Number.isFinite(index)) return null;
-    const lowerIndex = Math.floor(index);
-    const upperIndex = Math.ceil(index);
-    if (lowerIndex < 0 || upperIndex >= this.data.length) return null;
-
-    const lowerTime = this.data[lowerIndex]?.time;
-    const upperTime = this.data[upperIndex]?.time;
-    if (lowerTime === undefined || lowerTime === null) return null;
-    if (upperTime === undefined || upperTime === null) return lowerTime;
-    if (lowerIndex === upperIndex || lowerTime === upperTime) return lowerTime;
-
-    if (typeof lowerTime === 'number' && typeof upperTime === 'number') {
-      const weight = index - lowerIndex;
-      return lowerTime + (upperTime - lowerTime) * weight;
-    }
-
-    return lowerTime;
   }
 
   private buildSeriesData(
@@ -444,7 +424,7 @@ export class RSIChart {
 
     // Calculate slope: (y2 - y1) / (x2 - x1)
     if (index2 === index1) {
-      this.setMidlineCrossTime(null);
+      this.setMidlineCrossLogical(null);
       return;
     }
     const slope = (value2 - value1) / (index2 - index1);
@@ -455,6 +435,10 @@ export class RSIChart {
     // Start from first point and extend to the last data point
     for (let i = index1; i < this.data.length; i++) {
       const projectedValue = value1 + slope * (i - index1);
+      // Prevent this helper line from blowing out RSI autoscale.
+      if (projectedValue < 0 || projectedValue > 100) {
+        break;
+      }
       trendLineData.push({
         time: this.data[i].time,
         value: projectedValue
@@ -480,18 +464,16 @@ export class RSIChart {
     // Mark where this trendline crosses RSI midline (50) on the time axis.
     const midlineValue = 50;
     if (Math.abs(slope) < 1e-10) {
-      this.setMidlineCrossTime(null);
+      this.setMidlineCrossLogical(null);
       return;
     }
 
     const crossIndex = index1 + (midlineValue - value1) / slope;
     if (!Number.isFinite(crossIndex) || crossIndex < index1 || crossIndex > this.data.length - 1) {
-      this.setMidlineCrossTime(null);
+      this.setMidlineCrossLogical(null);
       return;
     }
-
-    const crossTime = this.getInterpolatedTimeAtIndex(crossIndex);
-    this.setMidlineCrossTime(crossTime);
+    this.setMidlineCrossLogical(crossIndex);
   }
 
   clearDivergence(): void {
@@ -506,7 +488,7 @@ export class RSIChart {
     // Reset state
     this.firstPoint = null;
     this.divergencePoints = [];
-    this.setMidlineCrossTime(null);
+    this.setMidlineCrossLogical(null);
   }
 
   resize(): void {
