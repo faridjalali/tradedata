@@ -24,10 +24,14 @@ export class RSIChart {
   private seriesData: any[] = [];
   private referenceLines: Array<{value: number, label: string, color: string}> = [];
   private priceData: Array<{time: string | number, close: number}> = [];
+  private priceByTime = new Map<string, number>();
+  private indexByTime = new Map<string, number>();
+  private divergencePointTimeKeys = new Set<string>();
   private divergenceToolActive: boolean = false;
   private highlightSeries: any = null;
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
+  private static readonly MAX_HIGHLIGHT_POINTS = 2000;
   private trendLineSeries: any = null;
   private midlineCrossIndex: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
@@ -39,6 +43,7 @@ export class RSIChart {
     this.displayMode = options.displayMode;
     this.data = this.normalizeRSIData(options.data);
     this.priceData = options.priceData || [];
+    this.rebuildLookupMaps();
     this.seriesData = this.buildSeriesData(this.data, this.priceData);
     this.onTrendLineDrawn = options.onTrendLineDrawn;
 
@@ -117,6 +122,27 @@ export class RSIChart {
       (typeof point.time === 'string' || typeof point.time === 'number') &&
       Number.isFinite(Number(point.value))
     ));
+  }
+
+  private timeKey(time: string | number): string {
+    return typeof time === 'number' ? String(time) : time;
+  }
+
+  private rebuildLookupMaps(): void {
+    this.priceByTime.clear();
+    this.indexByTime.clear();
+
+    for (let i = 0; i < this.data.length; i++) {
+      const point = this.data[i];
+      this.indexByTime.set(this.timeKey(point.time), i);
+    }
+
+    for (const point of this.priceData) {
+      const price = Number(point.close);
+      if (Number.isFinite(price)) {
+        this.priceByTime.set(this.timeKey(point.time), price);
+      }
+    }
   }
 
   private initMidlineCrossMarker(): void {
@@ -296,6 +322,7 @@ export class RSIChart {
     if (priceData) {
       this.priceData = priceData;
     }
+    this.rebuildLookupMaps();
     this.seriesData = this.buildSeriesData(this.data, this.priceData);
 
     if (this.series) {
@@ -351,12 +378,14 @@ export class RSIChart {
     this.clearHighlights();
     this.firstPoint = null;
     this.divergencePoints = [];
+    this.divergencePointTimeKeys.clear();
   }
 
   private detectAndHighlightDivergence(clickedTime: string | number): void {
     // Find the clicked point in RSI data
-    const clickedIndex = this.data.findIndex(d => d.time === clickedTime);
-    if (clickedIndex === -1) {
+    const clickedKey = this.timeKey(clickedTime);
+    const clickedIndex = this.indexByTime.get(clickedKey);
+    if (clickedIndex === undefined) {
       console.log('Clicked point not found in RSI data');
       return;
     }
@@ -364,13 +393,11 @@ export class RSIChart {
     const clickedRSI = this.data[clickedIndex].value;
 
     // Find corresponding price
-    const clickedPricePoint = this.priceData.find(p => p.time === clickedTime);
-    if (!clickedPricePoint) {
+    const clickedPrice = this.priceByTime.get(clickedKey);
+    if (!Number.isFinite(clickedPrice)) {
       console.log('Corresponding price data not found');
       return;
     }
-
-    const clickedPrice = clickedPricePoint.close;
 
     // Check if this is the first or second click
     if (!this.firstPoint) {
@@ -386,18 +413,20 @@ export class RSIChart {
       // 1) lower RSI + higher price (bearish)
       // 2) higher RSI + lower price (bullish)
       this.divergencePoints = [];
+      this.divergencePointTimeKeys.clear();
 
       for (let i = clickedIndex + 1; i < this.data.length; i++) {
         const currentRSI = this.data[i].value;
-        const currentPricePoint = this.priceData.find(p => p.time === this.data[i].time);
+        const currentTime = this.data[i].time;
+        const currentPrice = this.priceByTime.get(this.timeKey(currentTime));
 
-        if (currentPricePoint) {
-          const currentPrice = currentPricePoint.close;
+        if (Number.isFinite(currentPrice)) {
 
           const bearishDivergence = currentRSI < clickedRSI && currentPrice > clickedPrice;
           const bullishDivergence = currentRSI > clickedRSI && currentPrice < clickedPrice;
           if (bearishDivergence || bullishDivergence) {
-            this.divergencePoints.push(this.data[i]);
+            this.divergencePoints.push({ time: currentTime, value: currentRSI });
+            this.divergencePointTimeKeys.add(this.timeKey(currentTime));
           }
         }
       }
@@ -408,7 +437,7 @@ export class RSIChart {
       this.highlightPoints(this.divergencePoints);
     } else {
       // Second click: check if it's a divergence point and draw trend line
-      const isValidSecondPoint = this.divergencePoints.some(p => p.time === clickedTime);
+      const isValidSecondPoint = this.divergencePointTimeKeys.has(clickedKey);
 
       if (!isValidSecondPoint) {
         console.log('Second point must be one of the highlighted divergence points');
@@ -445,7 +474,9 @@ export class RSIChart {
       pointMarkersRadius: 5
     });
 
-    this.highlightSeries.setData(points);
+    const step = Math.max(1, Math.ceil(points.length / RSIChart.MAX_HIGHLIGHT_POINTS));
+    const displayPoints = step === 1 ? points : points.filter((_, index) => index % step === 0);
+    this.highlightSeries.setData(displayPoints);
   }
 
   private clearHighlights(): void {
@@ -533,6 +564,7 @@ export class RSIChart {
     // Reset state
     this.firstPoint = null;
     this.divergencePoints = [];
+    this.divergencePointTimeKeys.clear();
     this.setMidlineCrossIndex(null);
   }
 
