@@ -728,18 +728,34 @@ export class RSIChart {
   }
 
   clearDivergence(): void {
-    this.clearHighlights();
+    // Preserve viewport position before clearing
+    const visibleRangeBeforeClear = this.chart.timeScale().getVisibleLogicalRange?.();
+    this.suppressExternalSync = true;
 
-    // Clear all trend lines
-    for (const trendLineSeries of this.trendLineSeriesList) {
-      this.chart.removeSeries(trendLineSeries);
+    try {
+      this.clearHighlights();
+
+      // Clear all trend lines
+      for (const trendLineSeries of this.trendLineSeriesList) {
+        this.chart.removeSeries(trendLineSeries);
+      }
+      this.trendLineSeriesList = [];
+
+      // Reset state
+      this.firstPoint = null;
+      this.divergencePoints = [];
+      this.divergencePointTimeKeys.clear();
+    } finally {
+      // Restore viewport to prevent chart jump
+      if (visibleRangeBeforeClear) {
+        try {
+          this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
+        } catch {
+          // Keep the current viewport stable after clearing
+        }
+      }
+      this.suppressExternalSync = false;
     }
-    this.trendLineSeriesList = [];
-
-    // Reset state
-    this.firstPoint = null;
-    this.divergencePoints = [];
-    this.divergencePointTimeKeys.clear();
   }
 
   resize(): void {

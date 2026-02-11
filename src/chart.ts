@@ -1255,14 +1255,29 @@ function clearVolumeDeltaTrendLines(): void {
     volumeDeltaTrendLineSeriesList = [];
     return;
   }
-  for (const series of volumeDeltaTrendLineSeriesList) {
-    try {
-      volumeDeltaRsiChart.removeSeries(series);
-    } catch {
-      // Ignore stale trendline series remove errors.
+
+  // Preserve viewport position before clearing
+  const visibleRangeBeforeClear = volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.();
+
+  try {
+    for (const series of volumeDeltaTrendLineSeriesList) {
+      try {
+        volumeDeltaRsiChart.removeSeries(series);
+      } catch {
+        // Ignore stale trendline series remove errors.
+      }
+    }
+    volumeDeltaTrendLineSeriesList = [];
+  } finally {
+    // Restore viewport to prevent chart jump
+    if (visibleRangeBeforeClear) {
+      try {
+        volumeDeltaRsiChart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
+      } catch {
+        // Keep the current viewport stable after clearing
+      }
     }
   }
-  volumeDeltaTrendLineSeriesList = [];
 }
 
 function clearVolumeDeltaDivergenceState(): void {
