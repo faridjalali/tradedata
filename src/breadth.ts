@@ -172,15 +172,13 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
 
 async function loadBreadth(): Promise<void> {
 
-    const loading = document.getElementById('breadth-loading');
     const error = document.getElementById('breadth-error');
 
-    if (loading) loading.style.display = 'block';
     if (error) error.style.display = 'none';
 
     try {
         const response = await fetchBreadthData(currentMetric, currentTimeframeDays);
-        if (loading) loading.style.display = 'none';
+
 
         if (response.points.length === 0) {
             if (error) {
@@ -193,7 +191,7 @@ async function loadBreadth(): Promise<void> {
         renderBreadthChart(response.points, currentMetric, response.intraday);
     } catch (err) {
         console.error('Breadth load error:', err);
-        if (loading) loading.style.display = 'none';
+
         if (error) {
             error.textContent = 'Failed to load breadth data';
             error.style.display = 'block';
