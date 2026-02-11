@@ -1696,6 +1696,56 @@ function ensureResizeObserver(chartContainer: HTMLElement, volumeDeltaContainer:
   chartResizeObserver.observe(rsiContainer);
 }
 
+function showLoadingOverlay(container: HTMLElement): void {
+  // Remove existing overlay if present
+  const existingOverlay = container.querySelector('.chart-loading-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  // Create loading overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'chart-loading-overlay';
+  overlay.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(13, 17, 23, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: none;
+  `;
+
+  // Create loading spinner
+  const spinner = document.createElement('div');
+  spinner.innerHTML = `
+    <svg width="40" height="40" viewBox="0 0 40 40" style="animation: spin 1s linear infinite;">
+      <circle cx="20" cy="20" r="16" fill="none" stroke="#58a6ff" stroke-width="3"
+              stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" opacity="0.8"/>
+    </svg>
+    <style>
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  `;
+
+  overlay.appendChild(spinner);
+  container.appendChild(overlay);
+}
+
+function hideLoadingOverlay(container: HTMLElement): void {
+  const overlay = container.querySelector('.chart-loading-overlay');
+  if (overlay) {
+    overlay.remove();
+  }
+}
+
 export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
   ensureSettingsLoadedFromStorage();
   const requestId = ++latestRenderRequestId;
@@ -1736,6 +1786,11 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
   ensureResizeObserver(chartContainer, volumeDeltaContainer, rsiContainer);
   applyChartSizes(chartContainer, volumeDeltaContainer, rsiContainer);
+
+  // Show loading indicators on all chart panes
+  showLoadingOverlay(chartContainer);
+  showLoadingOverlay(volumeDeltaContainer);
+  showLoadingOverlay(rsiContainer);
 
   try {
     // Fetch data from API
@@ -1804,8 +1859,19 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     refreshMonthGridLines();
 
     currentChartTicker = ticker;
+
+    // Hide loading indicators after successful load
+    hideLoadingOverlay(chartContainer);
+    hideLoadingOverlay(volumeDeltaContainer);
+    hideLoadingOverlay(rsiContainer);
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
+
+    // Hide loading indicators on error
+    hideLoadingOverlay(chartContainer);
+    hideLoadingOverlay(volumeDeltaContainer);
+    hideLoadingOverlay(rsiContainer);
+
     console.error('Failed to load chart:', err);
     if (isNoDataTickerError(err)) {
       if (candleSeries) {
