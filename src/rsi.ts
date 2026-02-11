@@ -203,9 +203,8 @@ export class RSIChart {
       });
     }
 
-    // Zoomed in (day/time): show numeric month/day.
+    // Zoomed in (day/time): show day-of-month only.
     return date.toLocaleDateString('en-US', {
-      month: 'numeric',
       day: 'numeric',
       timeZone: 'America/Los_Angeles'
     });
