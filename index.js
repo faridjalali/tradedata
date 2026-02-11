@@ -412,43 +412,54 @@ async function fmpIntraday4Hour(symbol) {
 
 // Calculate RSI (Relative Strength Index) with smoothed averages
 function calculateRSI(closePrices, period = 14) {
-  if (closePrices.length < period + 1) return [];
+  if (!Array.isArray(closePrices) || closePrices.length === 0) return [];
+  if (closePrices.length === 1) return [50];
 
-  // Calculate price changes
-  const changes = [];
-  for (let i = 1; i < closePrices.length; i++) {
-    changes.push(closePrices[i] - closePrices[i - 1]);
-  }
+  const rsiValues = new Array(closePrices.length).fill(50);
+  const gains = [];
+  const losses = [];
 
-  // Calculate initial averages for first 'period' changes
   let avgGain = 0;
   let avgLoss = 0;
-  for (let i = 0; i < period; i++) {
-    if (changes[i] > 0) avgGain += changes[i];
-    else avgLoss += Math.abs(changes[i]);
-  }
-  avgGain /= period;
-  avgLoss /= period;
 
-  const rsiValues = [];
-
-  // First RSI value
-  const rs0 = avgLoss === 0 ? 100 : avgGain / avgLoss;
-  rsiValues.push(100 - (100 / (1 + rs0)));
-
-  // Subsequent RSI values using smoothed averages
-  for (let i = period; i < changes.length; i++) {
-    const change = changes[i];
+  for (let i = 1; i < closePrices.length; i++) {
+    const change = closePrices[i] - closePrices[i - 1];
     const gain = change > 0 ? change : 0;
     const loss = change < 0 ? Math.abs(change) : 0;
+    gains.push(gain);
+    losses.push(loss);
 
-    avgGain = ((avgGain * (period - 1)) + gain) / period;
-    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+    if (i < period) {
+      // Use the available history so RSI can be drawn from the beginning.
+      const window = i;
+      let gainSum = 0;
+      let lossSum = 0;
+      for (let j = 0; j < window; j++) {
+        gainSum += gains[j];
+        lossSum += losses[j];
+      }
+      avgGain = gainSum / window;
+      avgLoss = lossSum / window;
+    } else if (i === period) {
+      let gainSum = 0;
+      let lossSum = 0;
+      for (let j = i - period; j < i; j++) {
+        gainSum += gains[j];
+        lossSum += losses[j];
+      }
+      avgGain = gainSum / period;
+      avgLoss = lossSum / period;
+    } else {
+      avgGain = ((avgGain * (period - 1)) + gain) / period;
+      avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+    }
 
     const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    rsiValues.push(100 - (100 / (1 + rs)));
+    const rsi = 100 - (100 / (1 + rs));
+    rsiValues[i] = Number.isFinite(rsi) ? rsi : rsiValues[i - 1];
   }
 
+  rsiValues[0] = rsiValues[1] ?? 50;
   return rsiValues;
 }
 
@@ -717,10 +728,10 @@ app.get('/api/chart', async (req, res) => {
     const closePrices = convertedBars.map(b => b.close);
     const rsiValues = calculateRSI(closePrices, 14);
 
-    // RSI values begin after the warmup period. Keep only finite points.
+    // Emit RSI for the full loaded history.
     const rsi = [];
-    for (let i = 14; i < convertedBars.length; i++) {
-      const raw = rsiValues[i - 14];
+    for (let i = 0; i < convertedBars.length; i++) {
+      const raw = rsiValues[i];
       if (!Number.isFinite(raw)) continue;
       rsi.push({
         time: convertedBars[i].time,
