@@ -24,6 +24,11 @@ let errorEl: HTMLElement | null = null;
 let chartContent: HTMLElement | null = null;
 
 export function renderCustomChart(ticker: string): void {
+  // Prevent redundant initialization if already rendered for this ticker
+  if (currentTicker === ticker && priceChart && rsiChart) {
+    return; // Already initialized for this ticker
+  }
+
   currentTicker = ticker;
 
   // Get DOM elements
@@ -38,11 +43,11 @@ export function renderCustomChart(ticker: string): void {
     return;
   }
 
-  // Initialize charts
-  initializeCharts();
-
-  // Set up event listeners
-  setupEventListeners();
+  // Initialize charts only if not already created
+  if (!priceChart) {
+    initializeCharts();
+    setupEventListeners();
+  }
 
   // Load initial data (daily timeframe)
   loadChartData(ticker, currentInterval);
@@ -367,13 +372,12 @@ function loadDrawings(): void {
 }
 
 function showLoading(): void {
-  if (loadingEl) loadingEl.style.display = 'block';
+  // Don't show loading text, just dim the charts slightly
   if (errorEl) errorEl.style.display = 'none';
-  if (chartContent) chartContent.style.opacity = '0.5';
+  if (chartContent) chartContent.style.opacity = '0.8';
 }
 
 function hideLoading(): void {
-  if (loadingEl) loadingEl.style.display = 'none';
   if (chartContent) chartContent.style.opacity = '1';
 }
 
