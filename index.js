@@ -202,7 +202,9 @@ const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
 const FMP_TIMEOUT_MS = 15000;
 
 function buildFmpUrl(base, path, params = {}) {
-  const url = new URL(path, `${base}/`);
+  const normalizedBase = base.replace(/\/+$/, '');
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  const url = new URL(`${normalizedBase}/${normalizedPath}`);
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== '') {
       url.searchParams.set(key, String(value));
