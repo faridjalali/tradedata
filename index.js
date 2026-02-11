@@ -260,93 +260,11 @@ async function fmpIntraday4Hour(symbol) {
 
 
 
-// Calculate RSI (Relative Strength Index) with smoothed averages
-function calculateRSI(closePrices, period = 14) {
-  if (closePrices.length < period + 1) return [];
 
-  // Calculate price changes
-  const changes = [];
-  for (let i = 1; i < closePrices.length; i++) {
-    changes.push(closePrices[i] - closePrices[i - 1]);
-  }
 
-  // Calculate initial averages for first 'period' changes
-  let avgGain = 0;
-  let avgLoss = 0;
-  for (let i = 0; i < period; i++) {
-    if (changes[i] > 0) avgGain += changes[i];
-    else avgLoss += Math.abs(changes[i]);
-  }
-  avgGain /= period;
-  avgLoss /= period;
 
-  const rsiValues = [];
 
-  // First RSI value
-  const rs0 = avgLoss === 0 ? 100 : avgGain / avgLoss;
-  rsiValues.push(100 - (100 / (1 + rs0)));
 
-  // Subsequent RSI values using smoothed averages
-  for (let i = period; i < changes.length; i++) {
-    const change = changes[i];
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? Math.abs(change) : 0;
-
-    avgGain = ((avgGain * (period - 1)) + gain) / period;
-    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
-
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    rsiValues.push(100 - (100 / (1 + rs)));
-  }
-
-  return rsiValues;
-}
-
-// Convert ET timezone bars to LA timezone
-function convertToLATime(bars, interval) {
-  return bars.map(bar => {
-    // Daily data: Already in YYYY-MM-DD format
-    if (interval === '1day') {
-      return {
-        time: bar.date,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        volume: bar.volume || 0
-      };
-    }
-
-    // Intraday: Convert ET to Unix timestamp
-    // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
-
-    // Parse the datetime string components
-    const [datePart, timePart] = bar.datetime.split(' ');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const [hour, minute] = timePart.split(':').map(Number);
-
-    // Create a date string that will be interpreted in ET timezone
-    // by using toLocaleString to get the UTC offset
-    const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    const etOffset = testDate.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      timeZoneName: 'short'
-    }).includes('EST') ? -5 : -4; // -5 for EST, -4 for EDT
-
-    // Create UTC timestamp accounting for ET offset
-    const utcTimestamp = Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
-    const timestamp = Math.floor(utcTimestamp / 1000);
-
-    return {
-      time: timestamp,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume
-    };
-  });
-}
 
 // --- Cache expiry helpers ---
 function getNextCacheExpiry() {

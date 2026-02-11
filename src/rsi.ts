@@ -1,10 +1,9 @@
 // RSI Chart configuration and management
 
 import { RSIPoint, RSIDisplayMode } from './chartApi';
+import { IChartApi, ISeriesApi, createChart, LineStyle, CrosshairMode, MouseEventHandler, Time } from 'lightweight-charts';
 
-// Declare Lightweight Charts global
-declare const LightweightCharts: any;
-declare const LightweightChartsLineTools: any;
+
 
 export interface RSIChartOptions {
   container: HTMLElement;
@@ -13,19 +12,29 @@ export interface RSIChartOptions {
   priceData?: Array<{time: string | number, close: number}>; // For divergence detection
 }
 
+interface ReferenceLineConfig {
+  value: number;
+  label: string;
+  color: string;
+}
+
+interface PriceDataPoint {
+  time: string | number;
+  close: number;
+}
+
 export class RSIChart {
-  private chart: any;
-  private series: any;
-  private lineTools: any;
+  private chart: IChartApi;
+  private series: ISeriesApi<"Line" | "Histogram"> | null = null;
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
-  private referenceLines: Array<{value: number, label: string, color: string}> = [];
-  private priceData: Array<{time: string | number, close: number}> = [];
+  private referenceLines: ReferenceLineConfig[] = [];
+  private priceData: PriceDataPoint[] = [];
   private divergenceToolActive: boolean = false;
-  private highlightSeries: any = null;
+  private highlightSeries: ISeriesApi<"Line"> | null = null;
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
-  private trendLineSeries: any = null;
+  private trendLineSeries: ISeriesApi<"Line"> | null = null;
 
   constructor(options: RSIChartOptions) {
     this.displayMode = options.displayMode;
@@ -33,7 +42,7 @@ export class RSIChart {
     this.priceData = options.priceData || [];
 
     // Create RSI chart
-    this.chart = LightweightCharts.createChart(options.container, {
+    this.chart = createChart(options.container, {
       height: 400,
       layout: {
         background: { color: '#0d1117' },
@@ -46,7 +55,7 @@ export class RSIChart {
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: '#21262d'  // Show time scale at bottom of RSI chart
+        borderColor: '#21262d'
       },
       rightPriceScale: {
         borderColor: '#21262d',
@@ -56,7 +65,7 @@ export class RSIChart {
         }
       },
       crosshair: {
-        mode: 1 // CrosshairMode.Normal
+        mode: CrosshairMode.Normal
       }
     });
 
@@ -66,35 +75,34 @@ export class RSIChart {
     // Add RSI series based on display mode
     this.updateSeries();
 
-    // Set up click handler for divergence detection
-    this.chart.subscribeCrosshairMove((param: any) => {
-      if (this.divergenceToolActive && param && param.time) {
-        // We'll handle the actual click in a separate event
-      }
-    });
+    // Subscribe to events
+    this.chart.subscribeClick(this.handleChartClick.bind(this));
+  }
 
-    this.chart.subscribeClick((param: any) => {
-      if (this.divergenceToolActive && param && param.time) {
-        this.detectAndHighlightDivergence(param.time);
-      }
-    });
+  private handleChartClick(param: MouseEventHandler<Time>): void {
+    if (this.divergenceToolActive && param && param.time) {
+      this.detectAndHighlightDivergence(param.time as string | number);
+    }
   }
 
   private addReferenceLine(value: number, label: string, color: string): void {
-    // Store config for later series recreations
-    this.referenceLines.push({ value, label, color });
+    const config: ReferenceLineConfig = { value, label, color };
+    this.referenceLines.push(config);
 
-    // If series exists, add the line immediately
     if (this.series) {
-      this.series.createPriceLine({
-        price: value,
-        color,
-        lineWidth: 1,
-        lineStyle: 2, // LineStyle.Dashed
-        axisLabelVisible: false,
-        title: label
-      });
+      this.createPriceLine(this.series, config);
     }
+  }
+
+  private createPriceLine(series: ISeriesApi<any>, config: ReferenceLineConfig): void {
+    series.createPriceLine({
+      price: config.value,
+      color: config.color,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: config.label
+    });
   }
 
   private updateSeries(): void {
@@ -112,7 +120,6 @@ export class RSIChart {
         lastValueVisible: false
       });
     } else {
-      // Points mode - using histogram with very thin bars to simulate points
       this.series = this.chart.addHistogramSeries({
         color: '#58a6ff',
         priceFormat: {
@@ -127,26 +134,18 @@ export class RSIChart {
 
     // Set data
     if (this.displayMode === 'line') {
-      this.series.setData(this.data);
+      this.series.setData(this.data as any);
     } else {
-      // For histogram (points mode), convert to histogram format
       this.series.setData(this.data.map(d => ({
         time: d.time,
         value: d.value,
         color: '#58a6ff'
-      })));
+      })) as any);
     }
 
-    // Add reference lines (midline) to the new series
+    // Add reference lines
     this.referenceLines.forEach(config => {
-      this.series.createPriceLine({
-        price: config.value,
-        color: config.color,
-        lineWidth: 1,
-        lineStyle: 2, // LineStyle.Dashed
-        axisLabelVisible: false,
-        title: config.label
-      });
+        if (this.series) this.createPriceLine(this.series, config);
     });
   }
 
@@ -156,44 +155,35 @@ export class RSIChart {
     this.updateSeries();
   }
 
-  setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
+  setData(data: RSIPoint[], priceData?: PriceDataPoint[]): void {
     this.data = data;
     if (priceData) {
       this.priceData = priceData;
     }
 
     if (this.series) {
-      if (this.displayMode === 'line') {
-        this.series.setData(data);
-      } else {
-        this.series.setData(data.map(d => ({
-          time: d.time,
-          value: d.value,
-          color: '#58a6ff'
-        })));
-      }
+        if (this.displayMode === 'line') {
+            this.series.setData(data as any);
+        } else {
+            this.series.setData(data.map(d => ({
+                time: d.time,
+                value: d.value,
+                color: '#58a6ff'
+            })) as any);
+        }
     }
-
-
   }
 
-  getChart(): any {
+  getChart(): IChartApi {
     return this.chart;
   }
 
-  getSeries(): any {
+  getSeries(): ISeriesApi<"Line" | "Histogram"> | null {
     return this.series;
-  }
-
-
-
-  getLineTools(): any {
-    return this.lineTools;
   }
 
   activateDivergenceTool(): void {
     this.divergenceToolActive = true;
-    // Change cursor to indicate tool is active
     const container = this.chart.chartElement();
     if (container) {
       container.style.cursor = 'crosshair';
@@ -206,34 +196,21 @@ export class RSIChart {
     if (container) {
       container.style.cursor = 'default';
     }
-    // Clear any highlights and reset state
-    this.clearHighlights();
-    this.firstPoint = null;
-    this.divergencePoints = [];
+    this.clearDivergence();
   }
 
   private detectAndHighlightDivergence(clickedTime: string | number): void {
-    // Find the clicked point in RSI data
     const clickedIndex = this.data.findIndex(d => d.time === clickedTime);
-    if (clickedIndex === -1) {
-      console.log('Clicked point not found in RSI data');
-      return;
-    }
+    if (clickedIndex === -1) return;
 
     const clickedRSI = this.data[clickedIndex].value;
-
-    // Find corresponding price
     const clickedPricePoint = this.priceData.find(p => p.time === clickedTime);
-    if (!clickedPricePoint) {
-      console.log('Corresponding price data not found');
-      return;
-    }
-
+    
+    if (!clickedPricePoint) return;
     const clickedPrice = clickedPricePoint.close;
 
-    // Check if this is the first or second click
     if (!this.firstPoint) {
-      // First click: store point and find divergence
+      // First click
       this.firstPoint = {
         time: clickedTime,
         rsi: clickedRSI,
@@ -241,67 +218,43 @@ export class RSIChart {
         index: clickedIndex
       };
 
-      // Find all future points with divergence (lower RSI, higher price)
       this.divergencePoints = [];
-
       for (let i = clickedIndex + 1; i < this.data.length; i++) {
         const currentRSI = this.data[i].value;
         const currentPricePoint = this.priceData.find(p => p.time === this.data[i].time);
 
         if (currentPricePoint) {
           const currentPrice = currentPricePoint.close;
-
-          // Check divergence conditions: RSI lower AND price higher
           if (currentRSI < clickedRSI && currentPrice > clickedPrice) {
             this.divergencePoints.push(this.data[i]);
           }
         }
       }
-
-      console.log(`Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPrice.toFixed(2)})`);
-
-      // Highlight the divergence points
       this.highlightPoints(this.divergencePoints);
     } else {
-      // Second click: check if it's a divergence point and draw trend line
+      // Second click
       const isValidSecondPoint = this.divergencePoints.some(p => p.time === clickedTime);
+      if (!isValidSecondPoint) return;
 
-      if (!isValidSecondPoint) {
-        console.log('Second point must be one of the highlighted divergence points');
-        return;
-      }
-
-      console.log(`Drawing trend line from (RSI: ${this.firstPoint.rsi.toFixed(2)}) to (RSI: ${clickedRSI.toFixed(2)})`);
-
-      // Draw trend line from first point through second point, extending to the right
       this.drawTrendLine(this.firstPoint.time, this.firstPoint.rsi, clickedTime, clickedRSI);
-
-      // Clear highlights after drawing the line
       this.clearHighlights();
-
-      // Reset for next trend line
       this.firstPoint = null;
       this.divergencePoints = [];
     }
   }
 
   private highlightPoints(points: RSIPoint[]): void {
-    // Clear previous highlights
     this.clearHighlights();
+    if (points.length === 0) return;
 
-    if (points.length === 0) {
-      return;
-    }
-
-    // Add a marker series to highlight divergence points
     this.highlightSeries = this.chart.addLineSeries({
-      color: '#ff6b6b',  // Red color for bearish divergence
+      color: '#ff6b6b',
       lineWidth: 0,
       pointMarkersVisible: true,
       pointMarkersRadius: 5
     });
 
-    this.highlightSeries.setData(points);
+    this.highlightSeries.setData(points as any);
   }
 
   private clearHighlights(): void {
@@ -312,22 +265,14 @@ export class RSIChart {
   }
 
   private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
-    // Find the indices of the two points
     const index1 = this.data.findIndex(d => d.time === time1);
     const index2 = this.data.findIndex(d => d.time === time2);
 
-    if (index1 === -1 || index2 === -1) {
-      console.error('Could not find indices for trend line points');
-      return;
-    }
+    if (index1 === -1 || index2 === -1) return;
 
-    // Calculate slope: (y2 - y1) / (x2 - x1)
     const slope = (value2 - value1) / (index2 - index1);
-
-    // Create trend line data points extending to the right edge
     const trendLineData: RSIPoint[] = [];
 
-    // Start from first point and extend to the last data point
     for (let i = index1; i < this.data.length; i++) {
       const projectedValue = value1 + slope * (i - index1);
       trendLineData.push({
@@ -336,33 +281,28 @@ export class RSIChart {
       });
     }
 
-    // Create or update trend line series
     if (this.trendLineSeries) {
       this.chart.removeSeries(this.trendLineSeries);
     }
 
     this.trendLineSeries = this.chart.addLineSeries({
-      color: '#ffa500',  // Orange color for trend line
+      color: '#ffa500',
       lineWidth: 2,
-      lineStyle: 0, // Solid line
+      lineStyle: LineStyle.Solid,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false
     });
 
-    this.trendLineSeries.setData(trendLineData);
+    this.trendLineSeries.setData(trendLineData as any);
   }
 
   clearDivergence(): void {
     this.clearHighlights();
-
-    // Clear trend line
     if (this.trendLineSeries) {
       this.chart.removeSeries(this.trendLineSeries);
       this.trendLineSeries = null;
     }
-
-    // Reset state
     this.firstPoint = null;
     this.divergencePoints = [];
   }
