@@ -180,16 +180,18 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     // Fetch data from API
     const data = await fetchChartData(ticker, interval);
 
-    // Handle 2-hour aggregation for bars, then filter RSI to match
+    // Handle 2-hour aggregation for bars, then filter RSI and SMA to match
     let bars = data.bars;
     let rsiData: RSIPoint[] = data.rsi;
+    let smaData = data.sma;
 
     if (interval === '2hour') {
       bars = aggregate2HourBars(bars);
 
-      // Filter RSI data to only include points that have matching times in aggregated bars
+      // Filter RSI and SMA data to only include points that have matching times in aggregated bars
       const barTimes = new Set(bars.map(b => b.time));
       rsiData = data.rsi.filter(r => barTimes.has(r.time));
+      smaData = data.sma.filter(s => barTimes.has(s.time));
     }
 
     // Update price chart
@@ -198,8 +200,8 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
     }
 
     // Update SMA
-    if (smaSeries && data.sma) {
-      smaSeries.setData(data.sma);
+    if (smaSeries && smaData) {
+      smaSeries.setData(smaData);
     }
 
     // Initialize or update RSI chart
@@ -219,10 +221,16 @@ async function loadChartData(ticker: string, interval: ChartInterval): Promise<v
 
     // After both charts have data, fit content and scroll to show most recent data on right
     if (priceChart && rsiChart) {
+      const rsiChartInstance = rsiChart.getChart();
+
+      // Fit content on both charts
       priceChart.timeScale().fitContent();
+      rsiChartInstance.timeScale().fitContent();
+
       // Small delay to ensure fitContent completes, then scroll to show rightmost data
       setTimeout(() => {
         priceChart.timeScale().scrollToRealTime();
+        rsiChartInstance.timeScale().scrollToRealTime();
       }, 50);
     }
 
