@@ -55,7 +55,7 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
             return date.toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
-                timeZone: 'America/New_York'
+                timeZone: 'America/Los_Angeles'
             });
         }
         const date = new Date(d.date + 'T00:00:00');
