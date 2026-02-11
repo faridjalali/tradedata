@@ -15,6 +15,43 @@ const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 5;
 const SCALE_MIN_WIDTH_PX = 80;
+const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
+
+function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
+  let messageEl = container.querySelector('.price-pane-message') as HTMLDivElement | null;
+  if (messageEl) return messageEl;
+
+  messageEl = document.createElement('div');
+  messageEl.className = 'price-pane-message';
+  messageEl.style.position = 'absolute';
+  messageEl.style.top = '50%';
+  messageEl.style.left = '50%';
+  messageEl.style.transform = 'translate(-50%, -50%)';
+  messageEl.style.color = '#8b949e';
+  messageEl.style.fontSize = '1rem';
+  messageEl.style.fontWeight = '600';
+  messageEl.style.pointerEvents = 'none';
+  messageEl.style.zIndex = '20';
+  messageEl.style.display = 'none';
+  container.appendChild(messageEl);
+  return messageEl;
+}
+
+function setPricePaneMessage(container: HTMLElement, message: string | null): void {
+  const messageEl = ensurePricePaneMessageEl(container);
+  if (!message) {
+    messageEl.style.display = 'none';
+    messageEl.textContent = '';
+    return;
+  }
+  messageEl.textContent = message;
+  messageEl.style.display = 'block';
+}
+
+function isNoDataTickerError(err: unknown): boolean {
+  const message = String((err as any)?.message || err || '');
+  return /No .*data available for this ticker|No valid chart bars/i.test(message);
+}
 
 function formatPriceScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
@@ -154,6 +191,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   // Clear error
   errorContainer.style.display = 'none';
   errorContainer.textContent = '';
+  setPricePaneMessage(chartContainer, null);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -220,6 +258,19 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
     console.error('Failed to load chart:', err);
+    if (isNoDataTickerError(err)) {
+      if (candleSeries) {
+        candleSeries.setData([]);
+      }
+      if (rsiChart) {
+        rsiChart.setData([], []);
+      }
+      setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
+      errorContainer.style.display = 'none';
+      errorContainer.textContent = '';
+      return;
+    }
+
     errorContainer.textContent = `Error loading chart: ${err.message}`;
     errorContainer.style.display = 'block';
   }
