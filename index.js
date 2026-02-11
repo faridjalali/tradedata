@@ -570,16 +570,13 @@ async function fmpIntraday(symbol, interval, options = {}) {
   return normalized.length ? normalized : null;
 }
 
-// Smarter lookback days based on chart interval
+// Fetch 9 months of data to ensure 6 months of valid indicator data
+// (need buffer for RSI/VD-RSI warm-up period)
 function getIntradayLookbackDays(interval) {
-  const lookbackMap = {
-    '5min': 5,      // 5 days of 5-min bars (~390 bars)
-    '15min': 10,    // 10 days of 15-min bars (~260 bars)
-    '30min': 20,    // 20 days of 30-min bars (~260 bars)
-    '1hour': 60,    // 60 days of 1-hour bars (~390 bars)
-    '4hour': 120    // 120 days of 4-hour bars (~240 bars)
-  };
-  return lookbackMap[interval] || 30;
+  // All intervals get 270 days (9 months) to ensure:
+  // - 6 months (180 days) of visible data
+  // - 90 days buffer for indicator warm-up (RSI needs 14+ periods)
+  return 270;
 }
 
 const CHART_INTRADAY_LOOKBACK_DAYS = 365; // Legacy fallback
@@ -795,7 +792,8 @@ function getIntervalSeconds(interval) {
 function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval) {
   if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
   if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
-    return parentBars.map((bar) => ({ time: bar.time, delta: null }));
+    // No lower TF data = delta of 0 for all bars (matches TradingView behavior)
+    return parentBars.map((bar) => ({ time: bar.time, delta: 0 }));
   }
 
   const intervalSeconds = getIntervalSeconds(interval);
@@ -1176,7 +1174,14 @@ app.get('/api/chart', async (req, res) => {
       if (lowerTfBars.length > 0) {
         const firstParentTime = Number(firstBarTime);
         const lastParentTime = Number(lastBarTime);
-        const parentWindowStart = Number.isFinite(firstParentTime) ? firstParentTime : Number.NEGATIVE_INFINITY;
+
+        // CRITICAL: Include bars BEFORE the first parent bar for proper volume delta calculation
+        // The first parent bar needs the previous intrabar's close to determine doji direction
+        // Include enough buffer for RMA warm-up (14+ periods) = ~14 parent bars worth of 5-min data
+        const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
+        const parentWindowStart = Number.isFinite(firstParentTime)
+          ? (firstParentTime - warmUpBufferSeconds)
+          : Number.NEGATIVE_INFINITY;
         const parentWindowEndExclusive = Number.isFinite(lastParentTime)
           ? (lastParentTime + getIntervalSeconds(interval))
           : Number.POSITIVE_INFINITY;
