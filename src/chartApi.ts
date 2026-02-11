@@ -28,8 +28,17 @@ export interface ChartData {
 
 }
 
-export async function fetchChartData(ticker: string, interval: ChartInterval): Promise<ChartData> {
-  const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}`;
+export interface ChartFetchOptions {
+  vdRsiLength?: number;
+}
+
+export async function fetchChartData(ticker: string, interval: ChartInterval, options: ChartFetchOptions = {}): Promise<ChartData> {
+  const params = new URLSearchParams();
+  if (Number.isFinite(options.vdRsiLength)) {
+    params.set('vdRsiLength', String(Math.max(1, Math.floor(Number(options.vdRsiLength)))));
+  }
+  const vdRsiLengthParam = params.get('vdRsiLength');
+  const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}${vdRsiLengthParam ? `&vdRsiLength=${vdRsiLengthParam}` : ''}`;
   const response = await fetch(url);
 
   if (!response.ok) {

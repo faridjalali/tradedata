@@ -731,7 +731,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
 }
 
 function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
-  const rsiLength = 14;
+  const rsiLength = Math.max(1, Math.floor(Number(options.rsiLength) || 14));
 
   const deltaByBar = computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval);
   const gains = deltaByBar.map((point) => {
@@ -977,6 +977,7 @@ app.get('/api/chart', async (req, res) => {
   const interval = (req.query.interval || '4hour').toString();
   const VOLUME_DELTA_RSI_LOWER_TF = '5min';
   const VOLUME_DELTA_RSI_LOOKBACK_DAYS = 120;
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
 
   // Validate interval
   const validIntervals = ['5min', '15min', '30min', '1hour', '4hour'];
@@ -1031,7 +1032,8 @@ app.get('/api/chart', async (req, res) => {
         volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
           convertedBars,
           lowerTfBars,
-          interval
+          interval,
+          { rsiLength: vdRsiLength }
         );
       }
     } catch (volumeDeltaErr) {

@@ -9,6 +9,7 @@ let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
+let volumeDeltaRsiMidlineLine: any = null;
 let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
 let latestRenderRequestId = 0;
@@ -21,6 +22,7 @@ let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let priceSettingsPanelEl: HTMLDivElement | null = null;
+let volumeDeltaRsiSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
 let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
@@ -32,9 +34,9 @@ const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
-const VOLUME_DELTA_OVERBOUGHT = 70;
 const VOLUME_DELTA_MIDLINE = 50;
-const VOLUME_DELTA_OVERSOLD = 30;
+const VOLUME_DELTA_AXIS_MIN = 20;
+const VOLUME_DELTA_AXIS_MAX = 80;
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -62,6 +64,13 @@ interface RSISettings {
   midlineStyle: MidlineStyle;
 }
 
+interface VolumeDeltaRSISettings {
+  length: number;
+  lineColor: string;
+  midlineColor: string;
+  midlineStyle: MidlineStyle;
+}
+
 interface PersistedMASetting {
   enabled: boolean;
   type: MAType;
@@ -77,11 +86,19 @@ interface PersistedChartSettings {
     ma: PersistedMASetting[];
   };
   rsi: RSISettings;
+  volumeDeltaRsi?: VolumeDeltaRSISettings;
 }
 
 const DEFAULT_RSI_SETTINGS: RSISettings = {
   length: 14,
   lineColor: '#58a6ff',
+  midlineColor: '#ffffff',
+  midlineStyle: 'dotted'
+};
+
+const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
+  length: 14,
+  lineColor: VOLUME_DELTA_RSI_COLOR,
   midlineColor: '#ffffff',
   midlineStyle: 'dotted'
 };
@@ -105,6 +122,10 @@ const DEFAULT_PRICE_SETTINGS: {
 
 const rsiSettings: RSISettings = {
   ...DEFAULT_RSI_SETTINGS
+};
+
+const volumeDeltaRsiSettings: VolumeDeltaRSISettings = {
+  ...DEFAULT_VOLUME_DELTA_RSI_SETTINGS
 };
 
 const priceChartSettings: PriceChartSettings = {
@@ -303,6 +324,12 @@ function persistSettingsToStorage(): void {
         lineColor: rsiSettings.lineColor,
         midlineColor: rsiSettings.midlineColor,
         midlineStyle: rsiSettings.midlineStyle
+      },
+      volumeDeltaRsi: {
+        length: volumeDeltaRsiSettings.length,
+        lineColor: volumeDeltaRsiSettings.lineColor,
+        midlineColor: volumeDeltaRsiSettings.midlineColor,
+        midlineStyle: volumeDeltaRsiSettings.midlineStyle
       }
     };
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
@@ -352,6 +379,18 @@ function ensureSettingsLoadedFromStorage(): void {
         rsiSettings.midlineColor = persistedRSI.midlineColor;
       }
       rsiSettings.midlineStyle = persistedRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
+    }
+
+    const persistedVolumeDeltaRSI = parsed?.volumeDeltaRsi;
+    if (persistedVolumeDeltaRSI) {
+      volumeDeltaRsiSettings.length = Math.max(1, Math.floor(Number(persistedVolumeDeltaRSI.length) || volumeDeltaRsiSettings.length));
+      if (typeof persistedVolumeDeltaRSI.lineColor === 'string' && persistedVolumeDeltaRSI.lineColor.trim()) {
+        volumeDeltaRsiSettings.lineColor = persistedVolumeDeltaRSI.lineColor;
+      }
+      if (typeof persistedVolumeDeltaRSI.midlineColor === 'string' && persistedVolumeDeltaRSI.midlineColor.trim()) {
+        volumeDeltaRsiSettings.midlineColor = persistedVolumeDeltaRSI.midlineColor;
+      }
+      volumeDeltaRsiSettings.midlineStyle = persistedVolumeDeltaRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
     }
   } catch {
     // Ignore malformed storage content.
@@ -578,8 +617,21 @@ function syncRSISettingsPanelValues(): void {
   if (midlineStyle) midlineStyle.value = rsiSettings.midlineStyle;
 }
 
+function syncVolumeDeltaRSISettingsPanelValues(): void {
+  if (!volumeDeltaRsiSettingsPanelEl) return;
+  const length = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="length"]') as HTMLInputElement | null;
+  const color = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="line-color"]') as HTMLInputElement | null;
+  const midlineColor = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="midline-color"]') as HTMLInputElement | null;
+  const midlineStyle = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="midline-style"]') as HTMLSelectElement | null;
+  if (length) length.value = String(volumeDeltaRsiSettings.length);
+  if (color) color.value = volumeDeltaRsiSettings.lineColor;
+  if (midlineColor) midlineColor.value = volumeDeltaRsiSettings.midlineColor;
+  if (midlineStyle) midlineStyle.value = volumeDeltaRsiSettings.midlineStyle;
+}
+
 function hideSettingsPanels(): void {
   if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = 'none';
+  if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = 'none';
   if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
 }
 
@@ -594,6 +646,32 @@ function applyRSISettings(): void {
   rsiChart.setData(rsiData, currentBars.map((b) => ({ time: b.time, close: b.close })));
   rsiChart.setLineColor(rsiSettings.lineColor);
   rsiChart.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+}
+
+function midlineStyleToLineStyle(style: MidlineStyle): number {
+  return style === 'solid' ? 0 : 1;
+}
+
+function applyVolumeDeltaRSIVisualSettings(): void {
+  if (volumeDeltaRsiSeries) {
+    volumeDeltaRsiSeries.applyOptions({
+      color: volumeDeltaRsiSettings.lineColor,
+      lineWidth: 1
+    });
+  }
+  if (volumeDeltaRsiMidlineLine) {
+    volumeDeltaRsiMidlineLine.applyOptions({
+      color: volumeDeltaRsiSettings.midlineColor,
+      lineStyle: midlineStyleToLineStyle(volumeDeltaRsiSettings.midlineStyle)
+    });
+  }
+}
+
+function applyVolumeDeltaRSISettings(refetch: boolean): void {
+  applyVolumeDeltaRSIVisualSettings();
+  if (!refetch) return;
+  if (!currentChartTicker) return;
+  renderCustomChart(currentChartTicker, currentChartInterval);
 }
 
 function resetPriceSettingsToDefault(): void {
@@ -626,14 +704,24 @@ function resetRSISettingsToDefault(): void {
   persistSettingsToStorage();
 }
 
-function createSettingsButton(container: HTMLElement, pane: 'price' | 'rsi'): HTMLButtonElement {
+function resetVolumeDeltaRSISettingsToDefault(): void {
+  volumeDeltaRsiSettings.length = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.length;
+  volumeDeltaRsiSettings.lineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.lineColor;
+  volumeDeltaRsiSettings.midlineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineColor;
+  volumeDeltaRsiSettings.midlineStyle = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineStyle;
+  applyVolumeDeltaRSISettings(true);
+  syncVolumeDeltaRSISettingsPanelValues();
+  persistSettingsToStorage();
+}
+
+function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDelta' | 'rsi'): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
   btn.className = 'pane-settings-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.title = `${pane === 'price' ? 'Price' : 'RSI'} settings`;
+  btn.title = pane === 'price' ? 'Price settings' : pane === 'volumeDelta' ? 'Volume Delta RSI settings' : 'RSI settings';
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
   btn.style.left = '8px';
@@ -874,8 +962,95 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   return panel;
 }
 
-function ensureSettingsUI(chartContainer: HTMLElement, rsiContainer: HTMLElement): void {
+function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivElement {
+  const panel = document.createElement('div');
+  panel.className = 'pane-settings-panel volume-delta-rsi-settings-panel';
+  panel.style.position = 'absolute';
+  panel.style.left = '8px';
+  panel.style.top = '38px';
+  panel.style.zIndex = '31';
+  panel.style.width = '230px';
+  panel.style.maxWidth = 'calc(100% - 16px)';
+  panel.style.background = 'rgba(22, 27, 34, 0.95)';
+  panel.style.border = '1px solid #30363d';
+  panel.style.borderRadius = '6px';
+  panel.style.padding = '10px';
+  panel.style.display = 'none';
+  panel.style.color = '#c9d1d9';
+  panel.style.backdropFilter = 'blur(6px)';
+
+  panel.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+      <div style="font-weight:600;">Volume Delta RSI</div>
+      <button type="button" data-vd-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
+    <label style="margin-bottom:6px;">
+      <span>Length</span>
+      <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+    </label>
+    <label style="margin-bottom:6px;">
+      <span>Line color</span>
+      <input data-vd-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="margin-bottom:6px;">
+      <span>Midline color</span>
+      <input data-vd-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="margin-bottom:6px;">
+      <span>Midline style</span>
+      <select data-vd-rsi-setting="midline-style" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        <option value="dotted">Dotted</option>
+        <option value="solid">Solid</option>
+      </select>
+    </label>
+  `;
+  applyUniformSettingsPanelTypography(panel);
+
+  panel.addEventListener('input', (event) => {
+    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
+    if (!target) return;
+    const setting = target.dataset.vdRsiSetting || '';
+    if (setting === 'length') {
+      volumeDeltaRsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
+      applyVolumeDeltaRSISettings(true);
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'line-color') {
+      volumeDeltaRsiSettings.lineColor = target.value || volumeDeltaRsiSettings.lineColor;
+      applyVolumeDeltaRSISettings(false);
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'midline-color') {
+      volumeDeltaRsiSettings.midlineColor = target.value || volumeDeltaRsiSettings.midlineColor;
+      applyVolumeDeltaRSISettings(false);
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'midline-style') {
+      volumeDeltaRsiSettings.midlineStyle = target.value === 'solid' ? 'solid' : 'dotted';
+      applyVolumeDeltaRSISettings(false);
+      persistSettingsToStorage();
+      return;
+    }
+  });
+
+  panel.addEventListener('click', (event) => {
+    const target = event.target as HTMLButtonElement | null;
+    if (!target) return;
+    if (target.dataset.vdRsiSetting !== 'reset') return;
+    event.preventDefault();
+    resetVolumeDeltaRSISettingsToDefault();
+  });
+
+  container.appendChild(panel);
+  return panel;
+}
+
+function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTMLElement, rsiContainer: HTMLElement): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
+  const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
 
   if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
@@ -890,8 +1065,15 @@ function ensureSettingsUI(chartContainer: HTMLElement, rsiContainer: HTMLElement
     }
     rsiSettingsPanelEl = createRSISettingsPanel(rsiContainer);
   }
+  if (!volumeDeltaRsiSettingsPanelEl || volumeDeltaRsiSettingsPanelEl.parentElement !== volumeDeltaContainer) {
+    if (volumeDeltaRsiSettingsPanelEl?.parentElement) {
+      volumeDeltaRsiSettingsPanelEl.parentElement.removeChild(volumeDeltaRsiSettingsPanelEl);
+    }
+    volumeDeltaRsiSettingsPanelEl = createVolumeDeltaRSISettingsPanel(volumeDeltaContainer);
+  }
 
   syncPriceSettingsPanelValues();
+  syncVolumeDeltaRSISettingsPanelValues();
   syncRSISettingsPanelValues();
 
   if (!priceBtn.dataset.bound) {
@@ -902,6 +1084,15 @@ function ensureSettingsUI(chartContainer: HTMLElement, rsiContainer: HTMLElement
       if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = nextDisplay;
     });
     priceBtn.dataset.bound = '1';
+  }
+  if (!volumeDeltaBtn.dataset.bound) {
+    volumeDeltaBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextDisplay = volumeDeltaRsiSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      hideSettingsPanels();
+      if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = nextDisplay;
+    });
+    volumeDeltaBtn.dataset.bound = '1';
   }
   if (!rsiBtn.dataset.bound) {
     rsiBtn.addEventListener('click', (event) => {
@@ -1103,14 +1294,14 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
 
   const autoscale = () => ({
     priceRange: {
-      minValue: 0,
-      maxValue: 100,
+      minValue: VOLUME_DELTA_AXIS_MIN,
+      maxValue: VOLUME_DELTA_AXIS_MAX,
     },
   });
 
   const rsiSeries = chart.addLineSeries({
-    color: VOLUME_DELTA_RSI_COLOR,
-    lineWidth: 2,
+    color: volumeDeltaRsiSettings.lineColor,
+    lineWidth: 1,
     priceLineVisible: false,
     lastValueVisible: false,
     crosshairMarkerVisible: false,
@@ -1122,29 +1313,13 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     autoscaleInfoProvider: autoscale,
   });
 
-  rsiSeries.createPriceLine({
-    price: VOLUME_DELTA_OVERBOUGHT,
-    color: 'rgba(242, 54, 69, 0.5)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false,
-    title: 'Overbought',
-  });
-  rsiSeries.createPriceLine({
+  volumeDeltaRsiMidlineLine = rsiSeries.createPriceLine({
     price: VOLUME_DELTA_MIDLINE,
-    color: 'rgba(201, 209, 217, 0.55)',
+    color: volumeDeltaRsiSettings.midlineColor,
     lineWidth: 1,
-    lineStyle: 1,
+    lineStyle: midlineStyleToLineStyle(volumeDeltaRsiSettings.midlineStyle),
     axisLabelVisible: false,
     title: 'Midline',
-  });
-  rsiSeries.createPriceLine({
-    price: VOLUME_DELTA_OVERSOLD,
-    color: 'rgba(8, 153, 129, 0.5)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false,
-    title: 'Oversold',
   });
 
   return { chart, rsiSeries };
@@ -1249,7 +1424,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   ensureMonthGridOverlay(chartContainer, 'price');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureMonthGridOverlay(rsiContainer, 'rsi');
-  ensureSettingsUI(chartContainer, rsiContainer);
+  ensureSettingsUI(chartContainer, volumeDeltaContainer, rsiContainer);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -1262,6 +1437,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     const { chart, rsiSeries } = createVolumeDeltaRsiChart(volumeDeltaContainer);
     volumeDeltaRsiChart = chart;
     volumeDeltaRsiSeries = rsiSeries;
+    applyVolumeDeltaRSIVisualSettings();
   }
 
   ensureResizeObserver(chartContainer, volumeDeltaContainer, rsiContainer);
@@ -1269,7 +1445,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
   try {
     // Fetch data from API
-    const data = await fetchChartData(ticker, interval);
+    const data = await fetchChartData(ticker, interval, { vdRsiLength: volumeDeltaRsiSettings.length });
     if (requestId !== latestRenderRequestId) return;
 
     // Retrieve bars and RSI directly (backend handles aggregation)
@@ -1297,6 +1473,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       candleSeries.setData(bars);
     }
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
+    applyVolumeDeltaRSIVisualSettings();
 
 
     // Initialize or update RSI chart
