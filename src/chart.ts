@@ -3,7 +3,7 @@ import { fetchChartData, ChartInterval } from './chartApi';
 import { RSIChart } from './rsi';
 
 let currentChartTicker: string | null = null;
-let currentChartInterval: ChartInterval = '1day';
+let currentChartInterval: ChartInterval = '4hour';
 let priceChart: any = null;
 let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;

@@ -1,6 +1,6 @@
 // Chart API types and client
 
-export type ChartInterval = '1hour' | '4hour' | '1day';
+export type ChartInterval = '1hour' | '4hour';
 export type RSIDisplayMode = 'line' | 'points';
 
 export interface CandleBar {
@@ -36,5 +36,4 @@ export async function fetchChartData(ticker: string, interval: ChartInterval): P
 
   return response.json();
 }
-
 

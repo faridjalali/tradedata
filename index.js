@@ -471,19 +471,6 @@ function convertToLATime(bars, interval) {
   const converted = [];
 
   for (const bar of bars) {
-    // Daily data: Already in YYYY-MM-DD format
-    if (interval === '1day') {
-      converted.push({
-        time: bar.date,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        volume: bar.volume || 0
-      });
-      continue;
-    }
-
     // Intraday: Convert ET to Unix timestamp
     // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
     const parts = parseFmpDateTime(bar.datetime || bar.date);
@@ -685,12 +672,12 @@ app.get('/api/breadth', async (req, res) => {
 // --- Chart API ---
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
-  const interval = (req.query.interval || '1day').toString();
+  const interval = (req.query.interval || '4hour').toString();
 
   // Validate interval
-  const validIntervals = ['1hour', '4hour', '1day'];
+  const validIntervals = ['1hour', '4hour'];
   if (!validIntervals.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 1hour, 4hour, or 1day' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 1hour or 4hour' });
   }
 
   const cacheKey = `${CHART_CACHE_VERSION}_${ticker}_${interval}`;
@@ -705,13 +692,7 @@ app.get('/api/chart', async (req, res) => {
     let bars = [];
 
     // Fetch data based on interval
-    if (interval === '1day') {
-      const allBars = await fmpDaily(ticker);
-      if (!allBars || allBars.length === 0) {
-        return res.status(404).json({ error: 'No daily data available for this ticker' });
-      }
-      bars = allBars.slice(-180);
-    } else if (interval === '1hour') {
+    if (interval === '1hour') {
       const intradayBars = await fmpIntraday1Hour(ticker);
       if (!intradayBars || intradayBars.length === 0) {
         return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
@@ -726,12 +707,7 @@ app.get('/api/chart', async (req, res) => {
     }
 
     // Convert to LA timezone and sort chronologically.
-    const convertedBars = convertToLATime(bars, interval).sort((a, b) => {
-      if (interval === '1day') {
-        return String(a.time).localeCompare(String(b.time));
-      }
-      return Number(a.time) - Number(b.time);
-    });
+    const convertedBars = convertToLATime(bars, interval).sort((a, b) => Number(a.time) - Number(b.time));
 
     if (convertedBars.length === 0) {
       return res.status(404).json({ error: 'No valid chart bars available for this ticker' });
@@ -760,9 +736,7 @@ app.get('/api/chart', async (req, res) => {
     };
 
     // Cache
-    const expiresAt = interval === '1day' 
-      ? getNextCacheExpiry() 
-      : Date.now() + 5 * 60 * 1000;
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
     chartCache.set(cacheKey, { expiresAt, data: result });
     res.json(result);
