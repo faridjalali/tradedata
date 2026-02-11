@@ -86,8 +86,12 @@ function initializeCharts(): void {
     });
 
     // Initialize line tools for price chart
-    if (typeof LightweightChartsLineTools !== 'undefined') {
-      priceLineTools = new LightweightChartsLineTools.LineTools(priceChart);
+    try {
+      if (typeof LightweightChartsLineTools !== 'undefined' && LightweightChartsLineTools.LineTools) {
+        priceLineTools = new LightweightChartsLineTools.LineTools(priceChart);
+      }
+    } catch (error) {
+      console.warn('Line tools plugin not available or failed to initialize:', error);
     }
   }
 }
@@ -246,56 +250,67 @@ function synchronizeCharts(): void {
 }
 
 function handleDrawingTool(tool: string): void {
-  if (!priceLineTools) return;
-
-  if (tool === 'clear') {
-    // Clear all drawings from both price and RSI charts
-    priceLineTools.clearDrawings();
-    if (rsiChart) {
-      const rsiLineTools = rsiChart.getLineTools();
-      if (rsiLineTools) {
-        rsiLineTools.clearDrawings();
-      }
-    }
-
-    // Clear from localStorage
-    if (currentTicker && currentInterval) {
-      localStorage.removeItem(`drawings_price_${currentTicker}_${currentInterval}`);
-      localStorage.removeItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
-    }
-
-    // Remove active state from all tool buttons
-    const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
-    drawingButtons.forEach(btn => btn.classList.remove('active'));
-
+  if (!priceLineTools) {
+    console.warn('Line tools not available');
     return;
   }
 
-  // Activate drawing tool
-  const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
-  drawingButtons.forEach(btn => {
-    if ((btn as HTMLElement).dataset.tool === tool) {
-      btn.classList.toggle('active');
-    } else if ((btn as HTMLElement).dataset.tool !== 'clear') {
-      btn.classList.remove('active');
+  try {
+    if (tool === 'clear') {
+      // Clear all drawings from both price and RSI charts
+      if (priceLineTools.clearDrawings) {
+        priceLineTools.clearDrawings();
+      }
+      if (rsiChart) {
+        const rsiLineTools = rsiChart.getLineTools();
+        if (rsiLineTools && rsiLineTools.clearDrawings) {
+          rsiLineTools.clearDrawings();
+        }
+      }
+
+      // Clear from localStorage
+      if (currentTicker && currentInterval) {
+        localStorage.removeItem(`drawings_price_${currentTicker}_${currentInterval}`);
+        localStorage.removeItem(`drawings_rsi_${currentTicker}_${currentInterval}`);
+      }
+
+      // Remove active state from all tool buttons
+      const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
+      drawingButtons.forEach(btn => btn.classList.remove('active'));
+
+      return;
     }
-  });
 
-  // Activate the appropriate tool
-  switch (tool) {
-    case 'trend':
-      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.TREND_LINE);
-      break;
-    case 'horizontal':
-      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.HORIZONTAL_LINE);
-      break;
-    case 'ray':
-      priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.RAY);
-      break;
+    // Activate drawing tool
+    const drawingButtons = document.querySelectorAll('#drawing-tools .tf-btn');
+    drawingButtons.forEach(btn => {
+      if ((btn as HTMLElement).dataset.tool === tool) {
+        btn.classList.toggle('active');
+      } else if ((btn as HTMLElement).dataset.tool !== 'clear') {
+        btn.classList.remove('active');
+      }
+    });
+
+    // Activate the appropriate tool
+    if (priceLineTools.startDrawing && LightweightChartsLineTools.DrawingType) {
+      switch (tool) {
+        case 'trend':
+          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.TREND_LINE);
+          break;
+        case 'horizontal':
+          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.HORIZONTAL_LINE);
+          break;
+        case 'ray':
+          priceLineTools.startDrawing(LightweightChartsLineTools.DrawingType.RAY);
+          break;
+      }
+
+      // Set up auto-save on drawing complete
+      setupDrawingSaveHandler();
+    }
+  } catch (error) {
+    console.error('Error activating drawing tool:', error);
   }
-
-  // Set up auto-save on drawing complete
-  setupDrawingSaveHandler();
 }
 
 function setupDrawingSaveHandler(): void {

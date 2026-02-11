@@ -557,8 +557,8 @@ app.get('/api/chart', async (req, res) => {
       bars = intradayBars;
     }
 
-    // Convert to LA timezone
-    const convertedBars = convertToLATime(bars, interval);
+    // Convert to LA timezone and reverse to chronological order (FMP returns newest first)
+    const convertedBars = convertToLATime(bars, interval).reverse();
 
     // Calculate RSI from close prices
     const closePrices = convertedBars.map(b => b.close);

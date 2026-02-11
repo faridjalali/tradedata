@@ -59,8 +59,12 @@ export class RSIChart {
     this.updateSeries();
 
     // Initialize line tools for RSI chart
-    if (typeof LightweightChartsLineTools !== 'undefined') {
-      this.lineTools = new LightweightChartsLineTools.LineTools(this.chart);
+    try {
+      if (typeof LightweightChartsLineTools !== 'undefined' && LightweightChartsLineTools.LineTools) {
+        this.lineTools = new LightweightChartsLineTools.LineTools(this.chart);
+      }
+    } catch (error) {
+      console.warn('Line tools plugin not available for RSI chart:', error);
     }
   }
 
