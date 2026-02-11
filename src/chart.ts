@@ -18,8 +18,8 @@ function createPriceChart(container: HTMLElement) {
       textColor: '#d1d4dc',
     },
     grid: {
-      vertLines: { color: '#2b2b43' },
-      horzLines: { color: '#2b2b43' },
+      vertLines: { visible: false },
+      horzLines: { visible: false },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
