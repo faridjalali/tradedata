@@ -197,65 +197,193 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
 
 // --- FMP (Financial Modeling Prep) helpers ---
 const FMP_KEY = process.env.FMP_API_KEY || '';
-const FMP_BASE = 'https://financialmodelingprep.com/stable';
+const FMP_STABLE_BASE = 'https://financialmodelingprep.com/stable';
+const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
+const FMP_TIMEOUT_MS = 15000;
+
+function buildFmpUrl(base, path, params = {}) {
+  const url = new URL(path, `${base}/`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
+}
+
+function sanitizeFmpUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.has('apikey')) parsed.searchParams.set('apikey', '***');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function parseJsonSafe(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractFmpError(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const candidates = [
+    payload.error,
+    payload.message,
+    payload['Error Message'],
+    payload['Error message'],
+    payload.Note
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function toNumberOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function toArrayPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.historical)) return payload.historical;
+  return null;
+}
+
+function assertFmpKey() {
+  if (!FMP_KEY) {
+    throw new Error('FMP_API_KEY is not configured on the server');
+  }
+}
+
+async function fetchFmpJson(url, label) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FMP_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    const text = await resp.text();
+    const payload = parseJsonSafe(text);
+    const apiError = extractFmpError(payload);
+    const bodyText = apiError || (typeof text === 'string' ? text.trim().slice(0, 180) : '');
+
+    if (!resp.ok) {
+      const details = bodyText || `HTTP ${resp.status}`;
+      throw new Error(`${label} request failed (${resp.status}): ${details}`);
+    }
+
+    if (apiError) {
+      throw new Error(`${label} API error: ${apiError}`);
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchFmpArrayWithFallback(label, urls) {
+  assertFmpKey();
+  let lastError = null;
+  let sawEmptyResult = false;
+
+  for (const url of urls) {
+    try {
+      const payload = await fetchFmpJson(url, label);
+      const rows = toArrayPayload(payload);
+      if (!rows) {
+        throw new Error(`${label} returned unexpected payload shape`);
+      }
+      if (rows.length === 0) {
+        sawEmptyResult = true;
+        continue;
+      }
+      return rows;
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`${label} fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
+    }
+  }
+
+  if (sawEmptyResult) return [];
+  throw lastError || new Error(`${label} request failed`);
+}
 
 async function fmpDaily(symbol) {
-  const url = `${FMP_BASE}/historical-price-eod/light?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
-  const data = await resp.json();
-  if (!Array.isArray(data) || data.length === 0) return null;
-  // Light endpoint only provides close price, synthesize OHLC for candlesticks
-  // Use close price for all OHLC values (will render as line on candlestick chart)
-  return data.map(d => ({
-    date: d.date,
-    close: d.price,
-    open: d.price,
-    high: d.price,
-    low: d.price,
-    volume: d.volume || 0
-  }));
+  const symbolEncoded = encodeURIComponent(symbol);
+  const urls = [
+    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
+    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 })
+  ];
+
+  const rows = await fetchFmpArrayWithFallback('FMP daily', urls);
+  const normalized = rows.map((row) => {
+    const dateRaw = typeof row.date === 'string' ? row.date.trim() : '';
+    const date = dateRaw ? dateRaw.slice(0, 10) : null;
+    const close = toNumberOrNull(row.price ?? row.close);
+    const open = toNumberOrNull(row.open) ?? close;
+    const high = toNumberOrNull(row.high) ?? close;
+    const low = toNumberOrNull(row.low) ?? close;
+    const volume = toNumberOrNull(row.volume) ?? 0;
+
+    if (!date || close === null || open === null || high === null || low === null) {
+      return null;
+    }
+
+    return { date, open, high, low, close, volume };
+  }).filter(Boolean);
+
+  return normalized.length ? normalized : null;
+}
+
+async function fmpIntraday(symbol, interval) {
+  const symbolEncoded = encodeURIComponent(symbol);
+  const urls = [
+    buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, { symbol, apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, { symbol, apikey: FMP_KEY })
+  ];
+
+  const rows = await fetchFmpArrayWithFallback(`FMP ${interval}`, urls);
+  const normalized = rows.map((row) => {
+    const datetimeRaw = row.date ?? row.datetime;
+    const datetime = typeof datetimeRaw === 'string'
+      ? datetimeRaw.replace('T', ' ').replace('Z', '').trim()
+      : '';
+    const close = toNumberOrNull(row.close ?? row.price);
+    const open = toNumberOrNull(row.open) ?? close;
+    const high = toNumberOrNull(row.high) ?? close;
+    const low = toNumberOrNull(row.low) ?? close;
+    const volume = toNumberOrNull(row.volume) ?? 0;
+
+    if (!datetime || close === null || open === null || high === null || low === null) {
+      return null;
+    }
+
+    return { datetime, open, high, low, close, volume };
+  }).filter(Boolean);
+
+  return normalized.length ? normalized : null;
 }
 
 async function fmpIntraday30(symbol) {
-  const url = `${FMP_BASE}/historical-chart/30min/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
-  const data = await resp.json();
-  if (!Array.isArray(data) || data.length === 0) return null;
-  return data.map(d => ({ datetime: d.date, close: d.close }));
+  return fmpIntraday(symbol, '30min');
 }
 
 async function fmpIntraday1Hour(symbol) {
-  const url = `${FMP_BASE}/historical-chart/1hour/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
-  const data = await resp.json();
-  if (!Array.isArray(data) || data.length === 0) return null;
-  return data.map(d => ({
-    datetime: d.date,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    close: d.close,
-    volume: d.volume
-  }));
+  return fmpIntraday(symbol, '1hour');
 }
 
 async function fmpIntraday4Hour(symbol) {
-  const url = `${FMP_BASE}/historical-chart/4hour/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
-  const data = await resp.json();
-  if (!Array.isArray(data) || data.length === 0) return null;
-  return data.map(d => ({
-    datetime: d.date,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    close: d.close,
-    volume: d.volume
-  }));
+  return fmpIntraday(symbol, '4hour');
 }
 
 
@@ -303,27 +431,43 @@ function calculateRSI(closePrices, period = 14) {
 }
 
 // Convert ET timezone bars to LA timezone
+function parseFmpDateTime(datetimeValue) {
+  if (typeof datetimeValue !== 'string') return null;
+  const normalized = datetimeValue.trim().replace('T', ' ').replace('Z', '');
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5])
+  };
+}
+
 function convertToLATime(bars, interval) {
-  return bars.map(bar => {
+  const converted = [];
+
+  for (const bar of bars) {
     // Daily data: Already in YYYY-MM-DD format
     if (interval === '1day') {
-      return {
+      converted.push({
         time: bar.date,
         open: bar.open,
         high: bar.high,
         low: bar.low,
         close: bar.close,
         volume: bar.volume || 0
-      };
+      });
+      continue;
     }
 
     // Intraday: Convert ET to Unix timestamp
     // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
+    const parts = parseFmpDateTime(bar.datetime || bar.date);
+    if (!parts) continue;
 
-    // Parse the datetime string components
-    const [datePart, timePart] = bar.datetime.split(' ');
-    const [year, month, day] = datePart.split('-').map(Number);
-    const [hour, minute] = timePart.split(':').map(Number);
+    const { year, month, day, hour, minute } = parts;
 
     // Create a date string that will be interpreted in ET timezone
     // by using toLocaleString to get the UTC offset
@@ -337,15 +481,17 @@ function convertToLATime(bars, interval) {
     const utcTimestamp = Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
     const timestamp = Math.floor(utcTimestamp / 1000);
 
-    return {
+    converted.push({
       time: timestamp,
       open: bar.open,
       high: bar.high,
       low: bar.low,
       close: bar.close,
       volume: bar.volume
-    };
-  });
+    });
+  }
+
+  return converted;
 }
 
 // --- Cache expiry helpers ---
@@ -590,8 +736,9 @@ app.get('/api/chart', async (req, res) => {
     res.json(result);
 
   } catch (err) {
-    console.error('Chart API Error:', err);
-    res.status(500).json({ error: 'Failed to fetch chart data' });
+    const message = err && err.message ? err.message : 'Failed to fetch chart data';
+    console.error('Chart API Error:', message);
+    res.status(502).json({ error: message });
   }
 });
 
