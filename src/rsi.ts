@@ -266,17 +266,9 @@ export class RSIChart {
       this.container.style.position = 'relative';
     }
 
-    this.midlineOverlayEl = document.createElement('div');
-    this.midlineOverlayEl.style.position = 'absolute';
-    this.midlineOverlayEl.style.left = '0';
-    this.midlineOverlayEl.style.right = '0';
-    this.midlineOverlayEl.style.height = '0';
-    this.midlineOverlayEl.style.borderTop = `1px ${this.midlineStyle === 'solid' ? 'solid' : 'dotted'} ${this.midlineColor}`;
-    this.midlineOverlayEl.style.pointerEvents = 'none';
-    this.midlineOverlayEl.style.display = 'none';
-    // Above month gridline overlay (z=6), below cross marker (z=8).
-    this.midlineOverlayEl.style.zIndex = '7';
-    this.container.appendChild(this.midlineOverlayEl);
+    // Use lightweight-charts price line for the RSI midline. A DOM overlay can
+    // visually double-render the midline, so keep only the vertical cross marker here.
+    this.midlineOverlayEl = null;
 
     this.midlineCrossMarkerEl = document.createElement('div');
     this.midlineCrossMarkerEl.style.position = 'absolute';
@@ -350,19 +342,8 @@ export class RSIChart {
   }
 
   private updateMidlineOverlayPosition(): void {
-    if (!this.midlineOverlayEl || !this.series) return;
-    const y = this.series.priceToCoordinate?.(50);
-    if (!Number.isFinite(y)) {
-      this.midlineOverlayEl.style.display = 'none';
-      return;
-    }
-    const height = this.container.clientHeight;
-    if (y < 0 || y > height) {
-      this.midlineOverlayEl.style.display = 'none';
-      return;
-    }
-    this.midlineOverlayEl.style.top = `${y}px`;
-    this.midlineOverlayEl.style.display = 'block';
+    if (!this.midlineOverlayEl) return;
+    this.midlineOverlayEl.style.display = 'none';
   }
 
   isSyncSuppressed(): boolean {
@@ -578,9 +559,6 @@ export class RSIChart {
         color: this.midlineColor,
         lineStyle
       });
-    }
-    if (this.midlineOverlayEl) {
-      this.midlineOverlayEl.style.borderTop = `1px ${this.midlineStyle === 'solid' ? 'solid' : 'dotted'} ${this.midlineColor}`;
     }
     this.updateMidlineOverlayPosition();
   }
