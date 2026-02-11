@@ -588,137 +588,123 @@ function convertToLATime(bars, interval) {
   return converted;
 }
 
-// --- Cache expiry helpers ---
-function getNextCacheExpiry() {
-  const now = new Date();
-  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const etNow = new Date(etStr);
-  const target = new Date(etNow);
-  target.setHours(16, 1, 0, 0);
-  if (etNow >= target) target.setDate(target.getDate() + 1);
-  const diffMs = target.getTime() - etNow.getTime();
-  return now.getTime() + diffMs;
-}
-
-function isCacheValid(entry) {
-  if (!entry) return false;
-  return Date.now() < entry.expiresAt;
-}
-
 // --- Breadth API ---
-// SPY cached separately (daily + intraday), shared across all metrics.
-let spyDailyCache = { expiresAt: 0, bars: null };
-let spyIntradayCache = { expiresAt: 0, bars: null };
-const breadthDailyCache = new Map();
-const breadthIntradayCache = new Map();
-
-// --- Chart API Cache ---
-const chartCache = new Map();
-const CHART_CACHE_VERSION = 'v3';
 
 async function getSpyDaily() {
-  if (spyDailyCache.bars && Date.now() < spyDailyCache.expiresAt) return spyDailyCache.bars;
-  const bars = await fmpDaily('SPY');
-  if (bars) spyDailyCache = { expiresAt: getNextCacheExpiry(), bars };
-  return bars;
+  return fmpDaily('SPY');
 }
 
-async function getSpyIntraday() {
-  if (spyIntradayCache.bars && Date.now() < spyIntradayCache.expiresAt) return spyIntradayCache.bars;
-  const bars = await fmpIntraday30('SPY');
-  if (bars) spyIntradayCache = { expiresAt: Date.now() + 5 * 60 * 1000, bars };
-  return bars;
+async function getSpyIntraday(lookbackDays = 30) {
+  return fmpIntradayChartHistory('SPY', '30min', lookbackDays);
+}
+
+function isRegularHoursEt(dateTimeStr) {
+  const parts = String(dateTimeStr || '').split(' ');
+  if (parts.length < 2) return false;
+  const [h, m] = parts[1].split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return false;
+  const totalMin = h * 60 + m;
+  return totalMin >= 570 && totalMin <= 960;
+}
+
+function roundEtTo30MinEpochMs(dateTimeStr) {
+  // Parse FMP string (ET) as proper UTC timestamp
+  // 1. Treat input as UTC
+  const asUTC = new Date(String(dateTimeStr).replace(' ', 'T') + 'Z');
+  // 2. Get what time that represents in NY
+  const nyStr = asUTC.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
+  // 3. Parse that NY time as if it were UTC
+  const nyAsUTC = new Date(nyStr + ' GMT');
+  // 4. Diff is the offset we need to add to convert "ET interpreted as UTC" to "Real UTC"
+  const diff = asUTC.getTime() - nyAsUTC.getTime();
+  const d = new Date(asUTC.getTime() + diff);
+
+  d.setSeconds(0, 0);
+  const m = d.getMinutes();
+  d.setMinutes(m < 30 ? 0 : 30);
+  return d.getTime();
+}
+
+function buildIntradayBreadthPoints(spyBars, compBars, days) {
+  const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const y = todayET.getFullYear();
+  const mo = String(todayET.getMonth() + 1).padStart(2, '0');
+  const da = String(todayET.getDate()).padStart(2, '0');
+  const todayStr = `${y}-${mo}-${da}`;
+
+  const spyMap = new Map();
+  const spyDayByTs = new Map();
+  for (const bar of spyBars || []) {
+    const day = String(bar.datetime || '').slice(0, 10);
+    if (!day) continue;
+    if (!isRegularHoursEt(bar.datetime)) continue;
+    const ts = roundEtTo30MinEpochMs(bar.datetime);
+    spyMap.set(ts, bar.close);
+    spyDayByTs.set(ts, day);
+  }
+
+  const compMap = new Map();
+  const compDayByTs = new Map();
+  for (const bar of compBars || []) {
+    const day = String(bar.datetime || '').slice(0, 10);
+    if (!day) continue;
+    if (!isRegularHoursEt(bar.datetime)) continue;
+    const ts = roundEtTo30MinEpochMs(bar.datetime);
+    compMap.set(ts, bar.close);
+    compDayByTs.set(ts, day);
+  }
+
+  const commonKeys = [...spyMap.keys()]
+    .filter((k) => compMap.has(k))
+    .sort((a, b) => a - b);
+
+  if (commonKeys.length === 0) return [];
+
+  const commonDays = Array.from(new Set(commonKeys.map((k) => spyDayByTs.get(k) || compDayByTs.get(k)).filter(Boolean))).sort();
+  let selectedDaySet;
+  if (days === 1) {
+    selectedDaySet = new Set([todayStr]);
+  } else {
+    selectedDaySet = new Set(commonDays.slice(-days));
+  }
+
+  return commonKeys
+    .filter((k) => selectedDaySet.has(spyDayByTs.get(k) || compDayByTs.get(k)))
+    .map((k) => ({
+      date: new Date(k).toISOString(),
+      spy: Math.round(spyMap.get(k) * 100) / 100,
+      comparison: Math.round(compMap.get(k) * 100) / 100
+    }));
 }
 
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
   const days = Math.min(Math.max(parseInt(req.query.days) || 5, 1), 60);
-  const isIntraday = days === 1;
+  const isIntraday = days <= 30;
 
   try {
     if (isIntraday) {
-      // --- Intraday path (30-min bars, today only) ---
-      const cached = breadthIntradayCache.get(compTicker);
-      if (isCacheValid(cached)) return res.json(cached.data);
-
+      // --- Intraday path (30-min bars) ---
+      const lookbackDays = Math.max(14, days * 3);
       const [spyBars, compBars] = await Promise.all([
-        getSpyIntraday(),
-        fmpIntraday30(compTicker)
+        getSpyIntraday(lookbackDays),
+        fmpIntradayChartHistory(compTicker, '30min', lookbackDays)
       ]);
 
       if (!spyBars || !compBars) {
         return res.status(404).json({ error: 'No intraday data available (market may be closed)' });
       }
 
-      // Today's date in ET
-      const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-      const y = todayET.getFullYear();
-      const mo = String(todayET.getMonth() + 1).padStart(2, '0');
-      const da = String(todayET.getDate()).padStart(2, '0');
-      const todayStr = `${y}-${mo}-${da}`;
-
-      const isRegularHours = (dtStr) => {
-        const parts = dtStr.split(' ');
-        if (parts.length < 2) return false;
-        const [h, m] = parts[1].split(':').map(Number);
-        const totalMin = h * 60 + m;
-        return totalMin >= 570 && totalMin <= 960;
-      };
-
-      const roundTo30Min = (dtStr) => {
-        // Parse FMP string (ET) as proper UTC timestamp
-        // 1. Treat input as UTC
-        const asUTC = new Date(dtStr.replace(' ', 'T') + 'Z');
-        // 2. Get what time that represents in NY
-        const nyStr = asUTC.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
-        // 3. Parse that NY time as if it were UTC
-        const nyAsUTC = new Date(nyStr + ' GMT');
-        // 4. Diff is the offset we need to add to convert "ET interpreted as UTC" to "Real UTC"
-        const diff = asUTC.getTime() - nyAsUTC.getTime();
-        const d = new Date(asUTC.getTime() + diff);
-
-        d.setSeconds(0, 0);
-        const m = d.getMinutes();
-        d.setMinutes(m < 30 ? 0 : 30);
-        return d.getTime();
-      };
-
-      const spyMap = new Map();
-      for (const bar of spyBars) {
-        if (bar.datetime.startsWith(todayStr) && isRegularHours(bar.datetime)) {
-          spyMap.set(roundTo30Min(bar.datetime), bar.close);
-        }
-      }
-
-      const compMap = new Map();
-      for (const bar of compBars) {
-        if (bar.datetime.startsWith(todayStr) && isRegularHours(bar.datetime)) {
-          compMap.set(roundTo30Min(bar.datetime), bar.close);
-        }
-      }
-
-      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort((a, b) => a - b);
-
+      const points = buildIntradayBreadthPoints(spyBars, compBars, days);
       const result = {
         intraday: true,
-        points: commonKeys.map(k => ({
-          date: new Date(k).toISOString(),
-          spy: Math.round(spyMap.get(k) * 100) / 100,
-          comparison: Math.round(compMap.get(k) * 100) / 100
-        }))
+        points
       };
 
-      breadthIntradayCache.set(compTicker, { expiresAt: Date.now() + 5 * 60 * 1000, data: result });
       return res.json(result);
     }
 
     // --- Daily path ---
-    const cached = breadthDailyCache.get(compTicker);
-    if (isCacheValid(cached)) {
-      const points = cached.allPoints.slice(-days);
-      return res.json({ intraday: false, points });
-    }
-
     const [spyBars, compBars] = await Promise.all([
       getSpyDaily(),
       fmpDaily(compTicker)
@@ -744,8 +730,6 @@ app.get('/api/breadth', async (req, res) => {
       comparison: Math.round(compMap.get(d) * 100) / 100
     }));
 
-    breadthDailyCache.set(compTicker, { expiresAt: getNextCacheExpiry(), allPoints });
-
     const points = allPoints.slice(-days);
     res.json({ intraday: false, points });
   } catch (err) {
@@ -765,15 +749,7 @@ app.get('/api/chart', async (req, res) => {
     return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, or 4hour' });
   }
 
-  const cacheKey = `${CHART_CACHE_VERSION}_${ticker}_${interval}`;
-
   try {
-    // Check cache first
-    const cached = chartCache.get(cacheKey);
-    if (isCacheValid(cached)) {
-      return res.json(cached.data);
-    }
-
     const bars = await fmpIntradayChartHistory(ticker, interval, CHART_INTRADAY_LOOKBACK_DAYS);
     if (!bars || bars.length === 0) {
       return res.status(404).json({ error: `No ${interval} data available for this ticker` });
@@ -808,10 +784,6 @@ app.get('/api/chart', async (req, res) => {
       rsi
     };
 
-    // Cache
-    const expiresAt = Date.now() + 5 * 60 * 1000;
-
-    chartCache.set(cacheKey, { expiresAt, data: result });
     res.json(result);
 
   } catch (err) {

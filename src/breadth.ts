@@ -49,9 +49,28 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
         breadthChart = null;
     }
 
+    const intradayDayCount = intraday
+        ? new Set(
+            data.map(d =>
+                new Date(d.date).toLocaleDateString('en-US', {
+                    timeZone: 'America/Los_Angeles',
+                })
+            )
+        ).size
+        : 0;
+
     const labels = data.map(d => {
         if (intraday) {
             const date = new Date(d.date);
+            if (intradayDayCount > 1) {
+                return date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: 'America/Los_Angeles'
+                });
+            }
             return date.toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
