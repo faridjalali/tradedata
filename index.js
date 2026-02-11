@@ -1079,7 +1079,9 @@ app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
   const VOLUME_DELTA_RSI_LOWER_TF = '5min';
-  const VOLUME_DELTA_RSI_LOOKBACK_DAYS = 120;
+  // Force VD-RSI to always be derived from 5-minute volume-delta bars
+  // across the full chart history window.
+  const VOLUME_DELTA_RSI_LOOKBACK_DAYS = CHART_INTRADAY_LOOKBACK_DAYS;
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
 
   // Validate interval
@@ -1127,31 +1129,37 @@ app.get('/api/chart', async (req, res) => {
     } else {
     try {
       let lowerTfBars = [];
-      if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
-        // Reuse already-fetched bars when chart interval matches the lower timeframe.
-        lowerTfBars = convertedBars;
+      const lowerTfCacheKey = `${ticker}|${VOLUME_DELTA_RSI_LOWER_TF}|${VOLUME_DELTA_RSI_LOOKBACK_DAYS}`;
+      const cachedLowerTfBars = getTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey);
+      if (cachedLowerTfBars) {
+        lowerTfBars = cachedLowerTfBars;
       } else {
-        const lowerTfCacheKey = `${ticker}|${VOLUME_DELTA_RSI_LOWER_TF}|${VOLUME_DELTA_RSI_LOOKBACK_DAYS}`;
-        const cachedLowerTfBars = getTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey);
-        if (cachedLowerTfBars) {
-          lowerTfBars = cachedLowerTfBars;
-        } else {
-          const lowerTfRows = await fmpIntradayChartHistory(
-            ticker,
-            VOLUME_DELTA_RSI_LOWER_TF,
-            VOLUME_DELTA_RSI_LOOKBACK_DAYS
-          );
-          lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-            .sort((a, b) => Number(a.time) - Number(b.time));
-          if (lowerTfBars.length > 0) {
-            setTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey, lowerTfBars, cacheExpiryMs);
-          }
+        const lowerTfRows = await fmpIntradayChartHistory(
+          ticker,
+          VOLUME_DELTA_RSI_LOWER_TF,
+          VOLUME_DELTA_RSI_LOOKBACK_DAYS
+        );
+        lowerTfBars = convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
+          .sort((a, b) => Number(a.time) - Number(b.time));
+        if (lowerTfBars.length > 0) {
+          setTimedCacheValue(VD_RSI_LOWER_TF_CACHE, lowerTfCacheKey, lowerTfBars, cacheExpiryMs);
         }
       }
       if (lowerTfBars.length > 0) {
+        const firstParentTime = Number(firstBarTime);
+        const lastParentTime = Number(lastBarTime);
+        const parentWindowStart = Number.isFinite(firstParentTime) ? firstParentTime : Number.NEGATIVE_INFINITY;
+        const parentWindowEndExclusive = Number.isFinite(lastParentTime)
+          ? (lastParentTime + getIntervalSeconds(interval))
+          : Number.POSITIVE_INFINITY;
+        const lowerTfBarsInParentRange = lowerTfBars.filter((bar) => {
+          const t = Number(bar.time);
+          return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+        });
+
         volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
           convertedBars,
-          lowerTfBars,
+          lowerTfBarsInParentRange,
           interval,
           { rsiLength: vdRsiLength }
         );
