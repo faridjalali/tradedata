@@ -205,14 +205,15 @@ async function fmpDaily(symbol) {
   if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();
   if (!Array.isArray(data) || data.length === 0) return null;
-  // Return full OHLCV data for charting (breadth still works with { date, close })
+  // Light endpoint only provides close price, synthesize OHLC for candlesticks
+  // Use close price for all OHLC values (will render as line on candlestick chart)
   return data.map(d => ({
     date: d.date,
     close: d.price,
-    open: d.open,
-    high: d.high,
-    low: d.low,
-    volume: d.volume
+    open: d.price,
+    high: d.price,
+    low: d.price,
+    volume: d.volume || 0
   }));
 }
 
