@@ -92,7 +92,7 @@ function initializeCharts(): void {
     // Add 50-period SMA line series
     smaSeries = priceChart.addLineSeries({
       color: '#ffa500',  // Orange color
-      lineWidth: 2,
+      lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: true,

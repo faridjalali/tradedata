@@ -60,9 +60,8 @@ export class RSIChart {
       }
     });
 
-    // Add overbought/oversold reference lines
-    this.addReferenceLine(70, 'Overbought', '#f85149');
-    this.addReferenceLine(30, 'Oversold', '#3fb950');
+    // Add midline at 50
+    this.addReferenceLine(50, 'Midline', '#ffffff');
 
     // Add RSI series based on display mode
     this.updateSeries();
@@ -106,9 +105,9 @@ export class RSIChart {
     if (this.displayMode === 'line') {
       this.series = this.chart.addLineSeries({
         color: '#58a6ff',
-        lineWidth: 2,
-        priceLineVisible: true,
-        lastValueVisible: true
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false
       });
     } else {
       // Points mode - using histogram with very thin bars to simulate points
@@ -119,8 +118,8 @@ export class RSIChart {
           precision: 2,
           minMove: 0.01
         },
-        priceLineVisible: true,
-        lastValueVisible: true
+        priceLineVisible: false,
+        lastValueVisible: false
       });
     }
 
