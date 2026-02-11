@@ -48,10 +48,6 @@ export class RSIChart {
   private static readonly FUTURE_TIMELINE_DAYS = 370;
   private trendLineSeriesList: any[] = [];
   private timelineSeries: any = null;
-  private midlineCrossIndex: number | null = null;
-  private midlineCrossMarkerEl: HTMLDivElement | null = null;
-  private midlineOverlayEl: HTMLDivElement | null = null;
-  private markerResizeObserver: ResizeObserver | null = null;
   private suppressExternalSync: boolean = false;
   private onTrendLineDrawn?: () => void;
 
@@ -120,8 +116,6 @@ export class RSIChart {
 
     // Add midline at 50
     this.addReferenceLine(50, 'Midline', this.midlineColor, this.midlineStyleToLineStyle(this.midlineStyle));
-    this.initMidlineCrossMarker();
-    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.updateMidlineCrossMarkerPosition());
 
     // Add RSI series based on display mode
     this.updateSeries();
@@ -257,93 +251,6 @@ export class RSIChart {
 
   private midlineStyleToLineStyle(style: 'dotted' | 'solid'): number {
     return style === 'solid' ? 0 : 1;
-  }
-
-  private initMidlineCrossMarker(): void {
-    if (!this.container) return;
-    const position = window.getComputedStyle(this.container).position;
-    if (!position || position === 'static') {
-      this.container.style.position = 'relative';
-    }
-
-    // Use lightweight-charts price line for the RSI midline. A DOM overlay can
-    // visually double-render the midline, so keep only the vertical cross marker here.
-    this.midlineOverlayEl = null;
-
-    this.midlineCrossMarkerEl = document.createElement('div');
-    this.midlineCrossMarkerEl.style.position = 'absolute';
-    this.midlineCrossMarkerEl.style.top = '0';
-    this.midlineCrossMarkerEl.style.bottom = '0';
-    this.midlineCrossMarkerEl.style.width = '0';
-    this.midlineCrossMarkerEl.style.borderLeft = '1px dotted #ffa500';
-    this.midlineCrossMarkerEl.style.pointerEvents = 'none';
-    this.midlineCrossMarkerEl.style.display = 'none';
-    this.midlineCrossMarkerEl.style.zIndex = '8';
-    this.container.appendChild(this.midlineCrossMarkerEl);
-
-    this.markerResizeObserver = new ResizeObserver(() => {
-      this.updateMidlineOverlayPosition();
-      this.updateMidlineCrossMarkerPosition();
-    });
-    this.markerResizeObserver.observe(this.container);
-  }
-
-  private setMidlineCrossIndex(index: number | null): void {
-    this.midlineCrossIndex = index;
-    this.updateMidlineCrossMarkerPosition();
-  }
-
-  private updateMidlineCrossMarkerPosition(): void {
-    if (!this.midlineCrossMarkerEl) return;
-    if (this.midlineCrossIndex === null || this.midlineCrossIndex === undefined) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const visibleRange = this.chart.timeScale().getVisibleLogicalRange?.();
-    if (!visibleRange) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-    if (this.midlineCrossIndex < Number(visibleRange.from) || this.midlineCrossIndex > Number(visibleRange.to)) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const from = Number(visibleRange.from);
-    const to = Number(visibleRange.to);
-    if (!Number.isFinite(from) || !Number.isFinite(to) || Math.abs(to - from) < 1e-9) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const fromX = this.chart.timeScale().logicalToCoordinate(from);
-    const toX = this.chart.timeScale().logicalToCoordinate(to);
-    if (!Number.isFinite(fromX) || !Number.isFinite(toX)) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const ratio = (this.midlineCrossIndex - from) / (to - from);
-    const x = fromX + ((toX - fromX) * ratio);
-    if (!Number.isFinite(x)) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const width = this.container.clientWidth;
-    if (x < 0 || x > width) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    this.midlineCrossMarkerEl.style.left = `${x}px`;
-    this.midlineCrossMarkerEl.style.display = 'block';
-  }
-
-  private updateMidlineOverlayPosition(): void {
-    if (!this.midlineOverlayEl) return;
-    this.midlineOverlayEl.style.display = 'none';
   }
 
   isSyncSuppressed(): boolean {
@@ -517,7 +424,6 @@ export class RSIChart {
         this.midlinePriceLine = priceLine;
       }
     });
-    this.updateMidlineOverlayPosition();
   }
 
   setDisplayMode(mode: RSIDisplayMode): void {
@@ -560,7 +466,6 @@ export class RSIChart {
         lineStyle
       });
     }
-    this.updateMidlineOverlayPosition();
   }
 
   setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
@@ -590,9 +495,6 @@ export class RSIChart {
     }
 
     this.updateTimelineSeriesData();
-    this.updateMidlineOverlayPosition();
-
-
   }
 
   getChart(): any {
@@ -755,7 +657,6 @@ export class RSIChart {
 
     // Calculate slope: (y2 - y1) / (x2 - x1)
     if (index2 === index1) {
-      this.setMidlineCrossIndex(null);
       return;
     }
     const slope = (value2 - value1) / (index2 - index1);
@@ -804,40 +705,15 @@ export class RSIChart {
     this.trendLineSeriesList.push(trendLineSeries);
 
     trendLineSeries.setData(trendLineData);
-
-    // Mark where this trendline crosses RSI midline (50) on the time axis.
-    const midlineValue = 50;
-    if (Math.abs(slope) < 1e-10) {
-      this.setMidlineCrossIndex(null);
-      return;
-    }
-
-    const crossIndex = index1 + (midlineValue - value1) / slope;
-    if (!Number.isFinite(crossIndex) || crossIndex < index1 || crossIndex > maxTrendIndex) {
-      this.setMidlineCrossIndex(null);
-      return;
-    }
-    this.setMidlineCrossIndex(crossIndex);
     } finally {
       if (visibleRangeBeforeDraw) {
         try {
           this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeDraw);
         } catch {
-          // Preserve viewport when chart is mid-update.
+          // Keep the current viewport stable after drawing.
         }
       }
-      requestAnimationFrame(() => {
-        if (visibleRangeBeforeDraw) {
-          try {
-            this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeDraw);
-          } catch {
-            // Ignore transient timing errors.
-          }
-        }
-        requestAnimationFrame(() => {
-          this.suppressExternalSync = false;
-        });
-      });
+      this.suppressExternalSync = false;
     }
   }
 
@@ -854,7 +730,6 @@ export class RSIChart {
     this.firstPoint = null;
     this.divergencePoints = [];
     this.divergencePointTimeKeys.clear();
-    this.setMidlineCrossIndex(null);
   }
 
   resize(): void {
@@ -864,16 +739,6 @@ export class RSIChart {
   }
 
   destroy(): void {
-    this.markerResizeObserver?.disconnect();
-    this.markerResizeObserver = null;
-    if (this.midlineOverlayEl?.parentElement) {
-      this.midlineOverlayEl.parentElement.removeChild(this.midlineOverlayEl);
-    }
-    this.midlineOverlayEl = null;
-    if (this.midlineCrossMarkerEl?.parentElement) {
-      this.midlineCrossMarkerEl.parentElement.removeChild(this.midlineCrossMarkerEl);
-    }
-    this.midlineCrossMarkerEl = null;
     if (this.chart) {
       this.chart.remove();
     }
