@@ -8,7 +8,7 @@ interface BreadthDataPoint {
 }
 
 let breadthChart: any = null;
-let currentTimeframeDays = 1;
+let currentTimeframeDays = 5;
 let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
 
 export function getCurrentBreadthTimeframe(): number {

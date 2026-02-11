@@ -214,8 +214,7 @@ async function avDaily(symbol) {
   }));
 }
 
-// --- Cache that expires at next 4:01 PM ET each day ---
-const breadthCache = new Map();
+
 
 function getNextCacheExpiry() {
   // Calculate the next 4:01 PM ET timestamp
@@ -243,20 +242,40 @@ function isCacheValid(entry) {
 }
 
 // --- Breadth API (daily price comparison via Alpha Vantage) ---
+// SPY is shared across all comparisons — fetch once, reuse everywhere.
+let spyCache = { expiresAt: 0, bars: null }; // { expiresAt, bars: [{date, close}] }
+const breadthCache = new Map(); // key: compTicker → { expiresAt, allPoints[] }
+
+async function getSpyBars() {
+  if (spyCache.bars && Date.now() < spyCache.expiresAt) {
+    return spyCache.bars;
+  }
+  const bars = await avDaily('SPY');
+  if (bars) {
+    spyCache = { expiresAt: getNextCacheExpiry(), bars };
+  }
+  return bars;
+}
+
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
-  const days = Math.min(Math.max(parseInt(req.query.days) || 1, 1), 60);
+  const days = Math.min(Math.max(parseInt(req.query.days) || 5, 1), 60);
 
-  const cacheKey = `${compTicker}_${days}`;
-  const cached = breadthCache.get(cacheKey);
+  const cached = breadthCache.get(compTicker);
   if (isCacheValid(cached)) {
-    return res.json(cached.data);
+    const points = cached.allPoints.slice(-days);
+    return res.json({ intraday: false, points });
   }
 
   try {
-    // Sequential calls to respect Alpha Vantage 1 req/sec rate limit
-    const spyBars = await avDaily('SPY');
-    await new Promise(r => setTimeout(r, 1500));
+    // Get SPY (from cache or single API call)
+    const spyWasCached = spyCache.bars && Date.now() < spyCache.expiresAt;
+    const spyBars = await getSpyBars();
+
+    // Rate-limit delay only needed if SPY was just fetched (not cached)
+    if (!spyWasCached) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
     const compBars = await avDaily(compTicker);
 
     if (!spyBars || !compBars) {
@@ -277,19 +296,16 @@ app.get('/api/breadth', async (req, res) => {
       .filter(d => compMap.has(d))
       .sort();
 
-    const trimmed = commonDates.slice(-days);
+    const allPoints = commonDates.slice(-30).map(d => ({
+      date: d,
+      spy: Math.round(spyMap.get(d) * 100) / 100,
+      comparison: Math.round(compMap.get(d) * 100) / 100
+    }));
 
-    const result = {
-      intraday: false,
-      points: trimmed.map(d => ({
-        date: d,
-        spy: Math.round(spyMap.get(d) * 100) / 100,
-        comparison: Math.round(compMap.get(d) * 100) / 100
-      }))
-    };
+    breadthCache.set(compTicker, { expiresAt: getNextCacheExpiry(), allPoints });
 
-    breadthCache.set(cacheKey, { expiresAt: getNextCacheExpiry(), data: result });
-    res.json(result);
+    const points = allPoints.slice(-days);
+    res.json({ intraday: false, points });
   } catch (err) {
     console.error('Breadth API Error:', err);
     res.status(500).json({ error: 'Failed to fetch breadth data' });
