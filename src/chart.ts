@@ -263,7 +263,11 @@ function synchronizeCharts(): void {
       rsiChartInstance.clearCrosshairPosition();
       return;
     }
-    rsiChartInstance.setCrosshairPosition(param.logical, param.time);
+    // Sync vertical line only (price=NaN)
+    const rsiSeries = rsiChart?.getSeries();
+    if (rsiSeries) {
+      rsiChartInstance.setCrosshairPosition(NaN, param.time, rsiSeries);
+    }
   });
 
   rsiChartInstance.subscribeCrosshairMove((param: any) => {
@@ -271,7 +275,10 @@ function synchronizeCharts(): void {
       priceChart.clearCrosshairPosition();
       return;
     }
-    priceChart.setCrosshairPosition(param.logical, param.time);
+    // Sync vertical line only (price=NaN)
+    if (candleSeries) {
+      priceChart.setCrosshairPosition(NaN, param.time, candleSeries);
+    }
   });
 }
 

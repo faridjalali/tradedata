@@ -185,6 +185,8 @@ export class RSIChart {
     return this.series;
   }
 
+
+
   getLineTools(): any {
     return this.lineTools;
   }
