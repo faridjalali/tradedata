@@ -124,6 +124,13 @@ function renderTradingViewChart(ticker: string): void {
         "toolbar_bg": "#f1f3f6",
         "enable_publishing": false,
         "allow_symbol_change": false,
+        "studies": ["MASimple@tv-basicstudies"],
+        "studies_overrides": {
+            "moving average.length": 50,
+            "moving average.source": "close",
+            "moving average.plot.color": "#ff9800",
+            "moving average.plot.linewidth": 2
+        },
         "container_id": "tradingview_chart"
     });
 }
