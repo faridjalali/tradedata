@@ -32,7 +32,7 @@ export class RSIChart {
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
-  private trendLineSeries: any = null;
+  private trendLineSeriesList: any[] = [];
   private midlineCrossIndex: number | null = null;
   private midlineCrossMarkerEl: HTMLDivElement | null = null;
   private markerResizeObserver: ResizeObserver | null = null;
@@ -318,6 +318,7 @@ export class RSIChart {
   }
 
   setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
+    this.clearDivergence();
     this.data = this.normalizeRSIData(data);
     if (priceData) {
       this.priceData = priceData;
@@ -488,10 +489,10 @@ export class RSIChart {
 
   private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
     // Find the indices of the two points
-    const index1 = this.data.findIndex(d => d.time === time1);
-    const index2 = this.data.findIndex(d => d.time === time2);
+    const index1 = this.indexByTime.get(this.timeKey(time1));
+    const index2 = this.indexByTime.get(this.timeKey(time2));
 
-    if (index1 === -1 || index2 === -1) {
+    if (index1 === undefined || index2 === undefined) {
       console.error('Could not find indices for trend line points');
       return;
     }
@@ -503,30 +504,31 @@ export class RSIChart {
     }
     const slope = (value2 - value1) / (index2 - index1);
 
-    // Create trend line data points extending to the right edge
-    const trendLineData: RSIPoint[] = [];
-    let maxTrendIndex = index1;
-
-    // Start from first point and extend to the last data point
-    for (let i = index1; i < this.data.length; i++) {
-      const projectedValue = value1 + slope * (i - index1);
-      // Prevent this helper line from blowing out RSI autoscale.
-      if (projectedValue < 0 || projectedValue > 100) {
-        break;
-      }
-      maxTrendIndex = i;
-      trendLineData.push({
-        time: this.data[i].time,
-        value: projectedValue
-      });
+    const lastIndex = this.data.length - 1;
+    let maxByBounds = Number.POSITIVE_INFINITY;
+    if (slope > 0) {
+      maxByBounds = index1 + ((100 - value1) / slope);
+    } else if (slope < 0) {
+      maxByBounds = index1 + ((0 - value1) / slope);
+    }
+    if (!Number.isFinite(maxByBounds)) {
+      this.setMidlineCrossIndex(null);
+      return;
+    }
+    const maxTrendIndex = Math.min(lastIndex, Math.floor(maxByBounds));
+    if (!Number.isFinite(maxTrendIndex) || maxTrendIndex <= index1) {
+      this.setMidlineCrossIndex(null);
+      return;
     }
 
-    // Create or update trend line series
-    if (this.trendLineSeries) {
-      this.chart.removeSeries(this.trendLineSeries);
-    }
+    const trendEndValue = Math.max(0, Math.min(100, value1 + slope * (maxTrendIndex - index1)));
+    const trendLineData: RSIPoint[] = [
+      { time: this.data[index1].time, value: value1 },
+      { time: this.data[maxTrendIndex].time, value: trendEndValue }
+    ];
 
-    this.trendLineSeries = this.chart.addLineSeries({
+    // Create new trend line series (keep existing lines on chart)
+    const trendLineSeries = this.chart.addLineSeries({
       color: '#ffa500',  // Orange color for trend line
       lineWidth: 1,
       lineStyle: 0, // Solid line
@@ -534,8 +536,9 @@ export class RSIChart {
       lastValueVisible: false,
       crosshairMarkerVisible: false
     });
+    this.trendLineSeriesList.push(trendLineSeries);
 
-    this.trendLineSeries.setData(trendLineData);
+    trendLineSeries.setData(trendLineData);
 
     // Mark where this trendline crosses RSI midline (50) on the time axis.
     const midlineValue = 50;
@@ -555,11 +558,11 @@ export class RSIChart {
   clearDivergence(): void {
     this.clearHighlights();
 
-    // Clear trend line
-    if (this.trendLineSeries) {
-      this.chart.removeSeries(this.trendLineSeries);
-      this.trendLineSeries = null;
+    // Clear all trend lines
+    for (const trendLineSeries of this.trendLineSeriesList) {
+      this.chart.removeSeries(trendLineSeries);
     }
+    this.trendLineSeriesList = [];
 
     // Reset state
     this.firstPoint = null;
