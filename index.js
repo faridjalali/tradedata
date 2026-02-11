@@ -195,43 +195,36 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
     }
 });
 
-// --- Alpha Vantage helper ---
-const ALPHA_VANTAGE_KEY = process.env.ALPHA_VANTAGE_KEY || '';
-const AV_BASE = 'https://www.alphavantage.co/query';
+// --- FMP (Financial Modeling Prep) helpers ---
+const FMP_KEY = process.env.FMP_API_KEY || '';
+const FMP_BASE = 'https://financialmodelingprep.com/stable';
 
-async function avDaily(symbol) {
-  const url = `${AV_BASE}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${ALPHA_VANTAGE_KEY}`;
+async function fmpDaily(symbol) {
+  const url = `${FMP_BASE}/historical-price-eod/light?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Alpha Vantage ${resp.status}`);
+  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();
-  if (data['Error Message']) throw new Error(data['Error Message']);
-  if (data['Information']) throw new Error(data['Information']);
-  const series = data['Time Series (Daily)'];
-  if (!series) return null;
-  return Object.entries(series).map(([date, vals]) => ({
-    date,
-    close: parseFloat(vals['4. close'])
-  }));
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return data.map(d => ({ date: d.date, close: d.price }));
 }
 
+async function fmpIntraday30(symbol) {
+  const url = `${FMP_BASE}/historical-chart/30min?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`FMP ${resp.status}`);
+  const data = await resp.json();
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return data.map(d => ({ datetime: d.date, close: d.close }));
+}
 
-
+// --- Cache expiry helpers ---
 function getNextCacheExpiry() {
-  // Calculate the next 4:01 PM ET timestamp
   const now = new Date();
   const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
   const etNow = new Date(etStr);
-
-  // Build today's 4:01 PM ET
   const target = new Date(etNow);
   target.setHours(16, 1, 0, 0);
-
-  // If we're already past 4:01 PM ET today, next expiry is tomorrow 4:01 PM ET
-  if (etNow >= target) {
-    target.setDate(target.getDate() + 1);
-  }
-
-  // Convert back to system time by computing the offset
+  if (etNow >= target) target.setDate(target.getDate() + 1);
   const diffMs = target.getTime() - etNow.getTime();
   return now.getTime() + diffMs;
 }
@@ -241,56 +234,118 @@ function isCacheValid(entry) {
   return Date.now() < entry.expiresAt;
 }
 
-// --- Breadth API (daily price comparison via Alpha Vantage) ---
-// SPY is shared across all comparisons — fetch once, reuse everywhere.
-let spyCache = { expiresAt: 0, bars: null }; // { expiresAt, bars: [{date, close}] }
-const breadthCache = new Map(); // key: compTicker → { expiresAt, allPoints[] }
+// --- Breadth API ---
+// SPY cached separately (daily + intraday), shared across all metrics.
+let spyDailyCache = { expiresAt: 0, bars: null };
+let spyIntradayCache = { expiresAt: 0, bars: null };
+const breadthDailyCache = new Map();
+const breadthIntradayCache = new Map();
 
-async function getSpyBars() {
-  if (spyCache.bars && Date.now() < spyCache.expiresAt) {
-    return spyCache.bars;
-  }
-  const bars = await avDaily('SPY');
-  if (bars) {
-    spyCache = { expiresAt: getNextCacheExpiry(), bars };
-  }
+async function getSpyDaily() {
+  if (spyDailyCache.bars && Date.now() < spyDailyCache.expiresAt) return spyDailyCache.bars;
+  const bars = await fmpDaily('SPY');
+  if (bars) spyDailyCache = { expiresAt: getNextCacheExpiry(), bars };
+  return bars;
+}
+
+async function getSpyIntraday() {
+  if (spyIntradayCache.bars && Date.now() < spyIntradayCache.expiresAt) return spyIntradayCache.bars;
+  const bars = await fmpIntraday30('SPY');
+  if (bars) spyIntradayCache = { expiresAt: Date.now() + 5 * 60 * 1000, bars };
   return bars;
 }
 
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
   const days = Math.min(Math.max(parseInt(req.query.days) || 5, 1), 60);
-
-  const cached = breadthCache.get(compTicker);
-  if (isCacheValid(cached)) {
-    const points = cached.allPoints.slice(-days);
-    return res.json({ intraday: false, points });
-  }
+  const isIntraday = days === 1;
 
   try {
-    // Get SPY (from cache or single API call)
-    const spyWasCached = spyCache.bars && Date.now() < spyCache.expiresAt;
-    const spyBars = await getSpyBars();
+    if (isIntraday) {
+      // --- Intraday path (30-min bars, today only) ---
+      const cached = breadthIntradayCache.get(compTicker);
+      if (isCacheValid(cached)) return res.json(cached.data);
 
-    // Rate-limit delay only needed if SPY was just fetched (not cached)
-    if (!spyWasCached) {
-      await new Promise(r => setTimeout(r, 1500));
+      const [spyBars, compBars] = await Promise.all([
+        getSpyIntraday(),
+        fmpIntraday30(compTicker)
+      ]);
+
+      if (!spyBars || !compBars) {
+        return res.status(404).json({ error: 'No intraday data available (market may be closed)' });
+      }
+
+      // Today's date in ET
+      const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const y = todayET.getFullYear();
+      const mo = String(todayET.getMonth() + 1).padStart(2, '0');
+      const da = String(todayET.getDate()).padStart(2, '0');
+      const todayStr = `${y}-${mo}-${da}`;
+
+      const isRegularHours = (dtStr) => {
+        const parts = dtStr.split(' ');
+        if (parts.length < 2) return false;
+        const [h, m] = parts[1].split(':').map(Number);
+        const totalMin = h * 60 + m;
+        return totalMin >= 570 && totalMin <= 960;
+      };
+
+      const roundTo30Min = (dtStr) => {
+        const d = new Date(dtStr);
+        d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0);
+        return d.getTime();
+      };
+
+      const spyMap = new Map();
+      for (const bar of spyBars) {
+        if (bar.datetime.startsWith(todayStr) && isRegularHours(bar.datetime)) {
+          spyMap.set(roundTo30Min(bar.datetime), bar.close);
+        }
+      }
+
+      const compMap = new Map();
+      for (const bar of compBars) {
+        if (bar.datetime.startsWith(todayStr) && isRegularHours(bar.datetime)) {
+          compMap.set(roundTo30Min(bar.datetime), bar.close);
+        }
+      }
+
+      const commonKeys = [...spyMap.keys()].filter(k => compMap.has(k)).sort((a, b) => a - b);
+
+      const result = {
+        intraday: true,
+        points: commonKeys.map(k => ({
+          date: new Date(k).toISOString(),
+          spy: Math.round(spyMap.get(k) * 100) / 100,
+          comparison: Math.round(compMap.get(k) * 100) / 100
+        }))
+      };
+
+      breadthIntradayCache.set(compTicker, { expiresAt: Date.now() + 5 * 60 * 1000, data: result });
+      return res.json(result);
     }
-    const compBars = await avDaily(compTicker);
+
+    // --- Daily path ---
+    const cached = breadthDailyCache.get(compTicker);
+    if (isCacheValid(cached)) {
+      const points = cached.allPoints.slice(-days);
+      return res.json({ intraday: false, points });
+    }
+
+    const [spyBars, compBars] = await Promise.all([
+      getSpyDaily(),
+      fmpDaily(compTicker)
+    ]);
 
     if (!spyBars || !compBars) {
       return res.status(404).json({ error: 'No price data available' });
     }
 
     const spyMap = new Map();
-    for (const bar of spyBars) {
-      spyMap.set(bar.date, bar.close);
-    }
+    for (const bar of spyBars) spyMap.set(bar.date, bar.close);
 
     const compMap = new Map();
-    for (const bar of compBars) {
-      compMap.set(bar.date, bar.close);
-    }
+    for (const bar of compBars) compMap.set(bar.date, bar.close);
 
     const commonDates = [...spyMap.keys()]
       .filter(d => compMap.has(d))
@@ -302,7 +357,7 @@ app.get('/api/breadth', async (req, res) => {
       comparison: Math.round(compMap.get(d) * 100) / 100
     }));
 
-    breadthCache.set(compTicker, { expiresAt: getNextCacheExpiry(), allPoints });
+    breadthDailyCache.set(compTicker, { expiresAt: getNextCacheExpiry(), allPoints });
 
     const points = allPoints.slice(-days);
     res.json({ intraday: false, points });
@@ -315,3 +370,5 @@ app.get('/api/breadth', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+
