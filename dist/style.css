@@ -9,6 +9,10 @@
   --highlight: #58a6ff;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 html {
   background-color: var(--bg-color);
 }

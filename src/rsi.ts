@@ -19,7 +19,7 @@ export class RSIChart {
   private lineTools: any;
   private displayMode: RSIDisplayMode;
   private data: RSIPoint[];
-  private referenceLines: Array<{line: any, value: number}> = [];
+  private referenceLines: Array<{value: number, label: string, color: string}> = [];
   private priceData: Array<{time: string | number, close: number}> = [];
   private divergenceToolActive: boolean = false;
   private highlightSeries: any = null;
@@ -81,18 +81,20 @@ export class RSIChart {
   }
 
   private addReferenceLine(value: number, label: string, color: string): void {
-    const line = this.chart.addLineSeries({
-      color,
-      lineWidth: 1,
-      lineStyle: 2, // LineStyle.Dashed
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false
-    });
+    // Store config for later series recreations
+    this.referenceLines.push({ value, label, color });
 
-    // Store reference to update later with actual data range
-    this.referenceLines = this.referenceLines || [];
-    this.referenceLines.push({ line, value });
+    // If series exists, add the line immediately
+    if (this.series) {
+      this.series.createPriceLine({
+        price: value,
+        color,
+        lineWidth: 1,
+        lineStyle: 2, // LineStyle.Dashed
+        axisLabelVisible: false,
+        title: label
+      });
+    }
   }
 
   private updateSeries(): void {
@@ -135,18 +137,17 @@ export class RSIChart {
       })));
     }
 
-    // Update reference lines to match data range
-    if (this.data.length > 0 && this.referenceLines.length > 0) {
-      const firstTime = this.data[0].time;
-      const lastTime = this.data[this.data.length - 1].time;
-
-      this.referenceLines.forEach(({line, value}) => {
-        line.setData([
-          { time: firstTime, value },
-          { time: lastTime, value }
-        ]);
+    // Add reference lines (midline) to the new series
+    this.referenceLines.forEach(config => {
+      this.series.createPriceLine({
+        price: config.value,
+        color: config.color,
+        lineWidth: 1,
+        lineStyle: 2, // LineStyle.Dashed
+        axisLabelVisible: false,
+        title: config.label
       });
-    }
+    });
   }
 
   setDisplayMode(mode: RSIDisplayMode): void {
@@ -173,18 +174,7 @@ export class RSIChart {
       }
     }
 
-    // Update reference lines to match actual data range
-    if (data.length > 0 && this.referenceLines.length > 0) {
-      const firstTime = data[0].time;
-      const lastTime = data[data.length - 1].time;
 
-      this.referenceLines.forEach(({line, value}) => {
-        line.setData([
-          { time: firstTime, value },
-          { time: lastTime, value }
-        ]);
-      });
-    }
   }
 
   getChart(): any {
