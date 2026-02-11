@@ -63,11 +63,9 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
         if (intraday) {
             const date = new Date(d.date);
             if (intradayDayCount > 1) {
-                return date.toLocaleString('en-US', {
-                    month: 'short',
+                return date.toLocaleDateString('en-US', {
+                    month: 'numeric',
                     day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
                     timeZone: 'America/Los_Angeles'
                 });
             }
