@@ -86,7 +86,7 @@ function createPriceChart(container: HTMLElement) {
       attributionLogo: false,
     },
     grid: {
-      vertLines: { visible: false },
+      vertLines: { visible: true, color: '#21262d' },
       horzLines: { visible: false },
     },
     crosshair: {
