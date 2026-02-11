@@ -9,7 +9,6 @@ let candleSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
-let volumeDeltaSignalSeries: any = null;
 let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
 let latestRenderRequestId = 0;
@@ -33,7 +32,6 @@ const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
-const VOLUME_DELTA_SIGNAL_COLOR = '#FF6D00';
 const VOLUME_DELTA_OVERBOUGHT = 70;
 const VOLUME_DELTA_MIDLINE = 50;
 const VOLUME_DELTA_OVERSOLD = 30;
@@ -1124,20 +1122,6 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     autoscaleInfoProvider: autoscale,
   });
 
-  const signalSeries = chart.addLineSeries({
-    color: VOLUME_DELTA_SIGNAL_COLOR,
-    lineWidth: 1,
-    priceLineVisible: false,
-    lastValueVisible: false,
-    crosshairMarkerVisible: false,
-    priceFormat: {
-      type: 'custom',
-      minMove: 0.1,
-      formatter: (value: number) => formatVolumeDeltaScaleLabel(Number(value)),
-    },
-    autoscaleInfoProvider: autoscale,
-  });
-
   rsiSeries.createPriceLine({
     price: VOLUME_DELTA_OVERBOUGHT,
     color: 'rgba(242, 54, 69, 0.5)',
@@ -1163,25 +1147,20 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     title: 'Oversold',
   });
 
-  return { chart, rsiSeries, signalSeries };
+  return { chart, rsiSeries };
 }
 
 function setVolumeDeltaRsiData(
   bars: any[],
-  volumeDeltaRsi: { rsi: Array<{ time: string | number, value: number }>; signal: Array<{ time: string | number, value: number }> }
+  volumeDeltaRsi: { rsi: Array<{ time: string | number, value: number }> }
 ): void {
-  if (!volumeDeltaRsiSeries || !volumeDeltaSignalSeries) return;
+  if (!volumeDeltaRsiSeries) return;
 
   const normalizedRsi = normalizeValueSeries(volumeDeltaRsi?.rsi || []);
-  const normalizedSignal = normalizeValueSeries(volumeDeltaRsi?.signal || []);
 
   const rsiByTimeLocal = new Map<string, number>();
   for (const point of normalizedRsi) {
     rsiByTimeLocal.set(timeKey(point.time), Number(point.value));
-  }
-  const signalByTimeLocal = new Map<string, number>();
-  for (const point of normalizedSignal) {
-    signalByTimeLocal.set(timeKey(point.time), Number(point.value));
   }
 
   const seriesData = bars.map((bar) => {
@@ -1189,14 +1168,8 @@ function setVolumeDeltaRsiData(
     if (!Number.isFinite(value)) return { time: bar.time };
     return { time: bar.time, value: Number(value) };
   });
-  const signalData = bars.map((bar) => {
-    const value = signalByTimeLocal.get(timeKey(bar.time));
-    if (!Number.isFinite(value)) return { time: bar.time };
-    return { time: bar.time, value: Number(value) };
-  });
 
   volumeDeltaRsiSeries.setData(seriesData);
-  volumeDeltaSignalSeries.setData(signalData);
 
   volumeDeltaRsiByTime = new Map<string, number>();
   for (const bar of bars) {
@@ -1204,11 +1177,6 @@ function setVolumeDeltaRsiData(
     const rsiValue = rsiByTimeLocal.get(key);
     if (Number.isFinite(rsiValue)) {
       volumeDeltaRsiByTime.set(key, Number(rsiValue));
-      continue;
-    }
-    const signalValue = signalByTimeLocal.get(key);
-    if (Number.isFinite(signalValue)) {
-      volumeDeltaRsiByTime.set(key, Number(signalValue));
     }
   }
 }
@@ -1291,10 +1259,9 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     applyPriceGridOptions();
   }
   if (!volumeDeltaRsiChart) {
-    const { chart, rsiSeries, signalSeries } = createVolumeDeltaRsiChart(volumeDeltaContainer);
+    const { chart, rsiSeries } = createVolumeDeltaRsiChart(volumeDeltaContainer);
     volumeDeltaRsiChart = chart;
     volumeDeltaRsiSeries = rsiSeries;
-    volumeDeltaSignalSeries = signalSeries;
   }
 
   ensureResizeObserver(chartContainer, volumeDeltaContainer, rsiContainer);
@@ -1314,7 +1281,6 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     const rsiData = buildRSISeriesFromBars(bars, rsiSettings.length);
     const volumeDeltaRsiData = {
       rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
-      signal: normalizeValueSeries(data.volumeDeltaRsi?.signal || []),
     };
     currentBars = bars;
     priceByTime = new Map(
@@ -1377,9 +1343,6 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       }
       if (volumeDeltaRsiSeries) {
         volumeDeltaRsiSeries.setData([]);
-      }
-      if (volumeDeltaSignalSeries) {
-        volumeDeltaSignalSeries.setData([]);
       }
       volumeDeltaRsiByTime = new Map();
       currentBars = [];

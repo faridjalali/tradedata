@@ -618,53 +618,6 @@ function calculateRSI(closePrices, period = 14) {
   return rsiValues;
 }
 
-function calculateSMA(values, length = 1) {
-  const period = Math.max(1, Math.floor(length));
-  const out = new Array(values.length).fill(null);
-  let sum = 0;
-  let count = 0;
-
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i];
-    if (Number.isFinite(value)) {
-      sum += value;
-      count += 1;
-    }
-
-    if (i >= period) {
-      const dropped = values[i - period];
-      if (Number.isFinite(dropped)) {
-        sum -= dropped;
-        count -= 1;
-      }
-    }
-
-    if (i >= period - 1 && count === period) {
-      out[i] = sum / period;
-    }
-  }
-
-  return out;
-}
-
-function calculateEMA(values, length = 9) {
-  const period = Math.max(1, Math.floor(length));
-  const out = new Array(values.length).fill(null);
-  const alpha = 2 / (period + 1);
-  let ema = null;
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i];
-    if (!Number.isFinite(value)) continue;
-    if (ema === null) {
-      ema = value;
-    } else {
-      ema = (value * alpha) + (ema * (1 - alpha));
-    }
-    out[i] = ema;
-  }
-  return out;
-}
-
 function calculateRMA(values, length = 14) {
   const period = Math.max(1, Math.floor(length));
   const out = new Array(values.length).fill(null);
@@ -778,9 +731,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
 }
 
 function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
-  const rsiLength = Math.max(1, Math.floor(Number(options.rsiLength) || 14));
-  const rsiSmoothing = Math.max(1, Math.floor(Number(options.rsiSmoothing) || 1));
-  const signalLength = Math.max(1, Math.floor(Number(options.signalLength) || 9));
+  const rsiLength = 14;
 
   const deltaByBar = computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval);
   const gains = deltaByBar.map((point) => {
@@ -807,24 +758,16 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
     vdRsiRaw[i] = Number.isFinite(value) ? value : null;
   }
 
-  const vdRsiSmoothed = rsiSmoothing > 1 ? calculateSMA(vdRsiRaw, rsiSmoothing) : vdRsiRaw.slice();
-  const signalRaw = calculateEMA(vdRsiSmoothed, signalLength);
-
   const rsi = [];
-  const signal = [];
   for (let i = 0; i < deltaByBar.length; i++) {
     const time = deltaByBar[i].time;
-    const rsiValue = vdRsiSmoothed[i];
-    const signalValue = signalRaw[i];
+    const rsiValue = vdRsiRaw[i];
     if (Number.isFinite(rsiValue)) {
       rsi.push({ time, value: Math.round(rsiValue * 100) / 100 });
     }
-    if (Number.isFinite(signalValue)) {
-      signal.push({ time, value: Math.round(signalValue * 100) / 100 });
-    }
   }
 
-  return { rsi, signal };
+  return { rsi };
 }
 
 // Convert ET timezone bars to LA timezone
@@ -1069,7 +1012,7 @@ app.get('/api/chart', async (req, res) => {
       });
     }
 
-    let volumeDeltaRsi = { rsi: [], signal: [] };
+    let volumeDeltaRsi = { rsi: [] };
     try {
       let lowerTfBars = [];
       if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
@@ -1088,12 +1031,7 @@ app.get('/api/chart', async (req, res) => {
         volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
           convertedBars,
           lowerTfBars,
-          interval,
-          {
-            rsiLength: 14,
-            rsiSmoothing: 1,
-            signalLength: 9
-          }
+          interval
         );
       }
     } catch (volumeDeltaErr) {

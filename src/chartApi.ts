@@ -24,7 +24,6 @@ export interface ChartData {
   rsi: RSIPoint[];
   volumeDeltaRsi: {
     rsi: RSIPoint[];
-    signal: RSIPoint[];
   };
 
 }
