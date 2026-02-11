@@ -218,7 +218,7 @@ async function fmpDaily(symbol) {
 }
 
 async function fmpIntraday30(symbol) {
-  const url = `${FMP_BASE}/historical-chart/30min?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const url = `${FMP_BASE}/historical-chart/30min/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();
@@ -227,7 +227,7 @@ async function fmpIntraday30(symbol) {
 }
 
 async function fmpIntraday1Hour(symbol) {
-  const url = `${FMP_BASE}/historical-chart/1hour?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const url = `${FMP_BASE}/historical-chart/1hour/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();
@@ -243,7 +243,7 @@ async function fmpIntraday1Hour(symbol) {
 }
 
 async function fmpIntraday4Hour(symbol) {
-  const url = `${FMP_BASE}/historical-chart/4hour?symbol=${encodeURIComponent(symbol)}&apikey=${FMP_KEY}`;
+  const url = `${FMP_BASE}/historical-chart/4hour/${encodeURIComponent(symbol)}?apikey=${FMP_KEY}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`FMP ${resp.status}`);
   const data = await resp.json();

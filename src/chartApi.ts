@@ -4,7 +4,7 @@ export type ChartInterval = '1hour' | '2hour' | '4hour' | '1day';
 export type RSIDisplayMode = 'line' | 'points';
 
 export interface CandleBar {
-  time: string; // LA timezone: "YYYY-MM-DD" for daily, "YYYY-MM-DD HH:MM" for intraday
+  time: string | number; // LA timezone: "YYYY-MM-DD" or Unix timestamp
   open: number;
   high: number;
   low: number;
@@ -13,7 +13,7 @@ export interface CandleBar {
 }
 
 export interface RSIPoint {
-  time: string;
+  time: string | number;
   value: number;
 }
 
