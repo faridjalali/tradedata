@@ -16,6 +16,11 @@ function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
 }
 
+function sameTimeRange(a: any, b: any): boolean {
+  if (!a || !b) return false;
+  return String(a.from) === String(b.from) && String(a.to) === String(b.to);
+}
+
 // Create price chart
 function createPriceChart(container: HTMLElement) {
   const chart = createChart(container, {
@@ -29,6 +34,18 @@ function createPriceChart(container: HTMLElement) {
     },
     crosshair: {
       mode: CrosshairMode.Normal,
+    },
+    handleScroll: {
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: false,
+      mouseWheel: false,
+    },
+    handleScale: {
+      mouseWheel: false,
+      pinch: false,
+      axisPressedMouseMove: false,
+      axisDoubleClickReset: false,
     },
     rightPriceScale: {
       borderColor: '#2b2b43',
@@ -179,24 +196,36 @@ function setupChartSync() {
   if (!priceChart || !rsiChart) return;
 
   const rsiChartInstance = rsiChart.getChart();
-  let isSyncingFromPrice = false;
-  let isSyncingFromRSI = false;
+  let syncLock: 'price' | 'rsi' | null = null;
+  const unlockAfterFrame = (owner: 'price' | 'rsi') => {
+    requestAnimationFrame(() => {
+      if (syncLock === owner) syncLock = null;
+    });
+  };
 
   // Sync price chart → RSI chart by visible time range to avoid drift when datasets differ.
   priceChart.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
-    if (timeRange && !isSyncingFromRSI) {
-      isSyncingFromPrice = true;
+    if (!timeRange || syncLock === 'rsi') return;
+    const currentRSIRange = rsiChartInstance.timeScale().getVisibleRange();
+    if (sameTimeRange(currentRSIRange, timeRange)) return;
+    syncLock = 'price';
+    try {
       rsiChartInstance.timeScale().setVisibleRange(timeRange);
-      isSyncingFromPrice = false;
+    } finally {
+      unlockAfterFrame('price');
     }
   });
 
   // Sync RSI chart → price chart.
   rsiChartInstance.timeScale().subscribeVisibleTimeRangeChange((timeRange: any) => {
-    if (timeRange && !isSyncingFromPrice) {
-      isSyncingFromRSI = true;
+    if (!timeRange || syncLock === 'price') return;
+    const currentPriceRange = priceChart.timeScale().getVisibleRange();
+    if (sameTimeRange(currentPriceRange, timeRange)) return;
+    syncLock = 'rsi';
+    try {
       priceChart.timeScale().setVisibleRange(timeRange);
-      isSyncingFromRSI = false;
+    } finally {
+      unlockAfterFrame('rsi');
     }
   });
 

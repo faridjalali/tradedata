@@ -51,8 +51,11 @@ export class RSIChart {
         horzLines: { visible: false }
       },
       timeScale: {
+        visible: true,
         timeVisible: true,
         secondsVisible: false,
+        borderVisible: true,
+        ticksVisible: true,
         borderColor: '#21262d'  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
@@ -64,6 +67,18 @@ export class RSIChart {
       },
       crosshair: {
         mode: 1 // CrosshairMode.Normal
+      },
+      handleScroll: {
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+        mouseWheel: false
+      },
+      handleScale: {
+        mouseWheel: false,
+        pinch: false,
+        axisPressedMouseMove: false,
+        axisDoubleClickReset: false
       }
     });
 

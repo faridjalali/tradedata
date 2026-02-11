@@ -775,7 +775,7 @@ button:hover {
   padding: 20px;
   width: 100%;
   max-width: 1200px;
-  margin: 30px auto 0;
+  margin: 30px auto 100px;
 }
 
 .chart-controls-bar {
@@ -812,6 +812,7 @@ button:hover {
   position: relative;
   border-radius: 6px;
   overflow: hidden;
+  touch-action: pan-y;
 }
 
 #price-chart-container {
@@ -820,6 +821,8 @@ button:hover {
 
 #rsi-chart-container {
   border: 1px solid var(--border-color);
+  overflow: visible;
+  padding-bottom: 8px;
 }
 
 /* Mobile responsive */
