@@ -366,12 +366,30 @@ async function fmpDaily(symbol) {
   return normalized.length ? normalized : null;
 }
 
-async function fmpIntraday(symbol, interval) {
+function formatDateUTC(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addUtcDays(date, days) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+async function fmpIntraday(symbol, interval, options = {}) {
+  const { from, to } = options;
   const symbolEncoded = encodeURIComponent(symbol);
+  const params = { symbol, apikey: FMP_KEY };
+  if (from) params.from = from;
+  if (to) params.to = to;
+
   const urls = [
-    buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, { symbol, apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, { symbol, apikey: FMP_KEY })
+    buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, params),
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY, from, to }),
+    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, params)
   ];
 
   const rows = await fetchFmpArrayWithFallback(`FMP ${interval}`, urls);
@@ -394,6 +412,62 @@ async function fmpIntraday(symbol, interval) {
   }).filter(Boolean);
 
   return normalized.length ? normalized : null;
+}
+
+const CHART_INTRADAY_LOOKBACK_DAYS = 365;
+const CHART_INTRADAY_SLICE_DAYS = {
+  '5min': 7,
+  '15min': 30,
+  '30min': 30,
+  '1hour': 60,
+  '4hour': 120
+};
+
+async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
+  const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
+  const endDate = new Date();
+  endDate.setUTCHours(0, 0, 0, 0);
+  const startDate = addUtcDays(endDate, -Math.max(1, lookbackDays));
+
+  const byDateTime = new Map();
+  let cursor = new Date(startDate);
+  let lastSliceError = null;
+
+  while (cursor <= endDate) {
+    const sliceStart = new Date(cursor);
+    let sliceEnd = addUtcDays(sliceStart, sliceDays - 1);
+    if (sliceEnd > endDate) sliceEnd = new Date(endDate);
+
+    try {
+      const rows = await fmpIntraday(symbol, interval, {
+        from: formatDateUTC(sliceStart),
+        to: formatDateUTC(sliceEnd)
+      });
+      if (rows && rows.length > 0) {
+        for (const row of rows) {
+          byDateTime.set(row.datetime, row);
+        }
+      }
+    } catch (err) {
+      lastSliceError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
+    }
+
+    cursor = addUtcDays(sliceEnd, 1);
+  }
+
+  if (byDateTime.size === 0) {
+    // Fallback to a single request without date filters if slicing returned nothing.
+    try {
+      return await fmpIntraday(symbol, interval);
+    } catch (fallbackErr) {
+      if (lastSliceError) throw lastSliceError;
+      throw fallbackErr;
+    }
+  }
+
+  return Array.from(byDateTime.values()).sort((a, b) => String(a.datetime).localeCompare(String(b.datetime)));
 }
 
 async function fmpIntraday30(symbol) {
@@ -540,7 +614,7 @@ const breadthIntradayCache = new Map();
 
 // --- Chart API Cache ---
 const chartCache = new Map();
-const CHART_CACHE_VERSION = 'v2';
+const CHART_CACHE_VERSION = 'v3';
 
 async function getSpyDaily() {
   if (spyDailyCache.bars && Date.now() < spyDailyCache.expiresAt) return spyDailyCache.bars;
@@ -686,9 +760,9 @@ app.get('/api/chart', async (req, res) => {
   const interval = (req.query.interval || '4hour').toString();
 
   // Validate interval
-  const validIntervals = ['1hour', '4hour'];
+  const validIntervals = ['5min', '15min', '30min', '1hour', '4hour'];
   if (!validIntervals.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 1hour or 4hour' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, or 4hour' });
   }
 
   const cacheKey = `${CHART_CACHE_VERSION}_${ticker}_${interval}`;
@@ -700,21 +774,9 @@ app.get('/api/chart', async (req, res) => {
       return res.json(cached.data);
     }
 
-    let bars = [];
-
-    // Fetch data based on interval
-    if (interval === '1hour') {
-      const intradayBars = await fmpIntraday1Hour(ticker);
-      if (!intradayBars || intradayBars.length === 0) {
-        return res.status(404).json({ error: 'No 1-hour data available for this ticker' });
-      }
-      bars = intradayBars;
-    } else if (interval === '4hour') {
-      const intradayBars = await fmpIntraday4Hour(ticker);
-      if (!intradayBars || intradayBars.length === 0) {
-        return res.status(404).json({ error: 'No 4-hour data available for this ticker' });
-      }
-      bars = intradayBars;
+    const bars = await fmpIntradayChartHistory(ticker, interval, CHART_INTRADAY_LOOKBACK_DAYS);
+    if (!bars || bars.length === 0) {
+      return res.status(404).json({ error: `No ${interval} data available for this ticker` });
     }
 
     // Convert to LA timezone and sort chronologically.
