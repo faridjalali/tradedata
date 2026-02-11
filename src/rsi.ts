@@ -23,6 +23,9 @@ export class RSIChart {
   private priceData: Array<{time: string | number, close: number}> = [];
   private divergenceToolActive: boolean = false;
   private highlightSeries: any = null;
+  private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
+  private divergencePoints: RSIPoint[] = [];
+  private trendLineSeries: any = null;
 
   constructor(options: RSIChartOptions) {
     this.displayMode = options.displayMode;
@@ -212,8 +215,10 @@ export class RSIChart {
     if (container) {
       container.style.cursor = 'default';
     }
-    // Clear any highlights
+    // Clear any highlights and reset state
     this.clearHighlights();
+    this.firstPoint = null;
+    this.divergencePoints = [];
   }
 
   private detectAndHighlightDivergence(clickedTime: string | number): void {
@@ -224,38 +229,69 @@ export class RSIChart {
       return;
     }
 
-    const originRSI = this.data[clickedIndex].value;
+    const clickedRSI = this.data[clickedIndex].value;
 
     // Find corresponding price
-    const originPricePoint = this.priceData.find(p => p.time === clickedTime);
-    if (!originPricePoint) {
+    const clickedPricePoint = this.priceData.find(p => p.time === clickedTime);
+    if (!clickedPricePoint) {
       console.log('Corresponding price data not found');
       return;
     }
 
-    const originPrice = originPricePoint.close;
+    const clickedPrice = clickedPricePoint.close;
 
-    // Find all future points with divergence (lower RSI, higher price)
-    const divergencePoints: RSIPoint[] = [];
+    // Check if this is the first or second click
+    if (!this.firstPoint) {
+      // First click: store point and find divergence
+      this.firstPoint = {
+        time: clickedTime,
+        rsi: clickedRSI,
+        price: clickedPrice,
+        index: clickedIndex
+      };
 
-    for (let i = clickedIndex + 1; i < this.data.length; i++) {
-      const currentRSI = this.data[i].value;
-      const currentPricePoint = this.priceData.find(p => p.time === this.data[i].time);
+      // Find all future points with divergence (lower RSI, higher price)
+      this.divergencePoints = [];
 
-      if (currentPricePoint) {
-        const currentPrice = currentPricePoint.close;
+      for (let i = clickedIndex + 1; i < this.data.length; i++) {
+        const currentRSI = this.data[i].value;
+        const currentPricePoint = this.priceData.find(p => p.time === this.data[i].time);
 
-        // Check divergence conditions: RSI lower AND price higher
-        if (currentRSI < originRSI && currentPrice > originPrice) {
-          divergencePoints.push(this.data[i]);
+        if (currentPricePoint) {
+          const currentPrice = currentPricePoint.close;
+
+          // Check divergence conditions: RSI lower AND price higher
+          if (currentRSI < clickedRSI && currentPrice > clickedPrice) {
+            this.divergencePoints.push(this.data[i]);
+          }
         }
       }
+
+      console.log(`Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPrice.toFixed(2)})`);
+
+      // Highlight the divergence points
+      this.highlightPoints(this.divergencePoints);
+    } else {
+      // Second click: check if it's a divergence point and draw trend line
+      const isValidSecondPoint = this.divergencePoints.some(p => p.time === clickedTime);
+
+      if (!isValidSecondPoint) {
+        console.log('Second point must be one of the highlighted divergence points');
+        return;
+      }
+
+      console.log(`Drawing trend line from (RSI: ${this.firstPoint.rsi.toFixed(2)}) to (RSI: ${clickedRSI.toFixed(2)})`);
+
+      // Draw trend line from first point through second point, extending to the right
+      this.drawTrendLine(this.firstPoint.time, this.firstPoint.rsi, clickedTime, clickedRSI);
+
+      // Clear highlights after drawing the line
+      this.clearHighlights();
+
+      // Reset for next trend line
+      this.firstPoint = null;
+      this.divergencePoints = [];
     }
-
-    console.log(`Found ${divergencePoints.length} divergence points from origin (RSI: ${originRSI.toFixed(2)}, Price: ${originPrice.toFixed(2)})`);
-
-    // Highlight the divergence points
-    this.highlightPoints(divergencePoints);
   }
 
   private highlightPoints(points: RSIPoint[]): void {
@@ -284,8 +320,60 @@ export class RSIChart {
     }
   }
 
+  private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
+    // Find the indices of the two points
+    const index1 = this.data.findIndex(d => d.time === time1);
+    const index2 = this.data.findIndex(d => d.time === time2);
+
+    if (index1 === -1 || index2 === -1) {
+      console.error('Could not find indices for trend line points');
+      return;
+    }
+
+    // Calculate slope: (y2 - y1) / (x2 - x1)
+    const slope = (value2 - value1) / (index2 - index1);
+
+    // Create trend line data points extending to the right edge
+    const trendLineData: RSIPoint[] = [];
+
+    // Start from first point and extend to the last data point
+    for (let i = index1; i < this.data.length; i++) {
+      const projectedValue = value1 + slope * (i - index1);
+      trendLineData.push({
+        time: this.data[i].time,
+        value: projectedValue
+      });
+    }
+
+    // Create or update trend line series
+    if (this.trendLineSeries) {
+      this.chart.removeSeries(this.trendLineSeries);
+    }
+
+    this.trendLineSeries = this.chart.addLineSeries({
+      color: '#ffa500',  // Orange color for trend line
+      lineWidth: 2,
+      lineStyle: 0, // Solid line
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false
+    });
+
+    this.trendLineSeries.setData(trendLineData);
+  }
+
   clearDivergence(): void {
     this.clearHighlights();
+
+    // Clear trend line
+    if (this.trendLineSeries) {
+      this.chart.removeSeries(this.trendLineSeries);
+      this.trendLineSeries = null;
+    }
+
+    // Reset state
+    this.firstPoint = null;
+    this.divergencePoints = [];
   }
 
   resize(): void {
