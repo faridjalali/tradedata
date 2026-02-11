@@ -43,7 +43,7 @@ function createPriceChart(container: HTMLElement) {
 
   const chart = createChart(container, {
     layout: {
-      background: { color: '#1e222d' },
+      background: { color: '#0d1117' },
       textColor: '#d1d4dc',
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       attributionLogo: false,
