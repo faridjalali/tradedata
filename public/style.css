@@ -822,6 +822,7 @@ button:hover {
   border-radius: 6px;
   overflow: hidden;
   touch-action: pan-y;
+  background-color: #0d1117; /* Match chart background color */
 }
 
 #price-chart-container {
