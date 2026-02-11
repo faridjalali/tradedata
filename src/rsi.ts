@@ -662,15 +662,7 @@ export class RSIChart {
     });
     this.trendLineSeriesList.push(trendLineSeries);
 
-    const visibleRangeBefore = this.chart.timeScale().getVisibleLogicalRange();
     trendLineSeries.setData(trendLineData);
-    if (visibleRangeBefore) {
-      try {
-        this.chart.timeScale().setVisibleLogicalRange(visibleRangeBefore);
-      } catch {
-        // Ignore transient errors while chart is recomputing scale.
-      }
-    }
 
     // Mark where this trendline crosses RSI midline (50) on the time axis.
     const midlineValue = 50;
