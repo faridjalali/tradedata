@@ -2,7 +2,7 @@ import { getAlerts } from './state';
 import { createAlertCard } from './components';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
-import { ChartManager } from './chart';
+import { renderCustomChart } from './chart';
 
 // Declare TradingView and Chart.js globals
 declare const TradingView: any;
@@ -70,7 +70,7 @@ export function renderTickerView(ticker: string): void {
     }
 
     renderTradingViewChart(ticker);
-    ChartManager.getInstance().render(ticker);
+    renderCustomChart(ticker);
 }
 
 function renderAvg(containerId: string, list: Alert[]): void {
