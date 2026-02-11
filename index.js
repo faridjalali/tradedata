@@ -291,8 +291,20 @@ app.get('/api/breadth', async (req, res) => {
       };
 
       const roundTo30Min = (dtStr) => {
-        const d = new Date(dtStr);
-        d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0);
+        // Parse FMP string (ET) as proper UTC timestamp
+        // 1. Treat input as UTC
+        const asUTC = new Date(dtStr.replace(' ', 'T') + 'Z');
+        // 2. Get what time that represents in NY
+        const nyStr = asUTC.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
+        // 3. Parse that NY time as if it were UTC
+        const nyAsUTC = new Date(nyStr + ' GMT');
+        // 4. Diff is the offset we need to add to convert "ET interpreted as UTC" to "Real UTC"
+        const diff = asUTC.getTime() - nyAsUTC.getTime();
+        const d = new Date(asUTC.getTime() + diff);
+
+        d.setSeconds(0, 0);
+        const m = d.getMinutes();
+        d.setMinutes(m < 30 ? 0 : 30);
         return d.getTime();
       };
 
