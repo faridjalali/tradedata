@@ -724,18 +724,44 @@ function calculateRSI(closePrices, period = 14) {
 function calculateRMA(values, length = 14) {
   const period = Math.max(1, Math.floor(length));
   const out = new Array(values.length).fill(null);
-  let rma = null;
+
+  // First, we need to find the first 'period' valid values to calculate initial SMA
+  const validValues = [];
+  let firstValidIndex = -1;
 
   for (let i = 0; i < values.length; i++) {
+    if (Number.isFinite(values[i])) {
+      if (firstValidIndex === -1) {
+        firstValidIndex = i;
+      }
+      validValues.push({ index: i, value: values[i] });
+
+      // Once we have 'period' valid values, calculate initial SMA
+      if (validValues.length === period) {
+        const sum = validValues.reduce((acc, v) => acc + v.value, 0);
+        const initialRMA = sum / period;
+        out[i] = initialRMA;
+        break;
+      }
+    }
+  }
+
+  // If we don't have enough values for initial SMA, return all nulls
+  if (validValues.length < period) {
+    return out;
+  }
+
+  // Now apply Wilder's smoothing for subsequent values
+  let rma = out[validValues[period - 1].index];
+
+  for (let i = validValues[period - 1].index + 1; i < values.length; i++) {
     const value = values[i];
     if (!Number.isFinite(value)) {
       continue;
     }
-    if (rma === null) {
-      rma = value;
-    } else {
-      rma = ((rma * (period - 1)) + value) / period;
-    }
+
+    // Wilder's smoothing: RMA = ((previous RMA * (period - 1)) + current value) / period
+    rma = ((rma * (period - 1)) + value) / period;
     out[i] = rma;
   }
 
@@ -792,7 +818,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
   for (let i = 0; i < parentBars.length; i++) {
     const stream = intrabarsPerParent[i];
     if (!stream || stream.length === 0) {
-      deltas.push({ time: parentBars[i].time, delta: null });
+      deltas.push({ time: parentBars[i].time, delta: 0 });
       continue;
     }
 
