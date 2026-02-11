@@ -168,12 +168,12 @@ export class RSIChart {
   }
 
   private fixedRSIAutoscaleInfoProvider(): any {
-    // Return the FULL valid data range (0-100)
-    // This allows user adjustment but locks to these bounds
+    // Return the default axis range (20-80) to match VD-RSI behavior
+    // Combined with scaleMargins, this creates the proper Y-axis bounds
     return {
       priceRange: {
-        minValue: RSIChart.RSI_DATA_MIN,  // 0
-        maxValue: RSIChart.RSI_DATA_MAX   // 100
+        minValue: RSIChart.RSI_AXIS_MIN,  // 20
+        maxValue: RSIChart.RSI_AXIS_MAX   // 80
       }
     };
   }
