@@ -181,29 +181,11 @@ export class RSIChart {
       return;
     }
 
-    const lowerIndex = Math.floor(this.midlineCrossIndex);
-    const upperIndex = Math.ceil(this.midlineCrossIndex);
-    if (lowerIndex < 0 || upperIndex >= this.data.length) {
+    const x = this.chart.timeScale().logicalToCoordinate(this.midlineCrossIndex);
+    if (!Number.isFinite(x)) {
       this.midlineCrossMarkerEl.style.display = 'none';
       return;
     }
-
-    const lowerTime = this.data[lowerIndex]?.time;
-    const upperTime = this.data[upperIndex]?.time;
-    if (lowerTime === undefined || lowerTime === null || upperTime === undefined || upperTime === null) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const x0 = this.chart.timeScale().timeToCoordinate(lowerTime);
-    const x1 = this.chart.timeScale().timeToCoordinate(upperTime);
-    if (!Number.isFinite(x0) || !Number.isFinite(x1)) {
-      this.midlineCrossMarkerEl.style.display = 'none';
-      return;
-    }
-
-    const weight = upperIndex === lowerIndex ? 0 : (this.midlineCrossIndex - lowerIndex) / (upperIndex - lowerIndex);
-    const x = x0 + ((x1 - x0) * weight);
 
     const width = this.container.clientWidth;
     if (x < 0 || x > width) {
@@ -213,6 +195,38 @@ export class RSIChart {
 
     this.midlineCrossMarkerEl.style.left = `${x}px`;
     this.midlineCrossMarkerEl.style.display = 'block';
+  }
+
+  private inferBarStepSeconds(): number {
+    if (this.data.length < 2) return 1800;
+
+    const diffs: number[] = [];
+    for (let i = 1; i < this.data.length; i++) {
+      const prev = this.data[i - 1]?.time;
+      const curr = this.data[i]?.time;
+      if (typeof prev !== 'number' || typeof curr !== 'number') continue;
+      const diff = curr - prev;
+      if (Number.isFinite(diff) && diff > 0 && diff <= (8 * 3600)) {
+        diffs.push(diff);
+      }
+    }
+
+    if (diffs.length === 0) return 1800;
+    diffs.sort((a, b) => a - b);
+    return diffs[Math.floor(diffs.length / 2)];
+  }
+
+  private barsPerTradingDayFromStep(stepSeconds: number): number {
+    if (stepSeconds <= 5 * 60) return 78;
+    if (stepSeconds <= 15 * 60) return 26;
+    if (stepSeconds <= 30 * 60) return 13;
+    if (stepSeconds <= 60 * 60) return 7;
+    return 2;
+  }
+
+  private futureBarsForOneYear(): number {
+    const stepSeconds = this.inferBarStepSeconds();
+    return this.barsPerTradingDayFromStep(stepSeconds) * 252;
   }
 
   private buildSeriesData(
@@ -470,9 +484,9 @@ export class RSIChart {
     // Add a marker series to highlight divergence points
     this.highlightSeries = this.chart.addLineSeries({
       color: '#ff6b6b',  // Red color for bearish divergence
-      lineWidth: 0,
+      lineVisible: false,
       pointMarkersVisible: true,
-      pointMarkersRadius: 5
+      pointMarkersRadius: 2
     });
 
     const step = Math.max(1, Math.ceil(points.length / RSIChart.MAX_HIGHLIGHT_POINTS));
@@ -504,20 +518,32 @@ export class RSIChart {
     }
     const slope = (value2 - value1) / (index2 - index1);
 
-    // Create trend line data points extending to the right edge
+    // Create trend line data points extending one year into future bars
     const trendLineData: RSIPoint[] = [];
     let maxTrendIndex = index1;
+    const futureBars = this.futureBarsForOneYear();
+    const lastHistoricalIndex = this.data.length - 1;
+    const maxIndex = lastHistoricalIndex + futureBars;
+    const stepSeconds = this.inferBarStepSeconds();
+    const lastHistoricalTime = this.data[lastHistoricalIndex]?.time;
 
-    // Start from first point and extend to the last data point
-    for (let i = index1; i < this.data.length; i++) {
+    // Start from first point and extend to historical + future points.
+    for (let i = index1; i <= maxIndex; i++) {
       const projectedValue = value1 + slope * (i - index1);
       // Prevent this helper line from blowing out RSI autoscale.
       if (projectedValue < 0 || projectedValue > 100) {
         break;
       }
       maxTrendIndex = i;
+      let pointTime: string | number | null = null;
+      if (i <= lastHistoricalIndex) {
+        pointTime = this.data[i]?.time ?? null;
+      } else if (typeof lastHistoricalTime === 'number') {
+        pointTime = lastHistoricalTime + ((i - lastHistoricalIndex) * stepSeconds);
+      }
+      if (pointTime === null || pointTime === undefined) continue;
       trendLineData.push({
-        time: this.data[i].time,
+        time: pointTime,
         value: projectedValue
       });
     }

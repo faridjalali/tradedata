@@ -14,6 +14,22 @@ let rsiByTime = new Map<string, number>();
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
 
+function futureBarsForOneYear(interval: ChartInterval): number {
+  switch (interval) {
+    case '5min':
+      return 78 * 252;
+    case '15min':
+      return 26 * 252;
+    case '30min':
+      return 13 * 252;
+    case '1hour':
+      return 7 * 252;
+    case '4hour':
+    default:
+      return 2 * 252;
+  }
+}
+
 function timeKey(time: string | number): string {
   return typeof time === 'number' ? String(time) : time;
 }
@@ -207,9 +223,10 @@ function syncChartsToPriceRange(): void {
 
 function applyRightMargin(): void {
   if (!priceChart) return;
-  priceChart.timeScale().applyOptions({ rightOffset: RIGHT_MARGIN_BARS });
+  const rightOffset = RIGHT_MARGIN_BARS + futureBarsForOneYear(currentChartInterval);
+  priceChart.timeScale().applyOptions({ rightOffset });
   if (rsiChart) {
-    rsiChart.getChart().timeScale().applyOptions({ rightOffset: RIGHT_MARGIN_BARS });
+    rsiChart.getChart().timeScale().applyOptions({ rightOffset });
   }
 }
 

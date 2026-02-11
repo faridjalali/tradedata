@@ -779,6 +779,7 @@ button:hover {
   width: 100%;
   max-width: 1200px;
   margin: 30px auto 100px;
+  overflow: hidden;
 }
 
 .chart-controls-bar {
@@ -808,6 +809,10 @@ button:hover {
 
 #chart-content {
   transition: opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
 }
 
 #price-chart-container,
@@ -832,6 +837,7 @@ button:hover {
 @media (max-width: 768px) {
   .custom-chart-section {
     padding: 15px;
+    overflow: hidden;
   }
 
   #price-chart-container {
@@ -840,6 +846,7 @@ button:hover {
 
   #rsi-chart-container {
     height: 300px !important;
+    overflow: hidden;
   }
 
   .chart-controls-bar {
