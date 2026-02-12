@@ -54,15 +54,6 @@ function toStatusTextFromError(error: unknown): string {
     return message.length > 56 ? `${message.slice(0, 56)}...` : message;
 }
 
-function currentEtDateKey(): string {
-    return new Date().toLocaleDateString('en-CA', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    });
-}
-
 function toDateKey(raw?: string | null): string | null {
     const value = String(raw || '').trim();
     if (!value) return null;
@@ -85,10 +76,9 @@ function summarizeLastRunDate(status: DivergenceScanStatus): string {
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
 
-    if (!runDateKey) return 'Last run completed';
-    if (runDateKey === currentEtDateKey()) return 'Last run today';
+    if (!runDateKey) return 'Fetched';
     const mmdd = dateKeyToMmDd(runDateKey);
-    return mmdd ? `Last run on ${mmdd}` : 'Last run completed';
+    return mmdd ? `Fetched ${mmdd}` : 'Fetched';
 }
 
 function summarizeStatus(status: DivergenceScanStatus): string {
