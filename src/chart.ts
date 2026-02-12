@@ -1,5 +1,5 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import { fetchChartData, ChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
+import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 
 declare const Chart: any;
@@ -66,11 +66,18 @@ let chartFetchAbortController: AbortController | null = null;
 let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
+let chartDataCache = new Map<string, { data: ChartData; updatedAt: number }>();
+let volumeDeltaWindowCache: {
+  unixTimes: number[];
+  closes: number[];
+  deltaPrefix: number[];
+} | null = null;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
 const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
 const CHART_LIVE_REFRESH_MS = 5 * 60 * 1000;
+const CHART_CLIENT_CACHE_TTL_MS = 15 * 60 * 1000;
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -121,6 +128,7 @@ interface MASetting {
   length: number;
   color: string;
   series: any | null;
+  values: Array<number | null>;
 }
 
 interface PriceChartSettings {
@@ -246,7 +254,7 @@ const priceChartSettings: PriceChartSettings = {
   maSourceMode: DEFAULT_PRICE_SETTINGS.maSourceMode,
   verticalGridlines: DEFAULT_PRICE_SETTINGS.verticalGridlines,
   horizontalGridlines: DEFAULT_PRICE_SETTINGS.horizontalGridlines,
-  ma: DEFAULT_PRICE_SETTINGS.ma.map((ma) => ({ ...ma, series: null }))
+  ma: DEFAULT_PRICE_SETTINGS.ma.map((ma) => ({ ...ma, series: null, values: [] }))
 };
 
 const MONTH_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -416,6 +424,53 @@ function normalizeValueSeries(points: any[]): Array<{ time: string | number, val
     time: point.time,
     value: Number(point.value)
   }));
+}
+
+function buildChartDataCacheKey(ticker: string, interval: ChartInterval): string {
+  return [
+    String(ticker || '').trim().toUpperCase(),
+    interval,
+    String(volumeDeltaRsiSettings.length),
+    volumeDeltaSettings.sourceInterval,
+    volumeDeltaRsiSettings.sourceInterval
+  ].join('|');
+}
+
+function sweepChartDataCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of chartDataCache.entries()) {
+    if (!entry || !entry.updatedAt || (now - entry.updatedAt) > CHART_CLIENT_CACHE_TTL_MS) {
+      chartDataCache.delete(key);
+    }
+  }
+}
+
+function getCachedChartData(cacheKey: string): ChartData | null {
+  sweepChartDataCache();
+  const cached = chartDataCache.get(cacheKey);
+  return cached ? cached.data : null;
+}
+
+function setCachedChartData(cacheKey: string, data: ChartData): void {
+  chartDataCache.set(cacheKey, {
+    data,
+    updatedAt: Date.now()
+  });
+}
+
+function getLastBarSignature(data: ChartData | null): string {
+  const bars = Array.isArray(data?.bars) ? data.bars : [];
+  if (!bars.length) return 'none';
+  const last = bars[bars.length - 1];
+  return [
+    bars.length,
+    timeKey(last.time),
+    Number(last.open),
+    Number(last.high),
+    Number(last.low),
+    Number(last.close),
+    Number(last.volume)
+  ].join('|');
 }
 
 function normalizePaneOrder(order: unknown): PaneId[] {
@@ -808,12 +863,15 @@ function computeEMA(values: number[], length: number): Array<number | null> {
 }
 
 function clearMovingAverageSeries(): void {
-  if (!priceChart) return;
   for (const setting of priceChartSettings.ma) {
-    if (setting.series) {
+    if (setting.series && priceChart) {
       priceChart.removeSeries(setting.series);
       setting.series = null;
     }
+    if (!priceChart) {
+      setting.series = null;
+    }
+    setting.values = [];
   }
 }
 
@@ -831,6 +889,7 @@ function applyMovingAverages(): void {
         priceChart.removeSeries(setting.series);
         setting.series = null;
       }
+      setting.values = [];
       continue;
     }
 
@@ -853,6 +912,7 @@ function applyMovingAverages(): void {
           ? computeEMA(currentBars.map((bar) => Number(bar.close)), validLength)
           : computeSMA(currentBars.map((bar) => Number(bar.close)), validLength)
       );
+    setting.values = values;
 
     const maData = currentBars.map((bar, index) => {
       const value = values[index];
@@ -865,6 +925,68 @@ function applyMovingAverages(): void {
       };
     });
     setting.series.setData(maData);
+  }
+}
+
+function updateMovingAveragesLatestPoint(): void {
+  if (!priceChart || !Array.isArray(currentBars) || currentBars.length === 0) return;
+  // Daily MA values can span multiple bars in the same day; keep full recompute for correctness.
+  if (priceChartSettings.maSourceMode === 'daily') {
+    applyMovingAverages();
+    return;
+  }
+
+  const lastIndex = currentBars.length - 1;
+  const lastBar = currentBars[lastIndex];
+  const lastClose = Number(lastBar?.close);
+  if (!Number.isFinite(lastClose)) {
+    applyMovingAverages();
+    return;
+  }
+
+  for (const setting of priceChartSettings.ma) {
+    if (!setting.enabled || !setting.series) continue;
+    const period = Math.max(1, Math.floor(Number(setting.length) || 1));
+    let nextValue: number | null = null;
+
+    if (setting.type === 'EMA') {
+      if (lastIndex === 0) {
+        nextValue = lastClose;
+      } else {
+        const prevValue = Number(setting.values[lastIndex - 1]);
+        if (!Number.isFinite(prevValue)) {
+          applyMovingAverages();
+          return;
+        }
+        const alpha = 2 / (period + 1);
+        nextValue = (lastClose * alpha) + (prevValue * (1 - alpha));
+      }
+    } else {
+      if (lastIndex < period - 1) {
+        nextValue = null;
+      } else {
+        let sum = 0;
+        for (let i = lastIndex - period + 1; i <= lastIndex; i++) {
+          const close = Number(currentBars[i]?.close);
+          if (!Number.isFinite(close)) {
+            applyMovingAverages();
+            return;
+          }
+          sum += close;
+        }
+        nextValue = sum / period;
+      }
+    }
+
+    if (setting.values.length !== currentBars.length) {
+      setting.values = new Array(currentBars.length).fill(null);
+    }
+    setting.values[lastIndex] = Number.isFinite(Number(nextValue)) ? Number(nextValue) : null;
+    if (Number.isFinite(Number(nextValue))) {
+      setting.series.update({ time: lastBar.time, value: Number(nextValue) });
+    } else {
+      setting.series.update({ time: lastBar.time });
+    }
   }
 }
 
@@ -1330,6 +1452,7 @@ function resetPriceSettingsToDefault(): void {
     priceChartSettings.ma[i].length = defaults.length;
     priceChartSettings.ma[i].color = defaults.color;
     priceChartSettings.ma[i].series = null;
+    priceChartSettings.ma[i].values = [];
   }
   paneOrder = [...DEFAULT_PANE_ORDER];
   const chartContent = document.getElementById('chart-content');
@@ -3326,6 +3449,7 @@ function setVolumeDeltaHistogramData(
   volumeDeltaByTime = new Map(
     histogramData.map((point: any) => [timeKey(point.time), Number(point.value) || 0])
   );
+  rebuildVolumeDeltaWindowCache(bars);
   applyPricePaneDivergentBarColors();
 }
 
@@ -3372,29 +3496,80 @@ function clearVolumeDeltaDivergenceSummary(): void {
   volumeDeltaDivergenceSummaryEl.innerHTML = '';
 }
 
-function classifyVolumeDeltaDivergenceForDays(days: number, bars: any[]): 'bullish' | 'bearish' | 'neutral' {
-  if (!Array.isArray(bars) || bars.length < 2) return 'neutral';
-  const latestUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
-  if (latestUnix === null) return 'neutral';
-  const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
-
-  let firstInWindow: any | null = null;
-  let sumDelta = 0;
-  let barsInWindow = 0;
+function rebuildVolumeDeltaWindowCache(bars: any[]): void {
+  if (!Array.isArray(bars) || bars.length === 0) {
+    volumeDeltaWindowCache = null;
+    return;
+  }
+  const unixTimes: number[] = [];
+  const closes: number[] = [];
+  const deltaPrefix: number[] = [0];
+  let runningDelta = 0;
   for (const bar of bars) {
     const unix = unixSecondsFromTimeValue(bar?.time);
-    if (unix === null || unix < cutoffUnix) continue;
-    if (!firstInWindow) firstInWindow = bar;
+    const close = Number(bar?.close);
+    if (unix === null || !Number.isFinite(close)) continue;
     const delta = Number(volumeDeltaByTime.get(timeKey(bar.time)));
-    if (Number.isFinite(delta)) sumDelta += delta;
-    barsInWindow++;
+    const safeDelta = Number.isFinite(delta) ? delta : 0;
+    runningDelta += safeDelta;
+    unixTimes.push(unix);
+    closes.push(close);
+    deltaPrefix.push(runningDelta);
   }
+  volumeDeltaWindowCache = unixTimes.length
+    ? { unixTimes, closes, deltaPrefix }
+    : null;
+}
 
-  if (!firstInWindow || barsInWindow === 0) return 'neutral';
-  const startClose = Number(firstInWindow.close);
-  const endClose = Number(bars[bars.length - 1]?.close);
+function updateVolumeDeltaWindowCacheLatestBar(
+  timeValue: string | number,
+  latestClose: number,
+  latestDelta: number
+): void {
+  if (!volumeDeltaWindowCache) return;
+  const unix = unixSecondsFromTimeValue(timeValue);
+  if (unix === null) return;
+  const lastIndex = volumeDeltaWindowCache.unixTimes.length - 1;
+  if (lastIndex < 0) return;
+  if (volumeDeltaWindowCache.unixTimes[lastIndex] !== unix) return;
+  if (!Number.isFinite(latestClose) || !Number.isFinite(latestDelta)) return;
+
+  const previousPrefix = volumeDeltaWindowCache.deltaPrefix[lastIndex] ?? 0;
+  volumeDeltaWindowCache.closes[lastIndex] = latestClose;
+  volumeDeltaWindowCache.deltaPrefix[lastIndex + 1] = previousPrefix + latestDelta;
+}
+
+function lowerBoundUnixTimes(times: number[], target: number): number {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] < target) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+function classifyVolumeDeltaDivergenceForDays(days: number, bars: any[]): 'bullish' | 'bearish' | 'neutral' {
+  if (!Array.isArray(bars) || bars.length < 2) return 'neutral';
+  const cache = volumeDeltaWindowCache;
+  if (!cache || cache.unixTimes.length < 2) return 'neutral';
+
+  const lastIndex = cache.unixTimes.length - 1;
+  const latestUnix = cache.unixTimes[lastIndex];
+  if (!Number.isFinite(latestUnix)) return 'neutral';
+  const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
+  const startIndex = lowerBoundUnixTimes(cache.unixTimes, cutoffUnix);
+  if (startIndex < 0 || startIndex > lastIndex) return 'neutral';
+
+  const startClose = cache.closes[startIndex];
+  const endClose = cache.closes[lastIndex];
   if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) return 'neutral';
 
+  const sumDelta = (cache.deltaPrefix[lastIndex + 1] ?? 0) - (cache.deltaPrefix[startIndex] ?? 0);
   if (endClose < startClose && sumDelta > 0) return 'bullish';
   if (endClose > startClose && sumDelta < 0) return 'bearish';
   return 'neutral';
@@ -3668,37 +3843,15 @@ function isTickerChartVisible(): boolean {
   return true;
 }
 
-function findLatestValueByTime(points: Array<{ time: string | number, value: number }>, targetKey: string): number | null {
-  for (let i = points.length - 1; i >= 0; i--) {
-    const point = points[i];
-    if (!point || timeKey(point.time) !== targetKey) continue;
-    const numeric = Number(point.value);
-    if (Number.isFinite(numeric)) return numeric;
-  }
-  return null;
-}
-
-function findLatestDeltaByTime(points: Array<{ time: string | number, delta: number }>, targetKey: string): number | null {
-  for (let i = points.length - 1; i >= 0; i--) {
-    const point = points[i];
-    if (!point || timeKey(point.time) !== targetKey) continue;
-    const numeric = Number(point.delta);
-    if (Number.isFinite(numeric)) return numeric;
-  }
-  return null;
-}
-
-function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
+function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
   if (!candleSeries || !rsiChart || !volumeDeltaRsiSeries || !volumeDeltaHistogramSeries) return false;
   if (!Array.isArray(currentBars) || currentBars.length === 0) return false;
 
-  const fetchedBars = normalizeCandleBars(data.bars || []);
-  if (fetchedBars.length === 0) return false;
-
   const currentLastIndex = currentBars.length - 1;
   const currentLast = currentBars[currentLastIndex];
-  const fetchedLast = fetchedBars[fetchedBars.length - 1];
-  if (timeKey(currentLast?.time) !== timeKey(fetchedLast?.time)) {
+  const fetchedLast = data.latestBar;
+  if (!fetchedLast) return false;
+  if (timeKey(currentLast?.time) !== timeKey(fetchedLast.time)) {
     return false;
   }
 
@@ -3723,7 +3876,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
     }
   }
 
-  const latestRsi = findLatestValueByTime(normalizeValueSeries(data.rsi || []), lastKey);
+  const latestRsi = Number(data.latestRsi?.value);
   if (Number.isFinite(latestRsi)) {
     rsiByTime.set(lastKey, Number(latestRsi));
     const updated = rsiChart.updateLatestPoint(
@@ -3733,7 +3886,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
     if (!updated) return false;
   }
 
-  const latestVdRsi = findLatestValueByTime(normalizeValueSeries(data.volumeDeltaRsi?.rsi || []), lastKey);
+  const latestVdRsi = Number(data.latestVolumeDeltaRsi?.value);
   if (Number.isFinite(latestVdRsi)) {
     const normalizedVdRsi = normalizeVolumeDeltaValue(Number(latestVdRsi));
     volumeDeltaRsiByTime.set(lastKey, normalizedVdRsi);
@@ -3749,7 +3902,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
     });
   }
 
-  const latestDelta = findLatestDeltaByTime(normalizeVolumeDeltaSeries(data.volumeDelta || []), lastKey);
+  const latestDelta = Number(data.latestVolumeDelta?.delta);
   if (Number.isFinite(latestDelta)) {
     const numericDelta = Number(latestDelta);
     volumeDeltaByTime.set(lastKey, numericDelta);
@@ -3758,6 +3911,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
       value: numericDelta,
       color: numericDelta >= 0 ? VOLUME_DELTA_POSITIVE_COLOR : VOLUME_DELTA_NEGATIVE_COLOR
     });
+    updateVolumeDeltaWindowCacheLatestBar(lastTime, latestClose, numericDelta);
   }
 
   if (volumeDeltaSettings.divergentPriceBars) {
@@ -3766,7 +3920,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
     candleSeries.update(currentBars[currentLastIndex]);
   }
 
-  applyMovingAverages();
+  updateMovingAveragesLatestPoint();
   if (pricePaneContainerEl) {
     setPricePaneChange(pricePaneContainerEl, null);
   }
@@ -3778,21 +3932,17 @@ function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
 }
 
 async function refreshLatestChartDataInPlace(ticker: string, interval: ChartInterval): Promise<void> {
-  const data = await fetchChartData(ticker, interval, {
+  const data = await fetchChartLatestData(ticker, interval, {
     vdRsiLength: volumeDeltaRsiSettings.length,
     vdSourceInterval: volumeDeltaSettings.sourceInterval,
     vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
   });
 
   if (!currentChartTicker || currentChartTicker !== ticker || currentChartInterval !== interval) return;
-
-  const fetchedBars = normalizeCandleBars(data.bars || []);
-  if (fetchedBars.length === 0 || currentBars.length === 0) return;
-
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return;
   const currentLastKey = timeKey(currentBars[currentBars.length - 1]?.time);
-  const fetchedLastKey = timeKey(fetchedBars[fetchedBars.length - 1]?.time);
-
-  if (currentLastKey !== fetchedLastKey) {
+  const fetchedLastKey = timeKey(data.latestBar?.time);
+  if (!data.latestBar || currentLastKey !== fetchedLastKey) {
     await renderCustomChart(ticker, interval, { silent: true });
     return;
   }
@@ -3801,6 +3951,80 @@ async function refreshLatestChartDataInPlace(ticker: string, interval: ChartInte
   if (!patched) {
     await renderCustomChart(ticker, interval, { silent: true });
   }
+}
+
+function applyChartDataToUi(
+  data: ChartData,
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
+  const bars = normalizeCandleBars(data.bars || []);
+  if (bars.length === 0) {
+    throw new Error('No valid chart bars returned for this ticker/interval');
+  }
+
+  monthBoundaryTimes = buildMonthBoundaryTimes(bars);
+  const rsiData = buildRSISeriesFromBars(bars, rsiSettings.length);
+  const volumeDeltaRsiData = {
+    rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
+  };
+  const volumeDeltaData = normalizeVolumeDeltaSeries(data.volumeDelta || []);
+  currentBars = bars;
+  barIndexByTime = new Map<string, number>();
+  for (let i = 0; i < bars.length; i++) {
+    barIndexByTime.set(timeKey(bars[i].time), i);
+  }
+  rebuildPricePaneChangeMap(bars);
+  priceByTime = new Map(
+    bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
+  );
+  rsiByTime = new Map(
+    rsiData
+      .filter((point) => Number.isFinite(Number(point.value)))
+      .map((point) => [timeKey(point.time), Number(point.value)])
+  );
+
+  if (candleSeries) {
+    candleSeries.setData(bars);
+  }
+  setPricePaneChange(chartContainer, null);
+  setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
+  setVolumeDeltaHistogramData(bars, volumeDeltaData);
+  renderVolumeDeltaDivergenceSummary(volumeDeltaContainer, bars);
+  applyVolumeDeltaRSIVisualSettings();
+
+  if (!rsiChart && rsiContainer) {
+    rsiChart = new RSIChart({
+      container: rsiContainer,
+      data: rsiData,
+      displayMode: 'line',
+      lineColor: rsiSettings.lineColor,
+      midlineColor: rsiSettings.midlineColor,
+      midlineStyle: rsiSettings.midlineStyle,
+      priceData: bars.map((b) => ({ time: b.time, close: b.close })),
+      onTrendLineDrawn: () => {
+        rsiChart?.deactivateDivergenceTool();
+        rsiDivergenceToolActive = false;
+        setPaneTrendlineToolActive('rsi', false);
+        persistTrendlinesForCurrentContext();
+      }
+    });
+    applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+    applyPaneScaleVisibilityByPosition();
+  } else if (rsiChart) {
+    rsiChart.setData(rsiData, bars.map((b) => ({ time: b.time, close: b.close })));
+  }
+
+  applyRSISettings();
+  restorePersistedTrendlinesForCurrentContext();
+  setupChartSync();
+
+  applyMovingAverages();
+  applyRightMargin();
+  syncChartsToPriceRange();
+  refreshMonthGridLines();
 }
 
 function ensureChartLiveRefreshTimer(): void {
@@ -3842,6 +4066,7 @@ export async function renderCustomChart(
   );
   currentChartInterval = interval;
   currentChartTicker = ticker;
+  const cacheKey = buildChartDataCacheKey(ticker, interval);
 
   if (contextChanged) {
     rsiDivergencePlotSelected = false;
@@ -3906,8 +4131,18 @@ export async function renderCustomChart(
   applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   applyPaneScaleVisibilityByPosition();
 
-  // Show loading indicators only on user-triggered renders.
-  if (!silent) {
+  const cachedData = silent ? null : getCachedChartData(cacheKey);
+  const hasCachedData = Boolean(cachedData);
+  if (cachedData) {
+    applyChartDataToUi(
+      cachedData,
+      chartContainer as HTMLElement,
+      volumeDeltaRsiContainer as HTMLElement,
+      rsiContainer as HTMLElement,
+      volumeDeltaContainer as HTMLElement
+    );
+  } else if (!silent) {
+    // Show loading indicators only on user-triggered renders.
     showLoadingOverlay(chartContainer);
     showLoadingOverlay(volumeDeltaRsiContainer);
     showLoadingOverlay(rsiContainer);
@@ -3933,75 +4168,17 @@ export async function renderCustomChart(
       signal: fetchController.signal
     });
     if (requestId !== latestRenderRequestId) return;
-
-    // Retrieve bars and RSI directly (backend handles aggregation)
-    const bars = normalizeCandleBars(data.bars || []);
-    if (bars.length === 0) {
-      throw new Error('No valid chart bars returned for this ticker/interval');
+    const shouldApplyFreshData = !hasCachedData || getLastBarSignature(cachedData) !== getLastBarSignature(data);
+    if (shouldApplyFreshData) {
+      applyChartDataToUi(
+        data,
+        chartContainer as HTMLElement,
+        volumeDeltaRsiContainer as HTMLElement,
+        rsiContainer as HTMLElement,
+        volumeDeltaContainer as HTMLElement
+      );
     }
-    monthBoundaryTimes = buildMonthBoundaryTimes(bars);
-    const rsiData = buildRSISeriesFromBars(bars, rsiSettings.length);
-    const volumeDeltaRsiData = {
-      rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
-    };
-    const volumeDeltaData = normalizeVolumeDeltaSeries(data.volumeDelta || []);
-    currentBars = bars;
-    barIndexByTime = new Map<string, number>();
-    for (let i = 0; i < bars.length; i++) {
-      barIndexByTime.set(timeKey(bars[i].time), i);
-    }
-    rebuildPricePaneChangeMap(bars);
-    priceByTime = new Map(
-      bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
-    );
-    rsiByTime = new Map(
-      rsiData
-        .filter((point) => Number.isFinite(Number(point.value)))
-        .map((point) => [timeKey(point.time), Number(point.value)])
-    );
-
-    // Update price chart
-    if (candleSeries) {
-      candleSeries.setData(bars);
-    }
-    setPricePaneChange(chartContainer, null);
-    setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
-    setVolumeDeltaHistogramData(bars, volumeDeltaData);
-    renderVolumeDeltaDivergenceSummary(volumeDeltaContainer, bars);
-    applyVolumeDeltaRSIVisualSettings();
-
-
-    // Initialize or update RSI chart
-    if (!rsiChart && rsiContainer) {
-      rsiChart = new RSIChart({
-        container: rsiContainer,
-        data: rsiData,
-        displayMode: 'line',
-        lineColor: rsiSettings.lineColor,
-        midlineColor: rsiSettings.midlineColor,
-        midlineStyle: rsiSettings.midlineStyle,
-        priceData: bars.map(b => ({ time: b.time, close: b.close })),
-        onTrendLineDrawn: () => {
-          rsiChart?.deactivateDivergenceTool();
-          rsiDivergenceToolActive = false;
-          setPaneTrendlineToolActive('rsi', false);
-          persistTrendlinesForCurrentContext();
-        }
-      });
-      applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
-      applyPaneScaleVisibilityByPosition();
-    } else if (rsiChart) {
-      rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
-    }
-
-    applyRSISettings();
-    restorePersistedTrendlinesForCurrentContext();
-    setupChartSync();
-
-    applyMovingAverages();
-    applyRightMargin();
-    syncChartsToPriceRange();
-    refreshMonthGridLines();
+    setCachedChartData(cacheKey, data);
 
     if (!silent) {
       // Hide loading indicators after successful load
@@ -4016,6 +4193,9 @@ export async function renderCustomChart(
 
     console.error('Failed to load chart:', err);
     if (silent) {
+      return;
+    }
+    if (hasCachedData) {
       return;
     }
     if (isNoDataTickerError(err)) {
@@ -4043,6 +4223,7 @@ export async function renderCustomChart(
       volumeDeltaIndexByTime = new Map();
       volumeDeltaRsiByTime = new Map();
       volumeDeltaByTime = new Map();
+      volumeDeltaWindowCache = null;
       clearVolumeDeltaDivergenceSummary();
       currentBars = [];
       barIndexByTime = new Map();

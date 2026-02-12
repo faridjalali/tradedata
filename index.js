@@ -2110,20 +2110,12 @@ function prewarmFourHourChartResultFromRows(options = {}) {
   }).catch(() => {});
 }
 
-// --- Chart API ---
-app.get('/api/chart', async (req, res) => {
+function parseChartRequestParams(req) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
   const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '5min');
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(req.query.vdRsiSourceInterval, '5min');
-
-  // Validate interval
-  if (!VALID_CHART_INTERVALS.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
-  }
-
-  // Use smart lookback based on interval (much faster!)
   const lookbackDays = getIntradayLookbackDays(interval);
   const requestKey = buildChartRequestKey({
     ticker,
@@ -2133,13 +2125,38 @@ app.get('/api/chart', async (req, res) => {
     vdRsiSourceInterval,
     lookbackDays
   });
+  return {
+    ticker,
+    interval,
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays,
+    requestKey
+  };
+}
+
+async function getOrBuildChartResult(params) {
+  const {
+    ticker,
+    interval,
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays,
+    requestKey
+  } = params;
 
   const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
   if (cachedFinalResult) {
     if (CHART_TIMING_LOG_ENABLED) {
       console.log(`[chart-cache] ${ticker} ${interval} hit key=${requestKey}`);
     }
-    return sendChartJsonResponse(req, res, cachedFinalResult, 'cache_hit;dur=0.1,total;dur=0.1');
+    return {
+      result: cachedFinalResult,
+      serverTiming: 'cache_hit;dur=0.1,total;dur=0.1',
+      cacheHit: true
+    };
   }
 
   let buildPromise = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
@@ -2224,15 +2241,82 @@ app.get('/api/chart', async (req, res) => {
     }).catch(() => {});
   }
 
+  const { result, serverTiming } = await buildPromise;
+  if (isDedupedWait && CHART_TIMING_LOG_ENABLED) {
+    console.log(`[chart-dedupe] ${ticker} ${interval} request joined in-flight key=${requestKey}`);
+  }
+  return { result, serverTiming, cacheHit: false };
+}
+
+function findPointByTime(points, timeValue) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  const key = String(timeValue);
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i];
+    if (!point || String(point.time) !== key) continue;
+    return point;
+  }
+  return null;
+}
+
+function extractLatestChartPayload(result) {
+  const bars = Array.isArray(result?.bars) ? result.bars : [];
+  const latestBar = bars.length ? bars[bars.length - 1] : null;
+  const latestTime = latestBar ? latestBar.time : null;
+  const latestRsi = latestTime === null ? null : findPointByTime(result?.rsi, latestTime);
+  const latestVolumeDeltaRsi = latestTime === null
+    ? null
+    : findPointByTime(result?.volumeDeltaRsi?.rsi, latestTime);
+  const latestVolumeDelta = latestTime === null
+    ? null
+    : findPointByTime(result?.volumeDelta, latestTime);
+
+  return {
+    interval: result.interval,
+    timezone: result?.timezone || 'America/Los_Angeles',
+    latestBar,
+    latestRsi,
+    latestVolumeDeltaRsi,
+    latestVolumeDelta
+  };
+}
+
+// --- Chart API ---
+app.get('/api/chart', async (req, res) => {
+  const params = parseChartRequestParams(req);
+  const { interval } = params;
+
+  // Validate interval
+  if (!VALID_CHART_INTERVALS.includes(interval)) {
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
+  }
+
   try {
-    const { result, serverTiming } = await buildPromise;
-    if (isDedupedWait && CHART_TIMING_LOG_ENABLED) {
-      console.log(`[chart-dedupe] ${ticker} ${interval} request joined in-flight key=${requestKey}`);
-    }
+    const { result, serverTiming } = await getOrBuildChartResult(params);
     await sendChartJsonResponse(req, res, result, serverTiming);
   } catch (err) {
     const message = err && err.message ? err.message : 'Failed to fetch chart data';
     console.error('Chart API Error:', message);
+    const statusCode = Number(err && err.httpStatus);
+    res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
+  }
+});
+
+app.get('/api/chart/latest', async (req, res) => {
+  const params = parseChartRequestParams(req);
+  const { interval } = params;
+
+  if (!VALID_CHART_INTERVALS.includes(interval)) {
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
+  }
+
+  try {
+    const { result, serverTiming } = await getOrBuildChartResult(params);
+    const latestPayload = extractLatestChartPayload(result);
+    await sendChartJsonResponse(req, res, latestPayload, serverTiming);
+  } catch (err) {
+    const message = err && err.message ? err.message : 'Failed to fetch latest chart data';
+    console.error('Chart Latest API Error:', message);
     const statusCode = Number(err && err.httpStatus);
     res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
   }

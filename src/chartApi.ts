@@ -32,6 +32,18 @@ export interface ChartData {
   }>;
 }
 
+export interface ChartLatestData {
+  interval: ChartInterval;
+  timezone: 'America/Los_Angeles';
+  latestBar: CandleBar | null;
+  latestRsi: RSIPoint | null;
+  latestVolumeDeltaRsi: RSIPoint | null;
+  latestVolumeDelta: {
+    time: string | number;
+    delta: number;
+  } | null;
+}
+
 export interface ChartFetchOptions {
   vdRsiLength?: number;
   vdSourceInterval?: VolumeDeltaSourceInterval;
@@ -56,6 +68,33 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to fetch chart data' }));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchChartLatestData(
+  ticker: string,
+  interval: ChartInterval,
+  options: ChartFetchOptions = {}
+): Promise<ChartLatestData> {
+  const params = new URLSearchParams();
+  if (Number.isFinite(options.vdRsiLength)) {
+    params.set('vdRsiLength', String(Math.max(1, Math.floor(Number(options.vdRsiLength)))));
+  }
+  if (typeof options.vdSourceInterval === 'string' && options.vdSourceInterval) {
+    params.set('vdSourceInterval', options.vdSourceInterval);
+  }
+  if (typeof options.vdRsiSourceInterval === 'string' && options.vdRsiSourceInterval) {
+    params.set('vdRsiSourceInterval', options.vdRsiSourceInterval);
+  }
+  const query = params.toString();
+  const url = `/api/chart/latest?ticker=${encodeURIComponent(ticker)}&interval=${interval}${query ? `&${query}` : ''}`;
+  const response = await fetch(url, { signal: options.signal });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to fetch latest chart data' }));
     throw new Error(error.error || `HTTP ${response.status}`);
   }
 
