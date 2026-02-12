@@ -218,7 +218,7 @@ const DEFAULT_PRICE_SETTINGS: {
   ma: PersistedMASetting[];
 } = {
   maSourceMode: 'daily',
-  verticalGridlines: true,
+  verticalGridlines: false,
   horizontalGridlines: false,
   ma: [
     { enabled: false, type: 'SMA', length: 20, color: '#ffa500' },
@@ -4071,6 +4071,9 @@ export async function renderCustomChart(
     typeof previousTicker === 'string' &&
     (previousTicker !== ticker || previousInterval !== interval)
   );
+  const shouldApplyWeeklyDefaultRange = interval === '1week' && (
+    typeof previousTicker !== 'string' || contextChanged
+  );
   currentChartInterval = interval;
   currentChartTicker = ticker;
   const cacheKey = buildChartDataCacheKey(ticker, interval);
@@ -4148,6 +4151,9 @@ export async function renderCustomChart(
       rsiContainer as HTMLElement,
       volumeDeltaContainer as HTMLElement
     );
+    if (shouldApplyWeeklyDefaultRange) {
+      applyWeeklyInitialVisibleRange();
+    }
   } else if (!silent) {
     // Show loading indicators only on user-triggered renders.
     showLoadingOverlay(chartContainer);
@@ -4184,6 +4190,9 @@ export async function renderCustomChart(
         rsiContainer as HTMLElement,
         volumeDeltaContainer as HTMLElement
       );
+      if (shouldApplyWeeklyDefaultRange) {
+        applyWeeklyInitialVisibleRange();
+      }
     }
     setCachedChartData(cacheKey, data);
 
@@ -4309,6 +4318,26 @@ function applyRightMargin(): void {
     volumeDeltaChart.timeScale().applyOptions({ rightOffset });
   }
   refreshMonthGridLines();
+}
+
+function applyWeeklyInitialVisibleRange(): void {
+  if (!priceChart) return;
+  if (currentChartInterval !== '1week') return;
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return;
+
+  const lastIndex = currentBars.length - 1;
+  // One-year weekly window (approx 52-53 bars). Use 53 for full-year coverage.
+  const weeklyBarsToShow = Math.min(currentBars.length, 53);
+  const from = Math.max(0, lastIndex - weeklyBarsToShow + 1);
+  const to = lastIndex + RIGHT_MARGIN_BARS;
+
+  try {
+    priceChart.timeScale().setVisibleLogicalRange({ from, to });
+    syncChartsToPriceRange();
+    refreshMonthGridLines();
+  } catch {
+    // Ignore transient logical-range errors during render lifecycle.
+  }
 }
 
 // Setup sync between price, Volume Delta RSI, RSI, and Volume Delta charts.
