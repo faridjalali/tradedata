@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const zlib = require("zlib");
 const { promisify } = require("util");
 const { registerChartRoutes } = require("./server/routes/chartRoutes");
+const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
+const { registerHealthRoutes } = require("./server/routes/healthRoutes");
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
@@ -3282,85 +3284,18 @@ function scheduleNextDivergenceScan() {
   console.log(`Next divergence scan scheduled in ${Math.round(delayMs / 1000)}s`);
 }
 
-app.post('/api/divergence/scan', async (req, res) => {
-  if (!isDivergenceConfigured()) {
-    return res.status(503).json({ error: 'Divergence database is not configured' });
-  }
-  const configuredSecret = String(process.env.DIVERGENCE_SCAN_SECRET || '').trim();
-  const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
-  if (configuredSecret && configuredSecret !== providedSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  if (divergenceScanRunning) {
-    return res.status(409).json({ status: 'running' });
-  }
-
-  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
-  const refreshUniverse = parseBooleanInput(req.query.refreshUniverse, false)
-    || parseBooleanInput(req.body?.refreshUniverse, false);
-  let runDateEt = undefined;
-  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
-    const parsedRunDate = parseEtDateInput(req.body.runDateEt);
-    if (!parsedRunDate) {
-      return res.status(400).json({ error: 'runDateEt must be YYYY-MM-DD' });
-    }
-    runDateEt = parsedRunDate;
-  }
-  runDailyDivergenceScan({
-    force,
-    refreshUniverse,
-    runDateEt,
-    trigger: 'manual-api'
-  })
-    .then((summary) => {
-      console.log('Manual divergence scan completed:', summary);
-    })
-    .catch((err) => {
-      const message = err && err.message ? err.message : String(err);
-      console.error(`Manual divergence scan failed: ${message}`);
-    });
-
-  return res.status(202).json({ status: 'started' });
-});
-
-app.get('/api/divergence/scan/status', async (req, res) => {
-  if (!isDivergenceConfigured()) {
-    return res.status(503).json({ error: 'Divergence database is not configured' });
-  }
-  try {
-    const latest = await divergencePool.query(`
-      SELECT *
-      FROM divergence_scan_jobs
-      ORDER BY started_at DESC
-      LIMIT 1
-    `);
-    const latestJob = latest.rows[0] || null;
-    if (latestJob && !latestJob.scanned_trade_date) {
-      const tradeDateResult = await divergencePool.query(`
-        SELECT MAX(trade_date)::text AS scanned_trade_date
-        FROM divergence_signals
-        WHERE scan_job_id = $1
-          AND timeframe = '1d'
-          AND source_interval = $2
-      `, [latestJob.id, DIVERGENCE_SOURCE_INTERVAL]);
-      const fallbackTradeDate = String(tradeDateResult.rows[0]?.scanned_trade_date || '').trim();
-      if (fallbackTradeDate) {
-        latestJob.scanned_trade_date = fallbackTradeDate;
-      }
-    }
-    const lastScanDateEt = divergenceLastFetchedTradeDateEt
-      || String(latestJob?.scanned_trade_date || '').trim()
-      || divergenceLastScanDateEt
-      || null;
-    res.json({
-      running: divergenceScanRunning,
-      lastScanDateEt,
-      latestJob
-    });
-  } catch (err) {
-    console.error('Failed to fetch divergence scan status:', err);
-    res.status(500).json({ error: 'Failed to fetch scan status' });
-  }
+registerDivergenceRoutes({
+  app,
+  isDivergenceConfigured,
+  divergenceScanSecret: process.env.DIVERGENCE_SCAN_SECRET,
+  getIsScanRunning: () => divergenceScanRunning,
+  parseBooleanInput,
+  parseEtDateInput,
+  runDailyDivergenceScan,
+  divergencePool,
+  divergenceSourceInterval: DIVERGENCE_SOURCE_INTERVAL,
+  getLastFetchedTradeDateEt: () => divergenceLastFetchedTradeDateEt,
+  getLastScanDateEt: () => divergenceLastScanDateEt
 });
 
 async function checkDatabaseReady(poolInstance) {
@@ -3374,13 +3309,9 @@ async function checkDatabaseReady(poolInstance) {
   }
 }
 
-app.get('/api/debug/metrics', (req, res) => {
-  const providedSecret = String(req.query.secret || req.headers['x-debug-secret'] || '').trim();
-  if (DEBUG_METRICS_SECRET && providedSecret !== DEBUG_METRICS_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+function getDebugMetricsPayload() {
   const memory = process.memoryUsage();
-  return res.status(200).json({
+  return {
     uptimeSeconds: Math.floor((Date.now() - startedAtMs) / 1000),
     shuttingDown: isShuttingDown,
     http: {
@@ -3409,38 +3340,49 @@ app.get('/api/debug/metrics', (req, res) => {
       heapUsed: memory.heapUsed,
       external: memory.external
     }
-  });
-});
+  };
+}
 
-app.get('/healthz', (req, res) => {
-  res.status(200).json({
+function getHealthPayload() {
+  return {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     shuttingDown: isShuttingDown
-  });
-});
+  };
+}
 
-app.get('/readyz', async (req, res) => {
+async function getReadyPayload() {
   const primaryDb = await checkDatabaseReady(pool);
   const divergenceDb = isDivergenceConfigured()
     ? await checkDatabaseReady(divergencePool)
     : { ok: null };
   const ready = !isShuttingDown && primaryDb.ok === true;
   const statusCode = ready ? 200 : 503;
-  res.status(statusCode).json({
-    ready,
-    shuttingDown: isShuttingDown,
-    primaryDb: primaryDb.ok,
-    divergenceDb: divergenceDb.ok,
-    divergenceConfigured: isDivergenceConfigured(),
-    divergenceScanRunning: divergenceScanRunning,
-    lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
-    errors: {
-      primaryDb: primaryDb.error || null,
-      divergenceDb: divergenceDb.error || null
+  return {
+    statusCode,
+    body: {
+      ready,
+      shuttingDown: isShuttingDown,
+      primaryDb: primaryDb.ok,
+      divergenceDb: divergenceDb.ok,
+      divergenceConfigured: isDivergenceConfigured(),
+      divergenceScanRunning: divergenceScanRunning,
+      lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
+      errors: {
+        primaryDb: primaryDb.error || null,
+        divergenceDb: divergenceDb.error || null
+      }
     }
-  });
+  };
+}
+
+registerHealthRoutes({
+  app,
+  debugMetricsSecret: DEBUG_METRICS_SECRET,
+  getDebugMetricsPayload,
+  getHealthPayload,
+  getReadyPayload
 });
 
 const server = app.listen(port, () => {
