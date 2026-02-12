@@ -19,6 +19,7 @@ function normalizeAlert(raw: unknown): Alert {
         ...item,
         id,
         is_favorite: toFavoriteBoolean(item.is_favorite),
+        source: 'TV',
     } as Alert;
 }
 

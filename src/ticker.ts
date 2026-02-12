@@ -1,4 +1,5 @@
 import { getAlerts } from './state';
+import { getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
@@ -44,7 +45,7 @@ function updateSortButtons(selector: string, mode: SortMode): void {
 
 export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
     const refreshCharts = options.refreshCharts !== false;
-    const allAlerts = getAlerts();
+    const allAlerts = [...getAlerts(), ...getDivergenceSignals()];
     const alerts = allAlerts.filter(a => a.ticker === ticker);
     
     const daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
@@ -83,21 +84,22 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
 function renderAvg(containerId: string, list: Alert[]): void {
     const container = document.getElementById(containerId);
     if (!container) return;
-    
-    if (list.length === 0) {
+
+    const tvOnly = list.filter((a) => (a.source || 'TV') === 'TV');
+    if (tvOnly.length === 0) {
         container.innerHTML = '';
         return;
     }
 
     let signedSum = 0;
-    list.forEach(a => {
+    tvOnly.forEach(a => {
         const rawScore = a.combo_score || 0;
         const type = (a.signal_type || '').toLowerCase();
         const isBull = type.includes('bull');
         signedSum += isBull ? rawScore : -rawScore;
     });
 
-    const signedAvg = Math.round(signedSum / list.length);
+    const signedAvg = Math.round(signedSum / tvOnly.length);
     const absAvg = Math.abs(signedAvg);
     const isPositive = signedAvg >= 0;
 

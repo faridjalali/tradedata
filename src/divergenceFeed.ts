@@ -205,14 +205,15 @@ export function setupDivergenceFeedDelegation(): void {
         if (starBtn) {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
+            const source = (starBtn as HTMLElement).dataset.source === 'TV' ? 'TV' : 'FMP';
             if (!id) return;
 
-            const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"]`);
+            const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
             const isCurrentlyFilled = starBtn.classList.contains('filled');
 
             allStars.forEach(star => {
                 const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-                if (isCurrentlyFilled) {
+                if (!isCurrentlyFilled) {
                     star.classList.add('filled');
                     if (checkmark) {
                         checkmark.style.visibility = 'visible';

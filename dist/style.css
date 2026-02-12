@@ -459,6 +459,14 @@ h2 {
   white-space: pre;
 }
 
+.source-text {
+  margin-left: 5ch;
+  opacity: 0.5;
+  font-size: 0.62rem;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  letter-spacing: 0.02em;
+}
+
 /* Score Circles */
 .score-circle {
   width: 21px;

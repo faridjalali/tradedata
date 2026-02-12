@@ -11,6 +11,7 @@ export interface Alert {
     intensity_score?: number;
     combo_score?: number;
     is_favorite: boolean;
+    source?: 'TV' | 'FMP';
 }
 
 export interface AppState {

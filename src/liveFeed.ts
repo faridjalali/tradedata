@@ -1,6 +1,8 @@
 import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn } from './utils';
 import { fetchAlertsFromApi, toggleFavorite } from './api';
+import { toggleDivergenceFavorite } from './divergenceApi';
 import { setAlerts, getAlerts } from './state';
+import { getDivergenceSignals, setDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
@@ -90,9 +92,10 @@ export function setupLiveFeedDelegation(): void {
         if (starBtn) {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
+            const source = (starBtn as HTMLElement).dataset.source === 'FMP' ? 'FMP' : 'TV';
             if (id) {
                 // Optimistic UI Update: Find ALL instances of this alert's star icon
-                const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"]`);
+                const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
                 const isCurrentlyFilled = starBtn.classList.contains('filled');
                 
                 allStars.forEach(star => {
@@ -112,31 +115,44 @@ export function setupLiveFeedDelegation(): void {
                     }
                 });
 
-                toggleFavorite(Number(id)).then(updatedAlert => {
-                    const allAlerts = getAlerts();
-                    const idx = allAlerts.findIndex(a => a.id === updatedAlert.id);
-                    if (idx !== -1) {
-                         allAlerts[idx].is_favorite = updatedAlert.is_favorite;
-                         setAlerts(allAlerts); 
-                         
-                         // Re-enforce visual state from server response
-                         allStars.forEach(star => {
-                             const checkmark = star.querySelector('.check-mark') as HTMLElement;
-                             if (updatedAlert.is_favorite) {
-                                 star.classList.add('filled');
-                                 if (checkmark) {
-                                     checkmark.style.visibility = 'visible';
-                                     checkmark.style.opacity = '1';
-                                 }
-                             } else {
-                                 star.classList.remove('filled');
-                                 if (checkmark) {
-                                     checkmark.style.visibility = 'hidden';
-                                     checkmark.style.opacity = '0';
-                                 }
-                             }
-                         });
+                const togglePromise = source === 'FMP'
+                    ? toggleDivergenceFavorite(Number(id))
+                    : toggleFavorite(Number(id));
+
+                togglePromise.then(updatedAlert => {
+                    if (source === 'FMP') {
+                        const allSignals = getDivergenceSignals();
+                        const idx = allSignals.findIndex(a => a.id === updatedAlert.id);
+                        if (idx !== -1) {
+                            allSignals[idx].is_favorite = updatedAlert.is_favorite;
+                            setDivergenceSignals(allSignals);
+                        }
+                    } else {
+                        const allAlerts = getAlerts();
+                        const idx = allAlerts.findIndex(a => a.id === updatedAlert.id);
+                        if (idx !== -1) {
+                            allAlerts[idx].is_favorite = updatedAlert.is_favorite;
+                            setAlerts(allAlerts);
+                        }
                     }
+
+                    // Re-enforce visual state from server response
+                    allStars.forEach(star => {
+                        const checkmark = star.querySelector('.check-mark') as HTMLElement;
+                        if (updatedAlert.is_favorite) {
+                            star.classList.add('filled');
+                            if (checkmark) {
+                                checkmark.style.visibility = 'visible';
+                                checkmark.style.opacity = '1';
+                            }
+                        } else {
+                            star.classList.remove('filled');
+                            if (checkmark) {
+                                checkmark.style.visibility = 'hidden';
+                                checkmark.style.opacity = '0';
+                            }
+                        }
+                    });
                 }).catch(() => {
                     // Revert on failure
                     allStars.forEach(star => {

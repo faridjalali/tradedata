@@ -3,6 +3,7 @@ import { getRelativeTime, formatVolume, escapeHtml } from './utils';
 
 export function createAlertCard(alert: Alert): string {
     const timeStr = getRelativeTime(alert.timestamp);
+    const source = alert.source === 'FMP' ? 'FMP' : 'TV';
     
     let isBull = false;
     let isBear = false;
@@ -38,14 +39,14 @@ export function createAlertCard(alert: Alert): string {
 
     // Checkbox Icon
     const starIcon = `
-        <svg class="fav-icon ${starClass}" data-id="${alert.id}" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="fav-icon ${starClass}" data-id="${alert.id}" data-source="${source}" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <polyline class="check-mark" points="9 12 11 14 15 10" style="visibility: ${checkmarkVisibility}; opacity: ${checkmarkOpacity};"></polyline>
         </svg>
     `;
 
     return `
-        <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}">
+        <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
             ${starIcon}
             <h3>${escapeHtml(alert.ticker)}</h3>
             
@@ -58,6 +59,7 @@ export function createAlertCard(alert: Alert): string {
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>
+                    <span class="source-text">${source}</span>
                 </div>
             </div>
 
