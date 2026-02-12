@@ -783,6 +783,13 @@ function getTopPaneBadgePriority(badge: HTMLElement): number {
   return 100;
 }
 
+function getPaneBadgeStartLeft(container: HTMLElement): number {
+  const settingsBtn = container.querySelector('.pane-settings-btn') as HTMLElement | null;
+  if (!settingsBtn) return TOP_PANE_BADGE_START_LEFT_PX;
+  const computed = settingsBtn.offsetLeft + settingsBtn.offsetWidth + TOP_PANE_BADGE_GAP_PX;
+  return Math.max(TOP_PANE_BADGE_START_LEFT_PX, computed);
+}
+
 function layoutTopPaneBadges(container: HTMLElement): void {
   const badges = Array.from(container.querySelectorAll<HTMLElement>(`.${TOP_PANE_BADGE_CLASS}`))
     .filter((badge) => badge.style.display !== 'none');
@@ -793,7 +800,7 @@ function layoutTopPaneBadges(container: HTMLElement): void {
     .sort((a, b) => (a.priority - b.priority) || (a.index - b.index))
     .map((entry) => entry.badge);
 
-  let left = TOP_PANE_BADGE_START_LEFT_PX;
+  let left = getPaneBadgeStartLeft(container);
   for (const badge of ordered) {
     badge.style.left = `${left}px`;
     badge.style.top = '8px';
@@ -829,15 +836,16 @@ function syncTopPaneTickerLabel(): void {
   }
 
   if (!label) {
+    const startLeft = getPaneBadgeStartLeft(topPane);
     label = document.createElement('div');
     label.className = `${TOP_PANE_TICKER_LABEL_CLASS} ${TOP_PANE_BADGE_CLASS}`;
     label.dataset.topPaneBadgeRole = 'ticker';
     label.style.position = 'absolute';
-    label.style.left = `${TOP_PANE_BADGE_START_LEFT_PX}px`;
+    label.style.left = `${startLeft}px`;
     label.style.top = '8px';
     label.style.zIndex = '32';
     label.style.minHeight = '24px';
-    label.style.maxWidth = 'calc(100% - 70px)';
+    label.style.maxWidth = `calc(100% - ${startLeft + 30}px)`;
     label.style.display = 'inline-flex';
     label.style.alignItems = 'center';
     label.style.padding = '0 8px';
@@ -1576,11 +1584,12 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   let changeEl = container.querySelector('.price-pane-change') as HTMLDivElement | null;
   if (changeEl) return changeEl;
 
+  const startLeft = getPaneBadgeStartLeft(container);
   changeEl = document.createElement('div');
   changeEl.className = `price-pane-change ${TOP_PANE_BADGE_CLASS}`;
   changeEl.dataset.topPaneBadgeRole = 'price-change';
   changeEl.style.position = 'absolute';
-  changeEl.style.left = `${TOP_PANE_BADGE_START_LEFT_PX}px`;
+  changeEl.style.left = `${startLeft}px`;
   changeEl.style.top = '8px';
   changeEl.style.zIndex = '30';
   changeEl.style.minHeight = '24px';
