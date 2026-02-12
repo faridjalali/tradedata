@@ -27,6 +27,79 @@ const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '46110603');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
 const BASIC_AUTH_EXEMPT_PREFIXES = ['/webhook'];
+let isShuttingDown = false;
+
+function validateStartupEnvironment() {
+  const errors = [];
+  const warnings = [];
+  const requireNonEmpty = (name) => {
+    const value = String(process.env[name] || '').trim();
+    if (!value) {
+      errors.push(`${name} is required`);
+    }
+  };
+  const warnIfMissing = (name) => {
+    const value = String(process.env[name] || '').trim();
+    if (!value) {
+      warnings.push(`${name} is not set`);
+    }
+  };
+  const warnIfInvalidPositiveNumber = (name) => {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return;
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      warnings.push(`${name} should be a positive number (received: ${String(raw)})`);
+    }
+  };
+  const warnIfInvalidNonNegativeNumber = (name) => {
+    const raw = process.env[name];
+    if (raw === undefined || raw === null || raw === '') return;
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      warnings.push(`${name} should be a non-negative number (received: ${String(raw)})`);
+    }
+  };
+
+  requireNonEmpty('DATABASE_URL');
+  if (BASIC_AUTH_ENABLED && !String(BASIC_AUTH_PASSWORD || '').trim()) {
+    errors.push('BASIC_AUTH_PASSWORD must be set when BASIC_AUTH_ENABLED is true');
+  }
+  warnIfMissing('FMP_API_KEY');
+
+  const positiveNumericEnvNames = [
+    'DIVERGENCE_SCAN_SPREAD_MINUTES',
+    'DIVERGENCE_MIN_UNIVERSE_SIZE',
+    'CHART_QUOTE_CACHE_MS',
+    'VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES',
+    'VD_RSI_RESULT_CACHE_MAX_ENTRIES',
+    'CHART_DATA_CACHE_MAX_ENTRIES',
+    'CHART_QUOTE_CACHE_MAX_ENTRIES',
+    'CHART_FINAL_RESULT_CACHE_MAX_ENTRIES'
+  ];
+  positiveNumericEnvNames.forEach(warnIfInvalidPositiveNumber);
+  const nonNegativeNumericEnvNames = [
+    'CHART_RESULT_CACHE_TTL_SECONDS',
+    'CHART_RESPONSE_MAX_AGE_SECONDS',
+    'CHART_RESPONSE_SWR_SECONDS',
+    'CHART_RESPONSE_COMPRESS_MIN_BYTES'
+  ];
+  nonNegativeNumericEnvNames.forEach(warnIfInvalidNonNegativeNumber);
+
+  if (warnings.length > 0) {
+    for (const warning of warnings) {
+      console.warn(`[startup-env] ${warning}`);
+    }
+  }
+  if (errors.length > 0) {
+    for (const error of errors) {
+      console.error(`[startup-env] ${error}`);
+    }
+    throw new Error('Startup environment validation failed');
+  }
+}
+
+validateStartupEnvironment();
 
 function timingSafeStringEqual(left, right) {
   const leftBuffer = Buffer.from(String(left));
@@ -73,6 +146,11 @@ function basicAuthMiddleware(req, res, next) {
 
 app.use(basicAuthMiddleware);
 app.use(express.static('dist'));
+app.use((req, res, next) => {
+  if (!isShuttingDown) return next();
+  res.setHeader('Connection', 'close');
+  return res.status(503).json({ error: 'Server is shutting down' });
+});
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -129,12 +207,15 @@ function checkRateLimit(ip) {
 }
 
 // Cleanup stale entries every 5 minutes
-setInterval(() => {
+const webhookRateLimitCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of webhookRateLimit) {
     if (now - entry.start > RATE_LIMIT_WINDOW_MS) webhookRateLimit.delete(ip);
   }
 }, 300000);
+if (typeof webhookRateLimitCleanupTimer.unref === 'function') {
+  webhookRateLimitCleanupTimer.unref();
+}
 
 const initDB = async () => {
   try {
@@ -2610,8 +2691,30 @@ async function updateDivergenceScanJob(jobId, patch) {
   await divergencePool.query(`UPDATE divergence_scan_jobs SET ${fields.join(', ')} WHERE id = $${idx}`, values);
 }
 
-async function upsertDivergenceSignal(signal, scanJobId) {
-  if (!divergencePool) return;
+async function upsertDivergenceSignalsBatch(signals, scanJobId) {
+  if (!divergencePool || !Array.isArray(signals) || signals.length === 0) return;
+  const tickers = [];
+  const signalTypes = [];
+  const tradeDates = [];
+  const prices = [];
+  const prevCloses = [];
+  const deltas = [];
+  const timeframes = [];
+  const sourceIntervals = [];
+  const scanJobIds = [];
+
+  for (const signal of signals) {
+    tickers.push(signal.ticker);
+    signalTypes.push(signal.signal_type);
+    tradeDates.push(signal.trade_date);
+    prices.push(Number(signal.price));
+    prevCloses.push(Number(signal.prev_close));
+    deltas.push(Number(signal.volume_delta));
+    timeframes.push(signal.timeframe);
+    sourceIntervals.push(signal.source_interval);
+    scanJobIds.push(scanJobId ?? null);
+  }
+
   await divergencePool.query(`
     INSERT INTO divergence_signals(
       ticker,
@@ -2625,7 +2728,38 @@ async function upsertDivergenceSignal(signal, scanJobId) {
       timestamp,
       scan_job_id
     )
-    VALUES($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+    SELECT
+      s.ticker,
+      s.signal_type,
+      s.trade_date,
+      s.price,
+      s.prev_close,
+      s.volume_delta,
+      s.timeframe,
+      s.source_interval,
+      NOW(),
+      s.scan_job_id
+    FROM UNNEST(
+      $1::VARCHAR[],
+      $2::VARCHAR[],
+      $3::DATE[],
+      $4::DOUBLE PRECISION[],
+      $5::DOUBLE PRECISION[],
+      $6::DOUBLE PRECISION[],
+      $7::VARCHAR[],
+      $8::VARCHAR[],
+      $9::INTEGER[]
+    ) AS s(
+      ticker,
+      signal_type,
+      trade_date,
+      price,
+      prev_close,
+      volume_delta,
+      timeframe,
+      source_interval,
+      scan_job_id
+    )
     ON CONFLICT (trade_date, ticker, timeframe, source_interval)
     DO UPDATE SET
       signal_type = EXCLUDED.signal_type,
@@ -2635,15 +2769,15 @@ async function upsertDivergenceSignal(signal, scanJobId) {
       timestamp = NOW(),
       scan_job_id = EXCLUDED.scan_job_id
   `, [
-    signal.ticker,
-    signal.signal_type,
-    signal.trade_date,
-    signal.price,
-    signal.prev_close,
-    signal.volume_delta,
-    signal.timeframe,
-    signal.source_interval,
-    scanJobId
+    tickers,
+    signalTypes,
+    tradeDates,
+    prices,
+    prevCloses,
+    deltas,
+    timeframes,
+    sourceIntervals,
+    scanJobIds
   ]);
 }
 
@@ -2705,25 +2839,34 @@ async function runDailyDivergenceScan(options = {}) {
     for (let i = 0; i < symbols.length; i += DIVERGENCE_SCAN_CONCURRENCY) {
       const batch = symbols.slice(i, i + DIVERGENCE_SCAN_CONCURRENCY);
       const startedAt = Date.now();
-      await Promise.all(batch.map(async (ticker) => {
+      const batchResults = await Promise.all(batch.map(async (ticker) => {
         try {
-          const { signals, latestTradeDate } = await computeSymbolDivergenceSignals(ticker);
-          if (latestTradeDate) {
-            latestScannedTradeDate = maxEtDateString(latestScannedTradeDate, latestTradeDate);
-          }
-          for (const signal of signals) {
-            await upsertDivergenceSignal(signal, scanJobId);
-            if (signal.signal_type === 'bullish') bullishCount += 1;
-            if (signal.signal_type === 'bearish') bearishCount += 1;
-          }
+          const outcome = await computeSymbolDivergenceSignals(ticker);
+          return { ticker, ...outcome, error: null };
         } catch (err) {
-          errorCount += 1;
-          const message = err && err.message ? err.message : String(err);
-          console.error(`Divergence scan failed for ${ticker}: ${message}`);
-        } finally {
-          processed += 1;
+          return { ticker, signals: [], latestTradeDate: '', error: err };
         }
       }));
+
+      const batchSignals = [];
+      for (const result of batchResults) {
+        processed += 1;
+        if (result.error) {
+          errorCount += 1;
+          const message = result.error && result.error.message ? result.error.message : String(result.error);
+          console.error(`Divergence scan failed for ${result.ticker}: ${message}`);
+          continue;
+        }
+        if (result.latestTradeDate) {
+          latestScannedTradeDate = maxEtDateString(latestScannedTradeDate, result.latestTradeDate);
+        }
+        for (const signal of result.signals) {
+          batchSignals.push(signal);
+          if (signal.signal_type === 'bullish') bullishCount += 1;
+          if (signal.signal_type === 'bearish') bearishCount += 1;
+        }
+      }
+      await upsertDivergenceSignalsBatch(batchSignals, scanJobId);
 
       if (scanJobId && (processed % 50 === 0 || processed === totalSymbols)) {
         await updateDivergenceScanJob(scanJobId, {
@@ -2893,7 +3036,97 @@ app.get('/api/divergence/scan/status', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+async function checkDatabaseReady(poolInstance) {
+  if (!poolInstance) return { ok: null };
+  try {
+    await poolInstance.query('SELECT 1');
+    return { ok: true };
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+app.get('/healthz', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    shuttingDown: isShuttingDown
+  });
+});
+
+app.get('/readyz', async (req, res) => {
+  const primaryDb = await checkDatabaseReady(pool);
+  const divergenceDb = isDivergenceConfigured()
+    ? await checkDatabaseReady(divergencePool)
+    : { ok: null };
+  const ready = !isShuttingDown && primaryDb.ok === true;
+  const statusCode = ready ? 200 : 503;
+  res.status(statusCode).json({
+    ready,
+    shuttingDown: isShuttingDown,
+    primaryDb: primaryDb.ok,
+    divergenceDb: divergenceDb.ok,
+    divergenceConfigured: isDivergenceConfigured(),
+    divergenceScanRunning: divergenceScanRunning,
+    lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
+    errors: {
+      primaryDb: primaryDb.error || null,
+      divergenceDb: divergenceDb.error || null
+    }
+  });
+});
+
+const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
   scheduleNextDivergenceScan();
+});
+
+async function shutdownServer(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`Received ${signal}; shutting down gracefully...`);
+
+  if (divergenceSchedulerTimer) {
+    clearTimeout(divergenceSchedulerTimer);
+    divergenceSchedulerTimer = null;
+  }
+  clearInterval(webhookRateLimitCleanupTimer);
+  clearInterval(vdRsiCacheCleanupTimer);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error('Graceful shutdown timed out; forcing exit');
+    process.exit(1);
+  }, 15000);
+  if (typeof forceExitTimer.unref === 'function') {
+    forceExitTimer.unref();
+  }
+
+  try {
+    await new Promise((resolve, reject) => {
+      server.close((err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    await Promise.allSettled([
+      pool.end(),
+      divergencePool ? divergencePool.end() : Promise.resolve()
+    ]);
+    clearTimeout(forceExitTimer);
+    process.exit(0);
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`Graceful shutdown failed: ${message}`);
+    clearTimeout(forceExitTimer);
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', () => {
+  shutdownServer('SIGINT');
+});
+process.on('SIGTERM', () => {
+  shutdownServer('SIGTERM');
 });
