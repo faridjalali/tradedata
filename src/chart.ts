@@ -19,6 +19,7 @@ let volumeDeltaTrendLineSeriesList: any[] = [];
 let volumeDeltaDivergencePointTimeKeys = new Set<string>();
 let volumeDeltaFirstPoint: { time: string | number, rsi: number, price: number, index: number } | null = null;
 let volumeDeltaDivergenceToolActive = false;
+let rsiDivergenceToolActive = false;
 let volumeDeltaSuppressSync = false;
 let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
@@ -43,6 +44,7 @@ let rsiSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaDivergenceSummaryEl: HTMLDivElement | null = null;
 let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
+const ERASE_ICON = '⌫';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -54,6 +56,10 @@ const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
 const TOP_PANE_BADGE_START_LEFT_PX = 38;
 const TOP_PANE_BADGE_GAP_PX = 6;
+const PANE_SETTINGS_BUTTON_LEFT_PX = 8;
+const PANE_TOOL_BUTTON_TOP_PX = 8;
+const PANE_TOOL_BUTTON_SIZE_PX = 24;
+const PANE_TOOL_BUTTON_GAP_PX = 6;
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
 const VOLUME_DELTA_MIDLINE = 50;
 const VOLUME_DELTA_AXIS_MIN = 20;
@@ -78,6 +84,7 @@ type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
 type MidlineStyle = 'dotted' | 'solid';
 type PaneId = 'price-chart-container' | 'vd-rsi-chart-container' | 'rsi-chart-container' | 'vd-chart-container';
+type TrendToolPane = 'rsi' | 'volumeDeltaRsi';
 
 interface MASetting {
   enabled: boolean;
@@ -1185,11 +1192,11 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDel
         : 'RSI settings';
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
-  btn.style.left = '8px';
-  btn.style.top = '8px';
+  btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
+  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
   btn.style.zIndex = '30';
-  btn.style.width = '24px';
-  btn.style.height = '24px';
+  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.borderRadius = '4px';
   btn.style.border = '1px solid #30363d';
   btn.style.background = '#161b22';
@@ -1198,6 +1205,88 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDel
   btn.style.padding = '0';
   container.appendChild(btn);
   return btn;
+}
+
+function createPaneTrendlineButton(
+  container: HTMLElement,
+  pane: TrendToolPane,
+  action: 'trend' | 'erase',
+  orderFromSettings: number
+): HTMLButtonElement {
+  const existing = container.querySelector(`.pane-trendline-btn[data-pane="${pane}"][data-action="${action}"]`) as HTMLButtonElement | null;
+  if (existing) return existing;
+
+  const btn = document.createElement('button');
+  btn.className = 'pane-trendline-btn';
+  btn.dataset.pane = pane;
+  btn.dataset.action = action;
+  btn.type = 'button';
+  btn.title = action === 'trend' ? 'Draw Trendline' : 'Erase Trendline';
+  btn.textContent = action === 'trend' ? TREND_ICON : ERASE_ICON;
+  btn.style.position = 'absolute';
+  btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX + ((orderFromSettings + 1) * (PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX))}px`;
+  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
+  btn.style.zIndex = '30';
+  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.borderRadius = '4px';
+  btn.style.border = '1px solid #30363d';
+  btn.style.background = '#161b22';
+  btn.style.color = '#c9d1d9';
+  btn.style.cursor = 'pointer';
+  btn.style.padding = '0';
+  container.appendChild(btn);
+  return btn;
+}
+
+function getPaneTrendlineButton(pane: TrendToolPane): HTMLButtonElement | null {
+  return document.querySelector(`.pane-trendline-btn[data-pane="${pane}"][data-action="trend"]`) as HTMLButtonElement | null;
+}
+
+function setPaneTrendlineToolActive(pane: TrendToolPane, active: boolean): void {
+  const trendBtn = getPaneTrendlineButton(pane);
+  if (!trendBtn) return;
+  trendBtn.classList.toggle('active', active);
+  trendBtn.style.background = active ? '#1f6feb' : '#161b22';
+  trendBtn.style.color = '#ffffff';
+  trendBtn.textContent = TREND_ICON;
+}
+
+function toggleRSITrendlineTool(): void {
+  if (!rsiChart) return;
+  if (rsiDivergenceToolActive) {
+    rsiChart.deactivateDivergenceTool();
+    rsiDivergenceToolActive = false;
+    setPaneTrendlineToolActive('rsi', false);
+    return;
+  }
+  rsiChart.activateDivergenceTool();
+  rsiDivergenceToolActive = true;
+  setPaneTrendlineToolActive('rsi', true);
+}
+
+function clearRSITrendlines(): void {
+  rsiChart?.clearDivergence();
+  rsiChart?.deactivateDivergenceTool();
+  rsiDivergenceToolActive = false;
+  setPaneTrendlineToolActive('rsi', false);
+}
+
+function toggleVolumeDeltaRSITrendlineTool(): void {
+  if (!volumeDeltaRsiChart) return;
+  if (volumeDeltaDivergenceToolActive) {
+    deactivateVolumeDeltaDivergenceTool();
+    setPaneTrendlineToolActive('volumeDeltaRsi', false);
+    return;
+  }
+  activateVolumeDeltaDivergenceTool();
+  setPaneTrendlineToolActive('volumeDeltaRsi', true);
+}
+
+function clearVolumeDeltaRSITrendlines(): void {
+  clearVolumeDeltaDivergence();
+  deactivateVolumeDeltaDivergenceTool();
+  setPaneTrendlineToolActive('volumeDeltaRsi', false);
 }
 
 function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
@@ -1644,6 +1733,10 @@ function ensureSettingsUI(
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
+  const volumeDeltaRsiTrendBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'trend', 0);
+  const volumeDeltaRsiEraseBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'erase', 1);
+  const rsiTrendBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'trend', 0);
+  const rsiEraseBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'erase', 1);
 
   if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
     if (priceSettingsPanelEl?.parentElement) {
@@ -1711,6 +1804,41 @@ function ensureSettingsUI(
     });
     rsiBtn.dataset.bound = '1';
   }
+  if (!volumeDeltaRsiTrendBtn.dataset.bound) {
+    volumeDeltaRsiTrendBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleVolumeDeltaRSITrendlineTool();
+    });
+    volumeDeltaRsiTrendBtn.dataset.bound = '1';
+  }
+  if (!volumeDeltaRsiEraseBtn.dataset.bound) {
+    volumeDeltaRsiEraseBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearVolumeDeltaRSITrendlines();
+    });
+    volumeDeltaRsiEraseBtn.dataset.bound = '1';
+  }
+  if (!rsiTrendBtn.dataset.bound) {
+    rsiTrendBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleRSITrendlineTool();
+    });
+    rsiTrendBtn.dataset.bound = '1';
+  }
+  if (!rsiEraseBtn.dataset.bound) {
+    rsiEraseBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearRSITrendlines();
+    });
+    rsiEraseBtn.dataset.bound = '1';
+  }
+
+  setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
+  setPaneTrendlineToolActive('volumeDeltaRsi', volumeDeltaDivergenceToolActive);
 
   if (!document.body.dataset.chartSettingsBound) {
     document.addEventListener('click', (event) => {
@@ -2104,13 +2232,7 @@ function detectAndHandleVolumeDeltaDivergenceClick(clickedTime: string | number)
   );
 
   deactivateVolumeDeltaDivergenceTool();
-  rsiChart?.deactivateDivergenceTool();
-
-  const trendBtn = document.querySelector('#drawing-tools button[data-tool="trend"]') as HTMLElement | null;
-  if (trendBtn) {
-    trendBtn.classList.remove('active');
-    trendBtn.innerHTML = TREND_ICON;
-  }
+  setPaneTrendlineToolActive('volumeDeltaRsi', false);
 }
 
 function sameLogicalRange(a: any, b: any): boolean {
@@ -2833,13 +2955,9 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
         midlineStyle: rsiSettings.midlineStyle,
         priceData: bars.map(b => ({ time: b.time, close: b.close })),
         onTrendLineDrawn: () => {
-          const trendBtn = document.querySelector('#drawing-tools button[data-tool="trend"]') as HTMLElement | null;
-          if (trendBtn) {
-            trendBtn.classList.remove('active');
-            trendBtn.innerHTML = TREND_ICON;
-          }
           rsiChart?.deactivateDivergenceTool();
-          deactivateVolumeDeltaDivergenceTool();
+          rsiDivergenceToolActive = false;
+          setPaneTrendlineToolActive('rsi', false);
         }
       });
       applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
@@ -3152,48 +3270,6 @@ function setupChartSync() {
   });
 }
 
-function handleDrawingTool(tool: string): void {
-  if (!rsiChart && !volumeDeltaRsiChart) {
-    console.warn('RSI/VD RSI chart not available');
-    return;
-  }
-
-  try {
-    if (tool === 'clear') {
-      // Clear divergence highlights from both RSI and VD RSI charts.
-      rsiChart?.clearDivergence();
-      rsiChart?.deactivateDivergenceTool();
-      clearVolumeDeltaDivergence();
-      deactivateVolumeDeltaDivergenceTool();
-
-      // Remove active state from all tool buttons
-      document.querySelectorAll('#drawing-tools .tf-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.getAttribute('data-tool') === 'trend') {
-            btn.innerHTML = TREND_ICON;
-        }
-      });
-    } else if (tool === 'trend') {
-      const btn = document.querySelector(`button[data-tool="${tool}"]`);
-      if (btn?.classList.contains('active')) {
-        // Deactivate
-        rsiChart?.deactivateDivergenceTool();
-        deactivateVolumeDeltaDivergenceTool();
-        btn.classList.remove('active');
-        btn.innerHTML = TREND_ICON;
-      } else {
-        // Activate
-        rsiChart?.activateDivergenceTool();
-        activateVolumeDeltaDivergenceTool();
-        btn?.classList.add('active');
-        if (btn) btn.innerHTML = TREND_ICON;
-      }
-    }
-  } catch (error) {
-    console.error('Error handling drawing tool:', error);
-  }
-}
-
 // Export for main.ts usage
 export function initChartControls() {
   const controls = document.getElementById('chart-controls');
@@ -3213,15 +3289,6 @@ export function initChartControls() {
       if (currentChartTicker) {
         renderCustomChart(currentChartTicker, interval);
       }
-    });
-  });
-
-  // Drawing tools
-  controls.querySelectorAll('button[data-tool]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const target = e.currentTarget as HTMLElement; // Use currentTarget to get the button element
-      const tool = target.getAttribute('data-tool');
-      if (tool) handleDrawingTool(tool);
     });
   });
 
