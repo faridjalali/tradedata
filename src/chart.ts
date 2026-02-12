@@ -163,10 +163,10 @@ const DEFAULT_PRICE_SETTINGS: {
 };
 
 const DEFAULT_PANE_ORDER: PaneId[] = [
+  'vd-chart-container',
   'price-chart-container',
-  'vd-rsi-chart-container',
   'rsi-chart-container',
-  'vd-chart-container'
+  'vd-rsi-chart-container'
 ];
 
 let paneOrder: PaneId[] = [...DEFAULT_PANE_ORDER];
