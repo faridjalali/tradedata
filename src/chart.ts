@@ -915,7 +915,36 @@ function applyPaneOrderAndRefreshLayout(chartContent: HTMLElement): void {
       volumeDeltaContainer as HTMLElement
     );
   }
+  applyPaneScaleVisibilityByPosition();
   syncTopPaneTickerLabel();
+}
+
+function shouldShowPaneScale(paneId: PaneId): boolean {
+  const order = normalizePaneOrder(paneOrder);
+  const index = order.indexOf(paneId);
+  // Show only on pane positions 2 and 4.
+  return index === 1 || index === 3;
+}
+
+function applyChartScaleVisibility(chart: any, show: boolean): void {
+  if (!chart) return;
+  chart.applyOptions({
+    rightPriceScale: {
+      visible: show
+    },
+    timeScale: {
+      visible: show,
+      borderVisible: show,
+      ticksVisible: show
+    }
+  });
+}
+
+function applyPaneScaleVisibilityByPosition(): void {
+  applyChartScaleVisibility(priceChart, shouldShowPaneScale('price-chart-container'));
+  applyChartScaleVisibility(volumeDeltaRsiChart, shouldShowPaneScale('vd-rsi-chart-container'));
+  applyChartScaleVisibility(rsiChart?.getChart(), shouldShowPaneScale('rsi-chart-container'));
+  applyChartScaleVisibility(volumeDeltaChart, shouldShowPaneScale('vd-chart-container'));
 }
 
 function ensurePaneReorderHandle(
@@ -1170,7 +1199,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Chart Settings</div>
+      <div style="font-weight:600;">Chart</div>
       <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
@@ -1277,7 +1306,7 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">RSI Settings</div>
+      <div style="font-weight:600;">RSI</div>
       <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
@@ -2450,6 +2479,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
   ensureResizeObserver(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+  applyPaneScaleVisibilityByPosition();
 
   // Show loading indicators on all chart panes
   showLoadingOverlay(chartContainer);
@@ -2519,6 +2549,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
         }
       });
       applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+      applyPaneScaleVisibilityByPosition();
     } else if (rsiChart) {
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
