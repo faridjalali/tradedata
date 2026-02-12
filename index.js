@@ -8,6 +8,11 @@ const { registerChartRoutes } = require("./server/routes/chartRoutes");
 const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
 const { registerHealthRoutes } = require("./server/routes/healthRoutes");
 const {
+  buildDebugMetricsPayload,
+  buildHealthPayload,
+  buildReadyPayload
+} = require("./server/services/healthService");
+const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal
@@ -3298,83 +3303,46 @@ registerDivergenceRoutes({
   getLastScanDateEt: () => divergenceLastScanDateEt
 });
 
-async function checkDatabaseReady(poolInstance) {
-  if (!poolInstance) return { ok: null };
-  try {
-    await poolInstance.query('SELECT 1');
-    return { ok: true };
-  } catch (err) {
-    const message = err && err.message ? err.message : String(err);
-    return { ok: false, error: message };
-  }
-}
-
 function getDebugMetricsPayload() {
-  const memory = process.memoryUsage();
-  return {
-    uptimeSeconds: Math.floor((Date.now() - startedAtMs) / 1000),
-    shuttingDown: isShuttingDown,
-    http: {
-      totalRequests: httpDebugMetrics.totalRequests,
-      apiRequests: httpDebugMetrics.apiRequests
+  return buildDebugMetricsPayload({
+    startedAtMs,
+    isShuttingDown,
+    httpDebugMetrics,
+    chartCacheSizes: {
+      lowerTf: VD_RSI_LOWER_TF_CACHE.size,
+      vdRsiResults: VD_RSI_RESULT_CACHE.size,
+      chartData: CHART_DATA_CACHE.size,
+      quotes: CHART_QUOTE_CACHE.size,
+      finalResults: CHART_FINAL_RESULT_CACHE.size,
+      inFlight: CHART_IN_FLIGHT_REQUESTS.size
     },
-    chart: {
-      cacheSizes: {
-        lowerTf: VD_RSI_LOWER_TF_CACHE.size,
-        vdRsiResults: VD_RSI_RESULT_CACHE.size,
-        chartData: CHART_DATA_CACHE.size,
-        quotes: CHART_QUOTE_CACHE.size,
-        finalResults: CHART_FINAL_RESULT_CACHE.size,
-        inFlight: CHART_IN_FLIGHT_REQUESTS.size
-      },
-      metrics: chartDebugMetrics
-    },
+    chartDebugMetrics,
     divergence: {
       configured: isDivergenceConfigured(),
       running: divergenceScanRunning,
       lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null
     },
-    process: {
-      rss: memory.rss,
-      heapTotal: memory.heapTotal,
-      heapUsed: memory.heapUsed,
-      external: memory.external
-    }
-  };
+    memoryUsage: process.memoryUsage()
+  });
 }
 
 function getHealthPayload() {
-  return {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptimeSeconds: Math.floor(process.uptime()),
-    shuttingDown: isShuttingDown
-  };
+  return buildHealthPayload({
+    isShuttingDown,
+    nowIso: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime())
+  });
 }
 
 async function getReadyPayload() {
-  const primaryDb = await checkDatabaseReady(pool);
-  const divergenceDb = isDivergenceConfigured()
-    ? await checkDatabaseReady(divergencePool)
-    : { ok: null };
-  const ready = !isShuttingDown && primaryDb.ok === true;
-  const statusCode = ready ? 200 : 503;
-  return {
-    statusCode,
-    body: {
-      ready,
-      shuttingDown: isShuttingDown,
-      primaryDb: primaryDb.ok,
-      divergenceDb: divergenceDb.ok,
-      divergenceConfigured: isDivergenceConfigured(),
-      divergenceScanRunning: divergenceScanRunning,
-      lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
-      errors: {
-        primaryDb: primaryDb.error || null,
-        divergenceDb: divergenceDb.error || null
-      }
-    }
-  };
+  return buildReadyPayload({
+    pool,
+    divergencePool,
+    isDivergenceConfigured,
+    isShuttingDown,
+    divergenceScanRunning,
+    lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null
+  });
 }
 
 registerHealthRoutes({
