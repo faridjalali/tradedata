@@ -26,9 +26,40 @@
     ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-CUcXyLbM.js"></script>
+    <script type="module" crossorigin src="./assets/index-BI6Xyc7S.js"></script>
   </head>
   <body>
+    <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
+      <div class="site-lock-panel">
+        <div class="site-lock-title">Catvue</div>
+        <div class="site-lock-subtitle">Enter Passcode</div>
+        <div id="site-lock-dots" class="site-lock-dots" aria-hidden="true">
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+          <span class="site-lock-dot"></span>
+        </div>
+        <div id="site-lock-status" class="site-lock-status"></div>
+        <div class="site-lock-keypad">
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="1">1</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="2">2</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="3">3</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="4">4</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="5">5</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="6">6</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="7">7</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="8">8</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="9">9</button>
+          <button type="button" class="tf-btn lock-key-btn lock-key-action" data-lock-action="clear">Clear</button>
+          <button type="button" class="tf-btn lock-key-btn" data-lock-digit="0">0</button>
+          <button type="button" class="tf-btn lock-key-btn lock-key-action" data-lock-action="back">⌫</button>
+        </div>
+      </div>
+    </div>
     <div class="container">
       <header>
         <div class="header-left">

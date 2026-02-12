@@ -29,6 +29,11 @@ let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live';
 let liveDashboardScrollY = 0;
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'live' | 'divergence' = 'live';
+let appInitialized = false;
+
+const SITE_LOCK_STORAGE_KEY = 'catvue_unlock_v1';
+const SITE_LOCK_PASSCODE = '46110603';
+const SITE_LOCK_LENGTH = SITE_LOCK_PASSCODE.length;
  
 
 // Expose globals for HTML onclick attributes
@@ -252,8 +257,160 @@ function initSearch() {
     });
 }
 
-// Initialization
-document.addEventListener('DOMContentLoaded', () => {
+function isSiteLockAlreadyUnlocked(): boolean {
+    try {
+        return window.localStorage.getItem(SITE_LOCK_STORAGE_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function markSiteLockUnlocked(): void {
+    try {
+        window.localStorage.setItem(SITE_LOCK_STORAGE_KEY, '1');
+    } catch {
+        // Ignore storage errors.
+    }
+}
+
+function initializeSiteLock(onUnlock: () => void): void {
+    const overlay = document.getElementById('site-lock-overlay') as HTMLElement | null;
+    if (!overlay) {
+        onUnlock();
+        return;
+    }
+
+    const panel = overlay.querySelector('.site-lock-panel') as HTMLElement | null;
+    const statusEl = document.getElementById('site-lock-status') as HTMLElement | null;
+    const dotEls = Array.from(overlay.querySelectorAll('.site-lock-dot')) as HTMLElement[];
+    const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
+    const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
+
+    if (isSiteLockAlreadyUnlocked()) {
+        overlay.classList.add('hidden');
+        document.body.classList.remove('site-locked');
+        onUnlock();
+        return;
+    }
+
+    document.body.classList.add('site-locked');
+    overlay.classList.remove('hidden');
+
+    let entered = '';
+
+    const updateDots = () => {
+        for (let i = 0; i < dotEls.length; i++) {
+            dotEls[i].classList.toggle('filled', i < entered.length);
+        }
+    };
+
+    const setStatus = (message: string) => {
+        if (!statusEl) return;
+        statusEl.textContent = message;
+    };
+
+    const clearEntry = () => {
+        entered = '';
+        updateDots();
+    };
+
+    const handleSuccess = () => {
+        markSiteLockUnlocked();
+        overlay.classList.add('hidden');
+        document.body.classList.remove('site-locked');
+        window.removeEventListener('keydown', onKeyDown, true);
+        onUnlock();
+    };
+
+    const handleFailure = () => {
+        setStatus('Wrong passcode');
+        clearEntry();
+        if (panel) {
+            panel.classList.remove('shake');
+            // Force restart animation on repeated failures.
+            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+            panel.offsetWidth;
+            panel.classList.add('shake');
+        }
+        window.setTimeout(() => {
+            if (panel) panel.classList.remove('shake');
+        }, 320);
+    };
+
+    const verifyIfComplete = () => {
+        if (entered.length < SITE_LOCK_LENGTH) return;
+        if (entered === SITE_LOCK_PASSCODE) {
+            handleSuccess();
+            return;
+        }
+        handleFailure();
+    };
+
+    const appendDigit = (digit: string) => {
+        if (!/^[0-9]$/.test(digit)) return;
+        if (entered.length >= SITE_LOCK_LENGTH) return;
+        entered += digit;
+        setStatus('');
+        updateDots();
+        verifyIfComplete();
+    };
+
+    const backspace = () => {
+        if (!entered.length) return;
+        entered = entered.slice(0, -1);
+        setStatus('');
+        updateDots();
+    };
+
+    digitButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            appendDigit(String(button.dataset.lockDigit || ''));
+        });
+    });
+
+    actionButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            const action = String(button.dataset.lockAction || '');
+            if (action === 'clear') {
+                clearEntry();
+                setStatus('');
+                return;
+            }
+            if (action === 'back') {
+                backspace();
+            }
+        });
+    });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+        if (overlay.classList.contains('hidden')) return;
+        const key = event.key;
+        if (/^[0-9]$/.test(key)) {
+            event.preventDefault();
+            appendDigit(key);
+            return;
+        }
+        if (key === 'Backspace') {
+            event.preventDefault();
+            backspace();
+            return;
+        }
+        if (key === 'Escape') {
+            event.preventDefault();
+            clearEntry();
+            setStatus('');
+        }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+
+    updateDots();
+}
+
+function bootstrapApplication(): void {
+    if (appInitialized) return;
+    appInitialized = true;
+
+    // Initialization
     // Navigation
     document.getElementById('nav-live')?.addEventListener('click', () => switchView('live'));
     document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
@@ -386,6 +543,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize Chart Controls
     initChartControls();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initializeSiteLock(() => {
+        bootstrapApplication();
+    });
 });
 
 function setupMobileCollapse(): void {

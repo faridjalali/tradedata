@@ -15,6 +15,57 @@ const brotliCompressAsync = promisify(zlib.brotliCompress);
 // app.use(cors({ origin: 'https://yourdomain.com' }));
 app.use(cors());
 app.use(express.json());
+
+const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'true').toLowerCase() !== 'false';
+const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
+const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '46110603');
+const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
+const BASIC_AUTH_EXEMPT_PREFIXES = ['/webhook'];
+
+function timingSafeStringEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function shouldSkipBasicAuth(req) {
+  const path = String(req.path || req.originalUrl || '');
+  return BASIC_AUTH_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function basicAuthMiddleware(req, res, next) {
+  if (!BASIC_AUTH_ENABLED || shouldSkipBasicAuth(req) || req.method === 'OPTIONS') {
+    return next();
+  }
+
+  const authHeader = String(req.headers.authorization || '');
+  if (!authHeader.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', `Basic realm="${BASIC_AUTH_REALM}"`);
+    return res.status(401).send('Authentication required');
+  }
+
+  let decoded = '';
+  try {
+    decoded = Buffer.from(authHeader.slice(6).trim(), 'base64').toString('utf8');
+  } catch {
+    decoded = '';
+  }
+  const separator = decoded.indexOf(':');
+  const username = separator >= 0 ? decoded.slice(0, separator) : '';
+  const password = separator >= 0 ? decoded.slice(separator + 1) : '';
+
+  const validUsername = timingSafeStringEqual(username, BASIC_AUTH_USERNAME);
+  const validPassword = timingSafeStringEqual(password, BASIC_AUTH_PASSWORD);
+  if (!validUsername || !validPassword) {
+    res.setHeader('WWW-Authenticate', `Basic realm="${BASIC_AUTH_REALM}"`);
+    return res.status(401).send('Invalid credentials');
+  }
+
+  return next();
+}
+
+app.use(basicAuthMiddleware);
 app.use(express.static('dist'));
 
 const pool = new Pool({

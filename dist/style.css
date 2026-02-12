@@ -617,6 +617,111 @@ tr:last-child td {
 .hidden {
   display: none !important;
 }
+
+body.site-locked {
+  overflow: hidden;
+}
+
+.site-lock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 600px at 50% 0%, rgba(88, 166, 255, 0.25), rgba(13, 17, 23, 0.96)),
+    linear-gradient(180deg, #0f1622 0%, #0a0f18 100%);
+  backdrop-filter: blur(8px);
+}
+
+.site-lock-panel {
+  width: min(360px, calc(100vw - 30px));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 18px 14px 14px;
+  background: rgba(22, 27, 34, 0.55);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.site-lock-title {
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #e6edf3;
+  letter-spacing: 0.02em;
+}
+
+.site-lock-subtitle {
+  text-align: center;
+  color: #9aa4b2;
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
+
+.site-lock-dots {
+  margin: 14px auto 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+  width: 210px;
+}
+
+.site-lock-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: transparent;
+}
+
+.site-lock-dot.filled {
+  background: #e6edf3;
+  border-color: #e6edf3;
+}
+
+.site-lock-status {
+  min-height: 16px;
+  margin-top: 10px;
+  text-align: center;
+  color: #f85149;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.site-lock-keypad {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.lock-key-btn {
+  height: 44px;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #dce3ea;
+  background: rgba(22, 27, 34, 0.75);
+}
+
+.lock-key-action {
+  font-size: 0.8rem;
+}
+
+.site-lock-panel.shake {
+  animation: siteLockShake 280ms linear;
+}
+
+@keyframes siteLockShake {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+  100% { transform: translateX(0); }
+}
+
 button {
   background: var(--highlight);
   color: white;
