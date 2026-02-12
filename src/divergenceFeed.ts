@@ -54,6 +54,43 @@ function toStatusTextFromError(error: unknown): string {
     return message.length > 56 ? `${message.slice(0, 56)}...` : message;
 }
 
+function currentEtDateKey(): string {
+    return new Date().toLocaleDateString('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+}
+
+function toDateKey(raw?: string | null): string | null {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return null;
+    return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function dateKeyToMmDd(dateKey: string): string {
+    const parts = dateKey.split('-');
+    if (parts.length !== 3) return '';
+    return `${parts[1]}/${parts[2]}`;
+}
+
+function summarizeLastRunDate(status: DivergenceScanStatus): string {
+    const latest = status.latestJob as (DivergenceScanStatus['latestJob'] & { run_for_date?: string }) | null;
+    const runDateKey =
+        toDateKey(status.lastScanDateEt)
+        || toDateKey(latest?.run_for_date)
+        || toDateKey(latest?.finished_at)
+        || toDateKey(latest?.started_at);
+
+    if (!runDateKey) return 'Last run completed';
+    if (runDateKey === currentEtDateKey()) return 'Last run today';
+    const mmdd = dateKeyToMmDd(runDateKey);
+    return mmdd ? `Last run on ${mmdd}` : 'Last run completed';
+}
+
 function summarizeStatus(status: DivergenceScanStatus): string {
     const latest = status.latestJob;
     if (status.running) {
@@ -64,12 +101,13 @@ function summarizeStatus(status: DivergenceScanStatus): string {
     }
 
     if (latest?.status === 'completed') {
-        const bullish = Number(latest.bullish_count || 0);
-        const bearish = Number(latest.bearish_count || 0);
-        return `Done B:${bullish} R:${bearish}`;
+        return summarizeLastRunDate(status);
     }
     if (latest?.status === 'failed') {
         return 'Last run failed';
+    }
+    if (status.lastScanDateEt || latest?.run_for_date || latest?.finished_at || latest?.started_at) {
+        return summarizeLastRunDate(status);
     }
     return 'Idle';
 }

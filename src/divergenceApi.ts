@@ -52,6 +52,7 @@ export interface DivergenceScanStatus {
     running: boolean;
     lastScanDateEt: string | null;
     latestJob: {
+        run_for_date?: string;
         status?: string;
         started_at?: string;
         finished_at?: string;

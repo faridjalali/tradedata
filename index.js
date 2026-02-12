@@ -2187,7 +2187,7 @@ async function runDailyDivergenceScan(options = {}) {
 function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const candidate = new Date(nowEt);
-  candidate.setHours(16, 20, 0, 0);
+  candidate.setHours(16, 2, 0, 0);
 
   if (!isEtWeekday(candidate) || nowEt.getTime() >= candidate.getTime()) {
     candidate.setDate(candidate.getDate() + 1);
@@ -2201,7 +2201,7 @@ function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
     candidate.getMonth() + 1,
     candidate.getDate(),
     16,
-    20
+    2
   );
 }
 
