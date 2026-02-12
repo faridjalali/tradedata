@@ -802,7 +802,8 @@ function getIntervalSeconds(interval) {
     '15min': 15 * 60,
     '30min': 30 * 60,
     '1hour': 60 * 60,
-    '4hour': 4 * 60 * 60
+    '4hour': 4 * 60 * 60,
+    '1day': 24 * 60 * 60
   };
   return map[interval] || 60;
 }
@@ -815,6 +816,68 @@ function dayKeyInLA(unixSeconds) {
     month: '2-digit',
     day: '2-digit'
   });
+}
+
+function aggregate4HourBarsToDaily(fourHourBars) {
+  if (!Array.isArray(fourHourBars) || fourHourBars.length === 0) return [];
+
+  const sorted = fourHourBars
+    .filter((bar) => (
+      bar &&
+      Number.isFinite(Number(bar.time)) &&
+      Number.isFinite(Number(bar.open)) &&
+      Number.isFinite(Number(bar.high)) &&
+      Number.isFinite(Number(bar.low)) &&
+      Number.isFinite(Number(bar.close))
+    ))
+    .sort((a, b) => Number(a.time) - Number(b.time));
+
+  const byDay = new Map();
+
+  for (const bar of sorted) {
+    const time = Number(bar.time);
+    const key = dayKeyInLA(time);
+    if (!key) continue;
+
+    const open = Number(bar.open);
+    const high = Number(bar.high);
+    const low = Number(bar.low);
+    const close = Number(bar.close);
+    const volume = Number.isFinite(Number(bar.volume)) ? Number(bar.volume) : 0;
+
+    const existing = byDay.get(key);
+    if (!existing) {
+      byDay.set(key, {
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume,
+        _lastTime: time
+      });
+      continue;
+    }
+
+    existing.high = Math.max(existing.high, high);
+    existing.low = Math.min(existing.low, low);
+    existing.volume += volume;
+    if (time >= existing._lastTime) {
+      existing.close = close;
+      existing._lastTime = time;
+    }
+  }
+
+  return Array.from(byDay.values())
+    .sort((a, b) => Number(a.time) - Number(b.time))
+    .map((bar) => ({
+      time: bar.time,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume
+    }));
 }
 
 function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
@@ -1313,33 +1376,37 @@ app.get('/api/chart', async (req, res) => {
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
 
   // Validate interval
-  const validIntervals = ['5min', '15min', '30min', '1hour', '4hour'];
+  const validIntervals = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
   if (!validIntervals.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, or 4hour' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
   }
 
   // Use smart lookback based on interval (much faster!)
   const lookbackDays = getIntradayLookbackDays(interval);
 
   try {
-    let bars;
+    const parentFetchInterval = interval === '1day' ? '4hour' : interval;
+    let parentRows;
     let lowerTfRows;
-    if (interval === VOLUME_DELTA_RSI_LOWER_TF) {
-      bars = await fmpIntradayChartHistory(ticker, interval, lookbackDays);
-      lowerTfRows = bars;
+    if (parentFetchInterval === VOLUME_DELTA_RSI_LOWER_TF) {
+      parentRows = await fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays);
+      lowerTfRows = parentRows;
     } else {
       // Fetch parent bars and 5-min bars in parallel.
-      [bars, lowerTfRows] = await Promise.all([
-        fmpIntradayChartHistory(ticker, interval, lookbackDays),
+      [parentRows, lowerTfRows] = await Promise.all([
+        fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays),
         fmpIntradayChartHistory(ticker, VOLUME_DELTA_RSI_LOWER_TF, lookbackDays)
       ]);
     }
-    if (!bars || bars.length === 0) {
-      return res.status(404).json({ error: `No ${interval} data available for this ticker` });
+    if (!parentRows || parentRows.length === 0) {
+      return res.status(404).json({ error: `No ${parentFetchInterval} data available for this ticker` });
     }
 
-    // Convert to LA timezone and sort chronologically.
-    const convertedBars = convertToLATime(bars, interval).sort((a, b) => Number(a.time) - Number(b.time));
+    // Convert parent stream to LA timezone and sort chronologically.
+    const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
+    const convertedBars = interval === '1day'
+      ? aggregate4HourBarsToDaily(convertedParentBars)
+      : convertedParentBars;
 
     if (convertedBars.length === 0) {
       return res.status(404).json({ error: 'No valid chart bars available for this ticker' });
