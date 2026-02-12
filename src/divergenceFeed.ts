@@ -202,56 +202,14 @@ export function setupDivergenceFeedDelegation(): void {
     view.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const starBtn = target.closest('.fav-icon');
-        if (!starBtn) return;
+        if (starBtn) {
+            e.stopPropagation();
+            const id = (starBtn as HTMLElement).dataset.id;
+            if (!id) return;
 
-        e.stopPropagation();
-        const id = (starBtn as HTMLElement).dataset.id;
-        if (!id) return;
+            const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"]`);
+            const isCurrentlyFilled = starBtn.classList.contains('filled');
 
-        const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"]`);
-        const isCurrentlyFilled = starBtn.classList.contains('filled');
-
-        allStars.forEach(star => {
-            const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-            if (isCurrentlyFilled) {
-                star.classList.remove('filled');
-                if (checkmark) {
-                    checkmark.style.visibility = 'hidden';
-                    checkmark.style.opacity = '0';
-                }
-            } else {
-                star.classList.add('filled');
-                if (checkmark) {
-                    checkmark.style.visibility = 'visible';
-                    checkmark.style.opacity = '1';
-                }
-            }
-        });
-
-        toggleDivergenceFavorite(Number(id)).then((updatedAlert) => {
-            const all = getDivergenceSignals();
-            const idx = all.findIndex((a) => a.id === updatedAlert.id);
-            if (idx !== -1) {
-                all[idx].is_favorite = updatedAlert.is_favorite;
-                setDivergenceSignals(all);
-            }
-            allStars.forEach(star => {
-                const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-                if (updatedAlert.is_favorite) {
-                    star.classList.add('filled');
-                    if (checkmark) {
-                        checkmark.style.visibility = 'visible';
-                        checkmark.style.opacity = '1';
-                    }
-                } else {
-                    star.classList.remove('filled');
-                    if (checkmark) {
-                        checkmark.style.visibility = 'hidden';
-                        checkmark.style.opacity = '0';
-                    }
-                }
-            });
-        }).catch(() => {
             allStars.forEach(star => {
                 const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
                 if (isCurrentlyFilled) {
@@ -268,7 +226,57 @@ export function setupDivergenceFeedDelegation(): void {
                     }
                 }
             });
-        });
+            toggleDivergenceFavorite(Number(id)).then((updatedAlert) => {
+                const all = getDivergenceSignals();
+                const idx = all.findIndex((a) => a.id === updatedAlert.id);
+                if (idx !== -1) {
+                    all[idx].is_favorite = updatedAlert.is_favorite;
+                    setDivergenceSignals(all);
+                }
+                allStars.forEach(star => {
+                    const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+                    if (updatedAlert.is_favorite) {
+                        star.classList.add('filled');
+                        if (checkmark) {
+                            checkmark.style.visibility = 'visible';
+                            checkmark.style.opacity = '1';
+                        }
+                    } else {
+                        star.classList.remove('filled');
+                        if (checkmark) {
+                            checkmark.style.visibility = 'hidden';
+                            checkmark.style.opacity = '0';
+                        }
+                    }
+                });
+            }).catch(() => {
+                allStars.forEach(star => {
+                    const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+                    if (isCurrentlyFilled) {
+                        star.classList.add('filled');
+                        if (checkmark) {
+                            checkmark.style.visibility = 'visible';
+                            checkmark.style.opacity = '1';
+                        }
+                    } else {
+                        star.classList.remove('filled');
+                        if (checkmark) {
+                            checkmark.style.visibility = 'hidden';
+                            checkmark.style.opacity = '0';
+                        }
+                    }
+                });
+            });
+            return;
+        }
+
+        const card = target.closest('.alert-card');
+        if (card) {
+            const ticker = (card as HTMLElement).dataset.ticker;
+            if (ticker && window.showTickerView) {
+                window.showTickerView(ticker, 'divergence');
+            }
+        }
     });
 }
 

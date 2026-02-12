@@ -26,7 +26,9 @@ import {
 import { SortMode, LiveFeedMode } from './types';
 
 let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live'; 
-let dashboardScrollY = 0;
+let liveDashboardScrollY = 0;
+let divergenceDashboardScrollY = 0;
+let tickerOriginView: 'live' | 'divergence' = 'live';
  
 
 // Expose globals for HTML onclick attributes
@@ -37,12 +39,17 @@ window.setWeeklySort = setWeeklySort;
 window.setTickerDailySort = setTickerDailySort;
 window.setTickerWeeklySort = setTickerWeeklySort;
 
-window.showTickerView = function(ticker: string) {
+window.showTickerView = function(ticker: string, sourceView: 'live' | 'divergence' = 'live') {
+    tickerOriginView = sourceView;
+    if (sourceView === 'divergence') {
+        divergenceDashboardScrollY = window.scrollY;
+    } else {
+        liveDashboardScrollY = window.scrollY;
+    }
+
     if (currentView !== 'live') {
         switchView('live');
     }
-    // Save current scroll position before switching
-    dashboardScrollY = window.scrollY;
 
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
@@ -58,9 +65,16 @@ window.showTickerView = function(ticker: string) {
 window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
+
+    if (tickerOriginView === 'divergence') {
+        document.getElementById('reset-filter')?.classList.add('hidden');
+        switchView('divergence');
+        window.scrollTo(0, divergenceDashboardScrollY);
+        return;
+    }
+
     renderOverview();
-    // Restore scroll position
-    window.scrollTo(0, dashboardScrollY);
+    window.scrollTo(0, liveDashboardScrollY);
 
 }
 

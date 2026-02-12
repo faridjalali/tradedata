@@ -11,7 +11,7 @@ let weeklySortMode: SortMode = 'time';
 // We need to declare the window Interface extension to avoid TS errors
 declare global {
     interface Window {
-        showTickerView: (ticker: string) => void;
+        showTickerView: (ticker: string, sourceView?: 'live' | 'divergence') => void;
         showOverview: () => void;
         setDailySort: (mode: SortMode) => void;
         setWeeklySort: (mode: SortMode) => void;
