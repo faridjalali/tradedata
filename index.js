@@ -16,6 +16,38 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+const divergenceDatabaseUrl = process.env.DIVERGENCE_DATABASE_URL || '';
+const divergencePool = divergenceDatabaseUrl
+  ? new Pool({ connectionString: divergenceDatabaseUrl })
+  : null;
+
+const DIVERGENCE_SOURCE_INTERVAL = '5min';
+const DIVERGENCE_SCAN_PARENT_INTERVAL = '1day';
+const DIVERGENCE_SCAN_LOOKBACK_DAYS = 45;
+const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(1, Number(process.env.DIVERGENCE_SCAN_SPREAD_MINUTES) || 15);
+const DIVERGENCE_SCAN_CONCURRENCY = 1; // keep sequential to respect API limits
+const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
+
+let divergenceScanRunning = false;
+let divergenceSchedulerTimer = null;
+let divergenceLastScanDateEt = '';
+
+function isDivergenceConfigured() {
+  return Boolean(divergencePool);
+}
+
+async function withDivergenceClient(fn) {
+  if (!divergencePool) {
+    throw new Error('DIVERGENCE_DATABASE_URL is not configured');
+  }
+  const client = await divergencePool.connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
 // Simple in-memory rate limiter for webhook endpoint
 const webhookRateLimit = new Map();
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
@@ -80,6 +112,64 @@ const initDB = async () => {
 };
 
 initDB();
+
+const initDivergenceDB = async () => {
+  if (!divergencePool) {
+    console.log('Divergence DB not configured (set DIVERGENCE_DATABASE_URL to enable Divergence tab data).');
+    return;
+  }
+  try {
+    await divergencePool.query(`
+      CREATE TABLE IF NOT EXISTS divergence_signals (
+        id SERIAL PRIMARY KEY,
+        ticker VARCHAR(20) NOT NULL,
+        signal_type VARCHAR(10) NOT NULL,
+        trade_date DATE NOT NULL,
+        price DECIMAL(15, 4) NOT NULL,
+        prev_close DECIMAL(15, 4) NOT NULL,
+        volume_delta DECIMAL(20, 4) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL DEFAULT '1d',
+        source_interval VARCHAR(10) NOT NULL DEFAULT '5min',
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
+        scan_job_id INTEGER
+      );
+    `);
+    await divergencePool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS divergence_signals_unique_key
+      ON divergence_signals(trade_date, ticker, timeframe, source_interval);
+    `);
+    await divergencePool.query(`
+      CREATE TABLE IF NOT EXISTS divergence_scan_jobs (
+        id SERIAL PRIMARY KEY,
+        run_for_date DATE NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ,
+        total_symbols INTEGER NOT NULL DEFAULT 0,
+        processed_symbols INTEGER NOT NULL DEFAULT 0,
+        bullish_count INTEGER NOT NULL DEFAULT 0,
+        bearish_count INTEGER NOT NULL DEFAULT 0,
+        error_count INTEGER NOT NULL DEFAULT 0,
+        notes TEXT
+      );
+    `);
+    await divergencePool.query(`
+      CREATE TABLE IF NOT EXISTS divergence_symbols (
+        ticker VARCHAR(20) PRIMARY KEY,
+        exchange VARCHAR(40),
+        asset_type VARCHAR(40),
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    console.log('Divergence database initialized successfully');
+  } catch (err) {
+    console.error('Failed to initialize divergence database:', err);
+  }
+};
+
+initDivergenceDB();
 
 // Endpoint for TradingView Webhook
 app.post("/webhook", async (req, res) => {
@@ -193,6 +283,145 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
         console.error('Error toggling favorite:', err);
         res.status(500).send('Server Error');
     }
+});
+
+app.get('/api/divergence/signals', async (req, res) => {
+  if (!isDivergenceConfigured()) {
+    return res.status(503).json({ error: 'Divergence database is not configured' });
+  }
+  try {
+    const days = parseInt(req.query.days) || 0;
+    const startDate = req.query.start_date;
+    const endDate = req.query.end_date;
+
+    let query = 'SELECT * FROM divergence_signals ORDER BY timestamp DESC LIMIT 100';
+    let values = [];
+
+    if (startDate && endDate) {
+      query = `
+        SELECT
+          id,
+          ticker,
+          signal_type,
+          price,
+          timestamp,
+          timeframe,
+          CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,
+          ABS(volume_delta)::integer AS signal_volume,
+          0 AS intensity_score,
+          0 AS combo_score,
+          is_favorite
+        FROM divergence_signals
+        WHERE timestamp >= $1 AND timestamp <= $2
+        ORDER BY timestamp DESC
+        LIMIT 1000
+      `;
+      values = [startDate, endDate];
+    } else if (days > 0) {
+      query = `
+        SELECT
+          id,
+          ticker,
+          signal_type,
+          price,
+          timestamp,
+          timeframe,
+          CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,
+          ABS(volume_delta)::integer AS signal_volume,
+          0 AS intensity_score,
+          0 AS combo_score,
+          is_favorite
+        FROM divergence_signals
+        WHERE timestamp >= NOW() - $1::interval
+        ORDER BY timestamp DESC
+        LIMIT 1000
+      `;
+      values = [`${days} days`];
+    } else {
+      query = `
+        SELECT
+          id,
+          ticker,
+          signal_type,
+          price,
+          timestamp,
+          timeframe,
+          CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,
+          ABS(volume_delta)::integer AS signal_volume,
+          0 AS intensity_score,
+          0 AS combo_score,
+          is_favorite
+        FROM divergence_signals
+        ORDER BY timestamp DESC
+        LIMIT 1000
+      `;
+    }
+
+    const result = await divergencePool.query(query, values);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Divergence API error:', err);
+    res.status(500).json({ error: 'Failed to fetch divergence signals' });
+  }
+});
+
+app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
+  if (!isDivergenceConfigured()) {
+    return res.status(503).json({ error: 'Divergence database is not configured' });
+  }
+  const { id } = req.params;
+  const { is_favorite } = req.body;
+  try {
+    let query;
+    let values;
+    if (typeof is_favorite === 'boolean') {
+      query = `
+        UPDATE divergence_signals
+        SET is_favorite = $1
+        WHERE id = $2
+        RETURNING
+          id,
+          ticker,
+          signal_type,
+          price,
+          timestamp,
+          timeframe,
+          CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,
+          ABS(volume_delta)::integer AS signal_volume,
+          0 AS intensity_score,
+          0 AS combo_score,
+          is_favorite
+      `;
+      values = [is_favorite, id];
+    } else {
+      query = `
+        UPDATE divergence_signals
+        SET is_favorite = NOT is_favorite
+        WHERE id = $1
+        RETURNING
+          id,
+          ticker,
+          signal_type,
+          price,
+          timestamp,
+          timeframe,
+          CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,
+          ABS(volume_delta)::integer AS signal_volume,
+          0 AS intensity_score,
+          0 AS combo_score,
+          is_favorite
+      `;
+      values = [id];
+    }
+    const result = await divergencePool.query(query, values);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Signal not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error toggling divergence favorite:', err);
+    res.status(500).json({ error: 'Server Error' });
+  }
 });
 
 // --- FMP (Financial Modeling Prep) helpers ---
@@ -1521,6 +1750,530 @@ app.get('/api/chart', async (req, res) => {
   }
 });
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function etDateStringFromUnixSeconds(unixSeconds) {
+  if (!Number.isFinite(unixSeconds)) return '';
+  return new Date(Number(unixSeconds) * 1000).toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+}
+
+function currentEtDateString(nowUtc = new Date()) {
+  return nowUtc.toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+}
+
+function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
+  if (!Number.isFinite(unixSeconds)) return '';
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = formatter.formatToParts(new Date(Number(unixSeconds) * 1000));
+  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
+  const month = Number(parts.find((p) => p.type === 'month')?.value || 0);
+  const day = Number(parts.find((p) => p.type === 'day')?.value || 0);
+  if (!year || !month || !day) return '';
+
+  const d = new Date(Date.UTC(year, month - 1, day));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const weekYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(weekYear, 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${weekYear}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function classifyDivergenceSignal(volumeDelta, close, prevClose) {
+  if (!Number.isFinite(volumeDelta) || !Number.isFinite(close) || !Number.isFinite(prevClose)) return null;
+  if (volumeDelta > 0 && close < prevClose) return 'bullish';
+  if (volumeDelta < 0 && close > prevClose) return 'bearish';
+  return null;
+}
+
+function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
+  if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
+  const deltaByTime = new Map((dailyDeltas || []).map((point) => [Number(point.time), Number(point.delta) || 0]));
+  const weekly = [];
+  const byKey = new Map();
+
+  for (const bar of dailyBars) {
+    const time = Number(bar.time);
+    if (!Number.isFinite(time)) continue;
+    const weekKey = isoWeekKeyFromEtUnixSeconds(time);
+    if (!weekKey) continue;
+    const delta = Number(deltaByTime.get(time)) || 0;
+    const existing = byKey.get(weekKey);
+    if (!existing) {
+      const seed = {
+        weekKey,
+        time,
+        _lastTime: time,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+        delta
+      };
+      byKey.set(weekKey, seed);
+      weekly.push(seed);
+      continue;
+    }
+    existing.high = Math.max(existing.high, Number(bar.high));
+    existing.low = Math.min(existing.low, Number(bar.low));
+    existing.delta += delta;
+    if (time >= existing._lastTime) {
+      existing._lastTime = time;
+      existing.time = time;
+      existing.close = Number(bar.close);
+    }
+  }
+
+  return weekly.sort((a, b) => Number(a.time) - Number(b.time));
+}
+
+async function fetchUsStockUniverseFromFmp() {
+  assertFmpKey();
+  const urls = [
+    buildFmpUrl(FMP_STABLE_BASE, '/stock/list', { apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, '/stock/list', { apikey: FMP_KEY })
+  ];
+
+  let rows = null;
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      const payload = await fetchFmpJson(url, 'FMP stock universe');
+      if (Array.isArray(payload) && payload.length > 0) {
+        rows = payload;
+        break;
+      }
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP stock universe fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
+    }
+  }
+
+  if (!rows) {
+    throw lastError || new Error('Unable to fetch stock universe from FMP');
+  }
+
+  const allowedExchangeFragments = ['NASDAQ', 'NYSE', 'AMEX', 'ARCA', 'BATS', 'NEW YORK'];
+  const symbols = [];
+  for (const row of rows) {
+    const symbol = normalizeTickerSymbol(row?.symbol);
+    if (!symbol || symbol.includes('.') || symbol.includes('/')) continue;
+    const exchange = String(row?.exchangeShortName || row?.exchange || row?.exchangeName || '').toUpperCase();
+    const type = String(row?.type || row?.assetType || '').toLowerCase();
+    const isEtf = String(row?.isEtf || '').toLowerCase() === 'true';
+    const isFund = String(row?.isFund || '').toLowerCase() === 'true';
+    const active = row?.isActivelyTrading;
+    if (!allowedExchangeFragments.some((fragment) => exchange.includes(fragment))) continue;
+    if (type && !type.includes('stock') && !type.includes('common')) continue;
+    if (isEtf || isFund) continue;
+    if (active === false || String(active).toLowerCase() === 'false') continue;
+    symbols.push({ ticker: symbol, exchange: exchange || null, assetType: type || null });
+  }
+
+  const unique = new Map();
+  for (const row of symbols) {
+    if (!unique.has(row.ticker)) unique.set(row.ticker, row);
+  }
+  return Array.from(unique.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
+}
+
+async function refreshDivergenceSymbolUniverse() {
+  const symbols = await fetchUsStockUniverseFromFmp();
+  await withDivergenceClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      await client.query('UPDATE divergence_symbols SET is_active = FALSE WHERE is_active = TRUE');
+      for (const symbol of symbols) {
+        await client.query(`
+          INSERT INTO divergence_symbols(ticker, exchange, asset_type, is_active, updated_at)
+          VALUES($1, $2, $3, TRUE, NOW())
+          ON CONFLICT (ticker)
+          DO UPDATE SET
+            exchange = EXCLUDED.exchange,
+            asset_type = EXCLUDED.asset_type,
+            is_active = TRUE,
+            updated_at = NOW()
+        `, [symbol.ticker, symbol.exchange, symbol.assetType]);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+  });
+  return symbols.map((s) => s.ticker);
+}
+
+async function getDivergenceUniverseTickers() {
+  if (!divergencePool) return [];
+  try {
+    // Refresh from FMP every scan so the universe is current.
+    return await refreshDivergenceSymbolUniverse();
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`FMP universe refresh failed, falling back to cached divergence symbols: ${message}`);
+    const existing = await divergencePool.query(`
+      SELECT ticker
+      FROM divergence_symbols
+      WHERE is_active = TRUE
+      ORDER BY ticker ASC
+    `);
+    return existing.rows.map((row) => String(row.ticker || '').trim().toUpperCase()).filter(Boolean);
+  }
+}
+
+async function computeSymbolDivergenceSignals(ticker) {
+  const parentFetchInterval = '4hour';
+  const [parentRows, sourceRows] = await Promise.all([
+    fmpIntradayChartHistory(ticker, parentFetchInterval, DIVERGENCE_SCAN_LOOKBACK_DAYS),
+    fmpIntradayChartHistory(ticker, DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_LOOKBACK_DAYS)
+  ]);
+
+  if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
+  const dailyBars = aggregate4HourBarsToDaily(
+    convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
+  );
+  if (!Array.isArray(dailyBars) || dailyBars.length < 2) return [];
+
+  const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
+    convertToLATime(sourceRows || [], DIVERGENCE_SOURCE_INTERVAL).sort((a, b) => Number(a.time) - Number(b.time))
+  );
+  const dailyDeltas = computeVolumeDeltaByParentBars(dailyBars, sourceBars, DIVERGENCE_SCAN_PARENT_INTERVAL);
+  const deltaByTime = new Map(dailyDeltas.map((point) => [Number(point.time), Number(point.delta) || 0]));
+
+  const results = [];
+
+  const latestDaily = dailyBars[dailyBars.length - 1];
+  const previousDaily = dailyBars[dailyBars.length - 2];
+  if (latestDaily && previousDaily) {
+    const latestDelta = Number(deltaByTime.get(Number(latestDaily.time))) || 0;
+    const signal = classifyDivergenceSignal(latestDelta, Number(latestDaily.close), Number(previousDaily.close));
+    if (signal) {
+      results.push({
+        ticker,
+        signal_type: signal,
+        trade_date: etDateStringFromUnixSeconds(Number(latestDaily.time)),
+        timeframe: '1d',
+        source_interval: DIVERGENCE_SOURCE_INTERVAL,
+        price: Number(latestDaily.close),
+        prev_close: Number(previousDaily.close),
+        volume_delta: latestDelta
+      });
+    }
+  }
+
+  const weeklyBars = aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas);
+  if (weeklyBars.length >= 2) {
+    const latestWeekly = weeklyBars[weeklyBars.length - 1];
+    const previousWeekly = weeklyBars[weeklyBars.length - 2];
+    const weeklySignal = classifyDivergenceSignal(
+      Number(latestWeekly.delta),
+      Number(latestWeekly.close),
+      Number(previousWeekly.close)
+    );
+    if (weeklySignal) {
+      results.push({
+        ticker,
+        signal_type: weeklySignal,
+        trade_date: etDateStringFromUnixSeconds(Number(latestWeekly.time)),
+        timeframe: '1w',
+        source_interval: DIVERGENCE_SOURCE_INTERVAL,
+        price: Number(latestWeekly.close),
+        prev_close: Number(previousWeekly.close),
+        volume_delta: Number(latestWeekly.delta)
+      });
+    }
+  }
+
+  return results;
+}
+
+async function startDivergenceScanJob(runForDate, totalSymbols, trigger) {
+  if (!divergencePool) return null;
+  const result = await divergencePool.query(`
+    INSERT INTO divergence_scan_jobs(run_for_date, status, total_symbols, notes)
+    VALUES($1, 'running', $2, $3)
+    RETURNING id
+  `, [runForDate, totalSymbols, `trigger=${trigger}`]);
+  return Number(result.rows[0]?.id || 0) || null;
+}
+
+async function updateDivergenceScanJob(jobId, patch) {
+  if (!divergencePool || !jobId) return;
+  const fields = [];
+  const values = [];
+  let idx = 1;
+  for (const [key, value] of Object.entries(patch || {})) {
+    fields.push(`${key} = $${idx}`);
+    values.push(value);
+    idx += 1;
+  }
+  if (!fields.length) return;
+  values.push(jobId);
+  await divergencePool.query(`UPDATE divergence_scan_jobs SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+}
+
+async function upsertDivergenceSignal(signal, scanJobId) {
+  if (!divergencePool) return;
+  await divergencePool.query(`
+    INSERT INTO divergence_signals(
+      ticker,
+      signal_type,
+      trade_date,
+      price,
+      prev_close,
+      volume_delta,
+      timeframe,
+      source_interval,
+      timestamp,
+      scan_job_id
+    )
+    VALUES($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+    ON CONFLICT (trade_date, ticker, timeframe, source_interval)
+    DO UPDATE SET
+      signal_type = EXCLUDED.signal_type,
+      price = EXCLUDED.price,
+      prev_close = EXCLUDED.prev_close,
+      volume_delta = EXCLUDED.volume_delta,
+      timestamp = NOW(),
+      scan_job_id = EXCLUDED.scan_job_id
+  `, [
+    signal.ticker,
+    signal.signal_type,
+    signal.trade_date,
+    signal.price,
+    signal.prev_close,
+    signal.volume_delta,
+    signal.timeframe,
+    signal.source_interval,
+    scanJobId
+  ]);
+}
+
+async function runDailyDivergenceScan(options = {}) {
+  if (!isDivergenceConfigured()) {
+    return { status: 'disabled', reason: 'Divergence database is not configured' };
+  }
+  if (divergenceScanRunning) {
+    return { status: 'running' };
+  }
+
+  const force = Boolean(options.force);
+  const runDate = String(options.runDateEt || currentEtDateString()).trim();
+  const trigger = String(options.trigger || 'manual');
+  if (!force && divergenceLastScanDateEt === runDate) {
+    return { status: 'skipped', reason: 'already-scanned', runDate };
+  }
+
+  divergenceScanRunning = true;
+  let scanJobId = null;
+  let processed = 0;
+  let bullishCount = 0;
+  let bearishCount = 0;
+  let errorCount = 0;
+
+  try {
+    const symbols = await getDivergenceUniverseTickers();
+    const totalSymbols = symbols.length;
+    scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
+
+    await divergencePool.query(`
+      DELETE FROM divergence_signals
+      WHERE trade_date = $1
+        AND source_interval = $2
+        AND timeframe IN ('1d', '1w')
+    `, [runDate, DIVERGENCE_SOURCE_INTERVAL]);
+
+    if (totalSymbols === 0) {
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'completed',
+        finished_at: new Date(),
+        processed_symbols: 0
+      });
+      divergenceLastScanDateEt = runDate;
+      return { status: 'completed', runDate, processed: 0 };
+    }
+
+    const targetSpacingMs = Math.max(0, Math.floor((DIVERGENCE_SCAN_SPREAD_MINUTES * 60 * 1000) / totalSymbols));
+
+    for (let i = 0; i < symbols.length; i += DIVERGENCE_SCAN_CONCURRENCY) {
+      const batch = symbols.slice(i, i + DIVERGENCE_SCAN_CONCURRENCY);
+      const startedAt = Date.now();
+      await Promise.all(batch.map(async (ticker) => {
+        try {
+          const signals = await computeSymbolDivergenceSignals(ticker);
+          for (const signal of signals) {
+            await upsertDivergenceSignal(signal, scanJobId);
+            if (signal.signal_type === 'bullish') bullishCount += 1;
+            if (signal.signal_type === 'bearish') bearishCount += 1;
+          }
+        } catch (err) {
+          errorCount += 1;
+          const message = err && err.message ? err.message : String(err);
+          console.error(`Divergence scan failed for ${ticker}: ${message}`);
+        } finally {
+          processed += 1;
+        }
+      }));
+
+      if (scanJobId && (processed % 50 === 0 || processed === totalSymbols)) {
+        await updateDivergenceScanJob(scanJobId, {
+          processed_symbols: processed,
+          bullish_count: bullishCount,
+          bearish_count: bearishCount,
+          error_count: errorCount
+        });
+      }
+
+      const elapsed = Date.now() - startedAt;
+      if (targetSpacingMs > elapsed) {
+        await sleep(targetSpacingMs - elapsed);
+      }
+    }
+
+    await updateDivergenceScanJob(scanJobId, {
+      status: 'completed',
+      finished_at: new Date(),
+      processed_symbols: processed,
+      bullish_count: bullishCount,
+      bearish_count: bearishCount,
+      error_count: errorCount
+    });
+    divergenceLastScanDateEt = runDate;
+    return {
+      status: 'completed',
+      runDate,
+      processed,
+      bullishCount,
+      bearishCount,
+      errorCount
+    };
+  } catch (err) {
+    await updateDivergenceScanJob(scanJobId, {
+      status: 'failed',
+      finished_at: new Date(),
+      processed_symbols: processed,
+      bullish_count: bullishCount,
+      bearish_count: bearishCount,
+      error_count: errorCount,
+      notes: String(err && err.message ? err.message : err || '')
+    });
+    throw err;
+  } finally {
+    divergenceScanRunning = false;
+  }
+}
+
+function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
+  const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const candidate = new Date(nowEt);
+  candidate.setHours(16, 20, 0, 0);
+
+  if (!isEtWeekday(candidate) || nowEt.getTime() >= candidate.getTime()) {
+    candidate.setDate(candidate.getDate() + 1);
+    while (!isEtWeekday(candidate)) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+  }
+
+  return easternLocalToUtcMs(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    candidate.getDate(),
+    16,
+    20
+  );
+}
+
+function scheduleNextDivergenceScan() {
+  if (!isDivergenceConfigured() || !DIVERGENCE_SCANNER_ENABLED) return;
+  if (divergenceSchedulerTimer) clearTimeout(divergenceSchedulerTimer);
+  const nextRunMs = getNextDivergenceScanUtcMs(new Date());
+  const delayMs = Math.max(1000, nextRunMs - Date.now());
+  divergenceSchedulerTimer = setTimeout(async () => {
+    try {
+      await runDailyDivergenceScan({ trigger: 'scheduler' });
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.error(`Scheduled divergence scan failed: ${message}`);
+    } finally {
+      scheduleNextDivergenceScan();
+    }
+  }, delayMs);
+  if (typeof divergenceSchedulerTimer.unref === 'function') {
+    divergenceSchedulerTimer.unref();
+  }
+  console.log(`Next divergence scan scheduled in ${Math.round(delayMs / 1000)}s`);
+}
+
+app.post('/api/divergence/scan', async (req, res) => {
+  if (!isDivergenceConfigured()) {
+    return res.status(503).json({ error: 'Divergence database is not configured' });
+  }
+  const configuredSecret = String(process.env.DIVERGENCE_SCAN_SECRET || '').trim();
+  const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+  if (configuredSecret && configuredSecret !== providedSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (divergenceScanRunning) {
+    return res.status(409).json({ status: 'running' });
+  }
+
+  const force = String(req.query.force || '').toLowerCase() === 'true' || req.body?.force === true;
+  const runDateEt = req.body?.runDateEt ? String(req.body.runDateEt).trim() : undefined;
+  runDailyDivergenceScan({ force, runDateEt, trigger: 'manual-api' })
+    .then((summary) => {
+      console.log('Manual divergence scan completed:', summary);
+    })
+    .catch((err) => {
+      const message = err && err.message ? err.message : String(err);
+      console.error(`Manual divergence scan failed: ${message}`);
+    });
+
+  return res.status(202).json({ status: 'started' });
+});
+
+app.get('/api/divergence/scan/status', async (req, res) => {
+  if (!isDivergenceConfigured()) {
+    return res.status(503).json({ error: 'Divergence database is not configured' });
+  }
+  try {
+    const latest = await divergencePool.query(`
+      SELECT *
+      FROM divergence_scan_jobs
+      ORDER BY started_at DESC
+      LIMIT 1
+    `);
+    res.json({
+      running: divergenceScanRunning,
+      lastScanDateEt: divergenceLastScanDateEt || null,
+      latestJob: latest.rows[0] || null
+    });
+  } catch (err) {
+    console.error('Failed to fetch divergence scan status:', err);
+    res.status(500).json({ error: 'Failed to fetch scan status' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  scheduleNextDivergenceScan();
 });

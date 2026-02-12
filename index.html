@@ -59,6 +59,7 @@
         <nav class="main-nav">
           <button id="nav-breadth" class="nav-btn">Breadth</button>
           <button id="nav-live" class="nav-btn active">Live</button>
+          <button id="nav-divergence" class="nav-btn">Divergence</button>
           <button id="nav-leaderboard" class="nav-btn">Leaders</button>
         </nav>
       </header>
@@ -107,6 +108,48 @@
             <input type="month" id="history-month" class="glass-input hidden" />
           </div>
           <button id="reset-filter" class="hidden">← Back</button>
+        </div>
+        <!-- Divergence Controls -->
+        <div id="divergence-controls" class="hidden">
+          <div class="feed-controls-group">
+            <button
+              class="tf-btn"
+              id="divergence-btn-30"
+              data-tooltip="Divergence signals from last 30 days"
+            >
+              30
+            </button>
+            <button
+              class="tf-btn"
+              id="divergence-btn-7"
+              data-tooltip="Divergence signals from last 7 days"
+            >
+              7
+            </button>
+            <button
+              class="tf-btn active"
+              id="divergence-btn-1"
+              data-tooltip="Divergence signals from today"
+            >
+              1
+            </button>
+            <button
+              class="tf-btn"
+              id="divergence-btn-week"
+              data-tooltip="Divergence signals from this week"
+            >
+              W
+            </button>
+            <button
+              class="tf-btn"
+              id="divergence-btn-month"
+              data-tooltip="Divergence signals from this month"
+            >
+              M
+            </button>
+            <input type="week" id="divergence-history-week" class="glass-input hidden" />
+            <input type="month" id="divergence-history-month" class="glass-input hidden" />
+          </div>
         </div>
         <!-- Leaderboard Controls -->
         <div id="leaderboard-controls" class="hidden">
@@ -258,6 +301,43 @@
               </div>
             </div>
             <div id="weekly-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- DIVERGENCE VIEW -->
+      <main id="view-divergence" class="hidden">
+        <div id="divergence-dashboard-view" class="split-view">
+          <div class="column">
+            <div class="column-header">
+              <h2>Daily</h2>
+              <div class="header-sort-controls divergence-daily-sort">
+                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
+                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn" data-sort="intensity" title="Sort by Force">F</button>
+                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+              </div>
+            </div>
+            <div id="divergence-daily-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+
+          <div class="column">
+            <div class="column-header">
+              <h2>Weekly</h2>
+              <div class="header-sort-controls divergence-weekly-sort">
+                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
+                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn" data-sort="intensity" title="Sort by Force">F</button>
+                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+              </div>
+            </div>
+            <div id="divergence-weekly-container" class="alerts-list">
               <div class="loading">Loading...</div>
             </div>
           </div>

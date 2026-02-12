@@ -12,9 +12,18 @@ import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard'
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls } from './chart';
+import {
+    fetchDivergenceSignals,
+    renderDivergenceOverview,
+    setDivergenceFeedModeState,
+    isCurrentDivergenceTimeframe,
+    setDivergenceDailySort,
+    setDivergenceWeeklySort,
+    setupDivergenceFeedDelegation
+} from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
 
-let currentView: 'live' | 'leaderboard' | 'breadth' = 'live'; 
+let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live'; 
 let dashboardScrollY = 0;
  
 
@@ -53,7 +62,7 @@ window.showOverview = function() {
 
 }
 
-function switchView(view: 'live' | 'leaderboard' | 'breadth') {
+function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
     currentView = view;
     // Update Tabs
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -61,9 +70,11 @@ function switchView(view: 'live' | 'leaderboard' | 'breadth') {
 
     // Hide all views and controls
     document.getElementById('view-live')?.classList.add('hidden');
+    document.getElementById('view-divergence')?.classList.add('hidden');
     document.getElementById('view-leaderboard')?.classList.add('hidden');
     document.getElementById('view-breadth')?.classList.add('hidden');
     document.getElementById('live-controls')?.classList.add('hidden');
+    document.getElementById('divergence-controls')?.classList.add('hidden');
     document.getElementById('leaderboard-controls')?.classList.add('hidden');
     document.getElementById('breadth-controls')?.classList.add('hidden');
 
@@ -71,6 +82,10 @@ function switchView(view: 'live' | 'leaderboard' | 'breadth') {
     if (view === 'live') {
         document.getElementById('view-live')?.classList.remove('hidden');
         document.getElementById('live-controls')?.classList.remove('hidden');
+    } else if (view === 'divergence') {
+        document.getElementById('view-divergence')?.classList.remove('hidden');
+        document.getElementById('divergence-controls')?.classList.remove('hidden');
+        fetchDivergenceSignals(true).then(renderDivergenceOverview);
     } else if (view === 'leaderboard') {
         document.getElementById('view-leaderboard')?.classList.remove('hidden');
         document.getElementById('leaderboard-controls')?.classList.remove('hidden');
@@ -122,6 +137,41 @@ function setLiveFeedMode(mode: LiveFeedMode) {
             renderOverview();
         }
     });
+}
+
+function setDivergenceFeedMode(mode: LiveFeedMode, fetchData = true) {
+    setDivergenceFeedModeState(mode);
+
+    const btn30 = document.getElementById('divergence-btn-30');
+    const btn7 = document.getElementById('divergence-btn-7');
+    const btn1 = document.getElementById('divergence-btn-1');
+    const btnWeek = document.getElementById('divergence-btn-week');
+    const btnMonth = document.getElementById('divergence-btn-month');
+
+    const inputWeek = document.getElementById('divergence-history-week');
+    const inputMonth = document.getElementById('divergence-history-month');
+
+    [btn30, btn7, btn1, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    inputWeek?.classList.add('hidden');
+    inputMonth?.classList.add('hidden');
+
+    if (mode === '30') {
+        btn30?.classList.add('active');
+    } else if (mode === '7') {
+        btn7?.classList.add('active');
+    } else if (mode === '1') {
+        btn1?.classList.add('active');
+    } else if (mode === 'week') {
+        btnWeek?.classList.add('active');
+        inputWeek?.classList.remove('hidden');
+    } else if (mode === 'month') {
+        btnMonth?.classList.add('active');
+        inputMonth?.classList.remove('hidden');
+    }
+
+    if (fetchData) {
+        fetchDivergenceSignals(true).then(renderDivergenceOverview);
+    }
 }
 
 function initSearch() {
@@ -189,6 +239,7 @@ function initSearch() {
 document.addEventListener('DOMContentLoaded', () => {
     // Navigation
     document.getElementById('nav-live')?.addEventListener('click', () => switchView('live'));
+    document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
     document.getElementById('nav-leaderboard')?.addEventListener('click', () => {
         switchView('leaderboard');
     });
@@ -203,10 +254,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-1')?.addEventListener('click', () => setLiveFeedMode('1'));
     document.getElementById('btn-week')?.addEventListener('click', () => setLiveFeedMode('week'));
     document.getElementById('btn-month')?.addEventListener('click', () => setLiveFeedMode('month'));
+    document.getElementById('divergence-btn-30')?.addEventListener('click', () => setDivergenceFeedMode('30'));
+    document.getElementById('divergence-btn-7')?.addEventListener('click', () => setDivergenceFeedMode('7'));
+    document.getElementById('divergence-btn-1')?.addEventListener('click', () => setDivergenceFeedMode('1'));
+    document.getElementById('divergence-btn-week')?.addEventListener('click', () => setDivergenceFeedMode('week'));
+    document.getElementById('divergence-btn-month')?.addEventListener('click', () => setDivergenceFeedMode('month'));
     
     // New Date Inputs
     const weekInput = document.getElementById('history-week') as HTMLInputElement;
     const monthInput = document.getElementById('history-month') as HTMLInputElement;
+    const divergenceWeekInput = document.getElementById('divergence-history-week') as HTMLInputElement;
+    const divergenceMonthInput = document.getElementById('divergence-history-month') as HTMLInputElement;
 
     // Ticker View Daily Sort Buttons
     document.querySelectorAll('.ticker-daily-sort .tf-btn').forEach(btn => {
@@ -223,13 +281,29 @@ document.addEventListener('DOMContentLoaded', () => {
             setTickerWeeklySort(mode);
         });
     });
+    document.querySelectorAll('.divergence-daily-sort .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDivergenceDailySort(mode);
+        });
+    });
+    document.querySelectorAll('.divergence-weekly-sort .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDivergenceWeeklySort(mode);
+        });
+    });
 
     // Set defaults
     if (weekInput) weekInput.value = getCurrentWeekISO();
     if (monthInput) monthInput.value = getCurrentMonthISO();
+    if (divergenceWeekInput) divergenceWeekInput.value = getCurrentWeekISO();
+    if (divergenceMonthInput) divergenceMonthInput.value = getCurrentMonthISO();
 
     weekInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
     monthInput?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
+    divergenceWeekInput?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
+    divergenceMonthInput?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
 
     // Timeframe Buttons (Leaderboard)
     document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(btn => {
@@ -260,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial Load
     setLiveFeedMode('1'); 
+    setDivergenceFeedMode('1', false);
     
     setInterval(() => {
         // Poll if current
@@ -273,6 +348,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderOverview();
                 }
              });
+        } else if (currentView === 'divergence' && isCurrentDivergenceTimeframe()) {
+            fetchDivergenceSignals().then(renderDivergenceOverview);
         }
     }, 10000); 
 
@@ -281,6 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup Event Delegation
     setupLiveFeedDelegation();
+    setupDivergenceFeedDelegation();
     setupLeaderboardDelegation();
 
     // Mobile Collapse Toggle (only on mobile)
