@@ -16,7 +16,7 @@ const brotliCompressAsync = promisify(zlib.brotliCompress);
 app.use(cors());
 app.use(express.json());
 
-const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'true').toLowerCase() !== 'false';
+const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '46110603');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
