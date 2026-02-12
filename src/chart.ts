@@ -2493,8 +2493,9 @@ function rebuildPricePaneChangeMap(bars: any[]): void {
   for (let i = 1; i < bars.length; i++) {
     const currClose = Number(bars[i]?.close);
     const prevClose = Number(bars[i - 1]?.close);
-    if (!Number.isFinite(currClose) || !Number.isFinite(prevClose)) continue;
-    priceChangeByTime.set(timeKey(bars[i].time), currClose - prevClose);
+    if (!Number.isFinite(currClose) || !Number.isFinite(prevClose) || prevClose === 0) continue;
+    const percentChange = ((currClose - prevClose) / prevClose) * 100;
+    priceChangeByTime.set(timeKey(bars[i].time), percentChange);
   }
 }
 
@@ -2519,7 +2520,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   }
 
   const sign = delta > 0 ? '+' : '';
-  changeEl.textContent = `${sign}${delta.toFixed(2)}`;
+  changeEl.textContent = `${sign}${delta.toFixed(2)}%`;
   changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
   changeEl.style.display = 'inline-flex';
   layoutTopPaneBadges(container);
