@@ -45,6 +45,15 @@ function setRunStatusText(text: string): void {
     status.textContent = text;
 }
 
+function toStatusTextFromError(error: unknown): string {
+    const message = String((error as any)?.message || error || '').trim();
+    if (!message) return 'Run failed';
+    if (/not configured/i.test(message)) return 'DB not configured';
+    if (/unauthorized/i.test(message)) return 'Unauthorized';
+    if (/already running|running/i.test(message)) return 'Already running';
+    return message.length > 56 ? `${message.slice(0, 56)}...` : message;
+}
+
 function summarizeStatus(status: DivergenceScanStatus): string {
     const latest = status.latestJob;
     if (status.running) {
@@ -88,7 +97,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         }
     } catch (error) {
         console.error('Failed to poll divergence scan status:', error);
-        setRunStatusText('Status unavailable');
+        setRunStatusText(toStatusTextFromError(error));
         clearDivergenceScanPolling();
         setRunButtonState(false);
     } finally {
@@ -116,7 +125,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
     } catch (error) {
         console.error('Failed to sync divergence scan UI state:', error);
         setRunButtonState(false);
-        setRunStatusText('Status unavailable');
+        setRunStatusText(toStatusTextFromError(error));
     }
 }
 
@@ -138,7 +147,7 @@ export async function runManualDivergenceScan(): Promise<void> {
     } catch (error) {
         console.error('Failed to start divergence scan:', error);
         setRunButtonState(false);
-        setRunStatusText('Run failed');
+        setRunStatusText(toStatusTextFromError(error));
     }
 }
 

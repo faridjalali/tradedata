@@ -89,9 +89,12 @@ export async function startDivergenceScan(options?: { force?: boolean; refreshUn
 
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
     const response = await fetch('/api/divergence/scan/status');
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json().catch(() => null as any);
     if (!response.ok || !payload) {
-        throw new Error('Failed to fetch divergence scan status');
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : 'Failed to fetch divergence scan status';
+        throw new Error(reason);
     }
     return {
         running: Boolean((payload as any).running),
