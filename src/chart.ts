@@ -107,6 +107,7 @@ type MASourceMode = 'daily' | 'timeframe';
 type MidlineStyle = 'dotted' | 'solid';
 type PaneId = 'price-chart-container' | 'vd-rsi-chart-container' | 'rsi-chart-container' | 'vd-chart-container';
 type TrendToolPane = 'rsi' | 'volumeDeltaRsi';
+type PaneControlType = 'price' | 'volumeDelta' | 'volumeDeltaRsi' | 'rsi';
 
 interface MASetting {
   enabled: boolean;
@@ -1285,7 +1286,7 @@ function resetVolumeDeltaRSISettingsToDefault(): void {
   persistSettingsToStorage();
 }
 
-function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDelta' | 'volumeDeltaRsi' | 'rsi'): HTMLButtonElement {
+function createSettingsButton(container: HTMLElement, pane: PaneControlType): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
@@ -1314,6 +1315,44 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDel
   btn.style.padding = '0';
   container.appendChild(btn);
   return btn;
+}
+
+function getPaneShortLabel(pane: PaneControlType): string {
+  if (pane === 'volumeDelta') return 'VD';
+  if (pane === 'volumeDeltaRsi') return 'VD-RSI';
+  if (pane === 'rsi') return 'RSI';
+  return 'Price';
+}
+
+function createPaneNameBadge(container: HTMLElement, pane: PaneControlType): HTMLDivElement {
+  const existing = container.querySelector(`.pane-name-badge[data-pane="${pane}"]`) as HTMLDivElement | null;
+  if (existing) return existing;
+
+  const badge = document.createElement('div');
+  badge.className = 'pane-name-badge';
+  badge.dataset.pane = pane;
+  badge.textContent = getPaneShortLabel(pane);
+  badge.style.position = 'absolute';
+  badge.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
+  badge.style.top = `${PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX}px`;
+  badge.style.zIndex = '30';
+  badge.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  badge.style.padding = '0 8px';
+  badge.style.borderRadius = '4px';
+  badge.style.border = '1px solid #30363d';
+  badge.style.background = '#161b22';
+  badge.style.color = '#c9d1d9';
+  badge.style.display = 'inline-flex';
+  badge.style.alignItems = 'center';
+  badge.style.justifyContent = 'center';
+  badge.style.fontSize = '12px';
+  badge.style.fontWeight = '600';
+  badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  badge.style.pointerEvents = 'none';
+  badge.style.userSelect = 'none';
+  container.appendChild(badge);
+  return badge;
 }
 
 function createPaneTrendlineButton(
@@ -2180,6 +2219,10 @@ function ensureSettingsUI(
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
+  createPaneNameBadge(chartContainer, 'price');
+  createPaneNameBadge(volumeDeltaRsiContainer, 'volumeDeltaRsi');
+  createPaneNameBadge(rsiContainer, 'rsi');
+  createPaneNameBadge(volumeDeltaContainer, 'volumeDelta');
   const volumeDeltaRsiTrendBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'trend', 0);
   const volumeDeltaRsiEraseBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'erase', 1);
   const volumeDeltaRsiDivergenceBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'divergence', 2);
