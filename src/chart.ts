@@ -2482,6 +2482,49 @@ function showLoadingOverlay(container: HTMLElement): void {
   container.appendChild(overlay);
 }
 
+function showRetryOverlay(container: HTMLElement, onRetry: () => void): void {
+  const existingOverlay = container.querySelector('.chart-loading-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'chart-loading-overlay';
+  overlay.style.cssText = `
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(13, 17, 23, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: auto;
+  `;
+
+  const retryBtn = document.createElement('button');
+  retryBtn.type = 'button';
+  retryBtn.textContent = 'Try Refreshing';
+  retryBtn.style.background = '#161b22';
+  retryBtn.style.color = '#c9d1d9';
+  retryBtn.style.border = '1px solid #30363d';
+  retryBtn.style.borderRadius = '6px';
+  retryBtn.style.padding = '8px 12px';
+  retryBtn.style.fontSize = '12px';
+  retryBtn.style.fontWeight = '600';
+  retryBtn.style.cursor = 'pointer';
+  retryBtn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  retryBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    onRetry();
+  });
+
+  overlay.appendChild(retryBtn);
+  container.appendChild(overlay);
+}
+
 function hideLoadingOverlay(container: HTMLElement): void {
   const overlay = container.querySelector('.chart-loading-overlay');
   if (overlay) {
@@ -2637,14 +2680,13 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
 
-    // Hide loading indicators on error
-    hideLoadingOverlay(chartContainer);
-    hideLoadingOverlay(volumeDeltaRsiContainer);
-    hideLoadingOverlay(rsiContainer);
-    hideLoadingOverlay(volumeDeltaContainer);
-
     console.error('Failed to load chart:', err);
     if (isNoDataTickerError(err)) {
+      // Hide loading indicators for no-data state.
+      hideLoadingOverlay(chartContainer);
+      hideLoadingOverlay(volumeDeltaRsiContainer);
+      hideLoadingOverlay(rsiContainer);
+      hideLoadingOverlay(volumeDeltaContainer);
       if (candleSeries) {
         candleSeries.setData([]);
       }
@@ -2679,8 +2721,21 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
     priceChangeByTime = new Map();
     setPricePaneChange(chartContainer, null);
-    errorContainer.textContent = `Error loading chart: ${err.message}`;
-    errorContainer.style.display = 'block';
+    errorContainer.style.display = 'none';
+    errorContainer.textContent = '';
+
+    const retryRender = () => {
+      showLoadingOverlay(chartContainer);
+      showLoadingOverlay(volumeDeltaRsiContainer);
+      showLoadingOverlay(rsiContainer);
+      showLoadingOverlay(volumeDeltaContainer);
+      renderCustomChart(ticker, interval);
+    };
+
+    showRetryOverlay(chartContainer, retryRender);
+    showRetryOverlay(volumeDeltaRsiContainer, retryRender);
+    showRetryOverlay(rsiContainer, retryRender);
+    showRetryOverlay(volumeDeltaContainer, retryRender);
   }
 }
 
