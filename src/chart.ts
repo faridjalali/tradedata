@@ -2547,7 +2547,7 @@ function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivEl
   el.style.top = '8px';
   el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
   el.style.zIndex = '34';
-  el.style.minWidth = '42px';
+  el.style.minWidth = '34px';
   el.style.background = '#0d1117';
   el.style.border = '1px solid #30363d';
   el.style.borderRadius = '4px';
@@ -2615,7 +2615,7 @@ function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[])
     row.style.display = 'flex';
     row.style.alignItems = 'center';
     row.style.justifyContent = 'center';
-    row.style.width = '42px';
+    row.style.width = '34px';
     row.style.height = '32px';
     row.style.fontSize = '14px';
     row.style.fontWeight = '500';
