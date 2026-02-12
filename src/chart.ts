@@ -64,10 +64,13 @@ let volumeDeltaRsiDivergenceOverlayChart: any = null;
 let hasLoadedSettingsFromStorage = false;
 let chartFetchAbortController: AbortController | null = null;
 let intervalSwitchDebounceTimer: number | null = null;
+let chartLiveRefreshTimer: number | null = null;
+let chartLiveRefreshInFlight = false;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
 const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
+const CHART_LIVE_REFRESH_MS = 60 * 1000;
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -3656,7 +3659,44 @@ function scheduleIntervalChartRender(interval: ChartInterval): void {
   }, INTERVAL_SWITCH_DEBOUNCE_MS);
 }
 
-export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
+function isTickerChartVisible(): boolean {
+  if (document.visibilityState !== 'visible') return false;
+  const liveView = document.getElementById('view-live');
+  if (liveView?.classList.contains('hidden')) return false;
+  const tickerView = document.getElementById('ticker-view');
+  if (tickerView?.classList.contains('hidden')) return false;
+  return true;
+}
+
+function ensureChartLiveRefreshTimer(): void {
+  if (chartLiveRefreshTimer !== null) return;
+  chartLiveRefreshTimer = window.setInterval(() => {
+    if (chartLiveRefreshInFlight) return;
+    if (chartFetchAbortController) return;
+    if (!currentChartTicker) return;
+    if (!isTickerChartVisible()) return;
+
+    const scheduledTicker = currentChartTicker;
+    const scheduledInterval = currentChartInterval;
+    chartLiveRefreshInFlight = true;
+    renderCustomChart(scheduledTicker, scheduledInterval, { silent: true })
+      .catch(() => {})
+      .finally(() => {
+        chartLiveRefreshInFlight = false;
+      });
+  }, CHART_LIVE_REFRESH_MS);
+}
+
+interface RenderCustomChartOptions {
+  silent?: boolean;
+}
+
+export async function renderCustomChart(
+  ticker: string,
+  interval: ChartInterval = currentChartInterval,
+  options: RenderCustomChartOptions = {}
+) {
+  const silent = options.silent === true;
   ensureSettingsLoadedFromStorage();
   const previousTicker = currentChartTicker;
   const previousInterval = currentChartInterval;
@@ -3731,11 +3771,13 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   applyPaneScaleVisibilityByPosition();
 
-  // Show loading indicators on all chart panes
-  showLoadingOverlay(chartContainer);
-  showLoadingOverlay(volumeDeltaRsiContainer);
-  showLoadingOverlay(rsiContainer);
-  showLoadingOverlay(volumeDeltaContainer);
+  // Show loading indicators only on user-triggered renders.
+  if (!silent) {
+    showLoadingOverlay(chartContainer);
+    showLoadingOverlay(volumeDeltaRsiContainer);
+    showLoadingOverlay(rsiContainer);
+    showLoadingOverlay(volumeDeltaContainer);
+  }
 
   if (chartFetchAbortController) {
     try {
@@ -3826,16 +3868,21 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     syncChartsToPriceRange();
     refreshMonthGridLines();
 
-    // Hide loading indicators after successful load
-    hideLoadingOverlay(chartContainer);
-    hideLoadingOverlay(volumeDeltaRsiContainer);
-    hideLoadingOverlay(rsiContainer);
-    hideLoadingOverlay(volumeDeltaContainer);
+    if (!silent) {
+      // Hide loading indicators after successful load
+      hideLoadingOverlay(chartContainer);
+      hideLoadingOverlay(volumeDeltaRsiContainer);
+      hideLoadingOverlay(rsiContainer);
+      hideLoadingOverlay(volumeDeltaContainer);
+    }
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
     if (err?.name === 'AbortError') return;
 
     console.error('Failed to load chart:', err);
+    if (silent) {
+      return;
+    }
     if (isNoDataTickerError(err)) {
       // Hide loading indicators for no-data state.
       hideLoadingOverlay(chartContainer);
@@ -4148,6 +4195,7 @@ function setupChartSync() {
 export function initChartControls() {
   const controls = document.getElementById('chart-controls');
   if (!controls) return;
+  ensureChartLiveRefreshTimer();
 
   // Interval buttons
   controls.querySelectorAll('button[data-interval]').forEach(btn => {

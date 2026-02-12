@@ -658,6 +658,140 @@ async function fmpDaily(symbol) {
   return null;
 }
 
+function normalizeQuoteTimestamp(value) {
+  if (Number.isFinite(Number(value))) {
+    const numeric = Number(value);
+    if (numeric > 1e12) return Math.floor(numeric / 1000);
+    if (numeric > 1e10) return Math.floor(numeric / 1000);
+    return Math.floor(numeric);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsedMs = Date.parse(value.trim());
+    if (Number.isFinite(parsedMs)) {
+      return Math.floor(parsedMs / 1000);
+    }
+  }
+  return null;
+}
+
+function toQuoteRow(payload) {
+  if (Array.isArray(payload)) return payload[0] || null;
+  if (payload && Array.isArray(payload.data)) return payload.data[0] || null;
+  if (payload && Array.isArray(payload.quote)) return payload.quote[0] || null;
+  if (payload && typeof payload === 'object') return payload;
+  return null;
+}
+
+async function fmpQuoteSingle(symbol) {
+  assertFmpKey();
+  const symbolEncoded = encodeURIComponent(symbol);
+  const urls = [
+    buildFmpUrl(FMP_STABLE_BASE, '/quote', { symbol, apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, `/quote/${symbolEncoded}`, { apikey: FMP_KEY }),
+    buildFmpUrl(FMP_LEGACY_BASE, '/quote', { symbol, apikey: FMP_KEY })
+  ];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      const payload = await fetchFmpJson(url, 'FMP quote');
+      const row = toQuoteRow(payload);
+      if (!row) continue;
+      const price = toNumberOrNull(row.price ?? row.last ?? row.c ?? row.close ?? row.ask ?? row.bid);
+      if (!Number.isFinite(price)) continue;
+      return {
+        price,
+        timestamp: normalizeQuoteTimestamp(row.timestamp ?? row.lastUpdated ?? row.time)
+      };
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP quote fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+async function fmpLatestQuote(symbol) {
+  const normalizedSymbol = normalizeTickerSymbol(symbol);
+  if (!normalizedSymbol) return null;
+
+  const cached = getTimedCacheValue(CHART_QUOTE_CACHE, normalizedSymbol);
+  if (cached) {
+    return cached;
+  }
+
+  const candidates = getFmpSymbolCandidates(normalizedSymbol);
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const quote = await fmpQuoteSingle(candidate);
+      if (!quote || !Number.isFinite(Number(quote.price))) continue;
+      setTimedCacheValue(
+        CHART_QUOTE_CACHE,
+        normalizedSymbol,
+        quote,
+        Date.now() + CHART_QUOTE_CACHE_MS
+      );
+      if (candidate !== normalizedSymbol) {
+        console.log(`FMP symbol fallback (quote): ${normalizedSymbol} -> ${candidate}`);
+      }
+      return quote;
+    } catch (err) {
+      lastError = err;
+      const message = err && err.message ? err.message : String(err);
+      console.error(`FMP quote failed for ${candidate} (requested ${normalizedSymbol}): ${message}`);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
+}
+
+function patchLatestBarCloseWithQuote(result, quote) {
+  if (!result || !Array.isArray(result.bars) || result.bars.length === 0) return;
+  const quotePrice = Number(quote && quote.price);
+  if (!Number.isFinite(quotePrice)) return;
+
+  const bars = result.bars;
+  const lastIndex = bars.length - 1;
+  const last = bars[lastIndex];
+  const open = Number(last && last.open);
+  const high = Number(last && last.high);
+  const low = Number(last && last.low);
+
+  const boundedHigh = Number.isFinite(high)
+    ? Math.max(high, quotePrice, Number.isFinite(open) ? open : quotePrice)
+    : quotePrice;
+  const boundedLow = Number.isFinite(low)
+    ? Math.min(low, quotePrice, Number.isFinite(open) ? open : quotePrice)
+    : quotePrice;
+
+  bars[lastIndex] = {
+    ...last,
+    close: quotePrice,
+    high: boundedHigh,
+    low: boundedLow
+  };
+
+  // Keep RSI aligned with the patched latest close.
+  const closePrices = bars.map((bar) => Number(bar.close));
+  const rsiValues = calculateRSI(closePrices, 14);
+  const patchedRsi = [];
+  for (let i = 0; i < bars.length; i++) {
+    const raw = rsiValues[i];
+    if (!Number.isFinite(raw)) continue;
+    patchedRsi.push({
+      time: bars[i].time,
+      value: Math.round(raw * 100) / 100
+    });
+  }
+  result.rsi = patchedRsi;
+}
+
 function formatDateUTC(date) {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -680,6 +814,7 @@ const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
 const VD_RSI_LOWER_TF_CACHE = new Map();
 const VD_RSI_RESULT_CACHE = new Map();
 const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
+const CHART_QUOTE_CACHE = new Map();
 const CHART_IN_FLIGHT_REQUESTS = new Map();
 const CHART_FINAL_RESULT_CACHE = new Map();
 const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 20);
@@ -687,6 +822,7 @@ const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESP
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
 const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
+const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 60_000);
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
 
@@ -785,6 +921,7 @@ const vdRsiCacheCleanupTimer = setInterval(() => {
   sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
   sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
   sweepExpiredTimedCache(CHART_DATA_CACHE);
+  sweepExpiredTimedCache(CHART_QUOTE_CACHE);
   sweepExpiredTimedCache(CHART_FINAL_RESULT_CACHE);
 }, 15 * 60 * 1000);
 if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
@@ -1889,6 +2026,7 @@ function prewarmDailyChartResultFromRows(options = {}) {
         vdRsiSourceInterval,
         timer
       });
+      patchLatestBarCloseWithQuote(result, getTimedCacheValue(CHART_QUOTE_CACHE, ticker));
       setTimedCacheValue(
         CHART_FINAL_RESULT_CACHE,
         prewarmKey,
@@ -1958,6 +2096,13 @@ app.get('/api/chart', async (req, res) => {
         vdRsiSourceInterval
       ]));
       const rowsByInterval = new Map();
+      const quotePromise = fmpLatestQuote(ticker).catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        if (CHART_TIMING_LOG_ENABLED) {
+          console.warn(`[chart-quote] ${ticker} ${interval} skipped: ${message}`);
+        }
+        return null;
+      });
       await Promise.all(requiredIntervals.map(async (tf) => {
         const rows = await fmpIntradayChartHistory(ticker, tf, lookbackDays);
         rowsByInterval.set(tf, rows || []);
@@ -1973,6 +2118,11 @@ app.get('/api/chart', async (req, res) => {
         vdRsiSourceInterval,
         timer
       });
+      const quote = await quotePromise;
+      patchLatestBarCloseWithQuote(result, quote);
+      if (quote) {
+        timer.step('quote_patch');
+      }
       setTimedCacheValue(
         CHART_FINAL_RESULT_CACHE,
         requestKey,
