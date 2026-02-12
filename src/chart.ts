@@ -24,6 +24,7 @@ let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
 let latestRenderRequestId = 0;
 let pricePaneContainerEl: HTMLElement | null = null;
+let volumeDeltaPaneContainerEl: HTMLElement | null = null;
 let priceByTime = new Map<string, number>();
 let priceChangeByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
@@ -110,6 +111,7 @@ interface VolumeDeltaRSISettings {
 
 interface VolumeDeltaSettings {
   sourceInterval: VolumeDeltaSourceInterval;
+  divergenceTable: boolean;
   divergentPriceBars: boolean;
   bullishDivergentColor: string;
   bearishDivergentColor: string;
@@ -153,6 +155,7 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
 
 const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
   sourceInterval: '5min',
+  divergenceTable: true,
   divergentPriceBars: false,
   bullishDivergentColor: '#26a69a',
   bearishDivergentColor: '#ef5350',
@@ -445,6 +448,7 @@ function persistSettingsToStorage(): void {
       },
       volumeDelta: {
         sourceInterval: volumeDeltaSettings.sourceInterval,
+        divergenceTable: volumeDeltaSettings.divergenceTable,
         divergentPriceBars: volumeDeltaSettings.divergentPriceBars,
         bullishDivergentColor: volumeDeltaSettings.bullishDivergentColor,
         bearishDivergentColor: volumeDeltaSettings.bearishDivergentColor,
@@ -513,6 +517,9 @@ function ensureSettingsLoadedFromStorage(): void {
       const source = String(persistedVolumeDelta.sourceInterval || '');
       if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
         volumeDeltaSettings.sourceInterval = source;
+      }
+      if (typeof persistedVolumeDelta.divergenceTable === 'boolean') {
+        volumeDeltaSettings.divergenceTable = persistedVolumeDelta.divergenceTable;
       }
       if (typeof persistedVolumeDelta.divergentPriceBars === 'boolean') {
         volumeDeltaSettings.divergentPriceBars = persistedVolumeDelta.divergentPriceBars;
@@ -774,11 +781,13 @@ function syncRSISettingsPanelValues(): void {
 function syncVolumeDeltaSettingsPanelValues(): void {
   if (!volumeDeltaSettingsPanelEl) return;
   const source = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="source-interval"]') as HTMLSelectElement | null;
+  const divergenceTable = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergence-table"]') as HTMLInputElement | null;
   const divergent = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-price-bars"]') as HTMLInputElement | null;
   const bullish = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-bullish-color"]') as HTMLInputElement | null;
   const bearish = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-bearish-color"]') as HTMLInputElement | null;
   const neutral = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-neutral-color"]') as HTMLInputElement | null;
   if (source) source.value = volumeDeltaSettings.sourceInterval;
+  if (divergenceTable) divergenceTable.checked = volumeDeltaSettings.divergenceTable;
   if (divergent) divergent.checked = volumeDeltaSettings.divergentPriceBars;
   if (bullish) bullish.value = volumeDeltaSettings.bullishDivergentColor;
   if (bearish) bearish.value = volumeDeltaSettings.bearishDivergentColor;
@@ -1136,6 +1145,7 @@ function resetRSISettingsToDefault(): void {
 
 function resetVolumeDeltaSettingsToDefault(): void {
   volumeDeltaSettings.sourceInterval = DEFAULT_VOLUME_DELTA_SETTINGS.sourceInterval;
+  volumeDeltaSettings.divergenceTable = DEFAULT_VOLUME_DELTA_SETTINGS.divergenceTable;
   volumeDeltaSettings.divergentPriceBars = DEFAULT_VOLUME_DELTA_SETTINGS.divergentPriceBars;
   volumeDeltaSettings.bullishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
   volumeDeltaSettings.bearishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
@@ -1442,6 +1452,10 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
       </select>
     </label>
     <label style="margin-bottom:6px;">
+      <span>Divergence table</span>
+      <input type="checkbox" data-vd-setting="divergence-table" />
+    </label>
+    <label style="margin-bottom:6px;">
       <span>Divergent price bars</span>
       <input type="checkbox" data-vd-setting="divergent-price-bars" />
     </label>
@@ -1470,6 +1484,14 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
       volumeDeltaSettings.sourceInterval = nextValue;
       if (currentChartTicker) {
         renderCustomChart(currentChartTicker, currentChartInterval);
+      }
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'divergence-table') {
+      volumeDeltaSettings.divergenceTable = (target as HTMLInputElement).checked;
+      if (volumeDeltaPaneContainerEl) {
+        renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
       }
       persistSettingsToStorage();
       return;
@@ -2449,6 +2471,10 @@ function classifyVolumeDeltaDivergenceForDays(days: number, bars: any[]): 'bulli
 }
 
 function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[]): void {
+  if (!volumeDeltaSettings.divergenceTable) {
+    clearVolumeDeltaDivergenceSummary();
+    return;
+  }
   if (!Array.isArray(bars) || bars.length < 2) {
     clearVolumeDeltaDivergenceSummary();
     return;
@@ -2712,6 +2738,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     return;
   }
   pricePaneContainerEl = chartContainer as HTMLElement;
+  volumeDeltaPaneContainerEl = volumeDeltaContainer as HTMLElement;
 
   // Clear error
   errorContainer.style.display = 'none';
