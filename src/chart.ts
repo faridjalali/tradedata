@@ -930,7 +930,8 @@ function applyChartScaleVisibility(chart: any, show: boolean): void {
   if (!chart) return;
   chart.applyOptions({
     rightPriceScale: {
-      visible: show
+      // Y-axis should always be visible on every pane.
+      visible: true
     },
     timeScale: {
       visible: show,
