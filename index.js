@@ -822,7 +822,7 @@ const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESP
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
 const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
-const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 60_000);
+const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 300_000);
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
 

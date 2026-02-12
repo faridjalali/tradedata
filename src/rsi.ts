@@ -530,6 +530,63 @@ export class RSIChart {
     this.refreshTrendlineCrossLabels();
   }
 
+  updateLatestPoint(
+    point: RSIPoint,
+    latestPricePoint?: { time: string | number, close: number }
+  ): boolean {
+    if (!point || (typeof point.time !== 'string' && typeof point.time !== 'number')) return false;
+    const nextValueRaw = Number(point.value);
+    if (!Number.isFinite(nextValueRaw)) return false;
+    if (this.data.length === 0) return false;
+
+    const lastIndex = this.data.length - 1;
+    const lastTime = this.data[lastIndex]?.time;
+    const lastKey = this.timeKey(lastTime);
+    const nextKey = this.timeKey(point.time);
+    if (lastKey !== nextKey) return false;
+
+    const nextValue = Math.max(
+      RSIChart.RSI_DATA_MIN,
+      Math.min(RSIChart.RSI_DATA_MAX, nextValueRaw)
+    );
+    this.data[lastIndex] = {
+      ...this.data[lastIndex],
+      value: nextValue
+    };
+
+    if (latestPricePoint && this.timeKey(latestPricePoint.time) === lastKey) {
+      const nextClose = Number(latestPricePoint.close);
+      if (Number.isFinite(nextClose)) {
+        if (this.priceData.length > 0 && this.timeKey(this.priceData[this.priceData.length - 1].time) === lastKey) {
+          this.priceData[this.priceData.length - 1] = {
+            ...this.priceData[this.priceData.length - 1],
+            close: nextClose
+          };
+        }
+        this.priceByTime.set(lastKey, nextClose);
+      }
+    }
+
+    if (this.seriesData.length > 0 && this.timeKey(this.seriesData[this.seriesData.length - 1].time) === lastKey) {
+      this.seriesData[this.seriesData.length - 1] = {
+        time: lastTime,
+        value: nextValue
+      };
+    } else {
+      this.seriesData = this.buildSeriesData(this.data, this.priceData);
+    }
+
+    if (this.series) {
+      if (this.displayMode === 'line') {
+        this.series.update({ time: lastTime, value: nextValue });
+      } else {
+        this.series.update({ time: lastTime, value: nextValue, color: this.lineColor });
+      }
+    }
+    this.refreshTrendlineCrossLabels();
+    return true;
+  }
+
   getChart(): any {
     return this.chart;
   }

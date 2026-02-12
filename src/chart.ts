@@ -1,5 +1,5 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import { fetchChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
+import { fetchChartData, ChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 
 declare const Chart: any;
@@ -70,7 +70,7 @@ const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
 const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
-const CHART_LIVE_REFRESH_MS = 60 * 1000;
+const CHART_LIVE_REFRESH_MS = 5 * 60 * 1000;
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -3668,6 +3668,141 @@ function isTickerChartVisible(): boolean {
   return true;
 }
 
+function findLatestValueByTime(points: Array<{ time: string | number, value: number }>, targetKey: string): number | null {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i];
+    if (!point || timeKey(point.time) !== targetKey) continue;
+    const numeric = Number(point.value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function findLatestDeltaByTime(points: Array<{ time: string | number, delta: number }>, targetKey: string): number | null {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i];
+    if (!point || timeKey(point.time) !== targetKey) continue;
+    const numeric = Number(point.delta);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function patchLatestBarInPlaceFromPayload(data: ChartData): boolean {
+  if (!candleSeries || !rsiChart || !volumeDeltaRsiSeries || !volumeDeltaHistogramSeries) return false;
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return false;
+
+  const fetchedBars = normalizeCandleBars(data.bars || []);
+  if (fetchedBars.length === 0) return false;
+
+  const currentLastIndex = currentBars.length - 1;
+  const currentLast = currentBars[currentLastIndex];
+  const fetchedLast = fetchedBars[fetchedBars.length - 1];
+  if (timeKey(currentLast?.time) !== timeKey(fetchedLast?.time)) {
+    return false;
+  }
+
+  const lastTime = currentLast.time;
+  const lastKey = timeKey(lastTime);
+  currentBars[currentLastIndex] = {
+    ...currentLast,
+    ...fetchedLast
+  };
+
+  const latestClose = Number(currentBars[currentLastIndex].close);
+  if (Number.isFinite(latestClose)) {
+    priceByTime.set(lastKey, latestClose);
+  }
+  barIndexByTime.set(lastKey, currentLastIndex);
+
+  if (currentLastIndex > 0) {
+    const prevClose = Number(currentBars[currentLastIndex - 1]?.close);
+    if (Number.isFinite(prevClose) && prevClose !== 0 && Number.isFinite(latestClose)) {
+      const percentChange = ((latestClose - prevClose) / prevClose) * 100;
+      priceChangeByTime.set(lastKey, percentChange);
+    }
+  }
+
+  const latestRsi = findLatestValueByTime(normalizeValueSeries(data.rsi || []), lastKey);
+  if (Number.isFinite(latestRsi)) {
+    rsiByTime.set(lastKey, Number(latestRsi));
+    const updated = rsiChart.updateLatestPoint(
+      { time: lastTime, value: Number(latestRsi) },
+      Number.isFinite(latestClose) ? { time: lastTime, close: latestClose } : undefined
+    );
+    if (!updated) return false;
+  }
+
+  const latestVdRsi = findLatestValueByTime(normalizeValueSeries(data.volumeDeltaRsi?.rsi || []), lastKey);
+  if (Number.isFinite(latestVdRsi)) {
+    const normalizedVdRsi = normalizeVolumeDeltaValue(Number(latestVdRsi));
+    volumeDeltaRsiByTime.set(lastKey, normalizedVdRsi);
+    if (volumeDeltaRsiPoints.length > 0 && timeKey(volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1].time) === lastKey) {
+      volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1] = {
+        ...volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1],
+        value: normalizedVdRsi
+      };
+    }
+    volumeDeltaRsiSeries.update({
+      time: lastTime,
+      value: normalizedVdRsi
+    });
+  }
+
+  const latestDelta = findLatestDeltaByTime(normalizeVolumeDeltaSeries(data.volumeDelta || []), lastKey);
+  if (Number.isFinite(latestDelta)) {
+    const numericDelta = Number(latestDelta);
+    volumeDeltaByTime.set(lastKey, numericDelta);
+    volumeDeltaHistogramSeries.update({
+      time: lastTime,
+      value: numericDelta,
+      color: numericDelta >= 0 ? VOLUME_DELTA_POSITIVE_COLOR : VOLUME_DELTA_NEGATIVE_COLOR
+    });
+  }
+
+  if (volumeDeltaSettings.divergentPriceBars) {
+    applyPricePaneDivergentBarColors();
+  } else {
+    candleSeries.update(currentBars[currentLastIndex]);
+  }
+
+  applyMovingAverages();
+  if (pricePaneContainerEl) {
+    setPricePaneChange(pricePaneContainerEl, null);
+  }
+  if (volumeDeltaPaneContainerEl) {
+    renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
+  }
+  refreshActiveDivergenceOverlays();
+  return true;
+}
+
+async function refreshLatestChartDataInPlace(ticker: string, interval: ChartInterval): Promise<void> {
+  const data = await fetchChartData(ticker, interval, {
+    vdRsiLength: volumeDeltaRsiSettings.length,
+    vdSourceInterval: volumeDeltaSettings.sourceInterval,
+    vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+  });
+
+  if (!currentChartTicker || currentChartTicker !== ticker || currentChartInterval !== interval) return;
+
+  const fetchedBars = normalizeCandleBars(data.bars || []);
+  if (fetchedBars.length === 0 || currentBars.length === 0) return;
+
+  const currentLastKey = timeKey(currentBars[currentBars.length - 1]?.time);
+  const fetchedLastKey = timeKey(fetchedBars[fetchedBars.length - 1]?.time);
+
+  if (currentLastKey !== fetchedLastKey) {
+    await renderCustomChart(ticker, interval, { silent: true });
+    return;
+  }
+
+  const patched = patchLatestBarInPlaceFromPayload(data);
+  if (!patched) {
+    await renderCustomChart(ticker, interval, { silent: true });
+  }
+}
+
 function ensureChartLiveRefreshTimer(): void {
   if (chartLiveRefreshTimer !== null) return;
   chartLiveRefreshTimer = window.setInterval(() => {
@@ -3679,7 +3814,7 @@ function ensureChartLiveRefreshTimer(): void {
     const scheduledTicker = currentChartTicker;
     const scheduledInterval = currentChartInterval;
     chartLiveRefreshInFlight = true;
-    renderCustomChart(scheduledTicker, scheduledInterval, { silent: true })
+    refreshLatestChartDataInPlace(scheduledTicker, scheduledInterval)
       .catch(() => {})
       .finally(() => {
         chartLiveRefreshInFlight = false;
