@@ -27,6 +27,7 @@ const DIVERGENCE_SCAN_LOOKBACK_DAYS = 45;
 const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(1, Number(process.env.DIVERGENCE_SCAN_SPREAD_MINUTES) || 15);
 const DIVERGENCE_SCAN_CONCURRENCY = 1; // keep sequential to respect API limits
 const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
+const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -1898,12 +1899,15 @@ async function fetchUsStockUniverseFromFmp() {
   return Array.from(unique.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
 }
 
-async function refreshDivergenceSymbolUniverse() {
+async function refreshDivergenceSymbolUniverse(options = {}) {
+  const fullReset = Boolean(options.fullReset);
   const symbols = await fetchUsStockUniverseFromFmp();
   await withDivergenceClient(async (client) => {
     await client.query('BEGIN');
     try {
-      await client.query('UPDATE divergence_symbols SET is_active = FALSE WHERE is_active = TRUE');
+      if (fullReset) {
+        await client.query('UPDATE divergence_symbols SET is_active = FALSE WHERE is_active = TRUE');
+      }
       for (const symbol of symbols) {
         await client.query(`
           INSERT INTO divergence_symbols(ticker, exchange, asset_type, is_active, updated_at)
@@ -1927,19 +1931,33 @@ async function refreshDivergenceSymbolUniverse() {
 
 async function getDivergenceUniverseTickers() {
   if (!divergencePool) return [];
+  const existing = await divergencePool.query(`
+    SELECT ticker
+    FROM divergence_symbols
+    WHERE is_active = TRUE
+    ORDER BY ticker ASC
+  `);
+  const storedTickers = existing.rows
+    .map((row) => String(row.ticker || '').trim().toUpperCase())
+    .filter(Boolean);
+
+  // Long-term persistence: once we have a populated universe, keep using it.
+  if (storedTickers.length >= DIVERGENCE_MIN_UNIVERSE_SIZE) {
+    return storedTickers;
+  }
+
   try {
-    // Refresh from FMP every scan so the universe is current.
-    return await refreshDivergenceSymbolUniverse();
+    const bootstrapped = await refreshDivergenceSymbolUniverse({ fullReset: false });
+    if (bootstrapped.length > 0) {
+      console.log(`Divergence universe bootstrap updated to ${bootstrapped.length} symbols.`);
+      return bootstrapped;
+    }
+    if (storedTickers.length > 0) return storedTickers;
+    return [];
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    console.error(`FMP universe refresh failed, falling back to cached divergence symbols: ${message}`);
-    const existing = await divergencePool.query(`
-      SELECT ticker
-      FROM divergence_symbols
-      WHERE is_active = TRUE
-      ORDER BY ticker ASC
-    `);
-    return existing.rows.map((row) => String(row.ticker || '').trim().toUpperCase()).filter(Boolean);
+    console.error(`FMP universe bootstrap failed, falling back to cached divergence symbols: ${message}`);
+    return storedTickers;
   }
 }
 
