@@ -2,6 +2,8 @@ import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 
+declare const Chart: any;
+
 let currentChartTicker: string | null = null;
 let currentChartInterval: ChartInterval = '4hour';
 let priceChart: any = null;
@@ -37,6 +39,7 @@ let priceChangeByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 let volumeDeltaRsiByTime = new Map<string, number>();
 let volumeDeltaByTime = new Map<string, number>();
+let barIndexByTime = new Map<string, number>();
 let currentBars: any[] = [];
 let monthBoundaryTimes: number[] = [];
 let priceMonthGridOverlayEl: HTMLDivElement | null = null;
@@ -48,9 +51,20 @@ let volumeDeltaSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaRsiSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaDivergenceSummaryEl: HTMLDivElement | null = null;
+let rsiDivergencePlotToolActive = false;
+let volumeDeltaRsiDivergencePlotToolActive = false;
+let rsiDivergencePlotSelected = false;
+let volumeDeltaRsiDivergencePlotSelected = false;
+let rsiDivergencePlotStartIndex: number | null = null;
+let volumeDeltaRsiDivergencePlotStartIndex: number | null = null;
+let rsiDivergenceOverlayEl: HTMLDivElement | null = null;
+let volumeDeltaRsiDivergenceOverlayEl: HTMLDivElement | null = null;
+let rsiDivergenceOverlayChart: any = null;
+let volumeDeltaRsiDivergenceOverlayChart: any = null;
 let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
+const DIVERGENCE_ICON = 'D';
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -923,9 +937,13 @@ function getTopPaneBadgePriority(badge: HTMLElement): number {
 }
 
 function getPaneBadgeStartLeft(container: HTMLElement): number {
-  const settingsBtn = container.querySelector('.pane-settings-btn') as HTMLElement | null;
-  if (!settingsBtn) return TOP_PANE_BADGE_START_LEFT_PX;
-  const computed = settingsBtn.offsetLeft + settingsBtn.offsetWidth + TOP_PANE_BADGE_GAP_PX;
+  const toolButtons = Array.from(container.querySelectorAll<HTMLElement>('.pane-settings-btn, .pane-trendline-btn'));
+  if (!toolButtons.length) return TOP_PANE_BADGE_START_LEFT_PX;
+  const rightEdge = toolButtons.reduce((maxRight, btn) => {
+    const right = btn.offsetLeft + btn.offsetWidth;
+    return right > maxRight ? right : maxRight;
+  }, 0);
+  const computed = rightEdge + TOP_PANE_BADGE_GAP_PX;
   return Math.max(TOP_PANE_BADGE_START_LEFT_PX, computed);
 }
 
@@ -1176,6 +1194,7 @@ function applyRSISettings(): void {
   rsiChart.setData(rsiData, currentBars.map((b) => ({ time: b.time, close: b.close })));
   rsiChart.setLineColor(rsiSettings.lineColor);
   rsiChart.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
+  refreshActiveDivergenceOverlays();
 }
 
 function midlineStyleToLineStyle(style: MidlineStyle): number {
@@ -1195,6 +1214,7 @@ function applyVolumeDeltaRSIVisualSettings(): void {
       lineStyle: midlineStyleToLineStyle(volumeDeltaRsiSettings.midlineStyle)
     });
   }
+  refreshActiveDivergenceOverlays();
 }
 
 function applyVolumeDeltaRSISettings(refetch: boolean): void {
@@ -1299,7 +1319,7 @@ function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDel
 function createPaneTrendlineButton(
   container: HTMLElement,
   pane: TrendToolPane,
-  action: 'trend' | 'erase',
+  action: 'trend' | 'erase' | 'divergence',
   orderFromSettings: number
 ): HTMLButtonElement {
   const existing = container.querySelector(`.pane-trendline-btn[data-pane="${pane}"][data-action="${action}"]`) as HTMLButtonElement | null;
@@ -1310,8 +1330,16 @@ function createPaneTrendlineButton(
   btn.dataset.pane = pane;
   btn.dataset.action = action;
   btn.type = 'button';
-  btn.title = action === 'trend' ? 'Draw Trendline' : 'Erase Trendline';
-  btn.textContent = action === 'trend' ? TREND_ICON : ERASE_ICON;
+  btn.title = action === 'trend'
+    ? 'Draw Trendline'
+    : action === 'erase'
+      ? 'Erase Trendline'
+      : 'Divergence';
+  btn.textContent = action === 'trend'
+    ? TREND_ICON
+    : action === 'erase'
+      ? ERASE_ICON
+      : DIVERGENCE_ICON;
   btn.style.position = 'absolute';
   btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX + ((orderFromSettings + 1) * (PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX))}px`;
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
@@ -1328,17 +1356,21 @@ function createPaneTrendlineButton(
   return btn;
 }
 
-function getPaneTrendlineButton(pane: TrendToolPane): HTMLButtonElement | null {
-  return document.querySelector(`.pane-trendline-btn[data-pane="${pane}"][data-action="trend"]`) as HTMLButtonElement | null;
+function getPaneToolButton(pane: TrendToolPane, action: 'trend' | 'divergence'): HTMLButtonElement | null {
+  return document.querySelector(`.pane-trendline-btn[data-pane="${pane}"][data-action="${action}"]`) as HTMLButtonElement | null;
+}
+
+function setPaneToolButtonActive(pane: TrendToolPane, action: 'trend' | 'divergence', active: boolean): void {
+  const btn = getPaneToolButton(pane, action);
+  if (!btn) return;
+  btn.classList.toggle('active', active);
+  btn.style.background = active ? '#1f6feb' : '#161b22';
+  btn.style.color = '#ffffff';
+  btn.textContent = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
 }
 
 function setPaneTrendlineToolActive(pane: TrendToolPane, active: boolean): void {
-  const trendBtn = getPaneTrendlineButton(pane);
-  if (!trendBtn) return;
-  trendBtn.classList.toggle('active', active);
-  trendBtn.style.background = active ? '#1f6feb' : '#161b22';
-  trendBtn.style.color = '#ffffff';
-  trendBtn.textContent = TREND_ICON;
+  setPaneToolButtonActive(pane, 'trend', active);
 }
 
 function toggleRSITrendlineTool(): void {
@@ -1348,6 +1380,9 @@ function toggleRSITrendlineTool(): void {
     rsiDivergenceToolActive = false;
     setPaneTrendlineToolActive('rsi', false);
     return;
+  }
+  if (rsiDivergencePlotToolActive) {
+    deactivateRsiDivergencePlotTool();
   }
   rsiChart.activateDivergenceTool();
   rsiDivergenceToolActive = true;
@@ -1369,6 +1404,9 @@ function toggleVolumeDeltaRSITrendlineTool(): void {
     setPaneTrendlineToolActive('volumeDeltaRsi', false);
     return;
   }
+  if (volumeDeltaRsiDivergencePlotToolActive) {
+    deactivateVolumeDeltaRsiDivergencePlotTool();
+  }
   activateVolumeDeltaDivergenceTool();
   setPaneTrendlineToolActive('volumeDeltaRsi', true);
 }
@@ -1378,6 +1416,338 @@ function clearVolumeDeltaRSITrendlines(): void {
   deactivateVolumeDeltaDivergenceTool();
   setPaneTrendlineToolActive('volumeDeltaRsi', false);
   persistTrendlinesForCurrentContext();
+}
+
+function formatDivergenceOverlayTimeLabel(time: string | number): string {
+  const unix = unixSecondsFromTimeValue(time);
+  if (unix === null) return '';
+  const date = new Date(unix * 1000);
+  if (currentChartInterval === '1day') {
+    return MM_DD_YY_FORMATTER.format(date);
+  }
+  return date.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
+function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): HTMLDivElement {
+  const existing = pane === 'rsi' ? rsiDivergenceOverlayEl : volumeDeltaRsiDivergenceOverlayEl;
+  if (existing && existing.parentElement === container) return existing;
+
+  const overlay = document.createElement('div');
+  overlay.className = `divergence-plot-overlay divergence-plot-overlay-${pane}`;
+  overlay.style.position = 'absolute';
+  overlay.style.top = '40px';
+  overlay.style.right = `${SCALE_MIN_WIDTH_PX + 10}px`;
+  overlay.style.width = '360px';
+  overlay.style.maxWidth = `calc(100% - ${SCALE_MIN_WIDTH_PX + 24}px)`;
+  overlay.style.height = '220px';
+  overlay.style.border = '1px solid #30363d';
+  overlay.style.borderRadius = '6px';
+  overlay.style.background = 'rgba(13, 17, 23, 0.95)';
+  overlay.style.backdropFilter = 'blur(4px)';
+  overlay.style.zIndex = '35';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.display = 'none';
+  overlay.style.padding = '8px';
+  overlay.style.boxSizing = 'border-box';
+
+  const title = document.createElement('div');
+  title.className = 'divergence-plot-overlay-title';
+  title.style.fontSize = '12px';
+  title.style.color = '#c9d1d9';
+  title.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  title.style.marginBottom = '6px';
+  overlay.appendChild(title);
+
+  const canvasWrap = document.createElement('div');
+  canvasWrap.style.position = 'relative';
+  canvasWrap.style.width = '100%';
+  canvasWrap.style.height = 'calc(100% - 22px)';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'divergence-plot-overlay-canvas';
+  canvasWrap.appendChild(canvas);
+  overlay.appendChild(canvasWrap);
+  container.appendChild(overlay);
+
+  if (pane === 'rsi') {
+    rsiDivergenceOverlayEl = overlay;
+  } else {
+    volumeDeltaRsiDivergenceOverlayEl = overlay;
+  }
+  return overlay;
+}
+
+function getDivergenceOverlayChart(pane: TrendToolPane): any {
+  return pane === 'rsi' ? rsiDivergenceOverlayChart : volumeDeltaRsiDivergenceOverlayChart;
+}
+
+function setDivergenceOverlayChart(pane: TrendToolPane, chart: any | null): void {
+  if (pane === 'rsi') {
+    rsiDivergenceOverlayChart = chart;
+  } else {
+    volumeDeltaRsiDivergenceOverlayChart = chart;
+  }
+}
+
+function hideDivergenceOverlay(pane: TrendToolPane): void {
+  const overlay = pane === 'rsi' ? rsiDivergenceOverlayEl : volumeDeltaRsiDivergenceOverlayEl;
+  if (overlay) overlay.style.display = 'none';
+  const chart = getDivergenceOverlayChart(pane);
+  if (chart) {
+    try {
+      chart.destroy();
+    } catch {
+      // Ignore stale chart teardown errors.
+    }
+    setDivergenceOverlayChart(pane, null);
+  }
+}
+
+function findNearestBarIndex(time: string | number): number | null {
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
+  const direct = barIndexByTime.get(timeKey(time));
+  if (direct !== undefined) return direct;
+  const targetUnix = unixSecondsFromTimeValue(time);
+  if (targetUnix === null) return null;
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < currentBars.length; i++) {
+    const unix = unixSecondsFromTimeValue(currentBars[i]?.time);
+    if (unix === null) continue;
+    const distance = Math.abs(unix - targetUnix);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  return Number.isFinite(bestDistance) ? bestIndex : null;
+}
+
+function buildDivergenceOverlayData(startIndex: number): { labels: string[]; rsiValues: number[]; volumeDeltaRsiValues: number[] } {
+  const labels: string[] = [];
+  const rsiValues: number[] = [];
+  const volumeDeltaRsiValues: number[] = [];
+  for (let i = startIndex; i < currentBars.length; i++) {
+    const bar = currentBars[i];
+    const key = timeKey(bar.time);
+    const rsiValue = Number(rsiByTime.get(key));
+    const vdRsiValue = Number(volumeDeltaRsiByTime.get(key));
+    if (!Number.isFinite(rsiValue) || !Number.isFinite(vdRsiValue)) continue;
+    labels.push(formatDivergenceOverlayTimeLabel(bar.time));
+    rsiValues.push(rsiValue);
+    volumeDeltaRsiValues.push(vdRsiValue);
+  }
+  return { labels, rsiValues, volumeDeltaRsiValues };
+}
+
+function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number): void {
+  const container = pane === 'rsi'
+    ? document.getElementById('rsi-chart-container')
+    : document.getElementById('vd-rsi-chart-container');
+  if (!container || !(container instanceof HTMLElement)) return;
+  const overlay = ensureDivergenceOverlay(container, pane);
+  const title = overlay.querySelector('.divergence-plot-overlay-title') as HTMLDivElement | null;
+  const canvas = overlay.querySelector('.divergence-plot-overlay-canvas') as HTMLCanvasElement | null;
+  if (!title || !canvas) return;
+  if (!currentBars.length || startIndex < 0 || startIndex >= currentBars.length) {
+    hideDivergenceOverlay(pane);
+    return;
+  }
+
+  const startTime = currentBars[startIndex]?.time;
+  title.textContent = `Divergence from ${formatDivergenceOverlayTimeLabel(startTime)}`;
+  const data = buildDivergenceOverlayData(startIndex);
+  if (data.rsiValues.length < 2) {
+    hideDivergenceOverlay(pane);
+    return;
+  }
+
+  overlay.style.display = 'block';
+  const existingChart = getDivergenceOverlayChart(pane);
+  if (existingChart) {
+    existingChart.data.labels = data.labels;
+    existingChart.data.datasets[0].data = data.rsiValues;
+    existingChart.data.datasets[0].borderColor = rsiSettings.lineColor;
+    existingChart.data.datasets[1].data = data.volumeDeltaRsiValues;
+    existingChart.data.datasets[1].borderColor = volumeDeltaRsiSettings.lineColor;
+    existingChart.update('none');
+    return;
+  }
+
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: data.labels,
+      datasets: [
+        {
+          label: 'RSI',
+          data: data.rsiValues,
+          borderColor: rsiSettings.lineColor,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: data.rsiValues.length > 24 ? 0 : 2,
+          tension: 0.2
+        },
+        {
+          label: 'VD RSI',
+          data: data.volumeDeltaRsiValues,
+          borderColor: volumeDeltaRsiSettings.lineColor,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: data.volumeDeltaRsiValues.length > 24 ? 0 : 2,
+          tension: 0.2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#c9d1d9',
+            font: { size: 11 },
+            usePointStyle: true,
+            pointStyle: 'line'
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(22, 27, 34, 0.95)',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e'
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#8b949e',
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 6,
+            font: { size: 10 }
+          },
+          grid: { color: 'rgba(48, 54, 61, 0.22)' }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: {
+            color: '#8b949e',
+            font: { size: 10 }
+          },
+          grid: { color: 'rgba(48, 54, 61, 0.22)' }
+        }
+      }
+    }
+  });
+  setDivergenceOverlayChart(pane, chart);
+}
+
+function deactivateRsiDivergencePlotTool(): void {
+  rsiDivergencePlotToolActive = false;
+  rsiDivergencePlotSelected = false;
+  rsiDivergencePlotStartIndex = null;
+  setPaneToolButtonActive('rsi', 'divergence', false);
+  hideDivergenceOverlay('rsi');
+}
+
+function deactivateVolumeDeltaRsiDivergencePlotTool(): void {
+  volumeDeltaRsiDivergencePlotToolActive = false;
+  volumeDeltaRsiDivergencePlotSelected = false;
+  volumeDeltaRsiDivergencePlotStartIndex = null;
+  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', false);
+  hideDivergenceOverlay('volumeDeltaRsi');
+}
+
+function updateRsiDivergencePlotPoint(time: string | number, fromMove: boolean): void {
+  if (!rsiDivergencePlotToolActive) return;
+  if (fromMove && !rsiDivergencePlotSelected) return;
+  const index = findNearestBarIndex(time);
+  if (index === null) return;
+  rsiDivergencePlotSelected = true;
+  rsiDivergencePlotStartIndex = index;
+  renderDivergenceOverlayForPane('rsi', index);
+}
+
+function updateVolumeDeltaRsiDivergencePlotPoint(time: string | number, fromMove: boolean): void {
+  if (!volumeDeltaRsiDivergencePlotToolActive) return;
+  if (fromMove && !volumeDeltaRsiDivergencePlotSelected) return;
+  const index = findNearestBarIndex(time);
+  if (index === null) return;
+  volumeDeltaRsiDivergencePlotSelected = true;
+  volumeDeltaRsiDivergencePlotStartIndex = index;
+  renderDivergenceOverlayForPane('volumeDeltaRsi', index);
+}
+
+function toggleRsiDivergencePlotTool(): void {
+  if (rsiDivergencePlotToolActive) {
+    deactivateRsiDivergencePlotTool();
+    return;
+  }
+  if (rsiDivergenceToolActive) {
+    rsiChart?.deactivateDivergenceTool();
+    rsiDivergenceToolActive = false;
+    setPaneTrendlineToolActive('rsi', false);
+  }
+  rsiDivergencePlotToolActive = true;
+  rsiDivergencePlotSelected = false;
+  rsiDivergencePlotStartIndex = null;
+  setPaneToolButtonActive('rsi', 'divergence', true);
+}
+
+function toggleVolumeDeltaRsiDivergencePlotTool(): void {
+  if (volumeDeltaRsiDivergencePlotToolActive) {
+    deactivateVolumeDeltaRsiDivergencePlotTool();
+    return;
+  }
+  if (volumeDeltaDivergenceToolActive) {
+    deactivateVolumeDeltaDivergenceTool();
+    setPaneTrendlineToolActive('volumeDeltaRsi', false);
+  }
+  volumeDeltaRsiDivergencePlotToolActive = true;
+  volumeDeltaRsiDivergencePlotSelected = false;
+  volumeDeltaRsiDivergencePlotStartIndex = null;
+  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', true);
+}
+
+function refreshActiveDivergenceOverlays(): void {
+  if (rsiDivergencePlotToolActive && rsiDivergencePlotSelected && rsiDivergencePlotStartIndex !== null) {
+    renderDivergenceOverlayForPane('rsi', rsiDivergencePlotStartIndex);
+  }
+  if (volumeDeltaRsiDivergencePlotToolActive && volumeDeltaRsiDivergencePlotSelected && volumeDeltaRsiDivergencePlotStartIndex !== null) {
+    renderDivergenceOverlayForPane('volumeDeltaRsi', volumeDeltaRsiDivergencePlotStartIndex);
+  }
+}
+
+function deactivateInteractivePaneToolsFromEscape(): void {
+  if (rsiDivergenceToolActive) {
+    rsiChart?.deactivateDivergenceTool();
+    rsiDivergenceToolActive = false;
+    setPaneTrendlineToolActive('rsi', false);
+  }
+  if (volumeDeltaDivergenceToolActive) {
+    deactivateVolumeDeltaDivergenceTool();
+    setPaneTrendlineToolActive('volumeDeltaRsi', false);
+  }
+  if (rsiDivergencePlotToolActive) {
+    deactivateRsiDivergencePlotTool();
+  }
+  if (volumeDeltaRsiDivergencePlotToolActive) {
+    deactivateVolumeDeltaRsiDivergencePlotTool();
+  }
 }
 
 function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
@@ -1826,8 +2196,10 @@ function ensureSettingsUI(
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
   const volumeDeltaRsiTrendBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'trend', 0);
   const volumeDeltaRsiEraseBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'erase', 1);
+  const volumeDeltaRsiDivergenceBtn = createPaneTrendlineButton(volumeDeltaRsiContainer, 'volumeDeltaRsi', 'divergence', 2);
   const rsiTrendBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'trend', 0);
   const rsiEraseBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'erase', 1);
+  const rsiDivergenceBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'divergence', 2);
 
   if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
     if (priceSettingsPanelEl?.parentElement) {
@@ -1911,6 +2283,14 @@ function ensureSettingsUI(
     });
     volumeDeltaRsiEraseBtn.dataset.bound = '1';
   }
+  if (!volumeDeltaRsiDivergenceBtn.dataset.bound) {
+    volumeDeltaRsiDivergenceBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleVolumeDeltaRsiDivergencePlotTool();
+    });
+    volumeDeltaRsiDivergenceBtn.dataset.bound = '1';
+  }
   if (!rsiTrendBtn.dataset.bound) {
     rsiTrendBtn.addEventListener('click', (event) => {
       event.preventDefault();
@@ -1927,9 +2307,19 @@ function ensureSettingsUI(
     });
     rsiEraseBtn.dataset.bound = '1';
   }
+  if (!rsiDivergenceBtn.dataset.bound) {
+    rsiDivergenceBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleRsiDivergencePlotTool();
+    });
+    rsiDivergenceBtn.dataset.bound = '1';
+  }
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
   setPaneTrendlineToolActive('volumeDeltaRsi', volumeDeltaDivergenceToolActive);
+  setPaneToolButtonActive('rsi', 'divergence', rsiDivergencePlotToolActive);
+  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', volumeDeltaRsiDivergencePlotToolActive);
 
   if (!document.body.dataset.chartSettingsBound) {
     document.addEventListener('click', (event) => {
@@ -1937,6 +2327,10 @@ function ensureSettingsUI(
       if (!target) return;
       if (target.closest('.pane-settings-panel') || target.closest('.pane-settings-btn')) return;
       hideSettingsPanels();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      deactivateInteractivePaneToolsFromEscape();
     });
     document.body.dataset.chartSettingsBound = '1';
   }
@@ -2632,6 +3026,10 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
 
   chart.subscribeClick((param: any) => {
     if (!param || !param.time) return;
+    if (volumeDeltaRsiDivergencePlotToolActive) {
+      updateVolumeDeltaRsiDivergencePlotPoint(param.time, false);
+      return;
+    }
     if (!volumeDeltaDivergenceToolActive) return;
     detectAndHandleVolumeDeltaDivergenceClick(param.time);
   });
@@ -2750,6 +3148,7 @@ function setVolumeDeltaRsiData(
       volumeDeltaRsiByTime.set(key, Number(rsiValue));
     }
   }
+  refreshActiveDivergenceOverlays();
 }
 
 function restoreVolumeDeltaPersistedTrendlines(trendlines: RSIPersistedTrendline[]): void {
@@ -3106,9 +3505,24 @@ function hideLoadingOverlay(container: HTMLElement): void {
 
 export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
   ensureSettingsLoadedFromStorage();
+  const previousTicker = currentChartTicker;
+  const previousInterval = currentChartInterval;
   const requestId = ++latestRenderRequestId;
+  const contextChanged = (
+    typeof previousTicker === 'string' &&
+    (previousTicker !== ticker || previousInterval !== interval)
+  );
   currentChartInterval = interval;
   currentChartTicker = ticker;
+
+  if (contextChanged) {
+    rsiDivergencePlotSelected = false;
+    volumeDeltaRsiDivergencePlotSelected = false;
+    rsiDivergencePlotStartIndex = null;
+    volumeDeltaRsiDivergencePlotStartIndex = null;
+    hideDivergenceOverlay('rsi');
+    hideDivergenceOverlay('volumeDeltaRsi');
+  }
 
   const chartContent = document.getElementById('chart-content');
   if (!chartContent || !(chartContent instanceof HTMLElement)) {
@@ -3191,6 +3605,10 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     };
     const volumeDeltaData = normalizeVolumeDeltaSeries(data.volumeDelta || []);
     currentBars = bars;
+    barIndexByTime = new Map<string, number>();
+    for (let i = 0; i < bars.length; i++) {
+      barIndexByTime.set(timeKey(bars[i].time), i);
+    }
     rebuildPricePaneChangeMap(bars);
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
@@ -3280,6 +3698,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       volumeDeltaByTime = new Map();
       clearVolumeDeltaDivergenceSummary();
       currentBars = [];
+      barIndexByTime = new Map();
       clearMovingAverageSeries();
       monthBoundaryTimes = [];
       clearMonthGridOverlay(priceMonthGridOverlayEl);
@@ -3287,6 +3706,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
+      deactivateRsiDivergencePlotTool();
+      deactivateVolumeDeltaRsiDivergencePlotTool();
       errorContainer.style.display = 'none';
       errorContainer.textContent = '';
       return;
@@ -3295,6 +3716,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     priceChangeByTime = new Map();
     setPricePaneChange(chartContainer, null);
     clearVolumeDeltaDivergenceSummary();
+    deactivateRsiDivergencePlotTool();
+    deactivateVolumeDeltaRsiDivergencePlotTool();
     errorContainer.style.display = 'none';
     errorContainer.textContent = '';
 
@@ -3505,6 +3928,9 @@ function setupChartSync() {
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (volumeDeltaRsiDivergencePlotToolActive) {
+      updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
+    }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnRsi(param.time);
@@ -3518,6 +3944,9 @@ function setupChartSync() {
       volumeDeltaChartInstance.clearCrosshairPosition();
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
+    }
+    if (rsiDivergencePlotToolActive) {
+      updateRsiDivergencePlotPoint(param.time, true);
     }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
@@ -3537,6 +3966,12 @@ function setupChartSync() {
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
+  });
+
+  rsiChartInstance.subscribeClick((param: any) => {
+    if (!param || !param.time) return;
+    if (!rsiDivergencePlotToolActive) return;
+    updateRsiDivergencePlotPoint(param.time, false);
   });
 }
 
