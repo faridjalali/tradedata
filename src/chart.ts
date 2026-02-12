@@ -1,5 +1,5 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import { fetchChartData, ChartInterval } from './chartApi';
+import { fetchChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart } from './rsi';
 
 let currentChartTicker: string | null = null;
@@ -34,6 +34,7 @@ let volumeDeltaRsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let priceSettingsPanelEl: HTMLDivElement | null = null;
+let volumeDeltaSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaRsiSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
 let hasLoadedSettingsFromStorage = false;
@@ -56,6 +57,13 @@ const DIVERGENCE_HIGHLIGHT_COLOR = '#ff6b6b';
 const TRENDLINE_COLOR = '#ffa500';
 const VOLUME_DELTA_POSITIVE_COLOR = '#089981';
 const VOLUME_DELTA_NEGATIVE_COLOR = '#f23645';
+const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; label: string }> = [
+  { value: '5min', label: '5 min' },
+  { value: '15min', label: '15 min' },
+  { value: '30min', label: '30 min' },
+  { value: '1hour', label: '1 hour' },
+  { value: '4hour', label: '4 hour' }
+];
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -89,6 +97,11 @@ interface VolumeDeltaRSISettings {
   lineColor: string;
   midlineColor: string;
   midlineStyle: MidlineStyle;
+  sourceInterval: VolumeDeltaSourceInterval;
+}
+
+interface VolumeDeltaSettings {
+  sourceInterval: VolumeDeltaSourceInterval;
 }
 
 interface PersistedMASetting {
@@ -105,6 +118,7 @@ interface PersistedChartSettings {
     horizontalGridlines: boolean;
     ma: PersistedMASetting[];
   };
+  volumeDelta?: VolumeDeltaSettings;
   rsi: RSISettings;
   volumeDeltaRsi?: VolumeDeltaRSISettings;
   paneOrder?: PaneId[];
@@ -121,7 +135,12 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
   length: 14,
   lineColor: VOLUME_DELTA_RSI_COLOR,
   midlineColor: '#ffffff',
-  midlineStyle: 'dotted'
+  midlineStyle: 'dotted',
+  sourceInterval: '5min'
+};
+
+const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
+  sourceInterval: '5min'
 };
 
 const DEFAULT_PRICE_SETTINGS: {
@@ -157,6 +176,10 @@ const rsiSettings: RSISettings = {
 
 const volumeDeltaRsiSettings: VolumeDeltaRSISettings = {
   ...DEFAULT_VOLUME_DELTA_RSI_SETTINGS
+};
+
+const volumeDeltaSettings: VolumeDeltaSettings = {
+  ...DEFAULT_VOLUME_DELTA_SETTINGS
 };
 
 const priceChartSettings: PriceChartSettings = {
@@ -404,11 +427,15 @@ function persistSettingsToStorage(): void {
         midlineColor: rsiSettings.midlineColor,
         midlineStyle: rsiSettings.midlineStyle
       },
+      volumeDelta: {
+        sourceInterval: volumeDeltaSettings.sourceInterval
+      },
       volumeDeltaRsi: {
         length: volumeDeltaRsiSettings.length,
         lineColor: volumeDeltaRsiSettings.lineColor,
         midlineColor: volumeDeltaRsiSettings.midlineColor,
-        midlineStyle: volumeDeltaRsiSettings.midlineStyle
+        midlineStyle: volumeDeltaRsiSettings.midlineStyle,
+        sourceInterval: volumeDeltaRsiSettings.sourceInterval
       },
       paneOrder: [...paneOrder]
     };
@@ -461,6 +488,14 @@ function ensureSettingsLoadedFromStorage(): void {
       rsiSettings.midlineStyle = persistedRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
     }
 
+    const persistedVolumeDelta = parsed?.volumeDelta;
+    if (persistedVolumeDelta) {
+      const source = String(persistedVolumeDelta.sourceInterval || '');
+      if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
+        volumeDeltaSettings.sourceInterval = source;
+      }
+    }
+
     const persistedVolumeDeltaRSI = parsed?.volumeDeltaRsi;
     if (persistedVolumeDeltaRSI) {
       volumeDeltaRsiSettings.length = Math.max(1, Math.floor(Number(persistedVolumeDeltaRSI.length) || volumeDeltaRsiSettings.length));
@@ -471,6 +506,10 @@ function ensureSettingsLoadedFromStorage(): void {
         volumeDeltaRsiSettings.midlineColor = persistedVolumeDeltaRSI.midlineColor;
       }
       volumeDeltaRsiSettings.midlineStyle = persistedVolumeDeltaRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
+      const source = String(persistedVolumeDeltaRSI.sourceInterval || '');
+      if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
+        volumeDeltaRsiSettings.sourceInterval = source;
+      }
     }
 
     paneOrder = normalizePaneOrder(parsed?.paneOrder);
@@ -700,20 +739,29 @@ function syncRSISettingsPanelValues(): void {
   if (midlineStyle) midlineStyle.value = rsiSettings.midlineStyle;
 }
 
+function syncVolumeDeltaSettingsPanelValues(): void {
+  if (!volumeDeltaSettingsPanelEl) return;
+  const source = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="source-interval"]') as HTMLSelectElement | null;
+  if (source) source.value = volumeDeltaSettings.sourceInterval;
+}
+
 function syncVolumeDeltaRSISettingsPanelValues(): void {
   if (!volumeDeltaRsiSettingsPanelEl) return;
   const length = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="length"]') as HTMLInputElement | null;
   const color = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="line-color"]') as HTMLInputElement | null;
   const midlineColor = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="midline-color"]') as HTMLInputElement | null;
   const midlineStyle = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="midline-style"]') as HTMLSelectElement | null;
+  const source = volumeDeltaRsiSettingsPanelEl.querySelector('[data-vd-rsi-setting="source-interval"]') as HTMLSelectElement | null;
   if (length) length.value = String(volumeDeltaRsiSettings.length);
   if (color) color.value = volumeDeltaRsiSettings.lineColor;
   if (midlineColor) midlineColor.value = volumeDeltaRsiSettings.midlineColor;
   if (midlineStyle) midlineStyle.value = volumeDeltaRsiSettings.midlineStyle;
+  if (source) source.value = volumeDeltaRsiSettings.sourceInterval;
 }
 
 function hideSettingsPanels(): void {
   if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = 'none';
+  if (volumeDeltaSettingsPanelEl) volumeDeltaSettingsPanelEl.style.display = 'none';
   if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = 'none';
   if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
 }
@@ -908,24 +956,40 @@ function resetRSISettingsToDefault(): void {
   persistSettingsToStorage();
 }
 
+function resetVolumeDeltaSettingsToDefault(): void {
+  volumeDeltaSettings.sourceInterval = DEFAULT_VOLUME_DELTA_SETTINGS.sourceInterval;
+  if (currentChartTicker) {
+    renderCustomChart(currentChartTicker, currentChartInterval);
+  }
+  syncVolumeDeltaSettingsPanelValues();
+  persistSettingsToStorage();
+}
+
 function resetVolumeDeltaRSISettingsToDefault(): void {
   volumeDeltaRsiSettings.length = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.length;
   volumeDeltaRsiSettings.lineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.lineColor;
   volumeDeltaRsiSettings.midlineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineColor;
   volumeDeltaRsiSettings.midlineStyle = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineStyle;
+  volumeDeltaRsiSettings.sourceInterval = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.sourceInterval;
   applyVolumeDeltaRSISettings(true);
   syncVolumeDeltaRSISettingsPanelValues();
   persistSettingsToStorage();
 }
 
-function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDeltaRsi' | 'rsi'): HTMLButtonElement {
+function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDelta' | 'volumeDeltaRsi' | 'rsi'): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
   btn.className = 'pane-settings-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.title = pane === 'price' ? 'Price settings' : pane === 'volumeDeltaRsi' ? 'Volume Delta RSI settings' : 'RSI settings';
+  btn.title = pane === 'price'
+    ? 'Price settings'
+    : pane === 'volumeDelta'
+      ? 'Volume Delta settings'
+      : pane === 'volumeDeltaRsi'
+        ? 'Volume Delta RSI settings'
+        : 'RSI settings';
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
   btn.style.left = '8px';
@@ -1166,6 +1230,63 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   return panel;
 }
 
+function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement {
+  const panel = document.createElement('div');
+  panel.className = 'pane-settings-panel volume-delta-settings-panel';
+  panel.style.position = 'absolute';
+  panel.style.left = '8px';
+  panel.style.top = '38px';
+  panel.style.zIndex = '31';
+  panel.style.width = '230px';
+  panel.style.maxWidth = 'calc(100% - 16px)';
+  panel.style.background = 'rgba(22, 27, 34, 0.95)';
+  panel.style.border = '1px solid #30363d';
+  panel.style.borderRadius = '6px';
+  panel.style.padding = '10px';
+  panel.style.display = 'none';
+  panel.style.color = '#c9d1d9';
+  panel.style.backdropFilter = 'blur(6px)';
+
+  panel.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+      <div style="font-weight:600;">Volume Delta</div>
+      <button type="button" data-vd-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+    </div>
+    <label style="margin-bottom:6px;">
+      <span>Source TF</span>
+      <select data-vd-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
+      </select>
+    </label>
+  `;
+  applyUniformSettingsPanelTypography(panel);
+
+  panel.addEventListener('input', (event) => {
+    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
+    if (!target) return;
+    const setting = target.dataset.vdSetting || '';
+    if (setting !== 'source-interval') return;
+    const nextValue = String((target as HTMLSelectElement).value || '');
+    if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
+    volumeDeltaSettings.sourceInterval = nextValue;
+    if (currentChartTicker) {
+      renderCustomChart(currentChartTicker, currentChartInterval);
+    }
+    persistSettingsToStorage();
+  });
+
+  panel.addEventListener('click', (event) => {
+    const target = event.target as HTMLButtonElement | null;
+    if (!target) return;
+    if (target.dataset.vdSetting !== 'reset') return;
+    event.preventDefault();
+    resetVolumeDeltaSettingsToDefault();
+  });
+
+  container.appendChild(panel);
+  return panel;
+}
+
 function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
   panel.className = 'pane-settings-panel volume-delta-rsi-settings-panel';
@@ -1193,6 +1314,12 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
       <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
     </label>
     <label style="margin-bottom:6px;">
+      <span>Source TF</span>
+      <select data-vd-rsi-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
+      </select>
+    </label>
+    <label style="margin-bottom:6px;">
       <span>Line color</span>
       <input data-vd-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
     </label>
@@ -1216,6 +1343,14 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
     const setting = target.dataset.vdRsiSetting || '';
     if (setting === 'length') {
       volumeDeltaRsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
+      applyVolumeDeltaRSISettings(true);
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'source-interval') {
+      const nextValue = String((target as HTMLSelectElement).value || '');
+      if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
+      volumeDeltaRsiSettings.sourceInterval = nextValue;
       applyVolumeDeltaRSISettings(true);
       persistSettingsToStorage();
       return;
@@ -1252,10 +1387,16 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
   return panel;
 }
 
-function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTMLElement, rsiContainer: HTMLElement): void {
+function ensureSettingsUI(
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
-  const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDeltaRsi');
+  const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
+  const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
 
   if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
     if (priceSettingsPanelEl?.parentElement) {
@@ -1269,14 +1410,21 @@ function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTM
     }
     rsiSettingsPanelEl = createRSISettingsPanel(rsiContainer);
   }
-  if (!volumeDeltaRsiSettingsPanelEl || volumeDeltaRsiSettingsPanelEl.parentElement !== volumeDeltaContainer) {
+  if (!volumeDeltaRsiSettingsPanelEl || volumeDeltaRsiSettingsPanelEl.parentElement !== volumeDeltaRsiContainer) {
     if (volumeDeltaRsiSettingsPanelEl?.parentElement) {
       volumeDeltaRsiSettingsPanelEl.parentElement.removeChild(volumeDeltaRsiSettingsPanelEl);
     }
-    volumeDeltaRsiSettingsPanelEl = createVolumeDeltaRSISettingsPanel(volumeDeltaContainer);
+    volumeDeltaRsiSettingsPanelEl = createVolumeDeltaRSISettingsPanel(volumeDeltaRsiContainer);
+  }
+  if (!volumeDeltaSettingsPanelEl || volumeDeltaSettingsPanelEl.parentElement !== volumeDeltaContainer) {
+    if (volumeDeltaSettingsPanelEl?.parentElement) {
+      volumeDeltaSettingsPanelEl.parentElement.removeChild(volumeDeltaSettingsPanelEl);
+    }
+    volumeDeltaSettingsPanelEl = createVolumeDeltaSettingsPanel(volumeDeltaContainer);
   }
 
   syncPriceSettingsPanelValues();
+  syncVolumeDeltaSettingsPanelValues();
   syncVolumeDeltaRSISettingsPanelValues();
   syncRSISettingsPanelValues();
 
@@ -1289,12 +1437,21 @@ function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTM
     });
     priceBtn.dataset.bound = '1';
   }
-  if (!volumeDeltaBtn.dataset.bound) {
-    volumeDeltaBtn.addEventListener('click', (event) => {
+  if (!volumeDeltaRsiBtn.dataset.bound) {
+    volumeDeltaRsiBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       const nextDisplay = volumeDeltaRsiSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
       hideSettingsPanels();
       if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = nextDisplay;
+    });
+    volumeDeltaRsiBtn.dataset.bound = '1';
+  }
+  if (!volumeDeltaBtn.dataset.bound) {
+    volumeDeltaBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextDisplay = volumeDeltaSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      hideSettingsPanels();
+      if (volumeDeltaSettingsPanelEl) volumeDeltaSettingsPanelEl.style.display = nextDisplay;
     });
     volumeDeltaBtn.dataset.bound = '1';
   }
@@ -1317,6 +1474,55 @@ function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTM
     });
     document.body.dataset.chartSettingsBound = '1';
   }
+}
+
+function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
+  let changeEl = container.querySelector('.price-pane-change') as HTMLDivElement | null;
+  if (changeEl) return changeEl;
+
+  changeEl = document.createElement('div');
+  changeEl.className = 'price-pane-change';
+  changeEl.style.position = 'absolute';
+  changeEl.style.left = '38px';
+  changeEl.style.top = '8px';
+  changeEl.style.zIndex = '30';
+  changeEl.style.minHeight = '24px';
+  changeEl.style.display = 'inline-flex';
+  changeEl.style.alignItems = 'center';
+  changeEl.style.padding = '0 8px';
+  changeEl.style.borderRadius = '4px';
+  changeEl.style.border = '1px solid #30363d';
+  changeEl.style.background = '#161b22';
+  changeEl.style.color = '#c9d1d9';
+  changeEl.style.fontSize = '12px';
+  changeEl.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  changeEl.style.pointerEvents = 'none';
+  changeEl.style.display = 'none';
+  container.appendChild(changeEl);
+  return changeEl;
+}
+
+function setPricePaneChange(container: HTMLElement, bars: any[]): void {
+  const changeEl = ensurePricePaneChangeEl(container);
+  if (!Array.isArray(bars) || bars.length < 2) {
+    changeEl.style.display = 'none';
+    changeEl.textContent = '';
+    return;
+  }
+
+  const currentClose = Number(bars[bars.length - 1]?.close);
+  const prevClose = Number(bars[bars.length - 2]?.close);
+  if (!Number.isFinite(currentClose) || !Number.isFinite(prevClose)) {
+    changeEl.style.display = 'none';
+    changeEl.textContent = '';
+    return;
+  }
+
+  const delta = currentClose - prevClose;
+  const sign = delta > 0 ? '+' : '';
+  changeEl.textContent = `${sign}${delta.toFixed(2)}`;
+  changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
+  changeEl.style.display = 'inline-flex';
 }
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
@@ -2087,7 +2293,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   ensureMonthGridOverlay(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   ensureMonthGridOverlay(rsiContainer, 'rsi');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
-  ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer);
+  ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -2119,7 +2325,11 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
   try {
     // Fetch data from API
-    const data = await fetchChartData(ticker, interval, { vdRsiLength: volumeDeltaRsiSettings.length });
+    const data = await fetchChartData(ticker, interval, {
+      vdRsiLength: volumeDeltaRsiSettings.length,
+      vdSourceInterval: volumeDeltaSettings.sourceInterval,
+      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+    });
     if (requestId !== latestRenderRequestId) return;
 
     // Retrieve bars and RSI directly (backend handles aggregation)
@@ -2147,6 +2357,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     if (candleSeries) {
       candleSeries.setData(bars);
     }
+    setPricePaneChange(chartContainer, bars);
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
     setVolumeDeltaHistogramData(bars, volumeDeltaData);
     applyVolumeDeltaRSIVisualSettings();
@@ -2206,6 +2417,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       if (candleSeries) {
         candleSeries.setData([]);
       }
+      setPricePaneChange(chartContainer, []);
       if (rsiChart) {
         rsiChart.setData([], []);
       }
@@ -2233,6 +2445,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       return;
     }
 
+    setPricePaneChange(chartContainer, []);
     errorContainer.textContent = `Error loading chart: ${err.message}`;
     errorContainer.style.display = 'block';
   }

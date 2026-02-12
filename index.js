@@ -1370,10 +1370,15 @@ app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
 
-  // Force 5-minute source bars for Volume Delta / VD-RSI across all chart intervals.
-  const VOLUME_DELTA_RSI_LOWER_TF = '5min';
+  const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
+  const toVolumeDeltaSourceInterval = (value, fallback = '5min') => {
+    const normalized = String(value || '').trim();
+    return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
+  };
 
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(req.query.vdRsiSourceInterval, '5min');
 
   // Validate interval
   const validIntervals = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
@@ -1386,18 +1391,18 @@ app.get('/api/chart', async (req, res) => {
 
   try {
     const parentFetchInterval = interval === '1day' ? '4hour' : interval;
-    let parentRows;
-    let lowerTfRows;
-    if (parentFetchInterval === VOLUME_DELTA_RSI_LOWER_TF) {
-      parentRows = await fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays);
-      lowerTfRows = parentRows;
-    } else {
-      // Fetch parent bars and 5-min bars in parallel.
-      [parentRows, lowerTfRows] = await Promise.all([
-        fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays),
-        fmpIntradayChartHistory(ticker, VOLUME_DELTA_RSI_LOWER_TF, lookbackDays)
-      ]);
-    }
+    const requiredIntervals = Array.from(new Set([
+      parentFetchInterval,
+      vdSourceInterval,
+      vdRsiSourceInterval
+    ]));
+    const rowsByInterval = new Map();
+    await Promise.all(requiredIntervals.map(async (tf) => {
+      const rows = await fmpIntradayChartHistory(ticker, tf, lookbackDays);
+      rowsByInterval.set(tf, rows || []);
+    }));
+
+    const parentRows = rowsByInterval.get(parentFetchInterval) || [];
     if (!parentRows || parentRows.length === 0) {
       return res.status(404).json({ error: `No ${parentFetchInterval} data available for this ticker` });
     }
@@ -1427,48 +1432,64 @@ app.get('/api/chart', async (req, res) => {
       });
     }
 
-    const lowerTfBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
-      convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
-        .sort((a, b) => Number(a.time) - Number(b.time))
+    const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
+      convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
     );
+    const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
+    const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
+      ? vdSourceBars
+      : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
 
     let volumeDeltaRsi = { rsi: [] };
     const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
     const firstBarTime = convertedBars[0]?.time ?? '';
     const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
-    const vdRsiResultCacheKey = `v3|${ticker}|${interval}|${VOLUME_DELTA_RSI_LOWER_TF}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+    const vdRsiResultCacheKey = `v4|${ticker}|${interval}|${vdRsiSourceInterval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+    const firstParentTime = Number(firstBarTime);
+    const lastParentTime = Number(lastBarTime);
+    const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
+    const parentWindowStart = Number.isFinite(firstParentTime)
+      ? (firstParentTime - warmUpBufferSeconds)
+      : Number.NEGATIVE_INFINITY;
+    const parentWindowEndExclusive = Number.isFinite(lastParentTime)
+      ? (lastParentTime + getIntervalSeconds(interval))
+      : Number.POSITIVE_INFINITY;
+    const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
+      const t = Number(bar.time);
+      return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+    });
+    const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar) => {
+      const t = Number(bar.time);
+      return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+    });
+    const volumeDelta = computeVolumeDeltaByParentBars(
+      convertedBars,
+      vdSourceBarsInParentRange,
+      interval
+    ).map((point) => ({
+      time: point.time,
+      delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
+    }));
+
     const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
     if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
       volumeDeltaRsi = cachedVolumeDeltaRsi;
     } else {
     try {
-      if (lowerTfBars.length > 0) {
-        const firstParentTime = Number(firstBarTime);
-        const lastParentTime = Number(lastBarTime);
-
-        // CRITICAL: Include bars BEFORE the first parent bar for proper volume delta calculation
-        // The first parent bar needs the previous intrabar's close to determine doji direction
-        // Include enough buffer for RMA warm-up (14+ periods) = ~14 parent bars worth of 5-min data
-        const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
-        const parentWindowStart = Number.isFinite(firstParentTime)
-          ? (firstParentTime - warmUpBufferSeconds)
-          : Number.NEGATIVE_INFINITY;
-        const parentWindowEndExclusive = Number.isFinite(lastParentTime)
-          ? (lastParentTime + getIntervalSeconds(interval))
-          : Number.POSITIVE_INFINITY;
-        const lowerTfBarsInParentRange = lowerTfBars.filter((bar) => {
-          const t = Number(bar.time);
-          return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
-        });
-
+      if (vdRsiSourceBarsInParentRange.length > 0) {
         volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
           convertedBars,
-          lowerTfBarsInParentRange,
+          vdRsiSourceBarsInParentRange,
           interval,
           { rsiLength: vdRsiLength }
         );
-        setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
+      } else {
+        volumeDeltaRsi = {
+          rsi: [],
+          deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
+        };
       }
+      setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
     } catch (volumeDeltaErr) {
       const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
       console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
@@ -1481,7 +1502,14 @@ app.get('/api/chart', async (req, res) => {
       bars: convertedBars,
       rsi,
       volumeDeltaRsi,
-      volumeDelta: volumeDeltaRsi.deltaValues || []
+      volumeDelta,
+      volumeDeltaConfig: {
+        sourceInterval: vdSourceInterval
+      },
+      volumeDeltaRsiConfig: {
+        sourceInterval: vdRsiSourceInterval,
+        length: vdRsiLength
+      }
     };
 
     res.json(result);

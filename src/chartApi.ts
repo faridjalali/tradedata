@@ -2,6 +2,7 @@
 
 export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day';
 export type RSIDisplayMode = 'line' | 'points';
+export type VolumeDeltaSourceInterval = '5min' | '15min' | '30min' | '1hour' | '4hour';
 
 export interface CandleBar {
   time: string | number; // LA timezone: "YYYY-MM-DD" or Unix timestamp
@@ -33,6 +34,8 @@ export interface ChartData {
 
 export interface ChartFetchOptions {
   vdRsiLength?: number;
+  vdSourceInterval?: VolumeDeltaSourceInterval;
+  vdRsiSourceInterval?: VolumeDeltaSourceInterval;
 }
 
 export async function fetchChartData(ticker: string, interval: ChartInterval, options: ChartFetchOptions = {}): Promise<ChartData> {
@@ -40,8 +43,14 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
   if (Number.isFinite(options.vdRsiLength)) {
     params.set('vdRsiLength', String(Math.max(1, Math.floor(Number(options.vdRsiLength)))));
   }
-  const vdRsiLengthParam = params.get('vdRsiLength');
-  const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}${vdRsiLengthParam ? `&vdRsiLength=${vdRsiLengthParam}` : ''}`;
+  if (typeof options.vdSourceInterval === 'string' && options.vdSourceInterval) {
+    params.set('vdSourceInterval', options.vdSourceInterval);
+  }
+  if (typeof options.vdRsiSourceInterval === 'string' && options.vdRsiSourceInterval) {
+    params.set('vdRsiSourceInterval', options.vdRsiSourceInterval);
+  }
+  const query = params.toString();
+  const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}${query ? `&${query}` : ''}`;
   const response = await fetch(url);
 
   if (!response.ok) {
