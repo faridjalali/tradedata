@@ -313,6 +313,7 @@ app.get('/api/divergence/signals', async (req, res) => {
           is_favorite
         FROM divergence_signals
         WHERE timestamp >= $1 AND timestamp <= $2
+          AND timeframe = '1d'
         ORDER BY timestamp DESC
         LIMIT 1000
       `;
@@ -333,6 +334,7 @@ app.get('/api/divergence/signals', async (req, res) => {
           is_favorite
         FROM divergence_signals
         WHERE timestamp >= NOW() - $1::interval
+          AND timeframe = '1d'
         ORDER BY timestamp DESC
         LIMIT 1000
       `;
@@ -352,6 +354,7 @@ app.get('/api/divergence/signals', async (req, res) => {
           0 AS combo_score,
           is_favorite
         FROM divergence_signals
+        WHERE timeframe = '1d'
         ORDER BY timestamp DESC
         LIMIT 1000
       `;
@@ -1980,29 +1983,6 @@ async function computeSymbolDivergenceSignals(ticker) {
     }
   }
 
-  const weeklyBars = aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas);
-  if (weeklyBars.length >= 2) {
-    const latestWeekly = weeklyBars[weeklyBars.length - 1];
-    const previousWeekly = weeklyBars[weeklyBars.length - 2];
-    const weeklySignal = classifyDivergenceSignal(
-      Number(latestWeekly.delta),
-      Number(latestWeekly.close),
-      Number(previousWeekly.close)
-    );
-    if (weeklySignal) {
-      results.push({
-        ticker,
-        signal_type: weeklySignal,
-        trade_date: etDateStringFromUnixSeconds(Number(latestWeekly.time)),
-        timeframe: '1w',
-        source_interval: DIVERGENCE_SOURCE_INTERVAL,
-        price: Number(latestWeekly.close),
-        prev_close: Number(previousWeekly.close),
-        volume_delta: Number(latestWeekly.delta)
-      });
-    }
-  }
-
   return results;
 }
 
@@ -2097,9 +2077,14 @@ async function runDailyDivergenceScan(options = {}) {
 
     await divergencePool.query(`
       DELETE FROM divergence_signals
+      WHERE source_interval = $1
+        AND timeframe <> '1d'
+    `, [DIVERGENCE_SOURCE_INTERVAL]);
+    await divergencePool.query(`
+      DELETE FROM divergence_signals
       WHERE trade_date = $1
         AND source_interval = $2
-        AND timeframe IN ('1d', '1w')
+        AND timeframe = '1d'
     `, [runDate, DIVERGENCE_SOURCE_INTERVAL]);
 
     if (totalSymbols === 0) {
