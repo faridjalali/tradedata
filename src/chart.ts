@@ -10,6 +10,8 @@ let rsiChart: RSIChart | null = null;
 let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
 let volumeDeltaRsiMidlineLine: any = null;
+let volumeDeltaChart: any = null;
+let volumeDeltaHistogramSeries: any = null;
 let volumeDeltaRsiPoints: Array<{ time: string | number, value: number }> = [];
 let volumeDeltaIndexByTime = new Map<string, number>();
 let volumeDeltaHighlightSeries: any = null;
@@ -24,9 +26,11 @@ let latestRenderRequestId = 0;
 let priceByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 let volumeDeltaRsiByTime = new Map<string, number>();
+let volumeDeltaByTime = new Map<string, number>();
 let currentBars: any[] = [];
 let monthBoundaryTimes: number[] = [];
 let priceMonthGridOverlayEl: HTMLDivElement | null = null;
+let volumeDeltaRsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let priceSettingsPanelEl: HTMLDivElement | null = null;
@@ -50,6 +54,8 @@ const VOLUME_DELTA_DATA_MAX = 100;
 const VOLUME_DELTA_MAX_HIGHLIGHT_POINTS = 2000;
 const DIVERGENCE_HIGHLIGHT_COLOR = '#ff6b6b';
 const TRENDLINE_COLOR = '#ffa500';
+const VOLUME_DELTA_POSITIVE_COLOR = '#089981';
+const VOLUME_DELTA_NEGATIVE_COLOR = '#f23645';
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -100,14 +106,6 @@ interface PersistedChartSettings {
   };
   rsi: RSISettings;
   volumeDeltaRsi?: VolumeDeltaRSISettings;
-}
-
-interface VolumeDeltaBarValues {
-  time: string | number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
 }
 
 const DEFAULT_RSI_SETTINGS: RSISettings = {
@@ -168,20 +166,24 @@ const LA_DAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit'
 });
 
-function ensureMonthGridOverlay(container: HTMLElement, pane: 'price' | 'volumeDelta' | 'rsi'): HTMLDivElement {
+function ensureMonthGridOverlay(container: HTMLElement, pane: 'price' | 'volumeDeltaRsi' | 'volumeDelta' | 'rsi'): HTMLDivElement {
   const existing = pane === 'price'
     ? priceMonthGridOverlayEl
-    : pane === 'volumeDelta'
-      ? volumeDeltaMonthGridOverlayEl
+    : pane === 'volumeDeltaRsi'
+      ? volumeDeltaRsiMonthGridOverlayEl
+      : pane === 'volumeDelta'
+        ? volumeDeltaMonthGridOverlayEl
       : rsiMonthGridOverlayEl;
   if (existing && existing.parentElement === container) return existing;
 
   const overlay = document.createElement('div');
   const paneClass = pane === 'price'
     ? 'month-grid-overlay-price'
-    : pane === 'volumeDelta'
-      ? 'month-grid-overlay-volume-delta'
-      : 'month-grid-overlay-rsi';
+    : pane === 'volumeDeltaRsi'
+      ? 'month-grid-overlay-volume-delta-rsi'
+      : pane === 'volumeDelta'
+        ? 'month-grid-overlay-volume-delta'
+        : 'month-grid-overlay-rsi';
   overlay.className = `month-grid-overlay ${paneClass}`;
   overlay.style.position = 'absolute';
   overlay.style.top = '0';
@@ -194,6 +196,8 @@ function ensureMonthGridOverlay(container: HTMLElement, pane: 'price' | 'volumeD
 
   if (pane === 'price') {
     priceMonthGridOverlayEl = overlay;
+  } else if (pane === 'volumeDeltaRsi') {
+    volumeDeltaRsiMonthGridOverlayEl = overlay;
   } else if (pane === 'volumeDelta') {
     volumeDeltaMonthGridOverlayEl = overlay;
   } else {
@@ -325,68 +329,27 @@ function formatVolumeDeltaScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function formatVolumeDeltaValueTime(time: string | number): string {
-  if (typeof time === 'number' && Number.isFinite(time)) {
-    return new Date(time * 1000).toLocaleString('en-US', {
-      timeZone: 'America/Los_Angeles',
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  }
-  if (typeof time === 'string' && time.trim()) {
-    const parsed = Date.parse(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
-    if (Number.isFinite(parsed)) {
-      return new Date(parsed).toLocaleString('en-US', {
-        timeZone: 'America/Los_Angeles',
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-    }
-    return time;
-  }
-  return '';
+function normalizeVolumeDeltaSeries(points: any[]): Array<{ time: string | number, delta: number }> {
+  if (!Array.isArray(points)) return [];
+  return points
+    .filter((point) => (
+      point &&
+      (typeof point.time === 'string' || typeof point.time === 'number') &&
+      Number.isFinite(Number(point.delta))
+    ))
+    .map((point) => ({
+      time: point.time,
+      delta: Number(point.delta)
+    }));
 }
 
-function formatVolumeDeltaNumber(value: number): string {
+function formatVolumeDeltaHistogramScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
-  return Math.round(value).toString();
-}
-
-function renderVolumeDeltaValuesPane(container: HTMLElement, rows: VolumeDeltaBarValues[]): void {
-  const title = '<div class="vd-values-title">5m Volume Delta Candles (Last 10)</div>';
-  if (!rows.length) {
-    container.innerHTML = `${title}<div class="vd-values-empty">No 5m volume-delta values available.</div>`;
-    return;
-  }
-
-  const header = `
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Open</th>
-        <th>High</th>
-        <th>Low</th>
-        <th>Close</th>
-      </tr>
-    </thead>
-  `;
-  const body = rows.map((row) => `
-    <tr>
-      <td>${formatVolumeDeltaValueTime(row.time)}</td>
-      <td>${formatVolumeDeltaNumber(row.open)}</td>
-      <td>${formatVolumeDeltaNumber(row.high)}</td>
-      <td>${formatVolumeDeltaNumber(row.low)}</td>
-      <td>${formatVolumeDeltaNumber(row.close)}</td>
-    </tr>
-  `).join('');
-
-  container.innerHTML = `${title}<table>${header}<tbody>${body}</tbody></table>`;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(Math.round(value));
 }
 
 function persistSettingsToStorage(): void {
@@ -650,7 +613,8 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
 
 function refreshMonthGridLines(): void {
   renderMonthGridLines(priceChart, priceMonthGridOverlayEl);
-  renderMonthGridLines(volumeDeltaRsiChart, volumeDeltaMonthGridOverlayEl);
+  renderMonthGridLines(volumeDeltaRsiChart, volumeDeltaRsiMonthGridOverlayEl);
+  renderMonthGridLines(volumeDeltaChart, volumeDeltaMonthGridOverlayEl);
   renderMonthGridLines(rsiChart?.getChart(), rsiMonthGridOverlayEl);
 }
 
@@ -799,14 +763,14 @@ function resetVolumeDeltaRSISettingsToDefault(): void {
   persistSettingsToStorage();
 }
 
-function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDelta' | 'rsi'): HTMLButtonElement {
+function createSettingsButton(container: HTMLElement, pane: 'price' | 'volumeDeltaRsi' | 'rsi'): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
   btn.className = 'pane-settings-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.title = pane === 'price' ? 'Price settings' : pane === 'volumeDelta' ? 'Volume Delta RSI settings' : 'RSI settings';
+  btn.title = pane === 'price' ? 'Price settings' : pane === 'volumeDeltaRsi' ? 'Volume Delta RSI settings' : 'RSI settings';
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
   btn.style.left = '8px';
@@ -1135,7 +1099,7 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
 
 function ensureSettingsUI(chartContainer: HTMLElement, volumeDeltaContainer: HTMLElement, rsiContainer: HTMLElement): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
-  const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
+  const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
 
   if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
@@ -1682,6 +1646,79 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
   return { chart, rsiSeries };
 }
 
+function createVolumeDeltaChart(container: HTMLElement) {
+  const chart = createChart(container, {
+    layout: {
+      background: { color: '#0d1117' },
+      textColor: '#c9d1d9',
+      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { visible: false },
+      horzLines: { visible: false },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+    },
+    handleScroll: {
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: false,
+      mouseWheel: true,
+    },
+    handleScale: {
+      mouseWheel: true,
+      pinch: true,
+      axisPressedMouseMove: {
+        time: true,
+        price: true,
+      },
+      axisDoubleClickReset: {
+        time: true,
+        price: true,
+      },
+    },
+    rightPriceScale: {
+      borderColor: '#21262d',
+      minimumWidth: SCALE_MIN_WIDTH_PX,
+      entireTextOnly: true,
+    },
+    timeScale: {
+      visible: false,
+      timeVisible: true,
+      secondsVisible: false,
+      borderVisible: false,
+      fixRightEdge: false,
+      rightBarStaysOnScroll: false,
+      rightOffset: RIGHT_MARGIN_BARS,
+    },
+  });
+
+  const histogramSeries = chart.addHistogramSeries({
+    base: 0,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+    priceFormat: {
+      type: 'custom',
+      minMove: 1,
+      formatter: (value: number) => formatVolumeDeltaHistogramScaleLabel(Number(value)),
+    },
+  });
+
+  histogramSeries.createPriceLine({
+    price: 0,
+    color: '#8b949e',
+    lineWidth: 1,
+    lineStyle: 2,
+    axisLabelVisible: false,
+    title: '',
+  });
+
+  return { chart, histogramSeries };
+}
+
 function setVolumeDeltaRsiData(
   bars: any[],
   volumeDeltaRsi: { rsi: Array<{ time: string | number, value: number }> }
@@ -1722,6 +1759,35 @@ function setVolumeDeltaRsiData(
   }
 }
 
+function setVolumeDeltaHistogramData(
+  bars: any[],
+  volumeDeltaValues: Array<{ time: string | number, delta: number }>
+): void {
+  if (!volumeDeltaHistogramSeries) return;
+
+  const deltaByTime = new Map<string, number>();
+  for (const point of volumeDeltaValues) {
+    const delta = Number(point.delta);
+    if (!Number.isFinite(delta)) continue;
+    deltaByTime.set(timeKey(point.time), delta);
+  }
+
+  const histogramData = bars.map((bar) => {
+    const delta = deltaByTime.get(timeKey(bar.time)) ?? 0;
+    const numeric = Number.isFinite(Number(delta)) ? Number(delta) : 0;
+    return {
+      time: bar.time,
+      value: numeric,
+      color: numeric >= 0 ? VOLUME_DELTA_POSITIVE_COLOR : VOLUME_DELTA_NEGATIVE_COLOR
+    };
+  });
+
+  volumeDeltaHistogramSeries.setData(histogramData);
+  volumeDeltaByTime = new Map(
+    histogramData.map((point: any) => [timeKey(point.time), Number(point.value) || 0])
+  );
+}
+
 function normalizeCandleBars(bars: any[]): any[] {
   return bars.filter((bar) => (
     bar &&
@@ -1733,39 +1799,56 @@ function normalizeCandleBars(bars: any[]): any[] {
   ));
 }
 
-function applyChartSizes(chartContainer: HTMLElement, volumeDeltaContainer: HTMLElement, rsiContainer: HTMLElement): void {
+function applyChartSizes(
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
   if (!priceChart) return;
 
   const chartRect = chartContainer.getBoundingClientRect();
-  const volumeDeltaRect = volumeDeltaContainer.getBoundingClientRect();
+  const volumeDeltaRsiRect = volumeDeltaRsiContainer.getBoundingClientRect();
   const rsiRect = rsiContainer.getBoundingClientRect();
+  const volumeDeltaRect = volumeDeltaContainer.getBoundingClientRect();
   const priceWidth = Math.max(1, Math.floor(chartRect.width));
   const priceHeight = Math.max(1, Math.floor(chartRect.height));
-  const volumeDeltaWidth = Math.max(1, Math.floor(volumeDeltaRect.width));
-  const volumeDeltaHeight = Math.max(1, Math.floor(volumeDeltaRect.height));
+  const volumeDeltaRsiWidth = Math.max(1, Math.floor(volumeDeltaRsiRect.width));
+  const volumeDeltaRsiHeight = Math.max(1, Math.floor(volumeDeltaRsiRect.height));
   const rsiWidth = Math.max(1, Math.floor(rsiRect.width));
   const rsiHeight = Math.max(1, Math.floor(rsiRect.height));
+  const volumeDeltaWidth = Math.max(1, Math.floor(volumeDeltaRect.width));
+  const volumeDeltaHeight = Math.max(1, Math.floor(volumeDeltaRect.height));
 
   priceChart.applyOptions({ width: priceWidth, height: priceHeight });
   if (volumeDeltaRsiChart) {
-    volumeDeltaRsiChart.applyOptions({ width: volumeDeltaWidth, height: volumeDeltaHeight });
+    volumeDeltaRsiChart.applyOptions({ width: volumeDeltaRsiWidth, height: volumeDeltaRsiHeight });
   }
   if (rsiChart) {
     rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
   }
+  if (volumeDeltaChart) {
+    volumeDeltaChart.applyOptions({ width: volumeDeltaWidth, height: volumeDeltaHeight });
+  }
   refreshMonthGridLines();
 }
 
-function ensureResizeObserver(chartContainer: HTMLElement, volumeDeltaContainer: HTMLElement, rsiContainer: HTMLElement): void {
+function ensureResizeObserver(
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
   if (chartResizeObserver) return;
 
   chartResizeObserver = new ResizeObserver(() => {
-    applyChartSizes(chartContainer, volumeDeltaContainer, rsiContainer);
+    applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   });
 
   chartResizeObserver.observe(chartContainer);
-  chartResizeObserver.observe(volumeDeltaContainer);
+  chartResizeObserver.observe(volumeDeltaRsiContainer);
   chartResizeObserver.observe(rsiContainer);
+  chartResizeObserver.observe(volumeDeltaContainer);
 }
 
 function showLoadingOverlay(container: HTMLElement): void {
@@ -1824,12 +1907,12 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   currentChartInterval = interval;
 
   const chartContainer = document.getElementById('price-chart-container');
-  const volumeDeltaContainer = document.getElementById('vd-rsi-chart-container');
+  const volumeDeltaRsiContainer = document.getElementById('vd-rsi-chart-container');
   const rsiContainer = document.getElementById('rsi-chart-container');
-  const volumeDeltaValuesContainer = document.getElementById('vd-values-container');
+  const volumeDeltaContainer = document.getElementById('vd-chart-container');
   const errorContainer = document.getElementById('chart-error');
 
-  if (!chartContainer || !volumeDeltaContainer || !rsiContainer || !volumeDeltaValuesContainer || !errorContainer) {
+  if (!chartContainer || !volumeDeltaRsiContainer || !rsiContainer || !volumeDeltaContainer || !errorContainer) {
     console.error('Chart containers not found');
     return;
   }
@@ -1838,11 +1921,11 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   errorContainer.style.display = 'none';
   errorContainer.textContent = '';
   setPricePaneMessage(chartContainer, null);
-  renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, []);
   ensureMonthGridOverlay(chartContainer, 'price');
-  ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
+  ensureMonthGridOverlay(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   ensureMonthGridOverlay(rsiContainer, 'rsi');
-  ensureSettingsUI(chartContainer, volumeDeltaContainer, rsiContainer);
+  ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
+  ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer);
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -1852,19 +1935,25 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     applyPriceGridOptions();
   }
   if (!volumeDeltaRsiChart) {
-    const { chart, rsiSeries } = createVolumeDeltaRsiChart(volumeDeltaContainer);
+    const { chart, rsiSeries } = createVolumeDeltaRsiChart(volumeDeltaRsiContainer);
     volumeDeltaRsiChart = chart;
     volumeDeltaRsiSeries = rsiSeries;
     applyVolumeDeltaRSIVisualSettings();
   }
+  if (!volumeDeltaChart) {
+    const { chart, histogramSeries } = createVolumeDeltaChart(volumeDeltaContainer);
+    volumeDeltaChart = chart;
+    volumeDeltaHistogramSeries = histogramSeries;
+  }
 
-  ensureResizeObserver(chartContainer, volumeDeltaContainer, rsiContainer);
-  applyChartSizes(chartContainer, volumeDeltaContainer, rsiContainer);
+  ensureResizeObserver(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+  applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
 
   // Show loading indicators on all chart panes
   showLoadingOverlay(chartContainer);
-  showLoadingOverlay(volumeDeltaContainer);
+  showLoadingOverlay(volumeDeltaRsiContainer);
   showLoadingOverlay(rsiContainer);
+  showLoadingOverlay(volumeDeltaContainer);
 
   try {
     // Fetch data from API
@@ -1881,24 +1970,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     const volumeDeltaRsiData = {
       rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
     };
-    const volumeDeltaBarsLast10: VolumeDeltaBarValues[] = Array.isArray(data.volumeDeltaBarsLast10)
-      ? data.volumeDeltaBarsLast10
-        .filter((bar: any) => (
-          bar &&
-          (typeof bar.time === 'number' || typeof bar.time === 'string') &&
-          Number.isFinite(Number(bar.open)) &&
-          Number.isFinite(Number(bar.high)) &&
-          Number.isFinite(Number(bar.low)) &&
-          Number.isFinite(Number(bar.close))
-        ))
-        .map((bar: any) => ({
-          time: bar.time,
-          open: Number(bar.open),
-          high: Number(bar.high),
-          low: Number(bar.low),
-          close: Number(bar.close)
-        }))
-      : [];
+    const volumeDeltaData = normalizeVolumeDeltaSeries(data.volumeDelta || []);
     currentBars = bars;
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
@@ -1914,8 +1986,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       candleSeries.setData(bars);
     }
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
+    setVolumeDeltaHistogramData(bars, volumeDeltaData);
     applyVolumeDeltaRSIVisualSettings();
-    renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, volumeDeltaBarsLast10);
 
 
     // Initialize or update RSI chart
@@ -1938,7 +2010,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
           deactivateVolumeDeltaDivergenceTool();
         }
       });
-      applyChartSizes(chartContainer, volumeDeltaContainer, rsiContainer);
+      applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
     } else if (rsiChart) {
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
@@ -1955,15 +2027,17 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
     // Hide loading indicators after successful load
     hideLoadingOverlay(chartContainer);
-    hideLoadingOverlay(volumeDeltaContainer);
+    hideLoadingOverlay(volumeDeltaRsiContainer);
     hideLoadingOverlay(rsiContainer);
+    hideLoadingOverlay(volumeDeltaContainer);
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
 
     // Hide loading indicators on error
     hideLoadingOverlay(chartContainer);
-    hideLoadingOverlay(volumeDeltaContainer);
+    hideLoadingOverlay(volumeDeltaRsiContainer);
     hideLoadingOverlay(rsiContainer);
+    hideLoadingOverlay(volumeDeltaContainer);
 
     console.error('Failed to load chart:', err);
     if (isNoDataTickerError(err)) {
@@ -1976,15 +2050,19 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       if (volumeDeltaRsiChart) {
         volumeDeltaRsiSeries?.setData([]);
       }
+      if (volumeDeltaChart) {
+        volumeDeltaHistogramSeries?.setData([]);
+      }
       clearVolumeDeltaDivergence();
       volumeDeltaRsiPoints = [];
       volumeDeltaIndexByTime = new Map();
       volumeDeltaRsiByTime = new Map();
-      renderVolumeDeltaValuesPane(volumeDeltaValuesContainer, []);
+      volumeDeltaByTime = new Map();
       currentBars = [];
       clearMovingAverageSeries();
       monthBoundaryTimes = [];
       clearMonthGridOverlay(priceMonthGridOverlayEl);
+      clearMonthGridOverlay(volumeDeltaRsiMonthGridOverlayEl);
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
@@ -2009,6 +2087,9 @@ function syncChartsToPriceRange(): void {
     if (rsiChart) {
       rsiChart.getChart().timeScale().setVisibleLogicalRange(priceRange);
     }
+    if (volumeDeltaChart) {
+      volumeDeltaChart.timeScale().setVisibleLogicalRange(priceRange);
+    }
     refreshMonthGridLines();
   } catch {
     // Ignore transient range sync errors during live updates.
@@ -2025,184 +2106,192 @@ function applyRightMargin(): void {
   if (rsiChart) {
     rsiChart.getChart().timeScale().applyOptions({ rightOffset });
   }
+  if (volumeDeltaChart) {
+    volumeDeltaChart.timeScale().applyOptions({ rightOffset });
+  }
   refreshMonthGridLines();
 }
 
-// Setup sync between price, Volume Delta RSI, and RSI charts.
+// Setup sync between price, Volume Delta RSI, RSI, and Volume Delta charts.
 function setupChartSync() {
   if (isChartSyncBound) return;
-  if (!priceChart || !volumeDeltaRsiChart || !rsiChart) return;
-  if (!candleSeries || !volumeDeltaRsiSeries) return;
+  if (!priceChart || !volumeDeltaRsiChart || !rsiChart || !volumeDeltaChart) return;
+  if (!candleSeries || !volumeDeltaRsiSeries || !volumeDeltaHistogramSeries) return;
 
   isChartSyncBound = true;
-  const volumeDeltaChartInstance = volumeDeltaRsiChart;
+  const volumeDeltaRsiChartInstance = volumeDeltaRsiChart;
   const rsiChartInstance = rsiChart.getChart();
-  let syncLock: 'price' | 'volumeDelta' | 'rsi' | null = null;
-  const unlockAfterFrame = (owner: 'price' | 'volumeDelta' | 'rsi') => {
+  const volumeDeltaChartInstance = volumeDeltaChart;
+
+  let syncLock: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta' | null = null;
+  const unlockAfterFrame = (owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta') => {
     requestAnimationFrame(() => {
       if (syncLock === owner) syncLock = null;
     });
   };
 
-  // Sync price chart -> volume delta + RSI by logical range.
+  const syncRangeFromOwner = (
+    owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta',
+    timeRange: any
+  ) => {
+    if (!timeRange) return;
+    const targets: Array<{ owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta'; chart: any }> = [
+      { owner: 'price', chart: priceChart },
+      { owner: 'volumeDeltaRsi', chart: volumeDeltaRsiChartInstance },
+      { owner: 'rsi', chart: rsiChartInstance },
+      { owner: 'volumeDelta', chart: volumeDeltaChartInstance }
+    ];
+    for (const target of targets) {
+      if (target.owner === owner) continue;
+      const currentRange = target.chart.timeScale().getVisibleLogicalRange();
+      if (!sameLogicalRange(currentRange, timeRange)) {
+        target.chart.timeScale().setVisibleLogicalRange(timeRange);
+      }
+    }
+    refreshMonthGridLines();
+  };
+
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
-    if (!timeRange || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
-    const currentVdRange = volumeDeltaChartInstance.timeScale().getVisibleLogicalRange();
-    const currentRSIRange = rsiChartInstance.timeScale().getVisibleLogicalRange();
-    if (sameLogicalRange(currentVdRange, timeRange) && sameLogicalRange(currentRSIRange, timeRange)) return;
+    if (!timeRange || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
     syncLock = 'price';
     try {
-      if (!sameLogicalRange(currentVdRange, timeRange)) {
-        volumeDeltaChartInstance.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      if (!sameLogicalRange(currentRSIRange, timeRange)) {
-        rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      refreshMonthGridLines();
+      syncRangeFromOwner('price', timeRange);
     } finally {
       unlockAfterFrame('price');
     }
   });
 
-  // Sync volume delta -> price + RSI.
-  volumeDeltaChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
+  volumeDeltaRsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (volumeDeltaSuppressSync) return;
-    if (!timeRange || syncLock === 'price' || syncLock === 'rsi') return;
-    const currentPriceRange = priceChart.timeScale().getVisibleLogicalRange();
-    const currentRSIRange = rsiChartInstance.timeScale().getVisibleLogicalRange();
-    if (sameLogicalRange(currentPriceRange, timeRange) && sameLogicalRange(currentRSIRange, timeRange)) return;
-    syncLock = 'volumeDelta';
+    if (!timeRange || syncLock === 'price' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
+    syncLock = 'volumeDeltaRsi';
     try {
-      if (!sameLogicalRange(currentPriceRange, timeRange)) {
-        priceChart.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      if (!sameLogicalRange(currentRSIRange, timeRange)) {
-        rsiChartInstance.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      refreshMonthGridLines();
+      syncRangeFromOwner('volumeDeltaRsi', timeRange);
     } finally {
-      unlockAfterFrame('volumeDelta');
+      unlockAfterFrame('volumeDeltaRsi');
     }
   });
 
-  // Sync RSI -> price + volume delta.
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (rsiChart?.isSyncSuppressed?.()) return;
-    if (!timeRange || syncLock === 'price' || syncLock === 'volumeDelta') return;
-    const currentPriceRange = priceChart.timeScale().getVisibleLogicalRange();
-    const currentVdRange = volumeDeltaChartInstance.timeScale().getVisibleLogicalRange();
-    if (sameLogicalRange(currentPriceRange, timeRange) && sameLogicalRange(currentVdRange, timeRange)) return;
+    if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'volumeDelta') return;
     syncLock = 'rsi';
     try {
-      if (!sameLogicalRange(currentPriceRange, timeRange)) {
-        priceChart.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      if (!sameLogicalRange(currentVdRange, timeRange)) {
-        volumeDeltaChartInstance.timeScale().setVisibleLogicalRange(timeRange);
-      }
-      refreshMonthGridLines();
+      syncRangeFromOwner('rsi', timeRange);
     } finally {
       unlockAfterFrame('rsi');
     }
   });
 
-  // Sync crosshair from price -> other panes.
-  priceChart.subscribeCrosshairMove((param: any) => {
-    if (!param || !param.time) {
-      volumeDeltaChartInstance.clearCrosshairPosition();
-      rsiChartInstance.clearCrosshairPosition();
-      return;
-    }
-    const tKey = timeKey(param.time);
-    const mappedVd = volumeDeltaRsiByTime.get(tKey);
-    if (Number.isFinite(mappedVd)) {
-      try {
-        volumeDeltaChartInstance.setCrosshairPosition(mappedVd, param.time, volumeDeltaRsiSeries);
-      } catch {
-        volumeDeltaChartInstance.clearCrosshairPosition();
-      }
-    } else {
-      volumeDeltaChartInstance.clearCrosshairPosition();
-    }
-
-    const mappedRsi = rsiByTime.get(tKey);
-    if (!Number.isFinite(mappedRsi)) {
-      rsiChartInstance.clearCrosshairPosition();
-      return;
-    }
-    const rsiSeries = rsiChart?.getSeries();
-    if (rsiSeries) {
-      try {
-        rsiChartInstance.setCrosshairPosition(mappedRsi, param.time, rsiSeries);
-      } catch {
-        rsiChartInstance.clearCrosshairPosition();
-      }
+  volumeDeltaChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
+    if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi') return;
+    syncLock = 'volumeDelta';
+    try {
+      syncRangeFromOwner('volumeDelta', timeRange);
+    } finally {
+      unlockAfterFrame('volumeDelta');
     }
   });
 
-  // Sync crosshair from volume delta -> price + RSI.
-  volumeDeltaChartInstance.subscribeCrosshairMove((param: any) => {
-    if (!param || !param.time) {
-      priceChart.clearCrosshairPosition();
-      rsiChartInstance.clearCrosshairPosition();
-      return;
-    }
-
-    const tKey = timeKey(param.time);
-    const mappedPrice = priceByTime.get(tKey);
+  const setCrosshairOnPrice = (time: string | number) => {
+    const mappedPrice = priceByTime.get(timeKey(time));
     if (Number.isFinite(mappedPrice) && candleSeries) {
       try {
-        priceChart.setCrosshairPosition(mappedPrice, param.time, candleSeries);
+        priceChart.setCrosshairPosition(mappedPrice, time, candleSeries);
       } catch {
         priceChart.clearCrosshairPosition();
       }
     } else {
       priceChart.clearCrosshairPosition();
     }
+  };
 
-    const mappedRsi = rsiByTime.get(tKey);
+  const setCrosshairOnVolumeDeltaRsi = (time: string | number) => {
+    const mappedVdRsi = volumeDeltaRsiByTime.get(timeKey(time));
+    if (Number.isFinite(mappedVdRsi)) {
+      try {
+        volumeDeltaRsiChartInstance.setCrosshairPosition(mappedVdRsi, time, volumeDeltaRsiSeries);
+      } catch {
+        volumeDeltaRsiChartInstance.clearCrosshairPosition();
+      }
+    } else {
+      volumeDeltaRsiChartInstance.clearCrosshairPosition();
+    }
+  };
+
+  const setCrosshairOnRsi = (time: string | number) => {
+    const mappedRsi = rsiByTime.get(timeKey(time));
     const rsiSeries = rsiChart?.getSeries();
     if (Number.isFinite(mappedRsi) && rsiSeries) {
       try {
-        rsiChartInstance.setCrosshairPosition(mappedRsi, param.time, rsiSeries);
+        rsiChartInstance.setCrosshairPosition(mappedRsi, time, rsiSeries);
       } catch {
         rsiChartInstance.clearCrosshairPosition();
       }
     } else {
       rsiChartInstance.clearCrosshairPosition();
     }
-  });
+  };
 
-  // Sync crosshair from RSI -> price + volume delta.
-  rsiChartInstance.subscribeCrosshairMove((param: any) => {
-    if (!param || !param.time) {
-      priceChart.clearCrosshairPosition();
-      volumeDeltaChartInstance.clearCrosshairPosition();
-      return;
-    }
-
-    const tKey = timeKey(param.time);
-    const mappedPrice = priceByTime.get(tKey);
-    if (Number.isFinite(mappedPrice) && candleSeries) {
-      try {
-        priceChart.setCrosshairPosition(mappedPrice, param.time, candleSeries);
-      } catch {
-        priceChart.clearCrosshairPosition();
-      }
-    } else {
-      priceChart.clearCrosshairPosition();
-    }
-
-    const mappedVd = volumeDeltaRsiByTime.get(tKey);
+  const setCrosshairOnVolumeDelta = (time: string | number) => {
+    const mappedVd = volumeDeltaByTime.get(timeKey(time));
     if (Number.isFinite(mappedVd)) {
       try {
-        volumeDeltaChartInstance.setCrosshairPosition(mappedVd, param.time, volumeDeltaRsiSeries);
+        volumeDeltaChartInstance.setCrosshairPosition(mappedVd, time, volumeDeltaHistogramSeries);
       } catch {
         volumeDeltaChartInstance.clearCrosshairPosition();
       }
     } else {
       volumeDeltaChartInstance.clearCrosshairPosition();
     }
+  };
+
+  priceChart.subscribeCrosshairMove((param: any) => {
+    if (!param || !param.time) {
+      volumeDeltaRsiChartInstance.clearCrosshairPosition();
+      rsiChartInstance.clearCrosshairPosition();
+      volumeDeltaChartInstance.clearCrosshairPosition();
+      return;
+    }
+    setCrosshairOnVolumeDeltaRsi(param.time);
+    setCrosshairOnRsi(param.time);
+    setCrosshairOnVolumeDelta(param.time);
+  });
+
+  volumeDeltaRsiChartInstance.subscribeCrosshairMove((param: any) => {
+    if (!param || !param.time) {
+      priceChart.clearCrosshairPosition();
+      rsiChartInstance.clearCrosshairPosition();
+      volumeDeltaChartInstance.clearCrosshairPosition();
+      return;
+    }
+    setCrosshairOnPrice(param.time);
+    setCrosshairOnRsi(param.time);
+    setCrosshairOnVolumeDelta(param.time);
+  });
+
+  rsiChartInstance.subscribeCrosshairMove((param: any) => {
+    if (!param || !param.time) {
+      priceChart.clearCrosshairPosition();
+      volumeDeltaRsiChartInstance.clearCrosshairPosition();
+      volumeDeltaChartInstance.clearCrosshairPosition();
+      return;
+    }
+    setCrosshairOnPrice(param.time);
+    setCrosshairOnVolumeDeltaRsi(param.time);
+    setCrosshairOnVolumeDelta(param.time);
+  });
+
+  volumeDeltaChartInstance.subscribeCrosshairMove((param: any) => {
+    if (!param || !param.time) {
+      priceChart.clearCrosshairPosition();
+      volumeDeltaRsiChartInstance.clearCrosshairPosition();
+      rsiChartInstance.clearCrosshairPosition();
+      return;
+    }
+    setCrosshairOnPrice(param.time);
+    setCrosshairOnVolumeDeltaRsi(param.time);
+    setCrosshairOnRsi(param.time);
   });
 }
 

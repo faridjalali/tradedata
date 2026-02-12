@@ -1364,31 +1364,12 @@ app.get('/api/chart', async (req, res) => {
       convertToLATime(lowerTfRows || [], VOLUME_DELTA_RSI_LOWER_TF)
         .sort((a, b) => Number(a.time) - Number(b.time))
     );
-    const volumeDeltaBarsLast10 = computeVolumeDeltaCandlesByParentBars(
-      lowerTfBars,
-      lowerTfBars,
-      VOLUME_DELTA_RSI_LOWER_TF
-    )
-      .filter((bar) => (
-        Number.isFinite(Number(bar.open)) &&
-        Number.isFinite(Number(bar.high)) &&
-        Number.isFinite(Number(bar.low)) &&
-        Number.isFinite(Number(bar.close))
-      ))
-      .slice(-10)
-      .map((bar) => ({
-        time: bar.time,
-        open: Number(bar.open),
-        high: Number(bar.high),
-        low: Number(bar.low),
-        close: Number(bar.close)
-      }));
 
     let volumeDeltaRsi = { rsi: [] };
     const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
     const firstBarTime = convertedBars[0]?.time ?? '';
     const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
-    const vdRsiResultCacheKey = `v2|${ticker}|${interval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+    const vdRsiResultCacheKey = `v3|${ticker}|${interval}|${VOLUME_DELTA_RSI_LOWER_TF}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
     const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
     if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
       volumeDeltaRsi = cachedVolumeDeltaRsi;
@@ -1433,8 +1414,7 @@ app.get('/api/chart', async (req, res) => {
       bars: convertedBars,
       rsi,
       volumeDeltaRsi,
-      volumeDelta: volumeDeltaRsi.deltaValues || [],
-      volumeDeltaBarsLast10
+      volumeDelta: volumeDeltaRsi.deltaValues || []
     };
 
     res.json(result);
