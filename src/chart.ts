@@ -1444,9 +1444,9 @@ function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): H
   overlay.style.position = 'absolute';
   overlay.style.top = '40px';
   overlay.style.right = `${SCALE_MIN_WIDTH_PX + 10}px`;
-  overlay.style.width = '360px';
+  overlay.style.width = '468px';
   overlay.style.maxWidth = `calc(100% - ${SCALE_MIN_WIDTH_PX + 24}px)`;
-  overlay.style.height = '220px';
+  overlay.style.height = '286px';
   overlay.style.border = '1px solid #30363d';
   overlay.style.borderRadius = '6px';
   overlay.style.background = 'rgba(13, 17, 23, 0.95)';
@@ -1457,18 +1457,10 @@ function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): H
   overlay.style.padding = '8px';
   overlay.style.boxSizing = 'border-box';
 
-  const title = document.createElement('div');
-  title.className = 'divergence-plot-overlay-title';
-  title.style.fontSize = '12px';
-  title.style.color = '#c9d1d9';
-  title.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-  title.style.marginBottom = '6px';
-  overlay.appendChild(title);
-
   const canvasWrap = document.createElement('div');
   canvasWrap.style.position = 'relative';
   canvasWrap.style.width = '100%';
-  canvasWrap.style.height = 'calc(100% - 22px)';
+  canvasWrap.style.height = '100%';
   const canvas = document.createElement('canvas');
   canvas.className = 'divergence-plot-overlay-canvas';
   canvasWrap.appendChild(canvas);
@@ -1552,16 +1544,13 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
     : document.getElementById('vd-rsi-chart-container');
   if (!container || !(container instanceof HTMLElement)) return;
   const overlay = ensureDivergenceOverlay(container, pane);
-  const title = overlay.querySelector('.divergence-plot-overlay-title') as HTMLDivElement | null;
   const canvas = overlay.querySelector('.divergence-plot-overlay-canvas') as HTMLCanvasElement | null;
-  if (!title || !canvas) return;
+  if (!canvas) return;
   if (!currentBars.length || startIndex < 0 || startIndex >= currentBars.length) {
     hideDivergenceOverlay(pane);
     return;
   }
 
-  const startTime = currentBars[startIndex]?.time;
-  title.textContent = `Divergence from ${formatDivergenceOverlayTimeLabel(startTime)}`;
   const data = buildDivergenceOverlayData(startIndex);
   if (data.rsiValues.length < 2) {
     hideDivergenceOverlay(pane);
@@ -1590,7 +1579,7 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
           data: data.rsiValues,
           borderColor: rsiSettings.lineColor,
           backgroundColor: 'transparent',
-          borderWidth: 2,
+          borderWidth: 1,
           pointRadius: data.rsiValues.length > 24 ? 0 : 2,
           tension: 0.2
         },
@@ -1599,7 +1588,7 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
           data: data.volumeDeltaRsiValues,
           borderColor: volumeDeltaRsiSettings.lineColor,
           backgroundColor: 'transparent',
-          borderWidth: 2,
+          borderWidth: 1,
           pointRadius: data.volumeDeltaRsiValues.length > 24 ? 0 : 2,
           tension: 0.2
         }
@@ -1615,12 +1604,7 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
       },
       plugins: {
         legend: {
-          labels: {
-            color: '#c9d1d9',
-            font: { size: 11 },
-            usePointStyle: true,
-            pointStyle: 'line'
-          }
+          display: false
         },
         tooltip: {
           backgroundColor: 'rgba(22, 27, 34, 0.95)',
@@ -1632,6 +1616,7 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
       },
       scales: {
         x: {
+          display: false,
           ticks: {
             color: '#8b949e',
             maxRotation: 0,
@@ -1642,6 +1627,7 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
           grid: { color: 'rgba(48, 54, 61, 0.22)' }
         },
         y: {
+          display: false,
           min: 0,
           max: 100,
           ticks: {
