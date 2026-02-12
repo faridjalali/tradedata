@@ -1476,15 +1476,20 @@ function formatDivergenceOverlayTimeLabel(time: string | number): string {
 
 function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): HTMLDivElement {
   const existing = pane === 'rsi' ? rsiDivergenceOverlayEl : volumeDeltaRsiDivergenceOverlayEl;
-  if (existing && existing.parentElement === container) return existing;
+  if (existing && existing.parentElement === container) {
+    existing.style.top = '0';
+    existing.style.right = '0';
+    existing.style.maxWidth = '100%';
+    return existing;
+  }
 
   const overlay = document.createElement('div');
   overlay.className = `divergence-plot-overlay divergence-plot-overlay-${pane}`;
   overlay.style.position = 'absolute';
-  overlay.style.top = '40px';
-  overlay.style.right = `${SCALE_MIN_WIDTH_PX + 10}px`;
+  overlay.style.top = '0';
+  overlay.style.right = '0';
   overlay.style.width = '468px';
-  overlay.style.maxWidth = `calc(100% - ${SCALE_MIN_WIDTH_PX + 24}px)`;
+  overlay.style.maxWidth = '100%';
   overlay.style.height = '286px';
   overlay.style.border = '1px solid #30363d';
   overlay.style.borderRadius = '6px';
@@ -3233,13 +3238,16 @@ function setVolumeDeltaHistogramData(
 
 function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivElement {
   if (volumeDeltaDivergenceSummaryEl && volumeDeltaDivergenceSummaryEl.parentElement === container) {
+    volumeDeltaDivergenceSummaryEl.style.top = '50%';
+    volumeDeltaDivergenceSummaryEl.style.transform = 'translateY(-50%)';
     return volumeDeltaDivergenceSummaryEl;
   }
 
   const el = document.createElement('div');
   el.className = 'volume-delta-divergence-summary';
   el.style.position = 'absolute';
-  el.style.top = '8px';
+  el.style.top = '50%';
+  el.style.transform = 'translateY(-50%)';
   el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
   el.style.zIndex = '34';
   el.style.minWidth = '34px';
