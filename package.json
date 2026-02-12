@@ -6,7 +6,7 @@
     "start": "node index.js",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "lint:server": "node --check index.js && node --check server/chartMath.js && node --check server/routes/chartRoutes.js && node --check server/routes/divergenceRoutes.js && node --check server/routes/healthRoutes.js",
+    "lint:server": "node --check index.js && node --check server/chartMath.js && node --check server/routes/chartRoutes.js && node --check server/routes/divergenceRoutes.js && node --check server/routes/healthRoutes.js && node --check server/services/divergenceService.js",
     "lint": "npm run lint:server && npm run typecheck",
     "test": "node --test \"test/**/*.test.js\"",
     "build": "vite build",

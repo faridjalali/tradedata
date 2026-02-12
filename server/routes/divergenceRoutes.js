@@ -1,3 +1,8 @@
+const {
+  buildManualScanRequest,
+  fetchLatestDivergenceScanStatus
+} = require('../services/divergenceService');
+
 function registerDivergenceRoutes(options = {}) {
   const {
     app,
@@ -32,18 +37,15 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(409).json({ status: 'running' });
     }
 
-    const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
-    const refreshUniverse = parseBooleanInput(req.query.refreshUniverse, false)
-      || parseBooleanInput(req.body?.refreshUniverse, false);
-
-    let runDateEt;
-    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
-      const parsedRunDate = parseEtDateInput(req.body.runDateEt);
-      if (!parsedRunDate) {
-        return res.status(400).json({ error: 'runDateEt must be YYYY-MM-DD' });
-      }
-      runDateEt = parsedRunDate;
+    const scanRequest = buildManualScanRequest({
+      req,
+      parseBooleanInput,
+      parseEtDateInput
+    });
+    if (!scanRequest.ok) {
+      return res.status(400).json({ error: scanRequest.error });
     }
+    const { force, refreshUniverse, runDateEt } = scanRequest.value;
 
     runDailyDivergenceScan({
       force,
@@ -68,38 +70,14 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     try {
-      const latest = await divergencePool.query(`
-        SELECT *
-        FROM divergence_scan_jobs
-        ORDER BY started_at DESC
-        LIMIT 1
-      `);
-      const latestJob = latest.rows[0] || null;
-
-      if (latestJob && !latestJob.scanned_trade_date) {
-        const tradeDateResult = await divergencePool.query(`
-          SELECT MAX(trade_date)::text AS scanned_trade_date
-          FROM divergence_signals
-          WHERE scan_job_id = $1
-            AND timeframe = '1d'
-            AND source_interval = $2
-        `, [latestJob.id, divergenceSourceInterval]);
-        const fallbackTradeDate = String(tradeDateResult.rows[0]?.scanned_trade_date || '').trim();
-        if (fallbackTradeDate) {
-          latestJob.scanned_trade_date = fallbackTradeDate;
-        }
-      }
-
-      const lastScanDateEt = getLastFetchedTradeDateEt()
-        || String(latestJob?.scanned_trade_date || '').trim()
-        || getLastScanDateEt()
-        || null;
-
-      return res.json({
-        running: getIsScanRunning(),
-        lastScanDateEt,
-        latestJob
+      const statusPayload = await fetchLatestDivergenceScanStatus({
+        divergencePool,
+        divergenceSourceInterval,
+        getIsScanRunning,
+        getLastFetchedTradeDateEt,
+        getLastScanDateEt
       });
+      return res.json(statusPayload);
     } catch (err) {
       console.error('Failed to fetch divergence scan status:', err);
       return res.status(500).json({ error: 'Failed to fetch scan status' });
