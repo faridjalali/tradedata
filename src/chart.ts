@@ -3788,10 +3788,10 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
+    applyRSISettings();
     restorePersistedTrendlinesForCurrentContext();
     setupChartSync();
 
-    applyRSISettings();
     applyMovingAverages();
     applyRightMargin();
     syncChartsToPriceRange();
