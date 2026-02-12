@@ -1929,8 +1929,9 @@ async function refreshDivergenceSymbolUniverse(options = {}) {
   return symbols.map((s) => s.ticker);
 }
 
-async function getDivergenceUniverseTickers() {
+async function getDivergenceUniverseTickers(options = {}) {
   if (!divergencePool) return [];
+  const forceRefresh = Boolean(options.forceRefresh);
   const existing = await divergencePool.query(`
     SELECT ticker
     FROM divergence_symbols
@@ -1942,12 +1943,12 @@ async function getDivergenceUniverseTickers() {
     .filter(Boolean);
 
   // Long-term persistence: once we have a populated universe, keep using it.
-  if (storedTickers.length >= DIVERGENCE_MIN_UNIVERSE_SIZE) {
+  if (!forceRefresh && storedTickers.length >= DIVERGENCE_MIN_UNIVERSE_SIZE) {
     return storedTickers;
   }
 
   try {
-    const bootstrapped = await refreshDivergenceSymbolUniverse({ fullReset: false });
+    const bootstrapped = await refreshDivergenceSymbolUniverse({ fullReset: forceRefresh });
     if (bootstrapped.length > 0) {
       console.log(`Divergence universe bootstrap updated to ${bootstrapped.length} symbols.`);
       return bootstrapped;
@@ -2075,6 +2076,7 @@ async function runDailyDivergenceScan(options = {}) {
   }
 
   const force = Boolean(options.force);
+  const refreshUniverse = Boolean(options.refreshUniverse);
   const runDate = String(options.runDateEt || currentEtDateString()).trim();
   const trigger = String(options.trigger || 'manual');
   if (!force && divergenceLastScanDateEt === runDate) {
@@ -2089,7 +2091,7 @@ async function runDailyDivergenceScan(options = {}) {
   let errorCount = 0;
 
   try {
-    const symbols = await getDivergenceUniverseTickers();
+    const symbols = await getDivergenceUniverseTickers({ forceRefresh: refreshUniverse });
     const totalSymbols = symbols.length;
     scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
 
@@ -2241,8 +2243,15 @@ app.post('/api/divergence/scan', async (req, res) => {
   }
 
   const force = String(req.query.force || '').toLowerCase() === 'true' || req.body?.force === true;
+  const refreshUniverse = String(req.query.refreshUniverse || '').toLowerCase() === 'true'
+    || req.body?.refreshUniverse === true;
   const runDateEt = req.body?.runDateEt ? String(req.body.runDateEt).trim() : undefined;
-  runDailyDivergenceScan({ force, runDateEt, trigger: 'manual-api' })
+  runDailyDivergenceScan({
+    force,
+    refreshUniverse,
+    runDateEt,
+    trigger: 'manual-api'
+  })
     .then((summary) => {
       console.log('Manual divergence scan completed:', summary);
     })

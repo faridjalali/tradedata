@@ -47,3 +47,55 @@ export async function toggleDivergenceFavorite(id: number): Promise<Alert> {
     return normalizeAlert(await response.json());
 }
 
+export interface DivergenceScanStatus {
+    running: boolean;
+    lastScanDateEt: string | null;
+    latestJob: {
+        status?: string;
+        started_at?: string;
+        finished_at?: string;
+        processed_symbols?: number;
+        total_symbols?: number;
+        bullish_count?: number;
+        bearish_count?: number;
+        error_count?: number;
+    } | null;
+}
+
+export async function startDivergenceScan(options?: { force?: boolean; refreshUniverse?: boolean; runDateEt?: string }): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/scan', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            force: options?.force ?? true,
+            refreshUniverse: options?.refreshUniverse ?? true,
+            runDateEt: options?.runDateEt
+        })
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && String(payload?.status || '') === 'running') {
+            return { status: 'running' };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to start divergence scan (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'started') };
+}
+
+export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
+    const response = await fetch('/api/divergence/scan/status');
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload) {
+        throw new Error('Failed to fetch divergence scan status');
+    }
+    return {
+        running: Boolean((payload as any).running),
+        lastScanDateEt: (payload as any).lastScanDateEt ?? null,
+        latestJob: (payload as any).latestJob ?? null
+    };
+}

@@ -1,5 +1,11 @@
 import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn } from './utils';
-import { fetchDivergenceSignalsFromApi, toggleDivergenceFavorite } from './divergenceApi';
+import {
+    fetchDivergenceSignalsFromApi,
+    toggleDivergenceFavorite,
+    startDivergenceScan,
+    fetchDivergenceScanStatus,
+    DivergenceScanStatus
+} from './divergenceApi';
 import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { LiveFeedMode, SortMode, Alert } from './types';
@@ -7,6 +13,8 @@ import { LiveFeedMode, SortMode, Alert } from './types';
 let divergenceFeedMode: LiveFeedMode = '1';
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
+let divergenceScanPollTimer: number | null = null;
+let divergenceScanPollInFlight = false;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -14,6 +22,124 @@ export function getDivergenceFeedMode(): LiveFeedMode {
 
 export function setDivergenceFeedModeState(mode: LiveFeedMode): void {
     divergenceFeedMode = mode;
+}
+
+function getRunButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
+    return {
+        button: document.getElementById('divergence-run-btn') as HTMLButtonElement | null,
+        status: document.getElementById('divergence-run-status')
+    };
+}
+
+function setRunButtonState(running: boolean): void {
+    const { button } = getRunButtonElements();
+    if (!button) return;
+    button.disabled = running;
+    button.classList.toggle('active', running);
+    button.textContent = running ? 'Running' : 'Run';
+}
+
+function setRunStatusText(text: string): void {
+    const { status } = getRunButtonElements();
+    if (!status) return;
+    status.textContent = text;
+}
+
+function summarizeStatus(status: DivergenceScanStatus): string {
+    const latest = status.latestJob;
+    if (status.running) {
+        const processed = Number(latest?.processed_symbols || 0);
+        const total = Number(latest?.total_symbols || 0);
+        if (total > 0) return `Running ${processed}/${total}`;
+        return 'Running';
+    }
+
+    if (latest?.status === 'completed') {
+        const bullish = Number(latest.bullish_count || 0);
+        const bearish = Number(latest.bearish_count || 0);
+        return `Done B:${bullish} R:${bearish}`;
+    }
+    if (latest?.status === 'failed') {
+        return 'Last run failed';
+    }
+    return 'Idle';
+}
+
+function clearDivergenceScanPolling(): void {
+    if (divergenceScanPollTimer !== null) {
+        window.clearInterval(divergenceScanPollTimer);
+        divergenceScanPollTimer = null;
+    }
+}
+
+async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<void> {
+    if (divergenceScanPollInFlight) return;
+    divergenceScanPollInFlight = true;
+    try {
+        const status = await fetchDivergenceScanStatus();
+        setRunButtonState(status.running);
+        setRunStatusText(summarizeStatus(status));
+        if (!status.running) {
+            clearDivergenceScanPolling();
+            if (refreshOnComplete) {
+                await fetchDivergenceSignals(true);
+                renderDivergenceOverview();
+            }
+        }
+    } catch (error) {
+        console.error('Failed to poll divergence scan status:', error);
+        setRunStatusText('Status unavailable');
+        clearDivergenceScanPolling();
+        setRunButtonState(false);
+    } finally {
+        divergenceScanPollInFlight = false;
+    }
+}
+
+function ensureDivergenceScanPolling(refreshOnComplete: boolean): void {
+    clearDivergenceScanPolling();
+    divergenceScanPollTimer = window.setInterval(() => {
+        pollDivergenceScanStatus(refreshOnComplete);
+    }, 2500);
+}
+
+export async function syncDivergenceScanUiState(): Promise<void> {
+    try {
+        const status = await fetchDivergenceScanStatus();
+        setRunButtonState(status.running);
+        setRunStatusText(summarizeStatus(status));
+        if (status.running) {
+            ensureDivergenceScanPolling(true);
+        } else {
+            clearDivergenceScanPolling();
+        }
+    } catch (error) {
+        console.error('Failed to sync divergence scan UI state:', error);
+        setRunButtonState(false);
+        setRunStatusText('Status unavailable');
+    }
+}
+
+export async function runManualDivergenceScan(): Promise<void> {
+    setRunButtonState(true);
+    setRunStatusText('Starting...');
+    try {
+        const started = await startDivergenceScan({
+            force: true,
+            refreshUniverse: true
+        });
+        if (started.status === 'running') {
+            setRunStatusText('Already running');
+        } else {
+            setRunStatusText('Running');
+        }
+        ensureDivergenceScanPolling(true);
+        await pollDivergenceScanStatus(false);
+    } catch (error) {
+        console.error('Failed to start divergence scan:', error);
+        setRunButtonState(false);
+        setRunStatusText('Run failed');
+    }
 }
 
 export function isCurrentDivergenceTimeframe(): boolean {
@@ -162,4 +288,3 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
     }
     renderDivergenceOverview();
 }
-

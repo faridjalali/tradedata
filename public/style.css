@@ -151,6 +151,18 @@ h2 {
   align-items: center;
   width: 100%;
 }
+.divergence-run-btn {
+  width: auto !important;
+  min-width: 52px !important;
+  padding: 2px 8px !important;
+}
+.divergence-run-status {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  margin-left: 4px;
+  white-space: nowrap;
+}
 #reset-filter {
   font-size: 0.85rem;
 }

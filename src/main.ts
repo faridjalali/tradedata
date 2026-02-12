@@ -19,7 +19,9 @@ import {
     isCurrentDivergenceTimeframe,
     setDivergenceDailySort,
     setDivergenceWeeklySort,
-    setupDivergenceFeedDelegation
+    setupDivergenceFeedDelegation,
+    runManualDivergenceScan,
+    syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
 
@@ -86,6 +88,7 @@ function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
         document.getElementById('view-divergence')?.classList.remove('hidden');
         document.getElementById('divergence-controls')?.classList.remove('hidden');
         fetchDivergenceSignals(true).then(renderDivergenceOverview);
+        syncDivergenceScanUiState();
     } else if (view === 'leaderboard') {
         document.getElementById('view-leaderboard')?.classList.remove('hidden');
         document.getElementById('leaderboard-controls')?.classList.remove('hidden');
@@ -259,6 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('divergence-btn-1')?.addEventListener('click', () => setDivergenceFeedMode('1'));
     document.getElementById('divergence-btn-week')?.addEventListener('click', () => setDivergenceFeedMode('week'));
     document.getElementById('divergence-btn-month')?.addEventListener('click', () => setDivergenceFeedMode('month'));
+    document.getElementById('divergence-run-btn')?.addEventListener('click', () => {
+        runManualDivergenceScan();
+    });
     
     // New Date Inputs
     const weekInput = document.getElementById('history-week') as HTMLInputElement;
