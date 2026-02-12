@@ -109,6 +109,9 @@ interface VolumeDeltaRSISettings {
 interface VolumeDeltaSettings {
   sourceInterval: VolumeDeltaSourceInterval;
   divergentPriceBars: boolean;
+  bullishDivergentColor: string;
+  bearishDivergentColor: string;
+  neutralDivergentColor: string;
 }
 
 interface PersistedMASetting {
@@ -148,7 +151,10 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
 
 const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
   sourceInterval: '5min',
-  divergentPriceBars: false
+  divergentPriceBars: false,
+  bullishDivergentColor: '#26a69a',
+  bearishDivergentColor: '#ef5350',
+  neutralDivergentColor: '#c9d1d9'
 };
 
 const DEFAULT_PRICE_SETTINGS: {
@@ -437,7 +443,10 @@ function persistSettingsToStorage(): void {
       },
       volumeDelta: {
         sourceInterval: volumeDeltaSettings.sourceInterval,
-        divergentPriceBars: volumeDeltaSettings.divergentPriceBars
+        divergentPriceBars: volumeDeltaSettings.divergentPriceBars,
+        bullishDivergentColor: volumeDeltaSettings.bullishDivergentColor,
+        bearishDivergentColor: volumeDeltaSettings.bearishDivergentColor,
+        neutralDivergentColor: volumeDeltaSettings.neutralDivergentColor
       },
       volumeDeltaRsi: {
         length: volumeDeltaRsiSettings.length,
@@ -505,6 +514,15 @@ function ensureSettingsLoadedFromStorage(): void {
       }
       if (typeof persistedVolumeDelta.divergentPriceBars === 'boolean') {
         volumeDeltaSettings.divergentPriceBars = persistedVolumeDelta.divergentPriceBars;
+      }
+      if (typeof persistedVolumeDelta.bullishDivergentColor === 'string' && persistedVolumeDelta.bullishDivergentColor.trim()) {
+        volumeDeltaSettings.bullishDivergentColor = persistedVolumeDelta.bullishDivergentColor;
+      }
+      if (typeof persistedVolumeDelta.bearishDivergentColor === 'string' && persistedVolumeDelta.bearishDivergentColor.trim()) {
+        volumeDeltaSettings.bearishDivergentColor = persistedVolumeDelta.bearishDivergentColor;
+      }
+      if (typeof persistedVolumeDelta.neutralDivergentColor === 'string' && persistedVolumeDelta.neutralDivergentColor.trim()) {
+        volumeDeltaSettings.neutralDivergentColor = persistedVolumeDelta.neutralDivergentColor;
       }
     }
 
@@ -755,8 +773,14 @@ function syncVolumeDeltaSettingsPanelValues(): void {
   if (!volumeDeltaSettingsPanelEl) return;
   const source = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="source-interval"]') as HTMLSelectElement | null;
   const divergent = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-price-bars"]') as HTMLInputElement | null;
+  const bullish = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-bullish-color"]') as HTMLInputElement | null;
+  const bearish = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-bearish-color"]') as HTMLInputElement | null;
+  const neutral = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-neutral-color"]') as HTMLInputElement | null;
   if (source) source.value = volumeDeltaSettings.sourceInterval;
   if (divergent) divergent.checked = volumeDeltaSettings.divergentPriceBars;
+  if (bullish) bullish.value = volumeDeltaSettings.bullishDivergentColor;
+  if (bearish) bearish.value = volumeDeltaSettings.bearishDivergentColor;
+  if (neutral) neutral.value = volumeDeltaSettings.neutralDivergentColor;
 }
 
 function syncVolumeDeltaRSISettingsPanelValues(): void {
@@ -1111,6 +1135,9 @@ function resetRSISettingsToDefault(): void {
 function resetVolumeDeltaSettingsToDefault(): void {
   volumeDeltaSettings.sourceInterval = DEFAULT_VOLUME_DELTA_SETTINGS.sourceInterval;
   volumeDeltaSettings.divergentPriceBars = DEFAULT_VOLUME_DELTA_SETTINGS.divergentPriceBars;
+  volumeDeltaSettings.bullishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
+  volumeDeltaSettings.bearishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
+  volumeDeltaSettings.neutralDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor;
   if (currentChartTicker) {
     renderCustomChart(currentChartTicker, currentChartInterval);
   }
@@ -1416,6 +1443,18 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
       <span>Divergent price bars</span>
       <input type="checkbox" data-vd-setting="divergent-price-bars" />
     </label>
+    <label style="margin-bottom:6px;">
+      <span>Bullish</span>
+      <input type="color" data-vd-setting="divergent-bullish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="margin-bottom:6px;">
+      <span>Bearish</span>
+      <input type="color" data-vd-setting="divergent-bearish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
+    <label style="margin-bottom:6px;">
+      <span>Neutral</span>
+      <input type="color" data-vd-setting="divergent-neutral-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
+    </label>
   `;
   applyUniformSettingsPanelTypography(panel);
 
@@ -1435,6 +1474,24 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
     }
     if (setting === 'divergent-price-bars') {
       volumeDeltaSettings.divergentPriceBars = (target as HTMLInputElement).checked;
+      applyPricePaneDivergentBarColors();
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'divergent-bullish-color') {
+      volumeDeltaSettings.bullishDivergentColor = (target as HTMLInputElement).value || volumeDeltaSettings.bullishDivergentColor;
+      applyPricePaneDivergentBarColors();
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'divergent-bearish-color') {
+      volumeDeltaSettings.bearishDivergentColor = (target as HTMLInputElement).value || volumeDeltaSettings.bearishDivergentColor;
+      applyPricePaneDivergentBarColors();
+      persistSettingsToStorage();
+      return;
+    }
+    if (setting === 'divergent-neutral-color') {
+      volumeDeltaSettings.neutralDivergentColor = (target as HTMLInputElement).value || volumeDeltaSettings.neutralDivergentColor;
       applyPricePaneDivergentBarColors();
       persistSettingsToStorage();
       return;
@@ -2345,9 +2402,9 @@ function applyPricePaneDivergentBarColors(): void {
     return;
   }
 
-  const bullishColor = '#26a69a';
-  const bearishColor = '#ef5350';
-  const convergentColor = '#c9d1d9';
+  const bullishColor = volumeDeltaSettings.bullishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
+  const bearishColor = volumeDeltaSettings.bearishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
+  const convergentColor = volumeDeltaSettings.neutralDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor;
 
   const barsWithBodyColor = currentBars.map((bar, index) => {
     const close = Number(bar?.close);
