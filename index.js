@@ -2280,6 +2280,42 @@ function prewarmWeeklyChartResultFromRows(options = {}) {
   }).catch(() => {});
 }
 
+function prewarmWeeklyChartResultFromRequest(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  if (!ticker) return;
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1week')));
+  const requestKey = buildChartRequestKey({
+    ticker,
+    interval: '1week',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+
+  if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey)) return;
+  if (CHART_IN_FLIGHT_REQUESTS.has(requestKey)) return;
+
+  setTimeout(() => {
+    getOrBuildChartResult({
+      ticker,
+      interval: '1week',
+      vdRsiLength,
+      vdSourceInterval,
+      vdRsiSourceInterval,
+      lookbackDays,
+      requestKey
+    }).catch((err) => {
+      if (!CHART_TIMING_LOG_ENABLED) return;
+      const message = err && err.message ? err.message : String(err);
+      console.warn(`[chart-prewarm] ${ticker} 1week request failed: ${message}`);
+    });
+  }, 0);
+}
+
 function parseChartRequestParams(req) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
@@ -2319,6 +2355,15 @@ async function getOrBuildChartResult(params) {
 
   const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
   if (cachedFinalResult) {
+    if (interval === '1day') {
+      prewarmWeeklyChartResultFromRequest({
+        ticker,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        lookbackDays
+      });
+    }
     if (CHART_TIMING_LOG_ENABLED) {
       console.log(`[chart-cache] ${ticker} ${interval} hit key=${requestKey}`);
     }
