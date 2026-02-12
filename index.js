@@ -2052,6 +2052,64 @@ function prewarmDailyChartResultFromRows(options = {}) {
   }).catch(() => {});
 }
 
+function prewarmFourHourChartResultFromRows(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('4hour')));
+  const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
+  if (!ticker || !rowsByInterval) return;
+
+  const prewarmKey = buildChartRequestKey({
+    ticker,
+    interval: '4hour',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+  if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, prewarmKey)) return;
+  if (CHART_IN_FLIGHT_REQUESTS.has(prewarmKey)) return;
+
+  const prewarmPromise = (async () => {
+    try {
+      const timer = CHART_TIMING_LOG_ENABLED ? createChartStageTimer() : null;
+      const result = buildChartResultFromRows({
+        ticker,
+        interval: '4hour',
+        rowsByInterval,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        timer
+      });
+      patchLatestBarCloseWithQuote(result, getTimedCacheValue(CHART_QUOTE_CACHE, ticker));
+      setTimedCacheValue(
+        CHART_FINAL_RESULT_CACHE,
+        prewarmKey,
+        result,
+        getChartResultCacheExpiryMs(new Date())
+      );
+      if (CHART_TIMING_LOG_ENABLED && timer) {
+        console.log(`[chart-prewarm] ${ticker} 4hour ${timer.summary()}`);
+      }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      if (CHART_TIMING_LOG_ENABLED) {
+        console.warn(`[chart-prewarm] ${ticker} 4hour failed: ${message}`);
+      }
+    }
+  })();
+
+  CHART_IN_FLIGHT_REQUESTS.set(prewarmKey, prewarmPromise);
+  prewarmPromise.finally(() => {
+    if (CHART_IN_FLIGHT_REQUESTS.get(prewarmKey) === prewarmPromise) {
+      CHART_IN_FLIGHT_REQUESTS.delete(prewarmKey);
+    }
+  }).catch(() => {});
+}
+
 // --- Chart API ---
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
@@ -2132,6 +2190,17 @@ app.get('/api/chart', async (req, res) => {
       if (interval === '4hour') {
         setTimeout(() => {
           prewarmDailyChartResultFromRows({
+            ticker,
+            vdRsiLength,
+            vdSourceInterval,
+            vdRsiSourceInterval,
+            lookbackDays,
+            rowsByInterval
+          });
+        }, 0);
+      } else if (interval === '1day') {
+        setTimeout(() => {
+          prewarmFourHourChartResultFromRows({
             ticker,
             vdRsiLength,
             vdSourceInterval,
