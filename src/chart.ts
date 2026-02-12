@@ -831,7 +831,11 @@ function syncTopPaneTickerLabel(): void {
   let label = topPane.querySelector(`.${TOP_PANE_TICKER_LABEL_CLASS}`) as HTMLDivElement | null;
   if (!ticker) {
     if (label) label.remove();
-    layoutTopPaneBadges(topPane);
+    for (const paneId of DEFAULT_PANE_ORDER) {
+      const pane = document.getElementById(paneId);
+      if (!pane || !(pane instanceof HTMLElement)) continue;
+      layoutTopPaneBadges(pane);
+    }
     return;
   }
 
@@ -864,7 +868,11 @@ function syncTopPaneTickerLabel(): void {
   }
 
   label.textContent = ticker;
-  layoutTopPaneBadges(topPane);
+  for (const paneId of DEFAULT_PANE_ORDER) {
+    const pane = document.getElementById(paneId);
+    if (!pane || !(pane instanceof HTMLElement)) continue;
+    layoutTopPaneBadges(pane);
+  }
 }
 
 function applyPaneOrderToDom(chartContent: HTMLElement): void {
@@ -964,9 +972,11 @@ function ensurePaneReorderHandle(
       draggedPaneId = null;
       if (!source || source === paneId) return;
 
-      const rect = pane.getBoundingClientRect();
-      const midpoint = rect.top + (rect.height / 2);
-      const insertAfter = Number.isFinite(event.clientY) ? event.clientY > midpoint : true;
+      const sourceIndex = paneOrder.indexOf(source);
+      const targetIndex = paneOrder.indexOf(paneId);
+      const insertAfter = sourceIndex >= 0 && targetIndex >= 0
+        ? sourceIndex < targetIndex
+        : true;
       movePaneInOrder(source, paneId, insertAfter);
       applyPaneOrderAndRefreshLayout(chartContent);
       persistSettingsToStorage();
@@ -1624,7 +1634,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   if (!currentBars.length || priceChangeByTime.size === 0) {
     changeEl.style.display = 'none';
     changeEl.textContent = '';
-    if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
+    layoutTopPaneBadges(container);
     return;
   }
 
@@ -1635,7 +1645,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
     // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
     changeEl.style.display = 'none';
     changeEl.textContent = '';
-    if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
+    layoutTopPaneBadges(container);
     return;
   }
 
@@ -1643,7 +1653,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   changeEl.textContent = `${sign}${delta.toFixed(2)}`;
   changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
   changeEl.style.display = 'inline-flex';
-  if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
+  layoutTopPaneBadges(container);
 }
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
