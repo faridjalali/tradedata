@@ -177,6 +177,9 @@ function validateStartupEnvironment() {
     errors.push('BASIC_AUTH_PASSWORD must be set when BASIC_AUTH_ENABLED is true');
   }
   warnIfMissing('FMP_API_KEY');
+  if (String(process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true') {
+    warnings.push('FMP_REQUESTS_PAUSED is enabled (outbound FMP calls are blocked)');
+  }
 
   const positiveNumericEnvNames = [
     'DIVERGENCE_SCAN_SPREAD_MINUTES',
@@ -936,6 +939,7 @@ const FMP_KEY = process.env.FMP_API_KEY || '';
 const FMP_STABLE_BASE = 'https://financialmodelingprep.com/stable';
 const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
 const FMP_TIMEOUT_MS = 15000;
+const FMP_REQUESTS_PAUSED = String(process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
 const FMP_RATE_LIMIT_PER_MINUTE = Math.max(1, Number(process.env.FMP_RATE_LIMIT_PER_MINUTE) || 240);
 const FMP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const FMP_RATE_LIMIT_COOLDOWN_MS = Math.max(30_000, Number(process.env.FMP_RATE_LIMIT_COOLDOWN_MS) || 300_000);
@@ -1030,6 +1034,21 @@ function assertFmpKey() {
   }
 }
 
+function isFmpRequestsPaused() {
+  return FMP_REQUESTS_PAUSED;
+}
+
+function buildFmpPausedError(message) {
+  const err = new Error(message || 'FMP requests are paused by server configuration');
+  err.httpStatus = 503;
+  err.isFmpPaused = true;
+  return err;
+}
+
+function isFmpPausedError(err) {
+  return Boolean(err && err.isFmpPaused);
+}
+
 function isFmpRateLimitedError(err) {
   const message = String(err && err.message ? err.message : err || '');
   return /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message)
@@ -1083,6 +1102,10 @@ function waitForFmpRateLimitSlot() {
 }
 
 async function fetchFmpJson(url, label) {
+  if (isFmpRequestsPaused()) {
+    throw buildFmpPausedError(`${label} requests are paused by server configuration`);
+  }
+
   const cooldownErr = getFmpRateLimitCooldownError();
   if (cooldownErr) {
     throw cooldownErr;
@@ -1146,7 +1169,7 @@ async function fetchFmpArrayWithFallback(label, urls) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`${label} fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
-      if (isFmpRateLimitedError(err)) {
+      if (isFmpRateLimitedError(err) || isFmpPausedError(err)) {
         break;
       }
     }
@@ -1315,6 +1338,7 @@ async function fmpLatestQuote(symbol) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP quote failed for ${candidate} (requested ${normalizedSymbol}): ${message}`);
+      if (isFmpPausedError(err)) throw err;
     }
   }
 
@@ -1739,7 +1763,7 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       lastSliceError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
-      if (isFmpSubscriptionRestrictedError(err) || isFmpRateLimitedError(err)) {
+      if (isFmpSubscriptionRestrictedError(err) || isFmpRateLimitedError(err) || isFmpPausedError(err)) {
         throw err;
       }
     }
@@ -1777,7 +1801,7 @@ async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_IN
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
-      if (isFmpRateLimitedError(err)) {
+      if (isFmpRateLimitedError(err) || isFmpPausedError(err)) {
         throw err;
       }
     }
@@ -3583,6 +3607,9 @@ async function fetchUsStockUniverseFromFmp() {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP stock universe fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
+      if (isFmpPausedError(err)) {
+        break;
+      }
     }
   }
 
