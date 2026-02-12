@@ -154,7 +154,7 @@ const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
   divergentPriceBars: false,
   bullishDivergentColor: '#26a69a',
   bearishDivergentColor: '#ef5350',
-  neutralDivergentColor: '#c9d1d9'
+  neutralDivergentColor: '#8b949e'
 };
 
 const DEFAULT_PRICE_SETTINGS: {
@@ -2404,7 +2404,10 @@ function applyPricePaneDivergentBarColors(): void {
 
   const bullishColor = volumeDeltaSettings.bullishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
   const bearishColor = volumeDeltaSettings.bearishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
-  const convergentColor = volumeDeltaSettings.neutralDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor;
+  const configuredNeutral = String(volumeDeltaSettings.neutralDivergentColor || '').trim().toLowerCase();
+  const convergentColor = configuredNeutral === '#c9d1d9'
+    ? DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor
+    : (volumeDeltaSettings.neutralDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor);
 
   const barsWithBodyColor = currentBars.map((bar, index) => {
     const close = Number(bar?.close);
