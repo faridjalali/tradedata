@@ -1,6 +1,6 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
-import { RSIChart } from './rsi';
+import { RSIChart, RSIPersistedTrendline } from './rsi';
 
 let currentChartTicker: string | null = null;
 let currentChartInterval: ChartInterval = '4hour';
@@ -21,6 +21,7 @@ let volumeDeltaTrendlineCrossLabels: Array<{
   anchorTime: string | number;
   anchorValue: number;
 }> = [];
+let volumeDeltaTrendlineDefinitions: RSIPersistedTrendline[] = [];
 let volumeDeltaDivergencePointTimeKeys = new Set<string>();
 let volumeDeltaFirstPoint: { time: string | number, rsi: number, price: number, index: number } | null = null;
 let volumeDeltaDivergenceToolActive = false;
@@ -57,6 +58,7 @@ const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
+const TRENDLINES_STORAGE_KEY = 'custom_chart_trendlines_v1';
 const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
 const TOP_PANE_BADGE_START_LEFT_PX = 38;
@@ -149,6 +151,11 @@ interface PersistedChartSettings {
   rsi: RSISettings;
   volumeDeltaRsi?: VolumeDeltaRSISettings;
   paneOrder?: PaneId[];
+}
+
+interface PersistedTrendlineBundle {
+  rsi: RSIPersistedTrendline[];
+  volumeDeltaRsi: RSIPersistedTrendline[];
 }
 
 const DEFAULT_RSI_SETTINGS: RSISettings = {
@@ -442,6 +449,75 @@ function formatVolumeDeltaHistogramScaleLabel(value: number): string {
   if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
   return String(Math.round(value));
+}
+
+function normalizePersistedTrendlines(lines: unknown): RSIPersistedTrendline[] {
+  if (!Array.isArray(lines)) return [];
+  const out: RSIPersistedTrendline[] = [];
+  for (const line of lines) {
+    if (!line || typeof line !== 'object') continue;
+    const candidate = line as RSIPersistedTrendline;
+    const time1 = candidate.time1;
+    const time2 = candidate.time2;
+    const value1 = Number(candidate.value1);
+    const value2 = Number(candidate.value2);
+    if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
+    if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
+    out.push({ time1, value1, time2, value2 });
+  }
+  return out;
+}
+
+function buildTrendlineContextKey(ticker: string, interval: ChartInterval): string {
+  return `${ticker.toUpperCase()}|${interval}`;
+}
+
+function loadTrendlineStorage(): Record<string, PersistedTrendlineBundle> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(TRENDLINES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, Partial<PersistedTrendlineBundle>>;
+    const normalized: Record<string, PersistedTrendlineBundle> = {};
+    for (const [key, bundle] of Object.entries(parsed || {})) {
+      normalized[key] = {
+        rsi: normalizePersistedTrendlines(bundle?.rsi),
+        volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
+      };
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function saveTrendlineStorage(store: Record<string, PersistedTrendlineBundle>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(TRENDLINES_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Ignore storage errors (private mode/quota/etc.)
+  }
+}
+
+function loadPersistedTrendlinesForContext(ticker: string, interval: ChartInterval): PersistedTrendlineBundle {
+  const storage = loadTrendlineStorage();
+  const bundle = storage[buildTrendlineContextKey(ticker, interval)];
+  return {
+    rsi: normalizePersistedTrendlines(bundle?.rsi),
+    volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
+  };
+}
+
+function persistTrendlinesForCurrentContext(): void {
+  if (!currentChartTicker) return;
+  const storage = loadTrendlineStorage();
+  const key = buildTrendlineContextKey(currentChartTicker, currentChartInterval);
+  storage[key] = {
+    rsi: rsiChart?.getPersistedTrendlines() ?? [],
+    volumeDeltaRsi: volumeDeltaTrendlineDefinitions.map((line) => ({ ...line }))
+  };
+  saveTrendlineStorage(storage);
 }
 
 function persistSettingsToStorage(): void {
@@ -1279,10 +1355,11 @@ function toggleRSITrendlineTool(): void {
 }
 
 function clearRSITrendlines(): void {
-  rsiChart?.clearDivergence();
+  rsiChart?.clearDivergence(true);
   rsiChart?.deactivateDivergenceTool();
   rsiDivergenceToolActive = false;
   setPaneTrendlineToolActive('rsi', false);
+  persistTrendlinesForCurrentContext();
 }
 
 function toggleVolumeDeltaRSITrendlineTool(): void {
@@ -1297,9 +1374,10 @@ function toggleVolumeDeltaRSITrendlineTool(): void {
 }
 
 function clearVolumeDeltaRSITrendlines(): void {
-  clearVolumeDeltaDivergence();
+  clearVolumeDeltaDivergence(true);
   deactivateVolumeDeltaDivergenceTool();
   setPaneTrendlineToolActive('volumeDeltaRsi', false);
+  persistTrendlinesForCurrentContext();
 }
 
 function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
@@ -2172,22 +2250,47 @@ function clearVolumeDeltaHighlights(): void {
   volumeDeltaHighlightSeries = null;
 }
 
-function clearVolumeDeltaTrendLines(): void {
+function clearVolumeDeltaTrendLines(preserveViewport: boolean = false): void {
+  const visibleRangeBeforeClear = preserveViewport && volumeDeltaRsiChart
+    ? volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.()
+    : null;
+  if (preserveViewport) {
+    volumeDeltaSuppressSync = true;
+  }
+
   if (!volumeDeltaRsiChart || volumeDeltaTrendLineSeriesList.length === 0) {
     volumeDeltaTrendLineSeriesList = [];
+    volumeDeltaTrendlineDefinitions = [];
     clearVolumeDeltaTrendlineCrossLabels();
+    if (preserveViewport) {
+      volumeDeltaSuppressSync = false;
+    }
     return;
   }
 
-  for (const series of volumeDeltaTrendLineSeriesList) {
-    try {
-      volumeDeltaRsiChart.removeSeries(series);
-    } catch {
-      // Ignore stale trendline series remove errors.
+  try {
+    for (const series of volumeDeltaTrendLineSeriesList) {
+      try {
+        volumeDeltaRsiChart.removeSeries(series);
+      } catch {
+        // Ignore stale trendline series remove errors.
+      }
+    }
+    volumeDeltaTrendLineSeriesList = [];
+    volumeDeltaTrendlineDefinitions = [];
+    clearVolumeDeltaTrendlineCrossLabels();
+  } finally {
+    if (preserveViewport && visibleRangeBeforeClear) {
+      try {
+        volumeDeltaRsiChart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
+      } catch {
+        // Keep viewport stable after clearing.
+      }
+    }
+    if (preserveViewport) {
+      volumeDeltaSuppressSync = false;
     }
   }
-  volumeDeltaTrendLineSeriesList = [];
-  clearVolumeDeltaTrendlineCrossLabels();
 }
 
 function clearVolumeDeltaDivergenceState(): void {
@@ -2207,9 +2310,9 @@ function activateVolumeDeltaDivergenceTool(): void {
   setVolumeDeltaCursor(true);
 }
 
-function clearVolumeDeltaDivergence(): void {
+function clearVolumeDeltaDivergence(preserveViewport: boolean = false): void {
   clearVolumeDeltaDivergenceState();
-  clearVolumeDeltaTrendLines();
+  clearVolumeDeltaTrendLines(preserveViewport);
 }
 
 function highlightVolumeDeltaPoints(points: Array<{ time: string | number, value: number }>): void {
@@ -2236,7 +2339,8 @@ function drawVolumeDeltaTrendLine(
   time1: string | number,
   value1: number,
   time2: string | number,
-  value2: number
+  value2: number,
+  recordDefinition: boolean = true
 ): void {
   if (!volumeDeltaRsiChart || !volumeDeltaRsiPoints.length) return;
 
@@ -2298,6 +2402,14 @@ function drawVolumeDeltaTrendLine(
       stepSeconds
     );
     addVolumeDeltaTrendlineCrossLabel(time1, value1, formatMmDdYyFromUnixSeconds(crossUnixSeconds));
+    if (recordDefinition) {
+      volumeDeltaTrendlineDefinitions.push({
+        time1,
+        value1: Number(value1),
+        time2,
+        value2: Number(value2)
+      });
+    }
   } finally {
     if (visibleRangeBeforeDraw) {
       try {
@@ -2366,6 +2478,7 @@ function detectAndHandleVolumeDeltaDivergenceClick(clickedTime: string | number)
 
   deactivateVolumeDeltaDivergenceTool();
   setPaneTrendlineToolActive('volumeDeltaRsi', false);
+  persistTrendlinesForCurrentContext();
 }
 
 function sameLogicalRange(a: any, b: any): boolean {
@@ -2637,6 +2750,27 @@ function setVolumeDeltaRsiData(
       volumeDeltaRsiByTime.set(key, Number(rsiValue));
     }
   }
+}
+
+function restoreVolumeDeltaPersistedTrendlines(trendlines: RSIPersistedTrendline[]): void {
+  clearVolumeDeltaTrendLines();
+  if (!Array.isArray(trendlines) || trendlines.length === 0) return;
+  for (const line of trendlines) {
+    const time1 = line?.time1;
+    const time2 = line?.time2;
+    const value1 = Number(line?.value1);
+    const value2 = Number(line?.value2);
+    if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
+    if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
+    drawVolumeDeltaTrendLine(time1, value1, time2, value2, true);
+  }
+}
+
+function restorePersistedTrendlinesForCurrentContext(): void {
+  if (!currentChartTicker) return;
+  const persisted = loadPersistedTrendlinesForContext(currentChartTicker, currentChartInterval);
+  rsiChart?.restorePersistedTrendlines(persisted.rsi);
+  restoreVolumeDeltaPersistedTrendlines(persisted.volumeDeltaRsi);
 }
 
 function setVolumeDeltaHistogramData(
@@ -3092,6 +3226,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
           rsiChart?.deactivateDivergenceTool();
           rsiDivergenceToolActive = false;
           setPaneTrendlineToolActive('rsi', false);
+          persistTrendlinesForCurrentContext();
         }
       });
       applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
@@ -3100,6 +3235,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       rsiChart.setData(rsiData, bars.map(b => ({ time: b.time, close: b.close })));
     }
 
+    restorePersistedTrendlinesForCurrentContext();
     setupChartSync();
 
     applyRSISettings();

@@ -24,6 +24,13 @@ export interface RSIChartOptions {
   onTrendLineDrawn?: () => void;
 }
 
+export interface RSIPersistedTrendline {
+  time1: string | number;
+  value1: number;
+  time2: string | number;
+  value2: number;
+}
+
 export class RSIChart {
   private static readonly SCALE_LABEL_CHARS = 4;
   private static readonly SCALE_MIN_WIDTH_PX = 56;
@@ -56,6 +63,7 @@ export class RSIChart {
   private static readonly FUTURE_TIMELINE_DAYS = 370;
   private trendLineSeriesList: any[] = [];
   private trendlineCrossLabels: Array<{ element: HTMLDivElement, anchorTime: string | number, anchorValue: number }> = [];
+  private trendlineDefinitions: RSIPersistedTrendline[] = [];
   private timelineSeries: any = null;
   private suppressExternalSync: boolean = false;
   private onTrendLineDrawn?: () => void;
@@ -530,6 +538,25 @@ export class RSIChart {
     return this.series;
   }
 
+  getPersistedTrendlines(): RSIPersistedTrendline[] {
+    return this.trendlineDefinitions.map((line) => ({ ...line }));
+  }
+
+  restorePersistedTrendlines(trendlines: RSIPersistedTrendline[]): void {
+    this.clearDivergence();
+    if (!Array.isArray(trendlines) || trendlines.length === 0) return;
+    for (const line of trendlines) {
+      if (!line) continue;
+      const time1 = line.time1;
+      const time2 = line.time2;
+      const value1 = Number(line.value1);
+      const value2 = Number(line.value2);
+      if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
+      if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
+      this.drawTrendLine(time1, value1, time2, value2, true);
+    }
+  }
+
   refreshTrendlineLabels(): void {
     this.refreshTrendlineCrossLabels();
   }
@@ -783,7 +810,13 @@ export class RSIChart {
     );
   }
 
-  private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
+  private drawTrendLine(
+    time1: string | number,
+    value1: number,
+    time2: string | number,
+    value2: number,
+    recordDefinition: boolean = true
+  ): void {
     const visibleRangeBeforeDraw = this.chart.timeScale().getVisibleLogicalRange?.();
     this.suppressExternalSync = true;
     try {
@@ -834,6 +867,8 @@ export class RSIChart {
       });
     }
 
+    if (!trendLineData.length) return;
+
     // Create new trend line series (keep existing lines on chart)
     const trendLineSeries = this.chart.addLineSeries({
       color: '#ffa500',  // Orange color for trend line
@@ -857,6 +892,14 @@ export class RSIChart {
       stepSeconds
     );
     this.addTrendlineCrossLabel(time1, value1, this.formatMmDdYyFromUnixSeconds(crossUnixSeconds));
+    if (recordDefinition) {
+      this.trendlineDefinitions.push({
+        time1,
+        value1: Number(value1),
+        time2,
+        value2: Number(value2)
+      });
+    }
     } finally {
       if (visibleRangeBeforeDraw) {
         try {
@@ -869,24 +912,46 @@ export class RSIChart {
     }
   }
 
-  clearDivergence(): void {
-    this.clearHighlights();
-    this.clearTrendlineCrossLabels();
+  clearDivergence(preserveViewport: boolean = false): void {
+    const visibleRangeBeforeClear = preserveViewport
+      ? this.chart.timeScale().getVisibleLogicalRange?.()
+      : null;
 
-    // Clear all trend lines
-    for (const trendLineSeries of this.trendLineSeriesList) {
-      try {
-        this.chart.removeSeries(trendLineSeries);
-      } catch {
-        // Ignore stale trendline series remove errors.
+    if (preserveViewport) {
+      this.suppressExternalSync = true;
+    }
+
+    try {
+      this.clearHighlights();
+      this.clearTrendlineCrossLabels();
+
+      // Clear all trend lines
+      for (const trendLineSeries of this.trendLineSeriesList) {
+        try {
+          this.chart.removeSeries(trendLineSeries);
+        } catch {
+          // Ignore stale trendline series remove errors.
+        }
+      }
+      this.trendLineSeriesList = [];
+      this.trendlineDefinitions = [];
+
+      // Reset state
+      this.firstPoint = null;
+      this.divergencePoints = [];
+      this.divergencePointTimeKeys.clear();
+    } finally {
+      if (preserveViewport && visibleRangeBeforeClear) {
+        try {
+          this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
+        } catch {
+          // Keep viewport stable after clearing.
+        }
+      }
+      if (preserveViewport) {
+        this.suppressExternalSync = false;
       }
     }
-    this.trendLineSeriesList = [];
-
-    // Reset state
-    this.firstPoint = null;
-    this.divergencePoints = [];
-    this.divergencePointTimeKeys.clear();
   }
 
   resize(): void {
