@@ -59,12 +59,86 @@ const chartDebugMetrics = {
     day1: 0,
     hour4: 0,
     week1: 0
-  }
+  },
+  requestTimingByInterval: {}
 };
 const httpDebugMetrics = {
   totalRequests: 0,
   apiRequests: 0
 };
+const CHART_TIMING_SAMPLE_MAX = Math.max(50, Number(process.env.CHART_TIMING_SAMPLE_MAX) || 240);
+const chartTimingSamplesByKey = new Map();
+
+function clampTimingSample(valueMs) {
+  const numeric = Number(valueMs);
+  if (!Number.isFinite(numeric) || numeric < 0) return null;
+  return Math.round(numeric * 100) / 100;
+}
+
+function pushTimingSample(cacheKey, valueMs) {
+  const value = clampTimingSample(valueMs);
+  if (value === null) return;
+  let samples = chartTimingSamplesByKey.get(cacheKey);
+  if (!samples) {
+    samples = [];
+    chartTimingSamplesByKey.set(cacheKey, samples);
+  }
+  samples.push(value);
+  if (samples.length > CHART_TIMING_SAMPLE_MAX) {
+    samples.shift();
+  }
+}
+
+function calculateP95Ms(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+  return Math.round(sorted[index] * 100) / 100;
+}
+
+function getOrCreateChartTimingSummary(interval) {
+  const key = String(interval || '').trim() || 'unknown';
+  if (!chartDebugMetrics.requestTimingByInterval[key]) {
+    chartDebugMetrics.requestTimingByInterval[key] = {
+      count: 0,
+      cacheHitCount: 0,
+      cacheMissCount: 0,
+      chartCount: 0,
+      chartLatestCount: 0,
+      p95Ms: 0,
+      cacheHitP95Ms: 0,
+      cacheMissP95Ms: 0
+    };
+  }
+  return chartDebugMetrics.requestTimingByInterval[key];
+}
+
+function recordChartRequestTiming(options = {}) {
+  const interval = String(options.interval || '').trim() || 'unknown';
+  const route = options.route === 'chart_latest' ? 'chart_latest' : 'chart';
+  const cacheHit = options.cacheHit === true;
+  const durationMs = clampTimingSample(options.durationMs);
+  if (durationMs === null) return;
+
+  const summary = getOrCreateChartTimingSummary(interval);
+  summary.count += 1;
+  if (route === 'chart_latest') {
+    summary.chartLatestCount += 1;
+  } else {
+    summary.chartCount += 1;
+  }
+  if (cacheHit) {
+    summary.cacheHitCount += 1;
+  } else {
+    summary.cacheMissCount += 1;
+  }
+
+  pushTimingSample(`${interval}|all`, durationMs);
+  pushTimingSample(`${interval}|${cacheHit ? 'hit' : 'miss'}`, durationMs);
+  summary.p95Ms = calculateP95Ms(chartTimingSamplesByKey.get(`${interval}|all`));
+  summary.cacheHitP95Ms = calculateP95Ms(chartTimingSamplesByKey.get(`${interval}|hit`));
+  summary.cacheMissP95Ms = calculateP95Ms(chartTimingSamplesByKey.get(`${interval}|miss`));
+}
 
 function validateStartupEnvironment() {
   const errors = [];
@@ -108,6 +182,7 @@ function validateStartupEnvironment() {
     'DIVERGENCE_SCAN_SPREAD_MINUTES',
     'DIVERGENCE_MIN_UNIVERSE_SIZE',
     'CHART_QUOTE_CACHE_MS',
+    'CHART_TIMING_SAMPLE_MAX',
     'VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES',
     'VD_RSI_RESULT_CACHE_MAX_ENTRIES',
     'CHART_DATA_CACHE_MAX_ENTRIES',
@@ -2131,6 +2206,17 @@ function getChartResultCacheExpiryMs(nowUtc = new Date()) {
   return getVdRsiCacheExpiryMs(nowUtc);
 }
 
+function ifNoneMatchMatchesEtag(ifNoneMatchHeader, etag) {
+  const raw = String(ifNoneMatchHeader || '').trim();
+  if (!raw || !etag) return false;
+  if (raw === '*') return true;
+  const candidates = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return candidates.includes(etag);
+}
+
 async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
   const body = JSON.stringify(payload);
   const bodyBuffer = Buffer.from(body);
@@ -2145,7 +2231,7 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
     res.setHeader('Server-Timing', serverTimingHeader);
   }
 
-  if (ifNoneMatch && ifNoneMatch === etag) {
+  if (ifNoneMatchMatchesEtag(ifNoneMatch, etag)) {
     return res.status(304).end();
   }
 
@@ -2784,7 +2870,8 @@ registerChartRoutes({
   extractLatestChartPayload,
   sendChartJsonResponse,
   validateChartPayload: validateChartPayloadShape,
-  validateChartLatestPayload: validateChartLatestPayloadShape
+  validateChartLatestPayload: validateChartLatestPayloadShape,
+  onChartRequestMeasured: recordChartRequestTiming
 });
 
 function sleep(ms) {

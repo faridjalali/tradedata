@@ -49,6 +49,7 @@ export interface ChartFetchOptions {
   vdSourceInterval?: VolumeDeltaSourceInterval;
   vdRsiSourceInterval?: VolumeDeltaSourceInterval;
   signal?: AbortSignal;
+  onResponseMeta?: (meta: { status: number; chartCacheHeader: string | null }) => void;
 }
 
 export async function fetchChartData(ticker: string, interval: ChartInterval, options: ChartFetchOptions = {}): Promise<ChartData> {
@@ -65,6 +66,12 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
   const query = params.toString();
   const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}${query ? `&${query}` : ''}`;
   const response = await fetch(url, { signal: options.signal });
+  if (typeof options.onResponseMeta === 'function') {
+    options.onResponseMeta({
+      status: response.status,
+      chartCacheHeader: response.headers.get('x-chart-cache')
+    });
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to fetch chart data' }));
@@ -92,6 +99,12 @@ export async function fetchChartLatestData(
   const query = params.toString();
   const url = `/api/chart/latest?ticker=${encodeURIComponent(ticker)}&interval=${interval}${query ? `&${query}` : ''}`;
   const response = await fetch(url, { signal: options.signal });
+  if (typeof options.onResponseMeta === 'function') {
+    options.onResponseMeta({
+      status: response.status,
+      chartCacheHeader: response.headers.get('x-chart-cache')
+    });
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to fetch latest chart data' }));

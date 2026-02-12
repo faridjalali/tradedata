@@ -11,7 +11,8 @@ function registerChartRoutes(options = {}) {
     extractLatestChartPayload,
     sendChartJsonResponse,
     validateChartPayload,
-    validateChartLatestPayload
+    validateChartLatestPayload,
+    onChartRequestMeasured
   } = options;
 
   if (!app) {
@@ -19,6 +20,7 @@ function registerChartRoutes(options = {}) {
   }
 
   app.get('/api/chart', async (req, res) => {
+    const startedAtMs = Date.now();
     try {
       const params = parseChartRequestParams(req);
       const { interval } = params;
@@ -26,13 +28,22 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: invalidIntervalErrorMessage() });
       }
 
-      const { result, serverTiming } = await getOrBuildChartResult(params);
+      const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
       if (typeof validateChartPayload === 'function') {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {
           const reason = validation && validation.error ? validation.error : 'Invalid chart payload shape';
           return res.status(500).json({ error: reason });
         }
+      }
+      res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
+      if (typeof onChartRequestMeasured === 'function') {
+        onChartRequestMeasured({
+          route: 'chart',
+          interval,
+          cacheHit,
+          durationMs: Date.now() - startedAtMs
+        });
       }
       await sendChartJsonResponse(req, res, result, serverTiming);
     } catch (err) {
@@ -44,6 +55,7 @@ function registerChartRoutes(options = {}) {
   });
 
   app.get('/api/chart/latest', async (req, res) => {
+    const startedAtMs = Date.now();
     try {
       const params = parseChartRequestParams(req);
       const { interval } = params;
@@ -51,7 +63,7 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: invalidIntervalErrorMessage() });
       }
 
-      const { result, serverTiming } = await getOrBuildChartResult(params);
+      const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
       const latestPayload = extractLatestChartPayload(result);
       if (typeof validateChartLatestPayload === 'function') {
         const validation = validateChartLatestPayload(latestPayload);
@@ -59,6 +71,15 @@ function registerChartRoutes(options = {}) {
           const reason = validation && validation.error ? validation.error : 'Invalid latest payload shape';
           return res.status(500).json({ error: reason });
         }
+      }
+      res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
+      if (typeof onChartRequestMeasured === 'function') {
+        onChartRequestMeasured({
+          route: 'chart_latest',
+          interval,
+          cacheHit,
+          durationMs: Date.now() - startedAtMs
+        });
       }
       await sendChartJsonResponse(req, res, latestPayload, serverTiming);
     } catch (err) {

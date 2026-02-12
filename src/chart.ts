@@ -67,6 +67,10 @@ let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
 let chartDataCache = new Map<string, { data: ChartData; updatedAt: number }>();
+let chartCacheHydratedFromSession = false;
+let chartCachePersistTimer: number | null = null;
+let chartLayoutRefreshRafId: number | null = null;
+let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let volumeDeltaWindowCache: {
   unixTimes: number[];
   closes: number[];
@@ -78,6 +82,10 @@ const DIVERGENCE_ICON = 'D';
 const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
 const CHART_LIVE_REFRESH_MS = 5 * 60 * 1000;
 const CHART_CLIENT_CACHE_TTL_MS = 15 * 60 * 1000;
+const CHART_CLIENT_CACHE_MAX_ENTRIES = 16;
+const CHART_SESSION_CACHE_KEY = 'custom_chart_session_cache_v1';
+const CHART_SESSION_CACHE_MAX_ENTRIES = 6;
+const CHART_SESSION_CACHE_MAX_BYTES = 900_000;
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -114,6 +122,16 @@ const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; lab
   { value: '4hour', label: '4 hour' }
 ];
 const VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28] as const;
+const CHART_PERF_SAMPLE_MAX = 180;
+const PREFETCH_INTERVAL_TARGETS: Record<ChartInterval, ChartInterval[]> = {
+  '5min': [],
+  '15min': [],
+  '30min': [],
+  '1hour': [],
+  '4hour': ['1day'],
+  '1day': ['4hour', '1week'],
+  '1week': ['1day']
+};
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -436,26 +454,122 @@ function buildChartDataCacheKey(ticker: string, interval: ChartInterval): string
   ].join('|');
 }
 
+function isValidChartDataPayload(data: unknown): data is ChartData {
+  if (!data || typeof data !== 'object') return false;
+  const candidate = data as Partial<ChartData>;
+  if (!Array.isArray(candidate.bars) || candidate.bars.length === 0) return false;
+  return true;
+}
+
+function enforceChartDataCacheMaxEntries(): void {
+  while (chartDataCache.size > CHART_CLIENT_CACHE_MAX_ENTRIES) {
+    const oldestKey = chartDataCache.keys().next().value;
+    if (!oldestKey) break;
+    chartDataCache.delete(oldestKey);
+  }
+}
+
+function hydrateChartDataCacheFromSessionIfNeeded(): void {
+  if (chartCacheHydratedFromSession) return;
+  chartCacheHydratedFromSession = true;
+  if (typeof window === 'undefined') return;
+
+  try {
+    const raw = window.sessionStorage.getItem(CHART_SESSION_CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as {
+      version?: number;
+      entries?: Array<{ key: string; updatedAt: number; data: ChartData }>;
+    };
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries)) return;
+    const sortedEntries = [...parsed.entries]
+      .filter((entry) => entry && typeof entry.key === 'string' && Number.isFinite(entry.updatedAt) && isValidChartDataPayload(entry.data))
+      .sort((a, b) => Number(a.updatedAt) - Number(b.updatedAt));
+    for (const entry of sortedEntries) {
+      chartDataCache.set(entry.key, {
+        data: entry.data,
+        updatedAt: Number(entry.updatedAt)
+      });
+    }
+    enforceChartDataCacheMaxEntries();
+  } catch {
+    // Ignore session cache read/parse errors.
+  }
+}
+
+function schedulePersistChartDataCacheToSession(): void {
+  if (typeof window === 'undefined') return;
+  if (chartCachePersistTimer !== null) return;
+  chartCachePersistTimer = window.setTimeout(() => {
+    chartCachePersistTimer = null;
+    try {
+      const newestFirst = Array.from(chartDataCache.entries()).reverse();
+      const persistedEntries: Array<{ key: string; updatedAt: number; data: ChartData }> = [];
+      let totalBytes = 0;
+      for (const [key, entry] of newestFirst) {
+        if (!entry || !entry.data || !Number.isFinite(entry.updatedAt)) continue;
+        const candidate = {
+          key,
+          updatedAt: entry.updatedAt,
+          data: entry.data
+        };
+        const serializedCandidate = JSON.stringify(candidate);
+        if (!serializedCandidate) continue;
+        if ((totalBytes + serializedCandidate.length) > CHART_SESSION_CACHE_MAX_BYTES) continue;
+        persistedEntries.push(candidate);
+        totalBytes += serializedCandidate.length;
+        if (persistedEntries.length >= CHART_SESSION_CACHE_MAX_ENTRIES) break;
+      }
+      const payload = JSON.stringify({
+        version: 1,
+        entries: persistedEntries
+      });
+      window.sessionStorage.setItem(CHART_SESSION_CACHE_KEY, payload);
+    } catch {
+      // Ignore session cache persistence errors (quota, serialization, etc).
+    }
+  }, 180);
+}
+
 function sweepChartDataCache(): void {
+  hydrateChartDataCacheFromSessionIfNeeded();
   const now = Date.now();
+  let changed = false;
   for (const [key, entry] of chartDataCache.entries()) {
     if (!entry || !entry.updatedAt || (now - entry.updatedAt) > CHART_CLIENT_CACHE_TTL_MS) {
       chartDataCache.delete(key);
+      changed = true;
     }
+  }
+  const sizeBefore = chartDataCache.size;
+  enforceChartDataCacheMaxEntries();
+  if (chartDataCache.size !== sizeBefore) {
+    changed = true;
+  }
+  if (changed) {
+    schedulePersistChartDataCacheToSession();
   }
 }
 
 function getCachedChartData(cacheKey: string): ChartData | null {
   sweepChartDataCache();
   const cached = chartDataCache.get(cacheKey);
+  if (cached) {
+    chartDataCache.delete(cacheKey);
+    chartDataCache.set(cacheKey, cached);
+  }
   return cached ? cached.data : null;
 }
 
 function setCachedChartData(cacheKey: string, data: ChartData): void {
+  hydrateChartDataCacheFromSessionIfNeeded();
+  chartDataCache.delete(cacheKey);
   chartDataCache.set(cacheKey, {
     data,
     updatedAt: Date.now()
   });
+  enforceChartDataCacheMaxEntries();
+  schedulePersistChartDataCacheToSession();
 }
 
 function getLastBarSignature(data: ChartData | null): string {
@@ -472,6 +586,114 @@ function getLastBarSignature(data: ChartData | null): string {
     Number(last.volume)
   ].join('|');
 }
+
+type ChartPerfSummary = {
+  fetchCount: number;
+  renderCount: number;
+  fetchP95Ms: number;
+  renderP95Ms: number;
+  responseCacheHit: number;
+  responseCacheMiss: number;
+  responseCacheUnknown: number;
+};
+
+const chartPerfSamples: Record<ChartInterval, { fetchMs: number[]; renderMs: number[] }> = {
+  '5min': { fetchMs: [], renderMs: [] },
+  '15min': { fetchMs: [], renderMs: [] },
+  '30min': { fetchMs: [], renderMs: [] },
+  '1hour': { fetchMs: [], renderMs: [] },
+  '4hour': { fetchMs: [], renderMs: [] },
+  '1day': { fetchMs: [], renderMs: [] },
+  '1week': { fetchMs: [], renderMs: [] }
+};
+
+const chartPerfSummary: Record<ChartInterval, ChartPerfSummary> = {
+  '5min': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '15min': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '30min': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '1hour': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '4hour': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '1day': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 },
+  '1week': { fetchCount: 0, renderCount: 0, fetchP95Ms: 0, renderP95Ms: 0, responseCacheHit: 0, responseCacheMiss: 0, responseCacheUnknown: 0 }
+};
+
+function computeP95(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
+  return Math.round(sorted[index] * 100) / 100;
+}
+
+function pushPerfSample(values: number[], ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  values.push(Math.round(ms * 100) / 100);
+  if (values.length > CHART_PERF_SAMPLE_MAX) {
+    values.shift();
+  }
+}
+
+function recordChartFetchPerf(interval: ChartInterval, durationMs: number, cacheHeader: string | null): void {
+  const samples = chartPerfSamples[interval];
+  const summary = chartPerfSummary[interval];
+  pushPerfSample(samples.fetchMs, durationMs);
+  summary.fetchCount += 1;
+  summary.fetchP95Ms = computeP95(samples.fetchMs);
+  if (cacheHeader === 'hit') {
+    summary.responseCacheHit += 1;
+  } else if (cacheHeader === 'miss') {
+    summary.responseCacheMiss += 1;
+  } else {
+    summary.responseCacheUnknown += 1;
+  }
+}
+
+function recordChartRenderPerf(interval: ChartInterval, durationMs: number): void {
+  const samples = chartPerfSamples[interval];
+  const summary = chartPerfSummary[interval];
+  pushPerfSample(samples.renderMs, durationMs);
+  summary.renderCount += 1;
+  summary.renderP95Ms = computeP95(samples.renderMs);
+}
+
+function exposeChartPerfMetrics(): void {
+  if (typeof window === 'undefined') return;
+  (window as any).__chartPerfMetrics = {
+    getSnapshot: () => ({
+      byInterval: chartPerfSummary,
+      sampleMax: CHART_PERF_SAMPLE_MAX
+    })
+  };
+}
+
+function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): void {
+  const normalizedTicker = String(ticker || '').trim().toUpperCase();
+  if (!normalizedTicker) return;
+  const targets = PREFETCH_INTERVAL_TARGETS[interval] || [];
+  for (const target of targets) {
+    const cacheKey = buildChartDataCacheKey(normalizedTicker, target);
+    if (getCachedChartData(cacheKey)) continue;
+    if (chartPrefetchInFlight.has(cacheKey)) continue;
+
+    const prefetchPromise = fetchChartData(normalizedTicker, target, {
+      vdRsiLength: volumeDeltaRsiSettings.length,
+      vdSourceInterval: volumeDeltaSettings.sourceInterval,
+      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+    })
+      .then((prefetchedData) => {
+        setCachedChartData(cacheKey, prefetchedData);
+      })
+      .catch(() => {
+        // Prefetch is opportunistic; ignore errors.
+      })
+      .finally(() => {
+        chartPrefetchInFlight.delete(cacheKey);
+      });
+
+    chartPrefetchInFlight.set(cacheKey, prefetchPromise);
+  }
+}
+
+exposeChartPerfMetrics();
 
 function normalizePaneOrder(order: unknown): PaneId[] {
   if (!Array.isArray(order)) return [...DEFAULT_PANE_ORDER];
@@ -1029,6 +1251,14 @@ function refreshMonthGridLines(): void {
   refreshVolumeDeltaTrendlineCrossLabels();
 }
 
+function scheduleChartLayoutRefresh(): void {
+  if (chartLayoutRefreshRafId !== null) return;
+  chartLayoutRefreshRafId = requestAnimationFrame(() => {
+    chartLayoutRefreshRafId = null;
+    refreshMonthGridLines();
+  });
+}
+
 function applyPriceGridOptions(): void {
   if (!priceChart) return;
   priceChart.applyOptions({
@@ -1040,7 +1270,7 @@ function applyPriceGridOptions(): void {
       }
     }
   });
-  refreshMonthGridLines();
+  scheduleChartLayoutRefresh();
 }
 
 function syncPriceSettingsPanelValues(): void {
@@ -2089,7 +2319,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     }
     if (setting === 'v-grid') {
       priceChartSettings.verticalGridlines = (target as HTMLInputElement).checked;
-      refreshMonthGridLines();
+      scheduleChartLayoutRefresh();
       persistSettingsToStorage();
       return;
     }
@@ -3707,7 +3937,7 @@ function applyChartSizes(
   if (volumeDeltaChart) {
     volumeDeltaChart.applyOptions({ width: volumeDeltaWidth, height: volumeDeltaHeight });
   }
-  refreshMonthGridLines();
+  scheduleChartLayoutRefresh();
 }
 
 function ensureResizeObserver(
@@ -3933,11 +4163,17 @@ function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
 }
 
 async function refreshLatestChartDataInPlace(ticker: string, interval: ChartInterval): Promise<void> {
+  const fetchStartedAt = performance.now();
+  let responseCacheHeader: string | null = null;
   const data = await fetchChartLatestData(ticker, interval, {
     vdRsiLength: volumeDeltaRsiSettings.length,
     vdSourceInterval: volumeDeltaSettings.sourceInterval,
-    vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+    vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval,
+    onResponseMeta: (meta) => {
+      responseCacheHeader = meta.chartCacheHeader;
+    }
   });
+  recordChartFetchPerf(interval, performance.now() - fetchStartedAt, responseCacheHeader);
 
   if (!currentChartTicker || currentChartTicker !== ticker || currentChartInterval !== interval) return;
   if (!Array.isArray(currentBars) || currentBars.length === 0) return;
@@ -4031,7 +4267,7 @@ function applyChartDataToUi(
   applyMovingAverages();
   applyRightMargin();
   syncChartsToPriceRange();
-  refreshMonthGridLines();
+  scheduleChartLayoutRefresh();
 }
 
 function ensureChartLiveRefreshTimer(): void {
@@ -4144,6 +4380,7 @@ export async function renderCustomChart(
   const cachedData = silent ? null : getCachedChartData(cacheKey);
   const hasCachedData = Boolean(cachedData);
   if (cachedData) {
+    const renderStartedAt = performance.now();
     applyChartDataToUi(
       cachedData,
       chartContainer as HTMLElement,
@@ -4151,9 +4388,11 @@ export async function renderCustomChart(
       rsiContainer as HTMLElement,
       volumeDeltaContainer as HTMLElement
     );
+    recordChartRenderPerf(interval, performance.now() - renderStartedAt);
     if (shouldApplyWeeklyDefaultRange) {
       applyWeeklyInitialVisibleRange();
     }
+    prefetchRelatedIntervals(ticker, interval);
   } else if (!silent) {
     // Show loading indicators only on user-triggered renders.
     showLoadingOverlay(chartContainer);
@@ -4173,16 +4412,23 @@ export async function renderCustomChart(
   chartFetchAbortController = fetchController;
 
   try {
+    const fetchStartedAt = performance.now();
+    let responseCacheHeader: string | null = null;
     // Fetch data from API
     const data = await fetchChartData(ticker, interval, {
       vdRsiLength: volumeDeltaRsiSettings.length,
       vdSourceInterval: volumeDeltaSettings.sourceInterval,
       vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval,
-      signal: fetchController.signal
+      signal: fetchController.signal,
+      onResponseMeta: (meta) => {
+        responseCacheHeader = meta.chartCacheHeader;
+      }
     });
+    recordChartFetchPerf(interval, performance.now() - fetchStartedAt, responseCacheHeader);
     if (requestId !== latestRenderRequestId) return;
     const shouldApplyFreshData = !hasCachedData || getLastBarSignature(cachedData) !== getLastBarSignature(data);
     if (shouldApplyFreshData) {
+      const renderStartedAt = performance.now();
       applyChartDataToUi(
         data,
         chartContainer as HTMLElement,
@@ -4190,11 +4436,13 @@ export async function renderCustomChart(
         rsiContainer as HTMLElement,
         volumeDeltaContainer as HTMLElement
       );
+      recordChartRenderPerf(interval, performance.now() - renderStartedAt);
       if (shouldApplyWeeklyDefaultRange) {
         applyWeeklyInitialVisibleRange();
       }
     }
     setCachedChartData(cacheKey, data);
+    prefetchRelatedIntervals(ticker, interval);
 
     if (!silent) {
       // Hide loading indicators after successful load
@@ -4298,7 +4546,7 @@ function syncChartsToPriceRange(): void {
     if (volumeDeltaChart) {
       volumeDeltaChart.timeScale().setVisibleLogicalRange(priceRange);
     }
-    refreshMonthGridLines();
+    scheduleChartLayoutRefresh();
   } catch {
     // Ignore transient range sync errors during live updates.
   }
@@ -4317,7 +4565,7 @@ function applyRightMargin(): void {
   if (volumeDeltaChart) {
     volumeDeltaChart.timeScale().applyOptions({ rightOffset });
   }
-  refreshMonthGridLines();
+  scheduleChartLayoutRefresh();
 }
 
 function applyWeeklyInitialVisibleRange(): void {
@@ -4334,7 +4582,7 @@ function applyWeeklyInitialVisibleRange(): void {
   try {
     priceChart.timeScale().setVisibleLogicalRange({ from, to });
     syncChartsToPriceRange();
-    refreshMonthGridLines();
+    scheduleChartLayoutRefresh();
   } catch {
     // Ignore transient logical-range errors during render lifecycle.
   }
@@ -4376,7 +4624,7 @@ function setupChartSync() {
         target.chart.timeScale().setVisibleLogicalRange(timeRange);
       }
     }
-    refreshMonthGridLines();
+    scheduleChartLayoutRefresh();
   };
 
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
