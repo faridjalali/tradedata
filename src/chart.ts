@@ -3238,16 +3238,16 @@ function setVolumeDeltaHistogramData(
 
 function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivElement {
   if (volumeDeltaDivergenceSummaryEl && volumeDeltaDivergenceSummaryEl.parentElement === container) {
-    volumeDeltaDivergenceSummaryEl.style.top = '50%';
-    volumeDeltaDivergenceSummaryEl.style.transform = 'translateY(-50%)';
+    volumeDeltaDivergenceSummaryEl.style.top = `${SCALE_MIN_WIDTH_PX + 8}px`;
+    volumeDeltaDivergenceSummaryEl.style.transform = 'none';
     return volumeDeltaDivergenceSummaryEl;
   }
 
   const el = document.createElement('div');
   el.className = 'volume-delta-divergence-summary';
   el.style.position = 'absolute';
-  el.style.top = '50%';
-  el.style.transform = 'translateY(-50%)';
+  el.style.top = `${SCALE_MIN_WIDTH_PX + 8}px`;
+  el.style.transform = 'none';
   el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
   el.style.zIndex = '34';
   el.style.minWidth = '34px';
