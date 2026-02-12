@@ -27,7 +27,37 @@ const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '46110603');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
 const BASIC_AUTH_EXEMPT_PREFIXES = ['/webhook'];
+const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
+const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 let isShuttingDown = false;
+const startedAtMs = Date.now();
+const chartDebugMetrics = {
+  cacheHit: 0,
+  cacheMiss: 0,
+  buildStarted: 0,
+  dedupeJoin: 0,
+  prewarmRequested: {
+    dailyFrom4hour: 0,
+    fourHourFrom1day: 0,
+    weeklyFrom1day: 0,
+    fourHourFrom1dayCacheHit: 0,
+    weeklyFrom1dayCacheHit: 0
+  },
+  prewarmCompleted: {
+    day1: 0,
+    hour4: 0,
+    week1: 0
+  },
+  prewarmFailed: {
+    day1: 0,
+    hour4: 0,
+    week1: 0
+  }
+};
+const httpDebugMetrics = {
+  totalRequests: 0,
+  apiRequests: 0
+};
 
 function validateStartupEnvironment() {
   const errors = [];
@@ -101,6 +131,153 @@ function validateStartupEnvironment() {
 
 validateStartupEnvironment();
 
+function logStructured(level, event, fields = {}) {
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...fields
+  };
+  const line = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(line);
+  } else if (level === 'warn') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+function createRequestId() {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return crypto.randomBytes(8).toString('hex');
+}
+
+function shouldLogRequestPath(pathname) {
+  const path = String(pathname || '');
+  if (path.startsWith('/api/')) return true;
+  return path === '/healthz' || path === '/readyz' || path.startsWith('/webhook');
+}
+
+function extractSafeRequestMeta(req) {
+  const path = String(req.path || '');
+  const queryKeys = Object.keys(req.query || {});
+  const meta = {
+    method: req.method,
+    path,
+    queryKeys
+  };
+  if (path.startsWith('/api/chart')) {
+    const ticker = typeof req.query?.ticker === 'string' ? req.query.ticker : null;
+    const interval = typeof req.query?.interval === 'string' ? req.query.interval : null;
+    return { ...meta, ticker, interval };
+  }
+  return meta;
+}
+
+function isValidTickerSymbol(value) {
+  const ticker = String(value || '').trim().toUpperCase();
+  if (!ticker) return false;
+  return /^[A-Z][A-Z0-9.\-]{0,19}$/.test(ticker);
+}
+
+function parseEtDateInput(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const dt = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) return null;
+  const normalized = dt.toISOString().slice(0, 10);
+  return normalized === text ? text : null;
+}
+
+function parseBooleanInput(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
+  }
+  return fallback;
+}
+
+function isValidScaleTime(value) {
+  if (typeof value === 'number') return Number.isFinite(value);
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidCandleLike(value) {
+  if (!value || typeof value !== 'object') return false;
+  return isValidScaleTime(value.time)
+    && Number.isFinite(Number(value.open))
+    && Number.isFinite(Number(value.high))
+    && Number.isFinite(Number(value.low))
+    && Number.isFinite(Number(value.close))
+    && Number.isFinite(Number(value.volume));
+}
+
+function isValidPointLike(value, field = 'value') {
+  if (!value || typeof value !== 'object') return false;
+  return isValidScaleTime(value.time) && Number.isFinite(Number(value[field]));
+}
+
+function validateChartPayloadShape(payload) {
+  if (!payload || typeof payload !== 'object') return { ok: false, error: 'Chart payload is not an object' };
+  if (!Array.isArray(payload.bars) || payload.bars.length === 0) {
+    return { ok: false, error: 'Chart payload bars are missing' };
+  }
+  const firstBar = payload.bars[0];
+  const lastBar = payload.bars[payload.bars.length - 1];
+  if (!isValidCandleLike(firstBar) || !isValidCandleLike(lastBar)) {
+    return { ok: false, error: 'Chart payload bars are invalid' };
+  }
+  const rsi = Array.isArray(payload.rsi) ? payload.rsi : [];
+  if (rsi.length > 0) {
+    const firstRsi = rsi[0];
+    const lastRsi = rsi[rsi.length - 1];
+    if (!isValidPointLike(firstRsi) || !isValidPointLike(lastRsi)) {
+      return { ok: false, error: 'Chart payload RSI points are invalid' };
+    }
+  }
+  const vdRsi = Array.isArray(payload?.volumeDeltaRsi?.rsi) ? payload.volumeDeltaRsi.rsi : [];
+  if (vdRsi.length > 0) {
+    const firstVdRsi = vdRsi[0];
+    const lastVdRsi = vdRsi[vdRsi.length - 1];
+    if (!isValidPointLike(firstVdRsi) || !isValidPointLike(lastVdRsi)) {
+      return { ok: false, error: 'Chart payload Volume Delta RSI points are invalid' };
+    }
+  }
+  const volumeDelta = Array.isArray(payload.volumeDelta) ? payload.volumeDelta : [];
+  if (volumeDelta.length > 0) {
+    const firstDelta = volumeDelta[0];
+    const lastDelta = volumeDelta[volumeDelta.length - 1];
+    if (!isValidPointLike(firstDelta, 'delta') || !isValidPointLike(lastDelta, 'delta')) {
+      return { ok: false, error: 'Chart payload Volume Delta points are invalid' };
+    }
+  }
+  return { ok: true };
+}
+
+function validateChartLatestPayloadShape(payload) {
+  if (!payload || typeof payload !== 'object') return { ok: false, error: 'Latest payload is not an object' };
+  if (payload.latestBar !== null && !isValidCandleLike(payload.latestBar)) {
+    return { ok: false, error: 'Latest payload latestBar is invalid' };
+  }
+  if (payload.latestRsi !== null && payload.latestRsi !== undefined && !isValidPointLike(payload.latestRsi)) {
+    return { ok: false, error: 'Latest payload latestRsi is invalid' };
+  }
+  if (payload.latestVolumeDeltaRsi !== null && payload.latestVolumeDeltaRsi !== undefined && !isValidPointLike(payload.latestVolumeDeltaRsi)) {
+    return { ok: false, error: 'Latest payload latestVolumeDeltaRsi is invalid' };
+  }
+  if (payload.latestVolumeDelta !== null && payload.latestVolumeDelta !== undefined && !isValidPointLike(payload.latestVolumeDelta, 'delta')) {
+    return { ok: false, error: 'Latest payload latestVolumeDelta is invalid' };
+  }
+  return { ok: true };
+}
+
 function timingSafeStringEqual(left, right) {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
@@ -150,6 +327,36 @@ app.use((req, res, next) => {
   if (!isShuttingDown) return next();
   res.setHeader('Connection', 'close');
   return res.status(503).json({ error: 'Server is shutting down' });
+});
+app.use((req, res, next) => {
+  const requestId = String(req.headers['x-request-id'] || '').trim() || createRequestId();
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+
+  httpDebugMetrics.totalRequests += 1;
+  if (String(req.path || '').startsWith('/api/')) {
+    httpDebugMetrics.apiRequests += 1;
+  }
+
+  if (!REQUEST_LOG_ENABLED || !shouldLogRequestPath(req.path)) {
+    return next();
+  }
+
+  const startedNs = process.hrtime.bigint();
+  logStructured('info', 'request_start', {
+    requestId,
+    ...extractSafeRequestMeta(req)
+  });
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedNs) / 1e6;
+    logStructured('info', 'request_end', {
+      requestId,
+      statusCode: res.statusCode,
+      durationMs: Number(durationMs.toFixed(1)),
+      ...extractSafeRequestMeta(req)
+    });
+  });
+  return next();
 });
 
 const pool = new Pool({
@@ -2145,10 +2352,12 @@ function prewarmDailyChartResultFromRows(options = {}) {
         result,
         getChartResultCacheExpiryMs(new Date())
       );
+      chartDebugMetrics.prewarmCompleted.day1 += 1;
       if (CHART_TIMING_LOG_ENABLED && timer) {
         console.log(`[chart-prewarm] ${ticker} 1day ${timer.summary()}`);
       }
     } catch (err) {
+      chartDebugMetrics.prewarmFailed.day1 += 1;
       const message = err && err.message ? err.message : String(err);
       if (CHART_TIMING_LOG_ENABLED) {
         console.warn(`[chart-prewarm] ${ticker} 1day failed: ${message}`);
@@ -2203,10 +2412,12 @@ function prewarmFourHourChartResultFromRows(options = {}) {
         result,
         getChartResultCacheExpiryMs(new Date())
       );
+      chartDebugMetrics.prewarmCompleted.hour4 += 1;
       if (CHART_TIMING_LOG_ENABLED && timer) {
         console.log(`[chart-prewarm] ${ticker} 4hour ${timer.summary()}`);
       }
     } catch (err) {
+      chartDebugMetrics.prewarmFailed.hour4 += 1;
       const message = err && err.message ? err.message : String(err);
       if (CHART_TIMING_LOG_ENABLED) {
         console.warn(`[chart-prewarm] ${ticker} 4hour failed: ${message}`);
@@ -2261,10 +2472,12 @@ function prewarmWeeklyChartResultFromRows(options = {}) {
         result,
         getChartResultCacheExpiryMs(new Date())
       );
+      chartDebugMetrics.prewarmCompleted.week1 += 1;
       if (CHART_TIMING_LOG_ENABLED && timer) {
         console.log(`[chart-prewarm] ${ticker} 1week ${timer.summary()}`);
       }
     } catch (err) {
+      chartDebugMetrics.prewarmFailed.week1 += 1;
       const message = err && err.message ? err.message : String(err);
       if (CHART_TIMING_LOG_ENABLED) {
         console.warn(`[chart-prewarm] ${ticker} 1week failed: ${message}`);
@@ -2354,6 +2567,11 @@ function prewarmFourHourChartResultFromRequest(options = {}) {
 
 function parseChartRequestParams(req) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
+  if (!isValidTickerSymbol(ticker)) {
+    const err = new Error('Invalid ticker format');
+    err.httpStatus = 400;
+    throw err;
+  }
   const interval = (req.query.interval || '4hour').toString();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
   const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '5min');
@@ -2391,7 +2609,9 @@ async function getOrBuildChartResult(params) {
 
   const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
   if (cachedFinalResult) {
+    chartDebugMetrics.cacheHit += 1;
     if (interval === '1day') {
+      chartDebugMetrics.prewarmRequested.fourHourFrom1dayCacheHit += 1;
       prewarmFourHourChartResultFromRequest({
         ticker,
         vdRsiLength,
@@ -2399,6 +2619,7 @@ async function getOrBuildChartResult(params) {
         vdRsiSourceInterval,
         lookbackDays
       });
+      chartDebugMetrics.prewarmRequested.weeklyFrom1dayCacheHit += 1;
       prewarmWeeklyChartResultFromRequest({
         ticker,
         vdRsiLength,
@@ -2419,6 +2640,12 @@ async function getOrBuildChartResult(params) {
 
   let buildPromise = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
   const isDedupedWait = Boolean(buildPromise);
+  chartDebugMetrics.cacheMiss += 1;
+  if (isDedupedWait) {
+    chartDebugMetrics.dedupeJoin += 1;
+  } else {
+    chartDebugMetrics.buildStarted += 1;
+  }
   if (!buildPromise) {
     buildPromise = (async () => {
       const timer = createChartStageTimer();
@@ -2463,6 +2690,7 @@ async function getOrBuildChartResult(params) {
         getChartResultCacheExpiryMs(new Date())
       );
       if (interval === '4hour') {
+        chartDebugMetrics.prewarmRequested.dailyFrom4hour += 1;
         setTimeout(() => {
           prewarmDailyChartResultFromRows({
             ticker,
@@ -2474,6 +2702,7 @@ async function getOrBuildChartResult(params) {
           });
         }, 0);
       } else if (interval === '1day') {
+        chartDebugMetrics.prewarmRequested.fourHourFrom1day += 1;
         setTimeout(() => {
           prewarmFourHourChartResultFromRows({
             ticker,
@@ -2484,6 +2713,7 @@ async function getOrBuildChartResult(params) {
             rowsByInterval
           });
         }, 0);
+        chartDebugMetrics.prewarmRequested.weeklyFrom1day += 1;
         setTimeout(() => {
           prewarmWeeklyChartResultFromRows({
             ticker,
@@ -2555,7 +2785,9 @@ registerChartRoutes({
   validChartIntervals: VALID_CHART_INTERVALS,
   getOrBuildChartResult,
   extractLatestChartPayload,
-  sendChartJsonResponse
+  sendChartJsonResponse,
+  validateChartPayload: validateChartPayloadShape,
+  validateChartLatestPayload: validateChartLatestPayloadShape
 });
 
 function sleep(ms) {
@@ -3063,10 +3295,17 @@ app.post('/api/divergence/scan', async (req, res) => {
     return res.status(409).json({ status: 'running' });
   }
 
-  const force = String(req.query.force || '').toLowerCase() === 'true' || req.body?.force === true;
-  const refreshUniverse = String(req.query.refreshUniverse || '').toLowerCase() === 'true'
-    || req.body?.refreshUniverse === true;
-  const runDateEt = req.body?.runDateEt ? String(req.body.runDateEt).trim() : undefined;
+  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
+  const refreshUniverse = parseBooleanInput(req.query.refreshUniverse, false)
+    || parseBooleanInput(req.body?.refreshUniverse, false);
+  let runDateEt = undefined;
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
+    const parsedRunDate = parseEtDateInput(req.body.runDateEt);
+    if (!parsedRunDate) {
+      return res.status(400).json({ error: 'runDateEt must be YYYY-MM-DD' });
+    }
+    runDateEt = parsedRunDate;
+  }
   runDailyDivergenceScan({
     force,
     refreshUniverse,
@@ -3134,6 +3373,44 @@ async function checkDatabaseReady(poolInstance) {
     return { ok: false, error: message };
   }
 }
+
+app.get('/api/debug/metrics', (req, res) => {
+  const providedSecret = String(req.query.secret || req.headers['x-debug-secret'] || '').trim();
+  if (DEBUG_METRICS_SECRET && providedSecret !== DEBUG_METRICS_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const memory = process.memoryUsage();
+  return res.status(200).json({
+    uptimeSeconds: Math.floor((Date.now() - startedAtMs) / 1000),
+    shuttingDown: isShuttingDown,
+    http: {
+      totalRequests: httpDebugMetrics.totalRequests,
+      apiRequests: httpDebugMetrics.apiRequests
+    },
+    chart: {
+      cacheSizes: {
+        lowerTf: VD_RSI_LOWER_TF_CACHE.size,
+        vdRsiResults: VD_RSI_RESULT_CACHE.size,
+        chartData: CHART_DATA_CACHE.size,
+        quotes: CHART_QUOTE_CACHE.size,
+        finalResults: CHART_FINAL_RESULT_CACHE.size,
+        inFlight: CHART_IN_FLIGHT_REQUESTS.size
+      },
+      metrics: chartDebugMetrics
+    },
+    divergence: {
+      configured: isDivergenceConfigured(),
+      running: divergenceScanRunning,
+      lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null
+    },
+    process: {
+      rss: memory.rss,
+      heapTotal: memory.heapTotal,
+      heapUsed: memory.heapUsed,
+      external: memory.external
+    }
+  });
+});
 
 app.get('/healthz', (req, res) => {
   res.status(200).json({
