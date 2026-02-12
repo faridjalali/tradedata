@@ -823,7 +823,8 @@ function ensurePaneReorderHandle(
     handle.type = 'button';
     handle.className = 'pane-order-handle';
     handle.title = 'Drag to reorder panes';
-    handle.textContent = '⋮⋮';
+    handle.textContent = '';
+    handle.setAttribute('aria-label', 'Reorder pane');
     pane.appendChild(handle);
   }
 
