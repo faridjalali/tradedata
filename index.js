@@ -1169,7 +1169,7 @@ const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
 const CHART_QUOTE_CACHE = new Map();
 const CHART_IN_FLIGHT_REQUESTS = new Map();
 const CHART_FINAL_RESULT_CACHE = new Map();
-const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 20);
+const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 300);
 const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_MAX_AGE_SECONDS) || 15);
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
@@ -2519,21 +2519,19 @@ function prewarmWeeklyChartResultFromRequest(options = {}) {
   if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey)) return;
   if (CHART_IN_FLIGHT_REQUESTS.has(requestKey)) return;
 
-  setTimeout(() => {
-    getOrBuildChartResult({
-      ticker,
-      interval: '1week',
-      vdRsiLength,
-      vdSourceInterval,
-      vdRsiSourceInterval,
-      lookbackDays,
-      requestKey
-    }).catch((err) => {
-      if (!CHART_TIMING_LOG_ENABLED) return;
-      const message = err && err.message ? err.message : String(err);
-      console.warn(`[chart-prewarm] ${ticker} 1week request failed: ${message}`);
-    });
-  }, 0);
+  getOrBuildChartResult({
+    ticker,
+    interval: '1week',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays,
+    requestKey
+  }).catch((err) => {
+    if (!CHART_TIMING_LOG_ENABLED) return;
+    const message = err && err.message ? err.message : String(err);
+    console.warn(`[chart-prewarm] ${ticker} 1week request failed: ${message}`);
+  });
 }
 
 function prewarmFourHourChartResultFromRequest(options = {}) {
@@ -2555,21 +2553,19 @@ function prewarmFourHourChartResultFromRequest(options = {}) {
   if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey)) return;
   if (CHART_IN_FLIGHT_REQUESTS.has(requestKey)) return;
 
-  setTimeout(() => {
-    getOrBuildChartResult({
-      ticker,
-      interval: '4hour',
-      vdRsiLength,
-      vdSourceInterval,
-      vdRsiSourceInterval,
-      lookbackDays,
-      requestKey
-    }).catch((err) => {
-      if (!CHART_TIMING_LOG_ENABLED) return;
-      const message = err && err.message ? err.message : String(err);
-      console.warn(`[chart-prewarm] ${ticker} 4hour request failed: ${message}`);
-    });
-  }, 0);
+  getOrBuildChartResult({
+    ticker,
+    interval: '4hour',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays,
+    requestKey
+  }).catch((err) => {
+    if (!CHART_TIMING_LOG_ENABLED) return;
+    const message = err && err.message ? err.message : String(err);
+    console.warn(`[chart-prewarm] ${ticker} 4hour request failed: ${message}`);
+  });
 }
 
 function parseChartRequestParams(req) {
@@ -2698,39 +2694,33 @@ async function getOrBuildChartResult(params) {
       );
       if (interval === '4hour') {
         chartDebugMetrics.prewarmRequested.dailyFrom4hour += 1;
-        setTimeout(() => {
-          prewarmDailyChartResultFromRows({
-            ticker,
-            vdRsiLength,
-            vdSourceInterval,
-            vdRsiSourceInterval,
-            lookbackDays,
-            rowsByInterval
-          });
-        }, 0);
+        prewarmDailyChartResultFromRows({
+          ticker,
+          vdRsiLength,
+          vdSourceInterval,
+          vdRsiSourceInterval,
+          lookbackDays,
+          rowsByInterval
+        });
       } else if (interval === '1day') {
         chartDebugMetrics.prewarmRequested.fourHourFrom1day += 1;
-        setTimeout(() => {
-          prewarmFourHourChartResultFromRows({
-            ticker,
-            vdRsiLength,
-            vdSourceInterval,
-            vdRsiSourceInterval,
-            lookbackDays,
-            rowsByInterval
-          });
-        }, 0);
+        prewarmFourHourChartResultFromRows({
+          ticker,
+          vdRsiLength,
+          vdSourceInterval,
+          vdRsiSourceInterval,
+          lookbackDays,
+          rowsByInterval
+        });
         chartDebugMetrics.prewarmRequested.weeklyFrom1day += 1;
-        setTimeout(() => {
-          prewarmWeeklyChartResultFromRows({
-            ticker,
-            vdRsiLength,
-            vdSourceInterval,
-            vdRsiSourceInterval,
-            lookbackDays,
-            rowsByInterval
-          });
-        }, 0);
+        prewarmWeeklyChartResultFromRows({
+          ticker,
+          vdRsiLength,
+          vdSourceInterval,
+          vdRsiSourceInterval,
+          lookbackDays,
+          rowsByInterval
+        });
       }
       const serverTiming = timer.serverTiming();
       if (CHART_TIMING_LOG_ENABLED) {
