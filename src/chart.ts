@@ -1028,6 +1028,13 @@ function layoutTopPaneBadges(container: HTMLElement): void {
   }
 }
 
+function openTickerOnTradingView(ticker: string): void {
+  const symbol = String(ticker || '').trim().toUpperCase();
+  if (!symbol) return;
+  const url = `https://www.tradingview.com/symbols/${encodeURIComponent(symbol)}/`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function syncTopPaneTickerLabel(): void {
   const topPaneId = getTopPaneId();
 
@@ -1081,10 +1088,29 @@ function syncTopPaneTickerLabel(): void {
     label.style.whiteSpace = 'nowrap';
     label.style.overflow = 'hidden';
     label.style.textOverflow = 'ellipsis';
-    label.style.pointerEvents = 'none';
+    label.style.pointerEvents = 'auto';
+    label.style.cursor = 'pointer';
+    label.title = 'Open on TradingView';
+    label.setAttribute('role', 'link');
+    label.tabIndex = 0;
+    if (!label.dataset.clickBound) {
+      label.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const el = event.currentTarget as HTMLElement;
+        openTickerOnTradingView(String(el.dataset.tickerSymbol || ''));
+      });
+      label.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        const el = event.currentTarget as HTMLElement;
+        openTickerOnTradingView(String(el.dataset.tickerSymbol || ''));
+      });
+      label.dataset.clickBound = '1';
+    }
     topPane.appendChild(label);
   }
 
+  label.dataset.tickerSymbol = ticker;
   label.textContent = ticker;
   for (const paneId of DEFAULT_PANE_ORDER) {
     const pane = document.getElementById(paneId);
