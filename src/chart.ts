@@ -48,6 +48,7 @@ const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
+const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
 const VOLUME_DELTA_MIDLINE = 50;
 const VOLUME_DELTA_AXIS_MIN = 20;
@@ -768,6 +769,60 @@ function hideSettingsPanels(): void {
   if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
 }
 
+function syncTopPaneTickerLabel(): void {
+  const normalizedOrder = normalizePaneOrder(paneOrder);
+  const topPaneId = normalizedOrder[0];
+
+  for (const paneId of DEFAULT_PANE_ORDER) {
+    const pane = document.getElementById(paneId);
+    if (!pane || !(pane instanceof HTMLElement)) continue;
+    const existing = pane.querySelector(`.${TOP_PANE_TICKER_LABEL_CLASS}`) as HTMLDivElement | null;
+    if (!existing) continue;
+    if (paneId !== topPaneId) {
+      existing.remove();
+    }
+  }
+
+  if (!topPaneId) return;
+  const topPane = document.getElementById(topPaneId);
+  if (!topPane || !(topPane instanceof HTMLElement)) return;
+
+  const ticker = String(currentChartTicker || '').trim().toUpperCase();
+  let label = topPane.querySelector(`.${TOP_PANE_TICKER_LABEL_CLASS}`) as HTMLDivElement | null;
+  if (!ticker) {
+    if (label) label.remove();
+    return;
+  }
+
+  if (!label) {
+    label = document.createElement('div');
+    label.className = TOP_PANE_TICKER_LABEL_CLASS;
+    label.style.position = 'absolute';
+    label.style.left = '38px';
+    label.style.top = '8px';
+    label.style.zIndex = '32';
+    label.style.minHeight = '24px';
+    label.style.maxWidth = 'calc(100% - 70px)';
+    label.style.display = 'inline-flex';
+    label.style.alignItems = 'center';
+    label.style.padding = '0 8px';
+    label.style.borderRadius = '4px';
+    label.style.border = '1px solid #30363d';
+    label.style.background = '#161b22';
+    label.style.color = '#c9d1d9';
+    label.style.fontSize = '12px';
+    label.style.fontWeight = '600';
+    label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    label.style.whiteSpace = 'nowrap';
+    label.style.overflow = 'hidden';
+    label.style.textOverflow = 'ellipsis';
+    label.style.pointerEvents = 'none';
+    topPane.appendChild(label);
+  }
+
+  label.textContent = ticker;
+}
+
 function applyPaneOrderToDom(chartContent: HTMLElement): void {
   for (const paneId of paneOrder) {
     const pane = document.getElementById(paneId);
@@ -808,6 +863,7 @@ function applyPaneOrderAndRefreshLayout(chartContent: HTMLElement): void {
       volumeDeltaContainer as HTMLElement
     );
   }
+  syncTopPaneTickerLabel();
 }
 
 function ensurePaneReorderHandle(
@@ -883,6 +939,7 @@ function ensurePaneReorderUI(chartContent: HTMLElement): void {
     if (!pane || !(pane instanceof HTMLElement) || pane.parentElement !== chartContent) continue;
     ensurePaneReorderHandle(pane, paneId, chartContent);
   }
+  syncTopPaneTickerLabel();
 }
 
 function applyRSISettings(): void {
@@ -2281,6 +2338,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   ensureSettingsLoadedFromStorage();
   const requestId = ++latestRenderRequestId;
   currentChartInterval = interval;
+  currentChartTicker = ticker;
 
   const chartContent = document.getElementById('chart-content');
   if (!chartContent || !(chartContent instanceof HTMLElement)) {
@@ -2310,6 +2368,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   ensureMonthGridOverlay(rsiContainer, 'rsi');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+  syncTopPaneTickerLabel();
 
   // Initialize charts if needed
   if (!priceChart) {
@@ -2412,8 +2471,6 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     applyRightMargin();
     syncChartsToPriceRange();
     refreshMonthGridLines();
-
-    currentChartTicker = ticker;
 
     // Hide loading indicators after successful load
     hideLoadingOverlay(chartContainer);
