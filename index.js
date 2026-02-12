@@ -32,6 +32,7 @@ const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_M
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
 let divergenceLastScanDateEt = '';
+let divergenceLastFetchedTradeDateEt = '';
 
 function isDivergenceConfigured() {
   return Boolean(divergencePool);
@@ -144,6 +145,7 @@ const initDivergenceDB = async () => {
       CREATE TABLE IF NOT EXISTS divergence_scan_jobs (
         id SERIAL PRIMARY KEY,
         run_for_date DATE NOT NULL,
+        scanned_trade_date DATE,
         status VARCHAR(20) NOT NULL,
         started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         finished_at TIMESTAMPTZ,
@@ -154,6 +156,10 @@ const initDivergenceDB = async () => {
         error_count INTEGER NOT NULL DEFAULT 0,
         notes TEXT
       );
+    `);
+    await divergencePool.query(`
+      ALTER TABLE divergence_scan_jobs
+      ADD COLUMN IF NOT EXISTS scanned_trade_date DATE
     `);
     await divergencePool.query(`
       CREATE TABLE IF NOT EXISTS divergence_symbols (
@@ -1774,6 +1780,14 @@ function currentEtDateString(nowUtc = new Date()) {
   });
 }
 
+function maxEtDateString(a, b) {
+  const aVal = String(a || '').trim();
+  const bVal = String(b || '').trim();
+  if (!aVal) return bVal || '';
+  if (!bVal) return aVal;
+  return aVal >= bVal ? aVal : bVal;
+}
+
 function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -1966,11 +1980,20 @@ async function computeSymbolDivergenceSignals(ticker) {
     fmpIntradayChartHistory(ticker, DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_LOOKBACK_DAYS)
   ]);
 
-  if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
+  if (!Array.isArray(parentRows) || parentRows.length === 0) {
+    return { signals: [], latestTradeDate: '' };
+  }
   const dailyBars = aggregate4HourBarsToDaily(
     convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
   );
-  if (!Array.isArray(dailyBars) || dailyBars.length < 2) return [];
+  if (!Array.isArray(dailyBars) || dailyBars.length === 0) {
+    return { signals: [], latestTradeDate: '' };
+  }
+  const latestDaily = dailyBars[dailyBars.length - 1];
+  const latestTradeDate = etDateStringFromUnixSeconds(Number(latestDaily?.time)) || '';
+  if (dailyBars.length < 2) {
+    return { signals: [], latestTradeDate };
+  }
 
   const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
     convertToLATime(sourceRows || [], DIVERGENCE_SOURCE_INTERVAL).sort((a, b) => Number(a.time) - Number(b.time))
@@ -1980,7 +2003,6 @@ async function computeSymbolDivergenceSignals(ticker) {
 
   const results = [];
 
-  const latestDaily = dailyBars[dailyBars.length - 1];
   const previousDaily = dailyBars[dailyBars.length - 2];
   if (latestDaily && previousDaily) {
     const latestDelta = Number(deltaByTime.get(Number(latestDaily.time))) || 0;
@@ -1999,7 +2021,7 @@ async function computeSymbolDivergenceSignals(ticker) {
     }
   }
 
-  return results;
+  return { signals: results, latestTradeDate };
 }
 
 async function startDivergenceScanJob(runForDate, totalSymbols, trigger) {
@@ -2086,6 +2108,7 @@ async function runDailyDivergenceScan(options = {}) {
   let bullishCount = 0;
   let bearishCount = 0;
   let errorCount = 0;
+  let latestScannedTradeDate = '';
 
   try {
     const symbols = await getDivergenceUniverseTickers({ forceRefresh: refreshUniverse });
@@ -2108,9 +2131,11 @@ async function runDailyDivergenceScan(options = {}) {
       await updateDivergenceScanJob(scanJobId, {
         status: 'completed',
         finished_at: new Date(),
-        processed_symbols: 0
+        processed_symbols: 0,
+        scanned_trade_date: null
       });
       divergenceLastScanDateEt = runDate;
+      divergenceLastFetchedTradeDateEt = runDate;
       return { status: 'completed', runDate, processed: 0 };
     }
 
@@ -2121,7 +2146,10 @@ async function runDailyDivergenceScan(options = {}) {
       const startedAt = Date.now();
       await Promise.all(batch.map(async (ticker) => {
         try {
-          const signals = await computeSymbolDivergenceSignals(ticker);
+          const { signals, latestTradeDate } = await computeSymbolDivergenceSignals(ticker);
+          if (latestTradeDate) {
+            latestScannedTradeDate = maxEtDateString(latestScannedTradeDate, latestTradeDate);
+          }
           for (const signal of signals) {
             await upsertDivergenceSignal(signal, scanJobId);
             if (signal.signal_type === 'bullish') bullishCount += 1;
@@ -2141,7 +2169,8 @@ async function runDailyDivergenceScan(options = {}) {
           processed_symbols: processed,
           bullish_count: bullishCount,
           bearish_count: bearishCount,
-          error_count: errorCount
+          error_count: errorCount,
+          scanned_trade_date: latestScannedTradeDate || null
         });
       }
 
@@ -2157,12 +2186,15 @@ async function runDailyDivergenceScan(options = {}) {
       processed_symbols: processed,
       bullish_count: bullishCount,
       bearish_count: bearishCount,
-      error_count: errorCount
+      error_count: errorCount,
+      scanned_trade_date: latestScannedTradeDate || null
     });
     divergenceLastScanDateEt = runDate;
+    divergenceLastFetchedTradeDateEt = latestScannedTradeDate || runDate;
     return {
       status: 'completed',
       runDate,
+      fetchedTradeDate: latestScannedTradeDate || runDate,
       processed,
       bullishCount,
       bearishCount,
@@ -2271,10 +2303,28 @@ app.get('/api/divergence/scan/status', async (req, res) => {
       ORDER BY started_at DESC
       LIMIT 1
     `);
+    const latestJob = latest.rows[0] || null;
+    if (latestJob && !latestJob.scanned_trade_date) {
+      const tradeDateResult = await divergencePool.query(`
+        SELECT MAX(trade_date)::text AS scanned_trade_date
+        FROM divergence_signals
+        WHERE scan_job_id = $1
+          AND timeframe = '1d'
+          AND source_interval = $2
+      `, [latestJob.id, DIVERGENCE_SOURCE_INTERVAL]);
+      const fallbackTradeDate = String(tradeDateResult.rows[0]?.scanned_trade_date || '').trim();
+      if (fallbackTradeDate) {
+        latestJob.scanned_trade_date = fallbackTradeDate;
+      }
+    }
+    const lastScanDateEt = divergenceLastFetchedTradeDateEt
+      || String(latestJob?.scanned_trade_date || '').trim()
+      || divergenceLastScanDateEt
+      || null;
     res.json({
       running: divergenceScanRunning,
-      lastScanDateEt: divergenceLastScanDateEt || null,
-      latestJob: latest.rows[0] || null
+      lastScanDateEt,
+      latestJob
     });
   } catch (err) {
     console.error('Failed to fetch divergence scan status:', err);

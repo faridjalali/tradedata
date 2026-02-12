@@ -65,13 +65,16 @@ function toDateKey(raw?: string | null): string | null {
 function dateKeyToMmDd(dateKey: string): string {
     const parts = dateKey.split('-');
     if (parts.length !== 3) return '';
-    return `${parts[1]}/${parts[2]}`;
+    const month = Number(parts[1]);
+    if (!Number.isFinite(month) || month <= 0) return '';
+    return `${month}/${parts[2]}`;
 }
 
 function summarizeLastRunDate(status: DivergenceScanStatus): string {
-    const latest = status.latestJob as (DivergenceScanStatus['latestJob'] & { run_for_date?: string }) | null;
+    const latest = status.latestJob as (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string }) | null;
     const runDateKey =
         toDateKey(status.lastScanDateEt)
+        || toDateKey(latest?.scanned_trade_date)
         || toDateKey(latest?.run_for_date)
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
