@@ -3217,7 +3217,7 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval) {
   return map;
 }
 
-async function mapWithConcurrency(items, concurrency, worker) {
+async function mapWithConcurrency(items, concurrency, worker, onSettled) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) return [];
   const maxConcurrency = Math.max(1, Math.min(list.length, Number(concurrency) || 1));
@@ -3232,6 +3232,14 @@ async function mapWithConcurrency(items, concurrency, worker) {
         results[currentIndex] = await worker(list[currentIndex], currentIndex);
       } catch (err) {
         results[currentIndex] = { error: err };
+      } finally {
+        if (typeof onSettled === 'function') {
+          try {
+            onSettled(results[currentIndex], currentIndex, list[currentIndex]);
+          } catch {
+            // Best-effort callback for progress reporting.
+          }
+        }
       }
     }
   }
@@ -4209,7 +4217,7 @@ async function runDivergenceTableBuild(options = {}) {
     const summaryRows = [];
     const dailyRows = [];
 
-    const results = await mapWithConcurrency(
+    await mapWithConcurrency(
       tickers,
       DIVERGENCE_TABLE_BUILD_CONCURRENCY,
       async (ticker) => {
@@ -4226,31 +4234,29 @@ async function runDivergenceTableBuild(options = {}) {
           dailyInput
         });
         return { ticker, summary, dailyRow };
-      }
-    );
+      },
+      (result) => {
+        processedTickers += 1;
+        divergenceTableBuildStatus.processedTickers = processedTickers;
 
-    for (const row of results) {
-      processedTickers += 1;
-      if (row && !row.error) {
-        if (row.summary?.tradeDate) {
-          const tradeDate = String(row.summary.tradeDate).trim();
+        if (!result || result.error) {
+          return;
+        }
+        if (result.summary?.tradeDate) {
+          const tradeDate = String(result.summary.tradeDate).trim();
           summaryRows.push({
-            ticker: row.ticker,
+            ticker: result.ticker,
             source_interval: sourceInterval,
             trade_date: tradeDate,
-            states: row.summary.states
+            states: result.summary.states
           });
           lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, tradeDate);
         }
-        if (row.dailyRow) {
-          dailyRows.push(row.dailyRow);
+        if (result.dailyRow) {
+          dailyRows.push(result.dailyRow);
         }
       }
-
-      if (processedTickers % 50 === 0 || processedTickers === totalTickers) {
-        divergenceTableBuildStatus.processedTickers = processedTickers;
-      }
-    }
+    );
 
     const batchSize = 500;
     for (let i = 0; i < dailyRows.length; i += batchSize) {
