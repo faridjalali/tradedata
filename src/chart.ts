@@ -39,6 +39,7 @@ let priceSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaRsiSettingsPanelEl: HTMLDivElement | null = null;
 let rsiSettingsPanelEl: HTMLDivElement | null = null;
+let volumeDeltaDivergenceSummaryEl: HTMLDivElement | null = null;
 let hasLoadedSettingsFromStorage = false;
 const TREND_ICON = '✎';
 const RIGHT_MARGIN_BARS = 10;
@@ -70,6 +71,7 @@ const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; lab
   { value: '1hour', label: '1 hour' },
   { value: '4hour', label: '4 hour' }
 ];
+const VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28] as const;
 
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
@@ -2390,6 +2392,100 @@ function setVolumeDeltaHistogramData(
   applyPricePaneDivergentBarColors();
 }
 
+function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivElement {
+  if (volumeDeltaDivergenceSummaryEl && volumeDeltaDivergenceSummaryEl.parentElement === container) {
+    return volumeDeltaDivergenceSummaryEl;
+  }
+
+  const el = document.createElement('div');
+  el.className = 'volume-delta-divergence-summary';
+  el.style.position = 'absolute';
+  el.style.top = '8px';
+  el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
+  el.style.zIndex = '34';
+  el.style.minWidth = '42px';
+  el.style.background = '#0d1117';
+  el.style.border = '1px solid #30363d';
+  el.style.borderRadius = '4px';
+  el.style.overflow = 'hidden';
+  el.style.pointerEvents = 'none';
+  container.appendChild(el);
+  volumeDeltaDivergenceSummaryEl = el;
+  return el;
+}
+
+function clearVolumeDeltaDivergenceSummary(): void {
+  if (!volumeDeltaDivergenceSummaryEl) return;
+  volumeDeltaDivergenceSummaryEl.style.display = 'none';
+  volumeDeltaDivergenceSummaryEl.innerHTML = '';
+}
+
+function classifyVolumeDeltaDivergenceForDays(days: number, bars: any[]): 'bullish' | 'bearish' | 'neutral' {
+  if (!Array.isArray(bars) || bars.length < 2) return 'neutral';
+  const latestUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
+  if (latestUnix === null) return 'neutral';
+  const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
+
+  let firstInWindow: any | null = null;
+  let sumDelta = 0;
+  let barsInWindow = 0;
+  for (const bar of bars) {
+    const unix = unixSecondsFromTimeValue(bar?.time);
+    if (unix === null || unix < cutoffUnix) continue;
+    if (!firstInWindow) firstInWindow = bar;
+    const delta = Number(volumeDeltaByTime.get(timeKey(bar.time)));
+    if (Number.isFinite(delta)) sumDelta += delta;
+    barsInWindow++;
+  }
+
+  if (!firstInWindow || barsInWindow === 0) return 'neutral';
+  const startClose = Number(firstInWindow.close);
+  const endClose = Number(bars[bars.length - 1]?.close);
+  if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) return 'neutral';
+
+  if (endClose < startClose && sumDelta > 0) return 'bullish';
+  if (endClose > startClose && sumDelta < 0) return 'bearish';
+  return 'neutral';
+}
+
+function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[]): void {
+  if (!Array.isArray(bars) || bars.length < 2) {
+    clearVolumeDeltaDivergenceSummary();
+    return;
+  }
+
+  const summaryEl = ensureVolumeDeltaDivergenceSummaryEl(container);
+  summaryEl.innerHTML = '';
+  summaryEl.style.display = 'block';
+
+  for (let i = 0; i < VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS.length; i++) {
+    const days = VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS[i];
+    const state = classifyVolumeDeltaDivergenceForDays(days, bars);
+    const row = document.createElement('div');
+    row.textContent = String(days);
+    row.title = `Last ${days} day${days === 1 ? '' : 's'}`;
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'center';
+    row.style.width = '42px';
+    row.style.height = '32px';
+    row.style.fontSize = '14px';
+    row.style.fontWeight = '500';
+    row.style.lineHeight = '1';
+    row.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    row.style.background = '#161b22';
+    row.style.color = state === 'bullish'
+      ? '#26a69a'
+      : state === 'bearish'
+        ? '#ef5350'
+        : '#ffffff';
+    if (i < VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS.length - 1) {
+      row.style.borderBottom = '1px solid #30363d';
+    }
+    summaryEl.appendChild(row);
+  }
+}
+
 function applyPricePaneDivergentBarColors(): void {
   if (!candleSeries) return;
   if (!Array.isArray(currentBars) || currentBars.length === 0) {
@@ -2695,6 +2791,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     setPricePaneChange(chartContainer, null);
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
     setVolumeDeltaHistogramData(bars, volumeDeltaData);
+    renderVolumeDeltaDivergenceSummary(volumeDeltaContainer, bars);
     applyVolumeDeltaRSIVisualSettings();
 
 
@@ -2766,6 +2863,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       volumeDeltaIndexByTime = new Map();
       volumeDeltaRsiByTime = new Map();
       volumeDeltaByTime = new Map();
+      clearVolumeDeltaDivergenceSummary();
       currentBars = [];
       clearMovingAverageSeries();
       monthBoundaryTimes = [];
@@ -2781,6 +2879,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
 
     priceChangeByTime = new Map();
     setPricePaneChange(chartContainer, null);
+    clearVolumeDeltaDivergenceSummary();
     errorContainer.style.display = 'none';
     errorContainer.textContent = '';
 
