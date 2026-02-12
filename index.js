@@ -1725,6 +1725,195 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
   return res.status(200).send(bodyBuffer);
 }
 
+function buildChartResultFromRows(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const interval = String(options.interval || '4hour');
+  const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : new Map();
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const timer = options.timer || null;
+
+  const parentFetchInterval = interval === '1day' ? '4hour' : interval;
+  const parentRows = rowsByInterval.get(parentFetchInterval) || [];
+  if (!parentRows || parentRows.length === 0) {
+    const err = new Error(`No ${parentFetchInterval} data available for this ticker`);
+    err.httpStatus = 404;
+    throw err;
+  }
+
+  // Convert parent stream to LA timezone and sort chronologically.
+  const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
+  const convertedBars = interval === '1day'
+    ? aggregate4HourBarsToDaily(convertedParentBars)
+    : convertedParentBars;
+  if (timer) timer.step('parent_bars');
+
+  if (convertedBars.length === 0) {
+    const err = new Error('No valid chart bars available for this ticker');
+    err.httpStatus = 404;
+    throw err;
+  }
+
+  // Calculate RSI
+  const closePrices = convertedBars.map((bar) => bar.close);
+  const rsiValues = calculateRSI(closePrices, 14);
+
+  // Emit RSI for the full loaded history.
+  const rsi = [];
+  for (let i = 0; i < convertedBars.length; i++) {
+    const raw = rsiValues[i];
+    if (!Number.isFinite(raw)) continue;
+    rsi.push({
+      time: convertedBars[i].time,
+      value: Math.round(raw * 100) / 100
+    });
+  }
+  if (timer) timer.step('rsi');
+
+  const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
+    convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
+  );
+  const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
+  const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
+    ? vdSourceBars
+    : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
+  if (timer) timer.step('source_bars');
+
+  let volumeDeltaRsi = { rsi: [] };
+  const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
+  const firstBarTime = convertedBars[0]?.time ?? '';
+  const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
+  const vdRsiResultCacheKey = `v4|${ticker}|${interval}|${vdRsiSourceInterval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+  const firstParentTime = Number(firstBarTime);
+  const lastParentTime = Number(lastBarTime);
+  const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
+  const parentWindowStart = Number.isFinite(firstParentTime)
+    ? (firstParentTime - warmUpBufferSeconds)
+    : Number.NEGATIVE_INFINITY;
+  const parentWindowEndExclusive = Number.isFinite(lastParentTime)
+    ? (lastParentTime + getIntervalSeconds(interval))
+    : Number.POSITIVE_INFINITY;
+  const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
+    const t = Number(bar.time);
+    return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+  });
+  const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar) => {
+    const t = Number(bar.time);
+    return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+  });
+  const volumeDelta = computeVolumeDeltaByParentBars(
+    convertedBars,
+    vdSourceBarsInParentRange,
+    interval
+  ).map((point) => ({
+    time: point.time,
+    delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
+  }));
+  if (timer) timer.step('volume_delta');
+
+  const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
+  if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
+    volumeDeltaRsi = cachedVolumeDeltaRsi;
+  } else {
+    try {
+      if (vdRsiSourceBarsInParentRange.length > 0) {
+        volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
+          convertedBars,
+          vdRsiSourceBarsInParentRange,
+          interval,
+          { rsiLength: vdRsiLength }
+        );
+      } else {
+        volumeDeltaRsi = {
+          rsi: [],
+          deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
+        };
+      }
+      setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
+    } catch (volumeDeltaErr) {
+      const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
+      console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
+    }
+  }
+  if (timer) timer.step('vd_rsi');
+
+  const result = {
+    interval,
+    timezone: 'America/Los_Angeles',
+    bars: convertedBars,
+    rsi,
+    volumeDeltaRsi,
+    volumeDelta,
+    volumeDeltaConfig: {
+      sourceInterval: vdSourceInterval
+    },
+    volumeDeltaRsiConfig: {
+      sourceInterval: vdRsiSourceInterval,
+      length: vdRsiLength
+    }
+  };
+  if (timer) timer.step('assemble');
+  return result;
+}
+
+function prewarmDailyChartResultFromRows(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1day')));
+  const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
+  if (!ticker || !rowsByInterval) return;
+
+  const prewarmKey = buildChartRequestKey({
+    ticker,
+    interval: '1day',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+  if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, prewarmKey)) return;
+  if (CHART_IN_FLIGHT_REQUESTS.has(prewarmKey)) return;
+
+  const prewarmPromise = (async () => {
+    try {
+      const timer = CHART_TIMING_LOG_ENABLED ? createChartStageTimer() : null;
+      const result = buildChartResultFromRows({
+        ticker,
+        interval: '1day',
+        rowsByInterval,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        timer
+      });
+      setTimedCacheValue(
+        CHART_FINAL_RESULT_CACHE,
+        prewarmKey,
+        result,
+        getChartResultCacheExpiryMs(new Date())
+      );
+      if (CHART_TIMING_LOG_ENABLED && timer) {
+        console.log(`[chart-prewarm] ${ticker} 1day ${timer.summary()}`);
+      }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      if (CHART_TIMING_LOG_ENABLED) {
+        console.warn(`[chart-prewarm] ${ticker} 1day failed: ${message}`);
+      }
+    }
+  })();
+
+  CHART_IN_FLIGHT_REQUESTS.set(prewarmKey, prewarmPromise);
+  prewarmPromise.finally(() => {
+    if (CHART_IN_FLIGHT_REQUESTS.get(prewarmKey) === prewarmPromise) {
+      CHART_IN_FLIGHT_REQUESTS.delete(prewarmKey);
+    }
+  }).catch(() => {});
+}
+
 // --- Chart API ---
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
@@ -1775,131 +1964,33 @@ app.get('/api/chart', async (req, res) => {
       }));
       timer.step('fetch_rows');
 
-      const parentRows = rowsByInterval.get(parentFetchInterval) || [];
-      if (!parentRows || parentRows.length === 0) {
-        const err = new Error(`No ${parentFetchInterval} data available for this ticker`);
-        err.httpStatus = 404;
-        throw err;
-      }
-
-      // Convert parent stream to LA timezone and sort chronologically.
-      const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
-      const convertedBars = interval === '1day'
-        ? aggregate4HourBarsToDaily(convertedParentBars)
-        : convertedParentBars;
-      timer.step('parent_bars');
-
-      if (convertedBars.length === 0) {
-        const err = new Error('No valid chart bars available for this ticker');
-        err.httpStatus = 404;
-        throw err;
-      }
-
-      // Calculate RSI
-      const closePrices = convertedBars.map((bar) => bar.close);
-      const rsiValues = calculateRSI(closePrices, 14);
-
-      // Emit RSI for the full loaded history.
-      const rsi = [];
-      for (let i = 0; i < convertedBars.length; i++) {
-        const raw = rsiValues[i];
-        if (!Number.isFinite(raw)) continue;
-        rsi.push({
-          time: convertedBars[i].time,
-          value: Math.round(raw * 100) / 100
-        });
-      }
-      timer.step('rsi');
-
-      const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
-        convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
-      );
-      const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
-      const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
-        ? vdSourceBars
-        : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
-      timer.step('source_bars');
-
-      let volumeDeltaRsi = { rsi: [] };
-      const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
-      const firstBarTime = convertedBars[0]?.time ?? '';
-      const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
-      const vdRsiResultCacheKey = `v4|${ticker}|${interval}|${vdRsiSourceInterval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
-      const firstParentTime = Number(firstBarTime);
-      const lastParentTime = Number(lastBarTime);
-      const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
-      const parentWindowStart = Number.isFinite(firstParentTime)
-        ? (firstParentTime - warmUpBufferSeconds)
-        : Number.NEGATIVE_INFINITY;
-      const parentWindowEndExclusive = Number.isFinite(lastParentTime)
-        ? (lastParentTime + getIntervalSeconds(interval))
-        : Number.POSITIVE_INFINITY;
-      const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
-        const t = Number(bar.time);
-        return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
-      });
-      const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar) => {
-        const t = Number(bar.time);
-        return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
-      });
-      const volumeDelta = computeVolumeDeltaByParentBars(
-        convertedBars,
-        vdSourceBarsInParentRange,
-        interval
-      ).map((point) => ({
-        time: point.time,
-        delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
-      }));
-      timer.step('volume_delta');
-
-      const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
-      if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
-        volumeDeltaRsi = cachedVolumeDeltaRsi;
-      } else {
-        try {
-          if (vdRsiSourceBarsInParentRange.length > 0) {
-            volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
-              convertedBars,
-              vdRsiSourceBarsInParentRange,
-              interval,
-              { rsiLength: vdRsiLength }
-            );
-          } else {
-            volumeDeltaRsi = {
-              rsi: [],
-              deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
-            };
-          }
-          setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
-        } catch (volumeDeltaErr) {
-          const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
-          console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
-        }
-      }
-      timer.step('vd_rsi');
-
-      const result = {
+      const result = buildChartResultFromRows({
+        ticker,
         interval,
-        timezone: 'America/Los_Angeles',
-        bars: convertedBars,
-        rsi,
-        volumeDeltaRsi,
-        volumeDelta,
-        volumeDeltaConfig: {
-          sourceInterval: vdSourceInterval
-        },
-        volumeDeltaRsiConfig: {
-          sourceInterval: vdRsiSourceInterval,
-          length: vdRsiLength
-        }
-      };
-      timer.step('assemble');
+        rowsByInterval,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        timer
+      });
       setTimedCacheValue(
         CHART_FINAL_RESULT_CACHE,
         requestKey,
         result,
         getChartResultCacheExpiryMs(new Date())
       );
+      if (interval === '4hour') {
+        setTimeout(() => {
+          prewarmDailyChartResultFromRows({
+            ticker,
+            vdRsiLength,
+            vdSourceInterval,
+            vdRsiSourceInterval,
+            lookbackDays,
+            rowsByInterval
+          });
+        }, 0);
+      }
       const serverTiming = timer.serverTiming();
       if (CHART_TIMING_LOG_ENABLED) {
         console.log(`[chart-timing] ${ticker} ${interval} ${isDedupedWait ? 'dedupe-wait' : 'build'} ${timer.summary()}`);
