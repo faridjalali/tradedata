@@ -459,11 +459,71 @@ function normalizeVolumeDeltaSeries(points: any[]): Array<{ time: string | numbe
 
 function formatVolumeDeltaHistogramScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
+  const sign = value < 0 ? '-' : '';
   const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return String(Math.round(value));
+  const budget = SCALE_LABEL_CHARS - sign.length;
+  if (budget <= 0) return sign.slice(0, SCALE_LABEL_CHARS);
+
+  const truncateTo = (num: number, decimals: number): number => {
+    if (decimals <= 0) return Math.trunc(num);
+    const factor = 10 ** decimals;
+    return Math.trunc(num * factor) / factor;
+  };
+  const trimZeros = (text: string): string => text.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+
+  const tryUnit = (divisor: number, suffix: string): string | null => {
+    const scaled = abs / divisor;
+    if (divisor !== 1 && scaled < 1) return null;
+    const numericBudget = budget - suffix.length;
+    if (numericBudget <= 0) return null;
+
+    let decimals = 0;
+    if (suffix) {
+      if (scaled < 10) decimals = 1; // e.g. 4.8K
+    } else if (scaled >= 10 && scaled < 100) {
+      decimals = 1;
+    } else if (scaled < 10) {
+      decimals = 2;
+    }
+
+    while (decimals >= 0) {
+      const rendered = trimZeros(truncateTo(scaled, decimals).toFixed(decimals));
+      if (rendered.length <= numericBudget) {
+        return `${sign}${rendered}${suffix}`;
+      }
+      decimals -= 1;
+    }
+    return null;
+  };
+
+  const orderedUnits = [
+    { divisor: 1_000_000_000, suffix: 'B' },
+    { divisor: 1_000_000, suffix: 'M' },
+    { divisor: 1_000, suffix: 'K' },
+    { divisor: 1, suffix: '' }
+  ];
+  for (const unit of orderedUnits) {
+    const label = tryUnit(unit.divisor, unit.suffix);
+    if (label) return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
+  }
+
+  // Last resort for signed large numbers: promote unit so text stays within the 4-char axis budget.
+  const fallbackUnits = [
+    { divisor: 1_000, suffix: 'K' },
+    { divisor: 1_000_000, suffix: 'M' },
+    { divisor: 1_000_000_000, suffix: 'B' }
+  ];
+  for (const unit of fallbackUnits) {
+    const numericBudget = budget - unit.suffix.length;
+    if (numericBudget <= 0) continue;
+    const scaled = abs / unit.divisor;
+    const rendered = String(Math.max(1, Math.trunc(scaled)));
+    if (rendered.length > numericBudget) continue;
+    const label = `${sign}${rendered}${unit.suffix}`;
+    return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
+  }
+
+  return sign ? `${sign}0`.padEnd(SCALE_LABEL_CHARS, ' ') : '0'.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
 function normalizePersistedTrendlines(lines: unknown): RSIPersistedTrendline[] {
