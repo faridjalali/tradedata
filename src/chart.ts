@@ -108,6 +108,7 @@ interface VolumeDeltaRSISettings {
 
 interface VolumeDeltaSettings {
   sourceInterval: VolumeDeltaSourceInterval;
+  divergentPriceBars: boolean;
 }
 
 interface PersistedMASetting {
@@ -146,7 +147,8 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
 };
 
 const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
-  sourceInterval: '5min'
+  sourceInterval: '5min',
+  divergentPriceBars: false
 };
 
 const DEFAULT_PRICE_SETTINGS: {
@@ -434,7 +436,8 @@ function persistSettingsToStorage(): void {
         midlineStyle: rsiSettings.midlineStyle
       },
       volumeDelta: {
-        sourceInterval: volumeDeltaSettings.sourceInterval
+        sourceInterval: volumeDeltaSettings.sourceInterval,
+        divergentPriceBars: volumeDeltaSettings.divergentPriceBars
       },
       volumeDeltaRsi: {
         length: volumeDeltaRsiSettings.length,
@@ -499,6 +502,9 @@ function ensureSettingsLoadedFromStorage(): void {
       const source = String(persistedVolumeDelta.sourceInterval || '');
       if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
         volumeDeltaSettings.sourceInterval = source;
+      }
+      if (typeof persistedVolumeDelta.divergentPriceBars === 'boolean') {
+        volumeDeltaSettings.divergentPriceBars = persistedVolumeDelta.divergentPriceBars;
       }
     }
 
@@ -748,7 +754,9 @@ function syncRSISettingsPanelValues(): void {
 function syncVolumeDeltaSettingsPanelValues(): void {
   if (!volumeDeltaSettingsPanelEl) return;
   const source = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="source-interval"]') as HTMLSelectElement | null;
+  const divergent = volumeDeltaSettingsPanelEl.querySelector('[data-vd-setting="divergent-price-bars"]') as HTMLInputElement | null;
   if (source) source.value = volumeDeltaSettings.sourceInterval;
+  if (divergent) divergent.checked = volumeDeltaSettings.divergentPriceBars;
 }
 
 function syncVolumeDeltaRSISettingsPanelValues(): void {
@@ -1102,9 +1110,11 @@ function resetRSISettingsToDefault(): void {
 
 function resetVolumeDeltaSettingsToDefault(): void {
   volumeDeltaSettings.sourceInterval = DEFAULT_VOLUME_DELTA_SETTINGS.sourceInterval;
+  volumeDeltaSettings.divergentPriceBars = DEFAULT_VOLUME_DELTA_SETTINGS.divergentPriceBars;
   if (currentChartTicker) {
     renderCustomChart(currentChartTicker, currentChartInterval);
   }
+  applyPricePaneDivergentBarColors();
   syncVolumeDeltaSettingsPanelValues();
   persistSettingsToStorage();
 }
@@ -1402,6 +1412,10 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
         ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
       </select>
     </label>
+    <label style="margin-bottom:6px;">
+      <span>Divergent price bars</span>
+      <input type="checkbox" data-vd-setting="divergent-price-bars" />
+    </label>
   `;
   applyUniformSettingsPanelTypography(panel);
 
@@ -1409,14 +1423,22 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
     const target = event.target as HTMLInputElement | HTMLSelectElement | null;
     if (!target) return;
     const setting = target.dataset.vdSetting || '';
-    if (setting !== 'source-interval') return;
-    const nextValue = String((target as HTMLSelectElement).value || '');
-    if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
-    volumeDeltaSettings.sourceInterval = nextValue;
-    if (currentChartTicker) {
-      renderCustomChart(currentChartTicker, currentChartInterval);
+    if (setting === 'source-interval') {
+      const nextValue = String((target as HTMLSelectElement).value || '');
+      if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
+      volumeDeltaSettings.sourceInterval = nextValue;
+      if (currentChartTicker) {
+        renderCustomChart(currentChartTicker, currentChartInterval);
+      }
+      persistSettingsToStorage();
+      return;
     }
-    persistSettingsToStorage();
+    if (setting === 'divergent-price-bars') {
+      volumeDeltaSettings.divergentPriceBars = (target as HTMLInputElement).checked;
+      applyPricePaneDivergentBarColors();
+      persistSettingsToStorage();
+      return;
+    }
   });
 
   panel.addEventListener('click', (event) => {
@@ -2308,6 +2330,46 @@ function setVolumeDeltaHistogramData(
   volumeDeltaByTime = new Map(
     histogramData.map((point: any) => [timeKey(point.time), Number(point.value) || 0])
   );
+  applyPricePaneDivergentBarColors();
+}
+
+function applyPricePaneDivergentBarColors(): void {
+  if (!candleSeries) return;
+  if (!Array.isArray(currentBars) || currentBars.length === 0) {
+    candleSeries.setData([]);
+    return;
+  }
+
+  if (!volumeDeltaSettings.divergentPriceBars) {
+    candleSeries.setData(currentBars);
+    return;
+  }
+
+  const bullishColor = '#26a69a';
+  const bearishColor = '#ef5350';
+  const transparentBody = 'rgba(0, 0, 0, 0)';
+
+  const barsWithBodyColor = currentBars.map((bar, index) => {
+    const close = Number(bar?.close);
+    const prevClose = Number(currentBars[index - 1]?.close);
+    const delta = Number(volumeDeltaByTime.get(timeKey(bar.time)));
+    let bodyColor = transparentBody;
+
+    if (index > 0 && Number.isFinite(close) && Number.isFinite(prevClose) && Number.isFinite(delta)) {
+      if (delta > 0 && close < prevClose) {
+        bodyColor = bullishColor;
+      } else if (delta < 0 && close > prevClose) {
+        bodyColor = bearishColor;
+      }
+    }
+
+    return {
+      ...bar,
+      color: bodyColor
+    };
+  });
+
+  candleSeries.setData(barsWithBodyColor);
 }
 
 function normalizeCandleBars(bars: any[]): any[] {
