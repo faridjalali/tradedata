@@ -457,6 +457,7 @@ const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(1, Number(process.env.DIVERGENCE
 const DIVERGENCE_SCAN_CONCURRENCY = 1; // keep sequential to respect API limits
 const DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS = Math.max(45, Number(process.env.DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS) || 60);
 const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 2);
+const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(29, Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29);
 const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
 const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 
@@ -935,6 +936,12 @@ const FMP_KEY = process.env.FMP_API_KEY || '';
 const FMP_STABLE_BASE = 'https://financialmodelingprep.com/stable';
 const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
 const FMP_TIMEOUT_MS = 15000;
+const FMP_RATE_LIMIT_PER_MINUTE = Math.max(1, Number(process.env.FMP_RATE_LIMIT_PER_MINUTE) || 240);
+const FMP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const FMP_RATE_LIMIT_COOLDOWN_MS = Math.max(30_000, Number(process.env.FMP_RATE_LIMIT_COOLDOWN_MS) || 300_000);
+let fmpRateLimitCooldownUntilMs = 0;
+const fmpRecentRequestTimesMs = [];
+let fmpRateLimiterTail = Promise.resolve();
 
 function buildFmpUrl(base, path, params = {}) {
   const normalizedBase = base.replace(/\/+$/, '');
@@ -1023,7 +1030,69 @@ function assertFmpKey() {
   }
 }
 
+function isFmpRateLimitedError(err) {
+  const message = String(err && err.message ? err.message : err || '');
+  return /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message)
+    || (err && (err.isFmpRateLimited === true || Number(err.httpStatus) === 429));
+}
+
+function buildFmpRateLimitedError(message) {
+  const err = new Error(message || 'FMP rate limit reached');
+  err.httpStatus = 429;
+  err.isFmpRateLimited = true;
+  return err;
+}
+
+function extendFmpRateLimitCooldown() {
+  const nextUntil = Date.now() + FMP_RATE_LIMIT_COOLDOWN_MS;
+  if (nextUntil > fmpRateLimitCooldownUntilMs) {
+    fmpRateLimitCooldownUntilMs = nextUntil;
+    console.warn(`FMP rate-limit cooldown active for ${Math.round(FMP_RATE_LIMIT_COOLDOWN_MS / 1000)}s`);
+  }
+}
+
+function getFmpRateLimitCooldownError() {
+  if (Date.now() >= fmpRateLimitCooldownUntilMs) return null;
+  return buildFmpRateLimitedError('FMP rate limit cooldown is active');
+}
+
+function trimFmpRateWindow(nowMs) {
+  while (fmpRecentRequestTimesMs.length > 0 && (nowMs - fmpRecentRequestTimesMs[0]) >= FMP_RATE_LIMIT_WINDOW_MS) {
+    fmpRecentRequestTimesMs.shift();
+  }
+}
+
+async function acquireFmpRateLimitSlot() {
+  while (true) {
+    const nowMs = Date.now();
+    trimFmpRateWindow(nowMs);
+    if (fmpRecentRequestTimesMs.length < FMP_RATE_LIMIT_PER_MINUTE) {
+      fmpRecentRequestTimesMs.push(nowMs);
+      return;
+    }
+    const oldestMs = Number(fmpRecentRequestTimesMs[0] || nowMs);
+    const waitMs = Math.max(25, (oldestMs + FMP_RATE_LIMIT_WINDOW_MS) - nowMs + 5);
+    await sleep(waitMs);
+  }
+}
+
+function waitForFmpRateLimitSlot() {
+  const next = fmpRateLimiterTail.then(() => acquireFmpRateLimitSlot(), () => acquireFmpRateLimitSlot());
+  fmpRateLimiterTail = next.catch(() => {});
+  return next;
+}
+
 async function fetchFmpJson(url, label) {
+  const cooldownErr = getFmpRateLimitCooldownError();
+  if (cooldownErr) {
+    throw cooldownErr;
+  }
+  await waitForFmpRateLimitSlot();
+  const cooldownAfterWaitErr = getFmpRateLimitCooldownError();
+  if (cooldownAfterWaitErr) {
+    throw cooldownAfterWaitErr;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FMP_TIMEOUT_MS);
   try {
@@ -1034,11 +1103,19 @@ async function fetchFmpJson(url, label) {
     const bodyText = apiError || (typeof text === 'string' ? text.trim().slice(0, 180) : '');
 
     if (!resp.ok) {
+      if (resp.status === 429) {
+        extendFmpRateLimitCooldown();
+        throw buildFmpRateLimitedError(`${label} request failed (429): ${bodyText || 'Limit Reach'}`);
+      }
       const details = bodyText || `HTTP ${resp.status}`;
       throw new Error(`${label} request failed (${resp.status}): ${details}`);
     }
 
     if (apiError) {
+      if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
+        extendFmpRateLimitCooldown();
+        throw buildFmpRateLimitedError(`${label} request failed (429): ${apiError}`);
+      }
       throw new Error(`${label} API error: ${apiError}`);
     }
 
@@ -1069,6 +1146,9 @@ async function fetchFmpArrayWithFallback(label, urls) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`${label} fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
+      if (isFmpRateLimitedError(err)) {
+        break;
+      }
     }
   }
 
@@ -1245,7 +1325,7 @@ async function fmpLatestQuote(symbol) {
 function patchLatestBarCloseWithQuote(result, quote) {
   if (!result || !Array.isArray(result.bars) || result.bars.length === 0) return;
   const quotePrice = Number(quote && quote.price);
-  if (!Number.isFinite(quotePrice)) return;
+  if (!Number.isFinite(quotePrice) || quotePrice <= 0) return;
 
   const bars = result.bars;
   const lastIndex = bars.length - 1;
@@ -1659,7 +1739,7 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       lastSliceError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
-      if (isFmpSubscriptionRestrictedError(err)) {
+      if (isFmpSubscriptionRestrictedError(err) || isFmpRateLimitedError(err)) {
         throw err;
       }
     }
@@ -1697,6 +1777,9 @@ async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_IN
       lastError = err;
       const message = err && err.message ? err.message : String(err);
       console.error(`FMP ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
+      if (isFmpRateLimitedError(err)) {
+        throw err;
+      }
     }
   }
 
@@ -3345,13 +3428,6 @@ async function getDivergenceSummaryForTickers(options = {}) {
   const uniqueTickers = Array.from(new Set(tickers));
   const storedSummariesByTicker = await getStoredDivergenceSummariesForTickers(uniqueTickers, vdSourceInterval);
   const missingTickers = uniqueTickers.filter((ticker) => !storedSummariesByTicker.has(ticker));
-  const builtSummaries = missingTickers.length > 0
-    ? await mapWithConcurrency(
-      missingTickers,
-      DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
-      async (ticker) => getOrBuildTickerDivergenceSummary({ ticker, vdSourceInterval })
-    )
-    : [];
 
   const summaries = [];
   for (const ticker of uniqueTickers) {
@@ -3360,9 +3436,27 @@ async function getDivergenceSummaryForTickers(options = {}) {
       summaries.push(stored);
     }
   }
-  for (const item of builtSummaries) {
-    if (!item || item.error) continue;
-    summaries.push(item);
+
+  if (missingTickers.length > 0) {
+    const nowMs = Date.now();
+    const fallbackTradeDate = await getPublishedTradeDateForSourceInterval(vdSourceInterval)
+      || latestCompletedPacificTradeDateKey(new Date(nowMs))
+      || currentEtDateString();
+    const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
+    const neutralStates = buildNeutralDivergenceStateMap();
+
+    for (const ticker of missingTickers) {
+      const entry = {
+        ticker,
+        sourceInterval: vdSourceInterval,
+        tradeDate: fallbackTradeDate,
+        states: neutralStates,
+        computedAtMs: nowMs,
+        expiresAtMs
+      };
+      setDivergenceSummaryCacheEntry(entry);
+      summaries.push(entry);
+    }
   }
 
   return {
@@ -4169,6 +4263,113 @@ async function getDivergenceTableTickerUniverseFromAlerts() {
   return Array.from(tickers).sort((a, b) => a.localeCompare(b));
 }
 
+function groupDivergenceDailyRowsByTicker(rows) {
+  const out = new Map();
+  for (const row of rows || []) {
+    const ticker = String(row?.ticker || '').toUpperCase();
+    if (!ticker) continue;
+    if (!out.has(ticker)) out.set(ticker, []);
+    out.get(ticker).push({
+      trade_date: String(row?.trade_date || '').trim(),
+      close: Number(row?.close),
+      volume_delta: Number(row?.volume_delta)
+    });
+  }
+  return out;
+}
+
+async function loadDivergenceDailyHistoryByTicker(options = {}) {
+  const sourceInterval = String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
+  const tickers = Array.isArray(options.tickers) ? options.tickers : [];
+  const historyStartDate = String(options.historyStartDate || '').trim();
+  const asOfTradeDate = String(options.asOfTradeDate || '').trim();
+  if (!divergencePool || tickers.length === 0 || !historyStartDate || !asOfTradeDate) {
+    return new Map();
+  }
+
+  const historyResult = await divergencePool.query(`
+    SELECT
+      ticker,
+      trade_date::text AS trade_date,
+      close::double precision AS close,
+      volume_delta::double precision AS volume_delta
+    FROM divergence_daily_bars
+    WHERE source_interval = $1
+      AND ticker = ANY($2::VARCHAR[])
+      AND trade_date >= $3::date
+      AND trade_date <= $4::date
+    ORDER BY ticker ASC, trade_date ASC
+  `, [sourceInterval, tickers, historyStartDate, asOfTradeDate]);
+
+  return groupDivergenceDailyRowsByTicker(historyResult.rows);
+}
+
+function hasDivergenceHistoryCoverage(rows, asOfTradeDate, minCoverageDays) {
+  const safeRows = (Array.isArray(rows) ? rows : [])
+    .filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
+  if (safeRows.length < 2) return false;
+
+  const oldestDate = String(safeRows[0].trade_date || '').trim();
+  const latestDate = String(safeRows[safeRows.length - 1].trade_date || '').trim();
+  const oldestMs = parseDateKeyToUtcMs(oldestDate);
+  const latestMs = parseDateKeyToUtcMs(latestDate);
+  const asOfMs = parseDateKeyToUtcMs(asOfTradeDate);
+  if (!Number.isFinite(oldestMs) || !Number.isFinite(latestMs) || !Number.isFinite(asOfMs)) return false;
+
+  const latestLagDays = Math.floor((asOfMs - latestMs) / (24 * 60 * 60 * 1000));
+  if (latestLagDays > 3) return false;
+
+  const coverageDays = Math.floor((asOfMs - oldestMs) / (24 * 60 * 60 * 1000));
+  return coverageDays >= Math.max(1, Number(minCoverageDays) || DIVERGENCE_TABLE_MIN_COVERAGE_DAYS);
+}
+
+async function buildDivergenceDailyRowsForTicker(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
+  const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
+  const asOfTradeDate = String(options.asOfTradeDate || '').trim();
+  if (!ticker) return [];
+
+  const parentFetchInterval = '4hour';
+  const [parentRows, sourceRows] = await Promise.all([
+    fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays),
+    fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays)
+  ]);
+
+  if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
+  const dailyBars = aggregate4HourBarsToDaily(
+    convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
+  );
+  if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
+
+  const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
+    convertToLATime(sourceRows || [], sourceInterval).sort((a, b) => Number(a.time) - Number(b.time))
+  );
+  const dailyDeltas = computeVolumeDeltaByParentBars(dailyBars, sourceBars, DIVERGENCE_SCAN_PARENT_INTERVAL);
+  const deltaByTime = new Map(dailyDeltas.map((point) => [Number(point.time), Number(point.delta) || 0]));
+
+  const out = [];
+  for (let i = 0; i < dailyBars.length; i++) {
+    const bar = dailyBars[i];
+    const tradeDate = etDateStringFromUnixSeconds(Number(bar?.time));
+    if (!tradeDate) continue;
+    if (asOfTradeDate && tradeDate > asOfTradeDate) continue;
+    const close = Number(bar?.close);
+    const prevClose = Number((dailyBars[i - 1] || bar)?.close);
+    if (!Number.isFinite(close) || !Number.isFinite(prevClose)) continue;
+    out.push({
+      ticker,
+      trade_date: tradeDate,
+      source_interval: sourceInterval,
+      close,
+      prev_close: prevClose,
+      volume_delta: Number(deltaByTime.get(Number(bar.time)) || 0)
+    });
+  }
+
+  return out;
+}
+
 async function runDivergenceTableBuild(options = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
@@ -4194,8 +4395,6 @@ async function runDivergenceTableBuild(options = {}) {
 
   try {
     const sourceInterval = String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
-    const lookbackDays = Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
-    const maxTradeDateKey = latestCompletedPacificTradeDateKey(new Date());
     const tickers = await getDivergenceTableTickerUniverseFromAlerts();
     totalTickers = tickers.length;
 
@@ -4214,54 +4413,91 @@ async function runDivergenceTableBuild(options = {}) {
       return { status: 'completed', totalTickers: 0, processedTickers: 0, lastPublishedTradeDate: null };
     }
 
-    const summaryRows = [];
-    const dailyRows = [];
-
-    await mapWithConcurrency(
+    const requestedLookbackDays = Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
+    const bootstrapMissing = options.bootstrapMissing !== false;
+    const publishedTradeDate = await getPublishedTradeDateForSourceInterval(sourceInterval);
+    const fallbackTradeDate = latestCompletedPacificTradeDateKey(new Date());
+    const asOfTradeDate = publishedTradeDate || fallbackTradeDate || currentEtDateString();
+    const historyStartDate = dateKeyDaysAgo(asOfTradeDate, requestedLookbackDays + 7) || asOfTradeDate;
+    let rowsByTicker = await loadDivergenceDailyHistoryByTicker({
+      sourceInterval,
       tickers,
-      DIVERGENCE_TABLE_BUILD_CONCURRENCY,
-      async (ticker) => {
-        const dailyInput = await buildDailyDivergenceSummaryInput({
-          ticker,
-          vdSourceInterval: sourceInterval,
-          lookbackDays
-        });
-        const summary = computeDivergenceSummaryStatesFromDailyResult(dailyInput, { maxTradeDateKey });
-        const dailyRow = buildLatestDailyBarSnapshotForTicker({
-          ticker,
-          sourceInterval,
-          maxTradeDateKey,
-          dailyInput
-        });
-        return { ticker, summary, dailyRow };
-      },
-      (result) => {
-        processedTickers += 1;
-        divergenceTableBuildStatus.processedTickers = processedTickers;
+      historyStartDate,
+      asOfTradeDate
+    });
 
-        if (!result || result.error) {
-          return;
-        }
-        if (result.summary?.tradeDate) {
-          const tradeDate = String(result.summary.tradeDate).trim();
-          summaryRows.push({
-            ticker: result.ticker,
-            source_interval: sourceInterval,
-            trade_date: tradeDate,
-            states: result.summary.states
-          });
-          lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, tradeDate);
-        }
-        if (result.dailyRow) {
-          dailyRows.push(result.dailyRow);
-        }
+    if (bootstrapMissing) {
+      const backfillTickers = tickers.filter((ticker) => {
+        const rows = rowsByTicker.get(ticker) || [];
+        return !hasDivergenceHistoryCoverage(rows, asOfTradeDate, DIVERGENCE_TABLE_MIN_COVERAGE_DAYS);
+      });
+
+      if (backfillTickers.length > 0) {
+        divergenceTableBuildStatus.status = 'backfilling';
+        divergenceTableBuildStatus.processedTickers = 0;
+        processedTickers = 0;
+
+        await mapWithConcurrency(
+          backfillTickers,
+          DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+          async (ticker) => {
+            const rows = await buildDivergenceDailyRowsForTicker({
+              ticker,
+              sourceInterval,
+              lookbackDays: requestedLookbackDays,
+              asOfTradeDate
+            });
+            if (rows.length > 0) {
+              await upsertDivergenceDailyBarsBatch(rows, null);
+            }
+            return { ticker, rowCount: rows.length };
+          },
+          (result, _index, ticker) => {
+            processedTickers += 1;
+            divergenceTableBuildStatus.processedTickers = processedTickers;
+            if (result && result.error) {
+              const message = result.error && result.error.message ? result.error.message : String(result.error);
+              console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
+            }
+          }
+        );
+
+        rowsByTicker = await loadDivergenceDailyHistoryByTicker({
+          sourceInterval,
+          tickers,
+          historyStartDate,
+          asOfTradeDate
+        });
       }
-    );
+    }
+
+    divergenceTableBuildStatus.status = 'summarizing';
+    divergenceTableBuildStatus.processedTickers = 0;
+    processedTickers = 0;
+
+    const summaryRows = [];
+    const neutralStates = buildNeutralDivergenceStateMap();
+    for (const ticker of tickers) {
+      const rows = rowsByTicker.get(ticker) || [];
+      const filtered = rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
+      const latestRowDate = filtered.length ? String(filtered[filtered.length - 1].trade_date || '').trim() : '';
+      const states = filtered.length >= 2
+        ? classifyDivergenceStateMapFromDailyRows(filtered)
+        : neutralStates;
+      summaryRows.push({
+        ticker,
+        source_interval: sourceInterval,
+        trade_date: latestRowDate || asOfTradeDate,
+        states
+      });
+      processedTickers += 1;
+      divergenceTableBuildStatus.processedTickers = processedTickers;
+      if (latestRowDate) {
+        lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRowDate);
+      }
+    }
 
     const batchSize = 500;
-    for (let i = 0; i < dailyRows.length; i += batchSize) {
-      await upsertDivergenceDailyBarsBatch(dailyRows.slice(i, i + batchSize), null);
-    }
     for (let i = 0; i < summaryRows.length; i += batchSize) {
       await upsertDivergenceSummaryBatch(summaryRows.slice(i, i + batchSize), null);
     }
