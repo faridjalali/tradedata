@@ -1222,7 +1222,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
       <input type="checkbox" data-price-setting="h-grid" />
     </label>
     <label style="margin-bottom:4px;">
-      <span>MA Source</span>
+      <span>MA source</span>
       <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
         <option value="daily">Daily</option>
         <option value="timeframe">Chart</option>
@@ -1407,7 +1407,7 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
       <button type="button" data-vd-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
-      <span>Source TF</span>
+      <span>Source</span>
       <select data-vd-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
         ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
       </select>
@@ -1480,7 +1480,7 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
       <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
     </label>
     <label style="margin-bottom:6px;">
-      <span>Source TF</span>
+      <span>Source</span>
       <select data-vd-rsi-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
         ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
       </select>
