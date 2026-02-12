@@ -633,6 +633,10 @@ body.site-locked {
     radial-gradient(1200px 600px at 50% 0%, rgba(88, 166, 255, 0.25), rgba(13, 17, 23, 0.96)),
     linear-gradient(180deg, #0f1622 0%, #0a0f18 100%);
   backdrop-filter: blur(8px);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .site-lock-panel {
@@ -703,6 +707,7 @@ body.site-locked {
   font-weight: 600;
   color: #dce3ea;
   background: rgba(22, 27, 34, 0.75);
+  touch-action: manipulation;
 }
 
 .lock-key-action {

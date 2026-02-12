@@ -279,6 +279,12 @@ function initializeSiteLock(onUnlock: () => void): void {
         onUnlock();
         return;
     }
+    if (!overlay.dataset.doubleTapBound) {
+        overlay.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+        });
+        overlay.dataset.doubleTapBound = '1';
+    }
 
     const panel = overlay.querySelector('.site-lock-panel') as HTMLElement | null;
     const statusEl = document.getElementById('site-lock-status') as HTMLElement | null;
