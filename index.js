@@ -1,10 +1,15 @@
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const crypto = require("crypto");
+const zlib = require("zlib");
+const { promisify } = require("util");
 require("dotenv").config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+const gzipAsync = promisify(zlib.gzip);
+const brotliCompressAsync = promisify(zlib.brotliCompress);
 
 // NOTE: cors() allows all origins. Restrict in production if needed:
 // app.use(cors({ origin: 'https://yourdomain.com' }));
@@ -675,6 +680,13 @@ const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
 const VD_RSI_LOWER_TF_CACHE = new Map();
 const VD_RSI_RESULT_CACHE = new Map();
 const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
+const CHART_IN_FLIGHT_REQUESTS = new Map();
+const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_MAX_AGE_SECONDS) || 15);
+const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
+const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
+const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
+const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
+const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
 
 function easternLocalToUtcMs(year, month, day, hour, minute) {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
@@ -1601,159 +1613,294 @@ app.get('/api/breadth', async (req, res) => {
   }
 });
 
+function toVolumeDeltaSourceInterval(value, fallback = '5min') {
+  const normalized = String(value || '').trim();
+  return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
+}
+
+function buildChartRequestKey(params) {
+  return [
+    'v1',
+    params.ticker,
+    params.interval,
+    params.vdRsiLength,
+    params.vdSourceInterval,
+    params.vdRsiSourceInterval,
+    params.lookbackDays
+  ].join('|');
+}
+
+function createChartStageTimer() {
+  const startedNs = process.hrtime.bigint();
+  const stages = [];
+  let previousNs = startedNs;
+  const toMs = (durationNs) => Number(durationNs) / 1e6;
+  const fmt = (ms) => Number(ms).toFixed(1);
+  return {
+    step(name) {
+      const nowNs = process.hrtime.bigint();
+      stages.push({ name, ms: toMs(nowNs - previousNs) });
+      previousNs = nowNs;
+    },
+    serverTiming() {
+      const totalMs = toMs(process.hrtime.bigint() - startedNs);
+      const parts = stages.map((stage) => `${stage.name};dur=${fmt(stage.ms)}`);
+      parts.push(`total;dur=${fmt(totalMs)}`);
+      return parts.join(', ');
+    },
+    summary() {
+      const totalMs = toMs(process.hrtime.bigint() - startedNs);
+      const stageSummary = stages.map((stage) => `${stage.name}=${fmt(stage.ms)}ms`).join(' ');
+      return `${stageSummary}${stageSummary ? ' ' : ''}total=${fmt(totalMs)}ms`;
+    }
+  };
+}
+
+function getChartCacheControlHeaderValue() {
+  const maxAge = Math.max(0, Math.floor(CHART_RESPONSE_MAX_AGE_SECONDS));
+  const swr = Math.max(0, Math.floor(CHART_RESPONSE_SWR_SECONDS));
+  return `public, max-age=${maxAge}, stale-while-revalidate=${swr}`;
+}
+
+async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
+  const body = JSON.stringify(payload);
+  const bodyBuffer = Buffer.from(body);
+  const etagHash = crypto.createHash('sha1').update(bodyBuffer).digest('hex').slice(0, 16);
+  const etag = `W/"${bodyBuffer.byteLength.toString(16)}-${etagHash}"`;
+  const ifNoneMatch = String(req.headers['if-none-match'] || '').trim();
+
+  res.setHeader('Cache-Control', getChartCacheControlHeaderValue());
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.setHeader('ETag', etag);
+  if (serverTimingHeader) {
+    res.setHeader('Server-Timing', serverTimingHeader);
+  }
+
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return res.status(304).end();
+  }
+
+  const accepts = String(req.headers['accept-encoding'] || '').toLowerCase();
+  const shouldCompress = bodyBuffer.byteLength >= CHART_RESPONSE_COMPRESS_MIN_BYTES;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
+  if (shouldCompress && accepts.includes('br')) {
+    try {
+      const compressed = await brotliCompressAsync(bodyBuffer, {
+        params: {
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 4
+        }
+      });
+      res.setHeader('Content-Encoding', 'br');
+      return res.status(200).send(compressed);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn(`Brotli compression failed for /api/chart response: ${message}`);
+    }
+  }
+
+  if (shouldCompress && accepts.includes('gzip')) {
+    try {
+      const compressed = await gzipAsync(bodyBuffer, {
+        level: zlib.constants.Z_BEST_SPEED
+      });
+      res.setHeader('Content-Encoding', 'gzip');
+      return res.status(200).send(compressed);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn(`Gzip compression failed for /api/chart response: ${message}`);
+    }
+  }
+
+  return res.status(200).send(bodyBuffer);
+}
+
 // --- Chart API ---
 app.get('/api/chart', async (req, res) => {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
-
-  const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
-  const toVolumeDeltaSourceInterval = (value, fallback = '5min') => {
-    const normalized = String(value || '').trim();
-    return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
-  };
-
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
   const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '5min');
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(req.query.vdRsiSourceInterval, '5min');
 
   // Validate interval
-  const validIntervals = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
-  if (!validIntervals.includes(interval)) {
+  if (!VALID_CHART_INTERVALS.includes(interval)) {
     return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
   }
 
   // Use smart lookback based on interval (much faster!)
   const lookbackDays = getIntradayLookbackDays(interval);
+  const requestKey = buildChartRequestKey({
+    ticker,
+    interval,
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+
+  let buildPromise = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
+  const isDedupedWait = Boolean(buildPromise);
+  if (!buildPromise) {
+    buildPromise = (async () => {
+      const timer = createChartStageTimer();
+      const parentFetchInterval = interval === '1day' ? '4hour' : interval;
+      const requiredIntervals = Array.from(new Set([
+        parentFetchInterval,
+        vdSourceInterval,
+        vdRsiSourceInterval
+      ]));
+      const rowsByInterval = new Map();
+      await Promise.all(requiredIntervals.map(async (tf) => {
+        const rows = await fmpIntradayChartHistory(ticker, tf, lookbackDays);
+        rowsByInterval.set(tf, rows || []);
+      }));
+      timer.step('fetch_rows');
+
+      const parentRows = rowsByInterval.get(parentFetchInterval) || [];
+      if (!parentRows || parentRows.length === 0) {
+        const err = new Error(`No ${parentFetchInterval} data available for this ticker`);
+        err.httpStatus = 404;
+        throw err;
+      }
+
+      // Convert parent stream to LA timezone and sort chronologically.
+      const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
+      const convertedBars = interval === '1day'
+        ? aggregate4HourBarsToDaily(convertedParentBars)
+        : convertedParentBars;
+      timer.step('parent_bars');
+
+      if (convertedBars.length === 0) {
+        const err = new Error('No valid chart bars available for this ticker');
+        err.httpStatus = 404;
+        throw err;
+      }
+
+      // Calculate RSI
+      const closePrices = convertedBars.map((bar) => bar.close);
+      const rsiValues = calculateRSI(closePrices, 14);
+
+      // Emit RSI for the full loaded history.
+      const rsi = [];
+      for (let i = 0; i < convertedBars.length; i++) {
+        const raw = rsiValues[i];
+        if (!Number.isFinite(raw)) continue;
+        rsi.push({
+          time: convertedBars[i].time,
+          value: Math.round(raw * 100) / 100
+        });
+      }
+      timer.step('rsi');
+
+      const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
+        convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
+      );
+      const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
+      const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
+        ? vdSourceBars
+        : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
+      timer.step('source_bars');
+
+      let volumeDeltaRsi = { rsi: [] };
+      const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
+      const firstBarTime = convertedBars[0]?.time ?? '';
+      const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
+      const vdRsiResultCacheKey = `v4|${ticker}|${interval}|${vdRsiSourceInterval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
+      const firstParentTime = Number(firstBarTime);
+      const lastParentTime = Number(lastBarTime);
+      const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
+      const parentWindowStart = Number.isFinite(firstParentTime)
+        ? (firstParentTime - warmUpBufferSeconds)
+        : Number.NEGATIVE_INFINITY;
+      const parentWindowEndExclusive = Number.isFinite(lastParentTime)
+        ? (lastParentTime + getIntervalSeconds(interval))
+        : Number.POSITIVE_INFINITY;
+      const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
+        const t = Number(bar.time);
+        return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+      });
+      const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar) => {
+        const t = Number(bar.time);
+        return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
+      });
+      const volumeDelta = computeVolumeDeltaByParentBars(
+        convertedBars,
+        vdSourceBarsInParentRange,
+        interval
+      ).map((point) => ({
+        time: point.time,
+        delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
+      }));
+      timer.step('volume_delta');
+
+      const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
+      if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
+        volumeDeltaRsi = cachedVolumeDeltaRsi;
+      } else {
+        try {
+          if (vdRsiSourceBarsInParentRange.length > 0) {
+            volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
+              convertedBars,
+              vdRsiSourceBarsInParentRange,
+              interval,
+              { rsiLength: vdRsiLength }
+            );
+          } else {
+            volumeDeltaRsi = {
+              rsi: [],
+              deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
+            };
+          }
+          setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
+        } catch (volumeDeltaErr) {
+          const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
+          console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
+        }
+      }
+      timer.step('vd_rsi');
+
+      const result = {
+        interval,
+        timezone: 'America/Los_Angeles',
+        bars: convertedBars,
+        rsi,
+        volumeDeltaRsi,
+        volumeDelta,
+        volumeDeltaConfig: {
+          sourceInterval: vdSourceInterval
+        },
+        volumeDeltaRsiConfig: {
+          sourceInterval: vdRsiSourceInterval,
+          length: vdRsiLength
+        }
+      };
+      timer.step('assemble');
+      const serverTiming = timer.serverTiming();
+      if (CHART_TIMING_LOG_ENABLED) {
+        console.log(`[chart-timing] ${ticker} ${interval} ${isDedupedWait ? 'dedupe-wait' : 'build'} ${timer.summary()}`);
+      }
+      return { result, serverTiming };
+    })();
+    CHART_IN_FLIGHT_REQUESTS.set(requestKey, buildPromise);
+    buildPromise.finally(() => {
+      if (CHART_IN_FLIGHT_REQUESTS.get(requestKey) === buildPromise) {
+        CHART_IN_FLIGHT_REQUESTS.delete(requestKey);
+      }
+    }).catch(() => {});
+  }
 
   try {
-    const parentFetchInterval = interval === '1day' ? '4hour' : interval;
-    const requiredIntervals = Array.from(new Set([
-      parentFetchInterval,
-      vdSourceInterval,
-      vdRsiSourceInterval
-    ]));
-    const rowsByInterval = new Map();
-    await Promise.all(requiredIntervals.map(async (tf) => {
-      const rows = await fmpIntradayChartHistory(ticker, tf, lookbackDays);
-      rowsByInterval.set(tf, rows || []);
-    }));
-
-    const parentRows = rowsByInterval.get(parentFetchInterval) || [];
-    if (!parentRows || parentRows.length === 0) {
-      return res.status(404).json({ error: `No ${parentFetchInterval} data available for this ticker` });
+    const { result, serverTiming } = await buildPromise;
+    if (isDedupedWait && CHART_TIMING_LOG_ENABLED) {
+      console.log(`[chart-dedupe] ${ticker} ${interval} request joined in-flight key=${requestKey}`);
     }
-
-    // Convert parent stream to LA timezone and sort chronologically.
-    const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
-    const convertedBars = interval === '1day'
-      ? aggregate4HourBarsToDaily(convertedParentBars)
-      : convertedParentBars;
-
-    if (convertedBars.length === 0) {
-      return res.status(404).json({ error: 'No valid chart bars available for this ticker' });
-    }
-
-    // Calculate RSI
-    const closePrices = convertedBars.map(b => b.close);
-    const rsiValues = calculateRSI(closePrices, 14);
-
-    // Emit RSI for the full loaded history.
-    const rsi = [];
-    for (let i = 0; i < convertedBars.length; i++) {
-      const raw = rsiValues[i];
-      if (!Number.isFinite(raw)) continue;
-      rsi.push({
-        time: convertedBars[i].time,
-        value: Math.round(raw * 100) / 100
-      });
-    }
-
-    const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
-      convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
-    );
-    const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
-    const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
-      ? vdSourceBars
-      : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
-
-    let volumeDeltaRsi = { rsi: [] };
-    const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
-    const firstBarTime = convertedBars[0]?.time ?? '';
-    const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
-    const vdRsiResultCacheKey = `v4|${ticker}|${interval}|${vdRsiSourceInterval}|${vdRsiLength}|${convertedBars.length}|${firstBarTime}|${lastBarTime}`;
-    const firstParentTime = Number(firstBarTime);
-    const lastParentTime = Number(lastBarTime);
-    const warmUpBufferSeconds = getIntervalSeconds(interval) * 20; // 20 parent bars worth
-    const parentWindowStart = Number.isFinite(firstParentTime)
-      ? (firstParentTime - warmUpBufferSeconds)
-      : Number.NEGATIVE_INFINITY;
-    const parentWindowEndExclusive = Number.isFinite(lastParentTime)
-      ? (lastParentTime + getIntervalSeconds(interval))
-      : Number.POSITIVE_INFINITY;
-    const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
-      const t = Number(bar.time);
-      return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
-    });
-    const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar) => {
-      const t = Number(bar.time);
-      return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
-    });
-    const volumeDelta = computeVolumeDeltaByParentBars(
-      convertedBars,
-      vdSourceBarsInParentRange,
-      interval
-    ).map((point) => ({
-      time: point.time,
-      delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
-    }));
-
-    const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
-    if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
-      volumeDeltaRsi = cachedVolumeDeltaRsi;
-    } else {
-    try {
-      if (vdRsiSourceBarsInParentRange.length > 0) {
-        volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
-          convertedBars,
-          vdRsiSourceBarsInParentRange,
-          interval,
-          { rsiLength: vdRsiLength }
-        );
-      } else {
-        volumeDeltaRsi = {
-          rsi: [],
-          deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
-        };
-      }
-      setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
-    } catch (volumeDeltaErr) {
-      const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
-      console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
-    }
-    }
-
-    const result = {
-      interval,
-      timezone: 'America/Los_Angeles',
-      bars: convertedBars,
-      rsi,
-      volumeDeltaRsi,
-      volumeDelta,
-      volumeDeltaConfig: {
-        sourceInterval: vdSourceInterval
-      },
-      volumeDeltaRsiConfig: {
-        sourceInterval: vdRsiSourceInterval,
-        length: vdRsiLength
-      }
-    };
-
-    res.json(result);
-
+    await sendChartJsonResponse(req, res, result, serverTiming);
   } catch (err) {
     const message = err && err.message ? err.message : 'Failed to fetch chart data';
     console.error('Chart API Error:', message);
-    res.status(502).json({ error: message });
+    const statusCode = Number(err && err.httpStatus);
+    res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
   }
 });
 
