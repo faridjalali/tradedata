@@ -23,7 +23,9 @@ let volumeDeltaSuppressSync = false;
 let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
 let latestRenderRequestId = 0;
+let pricePaneContainerEl: HTMLElement | null = null;
 let priceByTime = new Map<string, number>();
+let priceChangeByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 let volumeDeltaRsiByTime = new Map<string, number>();
 let volumeDeltaByTime = new Map<string, number>();
@@ -1503,23 +1505,35 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   return changeEl;
 }
 
-function setPricePaneChange(container: HTMLElement, bars: any[]): void {
+function rebuildPricePaneChangeMap(bars: any[]): void {
+  priceChangeByTime = new Map<string, number>();
+  if (!Array.isArray(bars) || bars.length < 2) return;
+  for (let i = 1; i < bars.length; i++) {
+    const currClose = Number(bars[i]?.close);
+    const prevClose = Number(bars[i - 1]?.close);
+    if (!Number.isFinite(currClose) || !Number.isFinite(prevClose)) continue;
+    priceChangeByTime.set(timeKey(bars[i].time), currClose - prevClose);
+  }
+}
+
+function setPricePaneChange(container: HTMLElement, time?: string | number | null): void {
   const changeEl = ensurePricePaneChangeEl(container);
-  if (!Array.isArray(bars) || bars.length < 2) {
+  if (!currentBars.length || priceChangeByTime.size === 0) {
     changeEl.style.display = 'none';
     changeEl.textContent = '';
     return;
   }
 
-  const currentClose = Number(bars[bars.length - 1]?.close);
-  const prevClose = Number(bars[bars.length - 2]?.close);
-  if (!Number.isFinite(currentClose) || !Number.isFinite(prevClose)) {
+  const fallbackTime = currentBars[currentBars.length - 1]?.time;
+  const targetKey = time !== null && time !== undefined ? timeKey(time) : timeKey(fallbackTime);
+  const delta = priceChangeByTime.get(targetKey);
+  if (!Number.isFinite(delta)) {
+    // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
     changeEl.style.display = 'none';
     changeEl.textContent = '';
     return;
   }
 
-  const delta = currentClose - prevClose;
   const sign = delta > 0 ? '+' : '';
   changeEl.textContent = `${sign}${delta.toFixed(2)}`;
   changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
@@ -2285,6 +2299,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     console.error('Chart containers not found');
     return;
   }
+  pricePaneContainerEl = chartContainer as HTMLElement;
 
   // Clear error
   errorContainer.style.display = 'none';
@@ -2345,6 +2360,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     };
     const volumeDeltaData = normalizeVolumeDeltaSeries(data.volumeDelta || []);
     currentBars = bars;
+    rebuildPricePaneChangeMap(bars);
     priceByTime = new Map(
       bars.map((bar) => [timeKey(bar.time), Number(bar.close)])
     );
@@ -2358,7 +2374,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     if (candleSeries) {
       candleSeries.setData(bars);
     }
-    setPricePaneChange(chartContainer, bars);
+    setPricePaneChange(chartContainer, null);
     setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
     setVolumeDeltaHistogramData(bars, volumeDeltaData);
     applyVolumeDeltaRSIVisualSettings();
@@ -2418,7 +2434,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       if (candleSeries) {
         candleSeries.setData([]);
       }
-      setPricePaneChange(chartContainer, []);
+      priceChangeByTime = new Map();
+      setPricePaneChange(chartContainer, null);
       if (rsiChart) {
         rsiChart.setData([], []);
       }
@@ -2446,7 +2463,8 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
       return;
     }
 
-    setPricePaneChange(chartContainer, []);
+    priceChangeByTime = new Map();
+    setPricePaneChange(chartContainer, null);
     errorContainer.textContent = `Error loading chart: ${err.message}`;
     errorContainer.style.display = 'block';
   }
@@ -2627,8 +2645,10 @@ function setupChartSync() {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
+      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -2639,8 +2659,10 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
+      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -2651,8 +2673,10 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
+      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -2663,8 +2687,10 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
+      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
