@@ -62,9 +62,12 @@ let volumeDeltaRsiDivergenceOverlayEl: HTMLDivElement | null = null;
 let rsiDivergenceOverlayChart: any = null;
 let volumeDeltaRsiDivergenceOverlayChart: any = null;
 let hasLoadedSettingsFromStorage = false;
+let chartFetchAbortController: AbortController | null = null;
+let intervalSwitchDebounceTimer: number | null = null;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
+const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
 const RIGHT_MARGIN_BARS = 10;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
@@ -3638,6 +3641,20 @@ function hideLoadingOverlay(container: HTMLElement): void {
   }
 }
 
+function scheduleIntervalChartRender(interval: ChartInterval): void {
+  const scheduledTicker = currentChartTicker;
+  if (!scheduledTicker) return;
+  if (intervalSwitchDebounceTimer !== null) {
+    window.clearTimeout(intervalSwitchDebounceTimer);
+    intervalSwitchDebounceTimer = null;
+  }
+  intervalSwitchDebounceTimer = window.setTimeout(() => {
+    intervalSwitchDebounceTimer = null;
+    if (!currentChartTicker || currentChartTicker !== scheduledTicker) return;
+    renderCustomChart(scheduledTicker, interval);
+  }, INTERVAL_SWITCH_DEBOUNCE_MS);
+}
+
 export async function renderCustomChart(ticker: string, interval: ChartInterval = currentChartInterval) {
   ensureSettingsLoadedFromStorage();
   const previousTicker = currentChartTicker;
@@ -3719,12 +3736,23 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   showLoadingOverlay(rsiContainer);
   showLoadingOverlay(volumeDeltaContainer);
 
+  if (chartFetchAbortController) {
+    try {
+      chartFetchAbortController.abort();
+    } catch {
+      // Ignore abort errors from stale controllers.
+    }
+  }
+  const fetchController = new AbortController();
+  chartFetchAbortController = fetchController;
+
   try {
     // Fetch data from API
     const data = await fetchChartData(ticker, interval, {
       vdRsiLength: volumeDeltaRsiSettings.length,
       vdSourceInterval: volumeDeltaSettings.sourceInterval,
-      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval,
+      signal: fetchController.signal
     });
     if (requestId !== latestRenderRequestId) return;
 
@@ -3804,6 +3832,7 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     hideLoadingOverlay(volumeDeltaContainer);
   } catch (err: any) {
     if (requestId !== latestRenderRequestId) return;
+    if (err?.name === 'AbortError') return;
 
     console.error('Failed to load chart:', err);
     if (isNoDataTickerError(err)) {
@@ -3868,6 +3897,10 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
     showRetryOverlay(volumeDeltaRsiContainer, retryRender);
     showRetryOverlay(rsiContainer, retryRender);
     showRetryOverlay(volumeDeltaContainer, retryRender);
+  } finally {
+    if (chartFetchAbortController === fetchController) {
+      chartFetchAbortController = null;
+    }
   }
 }
 
@@ -4127,7 +4160,7 @@ export function initChartControls() {
       target.classList.add('active');
 
       if (currentChartTicker) {
-        renderCustomChart(currentChartTicker, interval);
+        scheduleIntervalChartRender(interval);
       }
     });
   });

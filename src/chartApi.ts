@@ -36,6 +36,7 @@ export interface ChartFetchOptions {
   vdRsiLength?: number;
   vdSourceInterval?: VolumeDeltaSourceInterval;
   vdRsiSourceInterval?: VolumeDeltaSourceInterval;
+  signal?: AbortSignal;
 }
 
 export async function fetchChartData(ticker: string, interval: ChartInterval, options: ChartFetchOptions = {}): Promise<ChartData> {
@@ -51,7 +52,7 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
   }
   const query = params.toString();
   const url = `/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}${query ? `&${query}` : ''}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: options.signal });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to fetch chart data' }));

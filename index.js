@@ -681,6 +681,8 @@ const VD_RSI_LOWER_TF_CACHE = new Map();
 const VD_RSI_RESULT_CACHE = new Map();
 const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
 const CHART_IN_FLIGHT_REQUESTS = new Map();
+const CHART_FINAL_RESULT_CACHE = new Map();
+const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 20);
 const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_MAX_AGE_SECONDS) || 15);
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
@@ -783,6 +785,7 @@ const vdRsiCacheCleanupTimer = setInterval(() => {
   sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
   sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
   sweepExpiredTimedCache(CHART_DATA_CACHE);
+  sweepExpiredTimedCache(CHART_FINAL_RESULT_CACHE);
 }, 15 * 60 * 1000);
 if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
   vdRsiCacheCleanupTimer.unref();
@@ -1662,6 +1665,13 @@ function getChartCacheControlHeaderValue() {
   return `public, max-age=${maxAge}, stale-while-revalidate=${swr}`;
 }
 
+function getChartResultCacheExpiryMs(nowUtc = new Date()) {
+  if (CHART_RESULT_CACHE_TTL_SECONDS > 0) {
+    return nowUtc.getTime() + (CHART_RESULT_CACHE_TTL_SECONDS * 1000);
+  }
+  return getVdRsiCacheExpiryMs(nowUtc);
+}
+
 async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
   const body = JSON.stringify(payload);
   const bodyBuffer = Buffer.from(body);
@@ -1738,6 +1748,14 @@ app.get('/api/chart', async (req, res) => {
     vdRsiSourceInterval,
     lookbackDays
   });
+
+  const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
+  if (cachedFinalResult) {
+    if (CHART_TIMING_LOG_ENABLED) {
+      console.log(`[chart-cache] ${ticker} ${interval} hit key=${requestKey}`);
+    }
+    return sendChartJsonResponse(req, res, cachedFinalResult, 'cache_hit;dur=0.1,total;dur=0.1');
+  }
 
   let buildPromise = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
   const isDedupedWait = Boolean(buildPromise);
@@ -1876,6 +1894,12 @@ app.get('/api/chart', async (req, res) => {
         }
       };
       timer.step('assemble');
+      setTimedCacheValue(
+        CHART_FINAL_RESULT_CACHE,
+        requestKey,
+        result,
+        getChartResultCacheExpiryMs(new Date())
+      );
       const serverTiming = timer.serverTiming();
       if (CHART_TIMING_LOG_ENABLED) {
         console.log(`[chart-timing] ${ticker} ${interval} ${isDedupedWait ? 'dedupe-wait' : 'build'} ${timer.summary()}`);
