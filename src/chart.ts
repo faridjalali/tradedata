@@ -49,6 +49,9 @@ const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
+const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
+const TOP_PANE_BADGE_START_LEFT_PX = 38;
+const TOP_PANE_BADGE_GAP_PX = 6;
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
 const VOLUME_DELTA_MIDLINE = 50;
 const VOLUME_DELTA_AXIS_MIN = 20;
@@ -769,9 +772,39 @@ function hideSettingsPanels(): void {
   if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
 }
 
+function getTopPaneId(): PaneId {
+  return normalizePaneOrder(paneOrder)[0];
+}
+
+function getTopPaneBadgePriority(badge: HTMLElement): number {
+  const role = String(badge.dataset.topPaneBadgeRole || '');
+  if (role === 'ticker') return 0;
+  if (role === 'price-change') return 1;
+  return 100;
+}
+
+function layoutTopPaneBadges(container: HTMLElement): void {
+  const badges = Array.from(container.querySelectorAll<HTMLElement>(`.${TOP_PANE_BADGE_CLASS}`))
+    .filter((badge) => badge.style.display !== 'none');
+  if (!badges.length) return;
+
+  const ordered = badges
+    .map((badge, index) => ({ badge, index, priority: getTopPaneBadgePriority(badge) }))
+    .sort((a, b) => (a.priority - b.priority) || (a.index - b.index))
+    .map((entry) => entry.badge);
+
+  let left = TOP_PANE_BADGE_START_LEFT_PX;
+  for (const badge of ordered) {
+    badge.style.left = `${left}px`;
+    badge.style.top = '8px';
+    badge.style.maxWidth = `calc(100% - ${left + 30}px)`;
+    const width = Math.ceil(badge.getBoundingClientRect().width || badge.offsetWidth || 0);
+    left += Math.max(0, width) + TOP_PANE_BADGE_GAP_PX;
+  }
+}
+
 function syncTopPaneTickerLabel(): void {
-  const normalizedOrder = normalizePaneOrder(paneOrder);
-  const topPaneId = normalizedOrder[0];
+  const topPaneId = getTopPaneId();
 
   for (const paneId of DEFAULT_PANE_ORDER) {
     const pane = document.getElementById(paneId);
@@ -791,14 +824,16 @@ function syncTopPaneTickerLabel(): void {
   let label = topPane.querySelector(`.${TOP_PANE_TICKER_LABEL_CLASS}`) as HTMLDivElement | null;
   if (!ticker) {
     if (label) label.remove();
+    layoutTopPaneBadges(topPane);
     return;
   }
 
   if (!label) {
     label = document.createElement('div');
-    label.className = TOP_PANE_TICKER_LABEL_CLASS;
+    label.className = `${TOP_PANE_TICKER_LABEL_CLASS} ${TOP_PANE_BADGE_CLASS}`;
+    label.dataset.topPaneBadgeRole = 'ticker';
     label.style.position = 'absolute';
-    label.style.left = '38px';
+    label.style.left = `${TOP_PANE_BADGE_START_LEFT_PX}px`;
     label.style.top = '8px';
     label.style.zIndex = '32';
     label.style.minHeight = '24px';
@@ -821,6 +856,7 @@ function syncTopPaneTickerLabel(): void {
   }
 
   label.textContent = ticker;
+  layoutTopPaneBadges(topPane);
 }
 
 function applyPaneOrderToDom(chartContent: HTMLElement): void {
@@ -1541,9 +1577,10 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   if (changeEl) return changeEl;
 
   changeEl = document.createElement('div');
-  changeEl.className = 'price-pane-change';
+  changeEl.className = `price-pane-change ${TOP_PANE_BADGE_CLASS}`;
+  changeEl.dataset.topPaneBadgeRole = 'price-change';
   changeEl.style.position = 'absolute';
-  changeEl.style.left = '38px';
+  changeEl.style.left = `${TOP_PANE_BADGE_START_LEFT_PX}px`;
   changeEl.style.top = '8px';
   changeEl.style.zIndex = '30';
   changeEl.style.minHeight = '24px';
@@ -1578,6 +1615,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   if (!currentBars.length || priceChangeByTime.size === 0) {
     changeEl.style.display = 'none';
     changeEl.textContent = '';
+    if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
     return;
   }
 
@@ -1588,6 +1626,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
     // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
     changeEl.style.display = 'none';
     changeEl.textContent = '';
+    if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
     return;
   }
 
@@ -1595,6 +1634,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   changeEl.textContent = `${sign}${delta.toFixed(2)}`;
   changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
   changeEl.style.display = 'inline-flex';
+  if (container.id === getTopPaneId()) layoutTopPaneBadges(container);
 }
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
