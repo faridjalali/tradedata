@@ -3300,6 +3300,15 @@ function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivEl
   if (volumeDeltaDivergenceSummaryEl && volumeDeltaDivergenceSummaryEl.parentElement === container) {
     volumeDeltaDivergenceSummaryEl.style.top = '8px';
     volumeDeltaDivergenceSummaryEl.style.transform = 'none';
+    volumeDeltaDivergenceSummaryEl.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
+    volumeDeltaDivergenceSummaryEl.style.display = 'flex';
+    volumeDeltaDivergenceSummaryEl.style.flexDirection = 'row';
+    volumeDeltaDivergenceSummaryEl.style.alignItems = 'center';
+    volumeDeltaDivergenceSummaryEl.style.gap = `${PANE_TOOL_BUTTON_GAP_PX}px`;
+    volumeDeltaDivergenceSummaryEl.style.background = 'transparent';
+    volumeDeltaDivergenceSummaryEl.style.border = 'none';
+    volumeDeltaDivergenceSummaryEl.style.borderRadius = '0';
+    volumeDeltaDivergenceSummaryEl.style.overflow = 'visible';
     return volumeDeltaDivergenceSummaryEl;
   }
 
@@ -3310,11 +3319,14 @@ function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivEl
   el.style.transform = 'none';
   el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
   el.style.zIndex = '34';
-  el.style.minWidth = '34px';
-  el.style.background = '#0d1117';
-  el.style.border = '1px solid #30363d';
-  el.style.borderRadius = '4px';
-  el.style.overflow = 'hidden';
+  el.style.display = 'flex';
+  el.style.flexDirection = 'row';
+  el.style.alignItems = 'center';
+  el.style.gap = `${PANE_TOOL_BUTTON_GAP_PX}px`;
+  el.style.background = 'transparent';
+  el.style.border = 'none';
+  el.style.borderRadius = '0';
+  el.style.overflow = 'visible';
   el.style.pointerEvents = 'none';
   container.appendChild(el);
   volumeDeltaDivergenceSummaryEl = el;
@@ -3372,28 +3384,28 @@ function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[])
   for (let i = 0; i < VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS.length; i++) {
     const days = VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS[i];
     const state = classifyVolumeDeltaDivergenceForDays(days, bars);
-    const row = document.createElement('div');
-    row.textContent = String(days);
-    row.title = `Last ${days} day${days === 1 ? '' : 's'}`;
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'center';
-    row.style.width = '34px';
-    row.style.height = '32px';
-    row.style.fontSize = '14px';
-    row.style.fontWeight = '500';
-    row.style.lineHeight = '1';
-    row.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-    row.style.background = '#161b22';
-    row.style.color = state === 'bullish'
+    const badge = document.createElement('div');
+    badge.textContent = String(days);
+    badge.title = `Last ${days} day${days === 1 ? '' : 's'}`;
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    badge.style.padding = '0';
+    badge.style.borderRadius = '4px';
+    badge.style.border = '1px solid #30363d';
+    badge.style.background = '#161b22';
+    badge.style.fontSize = '12px';
+    badge.style.fontWeight = '600';
+    badge.style.lineHeight = '1';
+    badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    badge.style.color = state === 'bullish'
       ? '#26a69a'
       : state === 'bearish'
         ? '#ef5350'
         : '#ffffff';
-    if (i < VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS.length - 1) {
-      row.style.borderBottom = '1px solid #30363d';
-    }
-    summaryEl.appendChild(row);
+    summaryEl.appendChild(badge);
   }
 }
 
