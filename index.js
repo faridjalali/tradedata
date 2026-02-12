@@ -821,13 +821,10 @@ async function fmpIntraday(symbol, interval, options = {}) {
   return result;
 }
 
-// Fetch 9 months of data to ensure 6 months of valid indicator data
-// (need buffer for RSI/VD-RSI warm-up period)
 function getIntradayLookbackDays(interval) {
-  // All intervals get 270 days (9 months) to ensure:
-  // - 6 months (180 days) of visible data
-  // - 90 days buffer for indicator warm-up (RSI needs 14+ periods)
-  return 270;
+  // Fetch one full year so all panes share the same 1-year parent history.
+  // RSI / VD-RSI warm-up is naturally covered by this window.
+  return 365;
 }
 
 const CHART_INTRADAY_LOOKBACK_DAYS = 365; // Legacy fallback
