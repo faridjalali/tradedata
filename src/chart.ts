@@ -2347,18 +2347,22 @@ function applyPricePaneDivergentBarColors(): void {
 
   const bullishColor = '#26a69a';
   const bearishColor = '#ef5350';
-  const transparentBody = 'rgba(0, 0, 0, 0)';
+  const convergentColor = '#c9d1d9';
 
   const barsWithBodyColor = currentBars.map((bar, index) => {
     const close = Number(bar?.close);
     const prevClose = Number(currentBars[index - 1]?.close);
     const delta = Number(volumeDeltaByTime.get(timeKey(bar.time)));
-    let bodyColor = transparentBody;
+    const hasComparableBar = index > 0 && Number.isFinite(close) && Number.isFinite(prevClose);
+    const hasDelta = Number.isFinite(delta);
 
-    if (index > 0 && Number.isFinite(close) && Number.isFinite(prevClose) && Number.isFinite(delta)) {
-      if (delta > 0 && close < prevClose) {
+    let bodyColor = convergentColor;
+    if (hasComparableBar && hasDelta) {
+      const isBullishDivergence = delta > 0 && close < prevClose;
+      const isBearishDivergence = delta < 0 && close > prevClose;
+      if (isBullishDivergence) {
         bodyColor = bullishColor;
-      } else if (delta < 0 && close > prevClose) {
+      } else if (isBearishDivergence) {
         bodyColor = bearishColor;
       }
     }
