@@ -1676,7 +1676,7 @@ function formatDivergenceOverlayTimeLabel(time: string | number): string {
   const unix = unixSecondsFromTimeValue(time);
   if (unix === null) return '';
   const date = new Date(unix * 1000);
-  if (currentChartInterval === '1day') {
+  if (currentChartInterval === '1day' || currentChartInterval === '1week') {
     return MM_DD_YY_FORMATTER.format(date);
   }
   return date.toLocaleString('en-US', {

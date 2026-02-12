@@ -1,6 +1,6 @@
 // Chart API types and client
 
-export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day';
+export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day' | '1week';
 export type RSIDisplayMode = 'line' | 'points';
 export type VolumeDeltaSourceInterval = '5min' | '15min' | '30min' | '1hour' | '4hour';
 

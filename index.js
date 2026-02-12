@@ -874,7 +874,7 @@ const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
 const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
 const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 300_000);
-const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day'];
+const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
 
 function easternLocalToUtcMs(year, month, day, hour, minute) {
@@ -1242,7 +1242,8 @@ function getIntervalSeconds(interval) {
     '30min': 30 * 60,
     '1hour': 60 * 60,
     '4hour': 4 * 60 * 60,
-    '1day': 24 * 60 * 60
+    '1day': 24 * 60 * 60,
+    '1week': 7 * 24 * 60 * 60
   };
   return map[interval] || 60;
 }
@@ -1308,6 +1309,89 @@ function aggregate4HourBarsToDaily(fourHourBars) {
   }
 
   return Array.from(byDay.values())
+    .sort((a, b) => Number(a.time) - Number(b.time))
+    .map((bar) => ({
+      time: bar.time,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume
+    }));
+}
+
+function weekKeyInLA(unixSeconds) {
+  if (!Number.isFinite(unixSeconds)) return '';
+  const dayString = new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const match = dayString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return '';
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+  const weekDay = utcDate.getUTCDay(); // 0=Sun..6=Sat
+  const daysSinceMonday = (weekDay + 6) % 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() - daysSinceMonday);
+  return formatDateUTC(utcDate);
+}
+
+function aggregateDailyBarsToWeekly(dailyBars) {
+  if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
+
+  const sorted = dailyBars
+    .filter((bar) => (
+      bar &&
+      Number.isFinite(Number(bar.time)) &&
+      Number.isFinite(Number(bar.open)) &&
+      Number.isFinite(Number(bar.high)) &&
+      Number.isFinite(Number(bar.low)) &&
+      Number.isFinite(Number(bar.close))
+    ))
+    .sort((a, b) => Number(a.time) - Number(b.time));
+
+  const byWeek = new Map();
+
+  for (const bar of sorted) {
+    const time = Number(bar.time);
+    const key = weekKeyInLA(time);
+    if (!key) continue;
+
+    const open = Number(bar.open);
+    const high = Number(bar.high);
+    const low = Number(bar.low);
+    const close = Number(bar.close);
+    const volume = Number.isFinite(Number(bar.volume)) ? Number(bar.volume) : 0;
+
+    const existing = byWeek.get(key);
+    if (!existing) {
+      byWeek.set(key, {
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume,
+        _lastTime: time
+      });
+      continue;
+    }
+
+    existing.high = Math.max(existing.high, high);
+    existing.low = Math.min(existing.low, low);
+    existing.volume += volume;
+    if (time >= existing._lastTime) {
+      existing.close = close;
+      existing._lastTime = time;
+    }
+  }
+
+  return Array.from(byWeek.values())
     .sort((a, b) => Number(a.time) - Number(b.time))
     .map((bar) => ({
       time: bar.time,
@@ -1922,7 +2006,7 @@ function buildChartResultFromRows(options = {}) {
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
   const timer = options.timer || null;
 
-  const parentFetchInterval = interval === '1day' ? '4hour' : interval;
+  const parentFetchInterval = (interval === '1day' || interval === '1week') ? '4hour' : interval;
   const parentRows = rowsByInterval.get(parentFetchInterval) || [];
   if (!parentRows || parentRows.length === 0) {
     const err = new Error(`No ${parentFetchInterval} data available for this ticker`);
@@ -1932,9 +2016,13 @@ function buildChartResultFromRows(options = {}) {
 
   // Convert parent stream to LA timezone and sort chronologically.
   const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
-  const convertedBars = interval === '1day'
-    ? aggregate4HourBarsToDaily(convertedParentBars)
-    : convertedParentBars;
+  let convertedBars = convertedParentBars;
+  if (interval === '1day' || interval === '1week') {
+    const dailyBars = aggregate4HourBarsToDaily(convertedParentBars);
+    convertedBars = interval === '1day'
+      ? dailyBars
+      : aggregateDailyBarsToWeekly(dailyBars);
+  }
   if (timer) timer.step('parent_bars');
 
   if (convertedBars.length === 0) {
@@ -2161,6 +2249,64 @@ function prewarmFourHourChartResultFromRows(options = {}) {
   }).catch(() => {});
 }
 
+function prewarmWeeklyChartResultFromRows(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1week')));
+  const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
+  if (!ticker || !rowsByInterval) return;
+
+  const prewarmKey = buildChartRequestKey({
+    ticker,
+    interval: '1week',
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+  if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, prewarmKey)) return;
+  if (CHART_IN_FLIGHT_REQUESTS.has(prewarmKey)) return;
+
+  const prewarmPromise = (async () => {
+    try {
+      const timer = CHART_TIMING_LOG_ENABLED ? createChartStageTimer() : null;
+      const result = buildChartResultFromRows({
+        ticker,
+        interval: '1week',
+        rowsByInterval,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        timer
+      });
+      patchLatestBarCloseWithQuote(result, getTimedCacheValue(CHART_QUOTE_CACHE, ticker));
+      setTimedCacheValue(
+        CHART_FINAL_RESULT_CACHE,
+        prewarmKey,
+        result,
+        getChartResultCacheExpiryMs(new Date())
+      );
+      if (CHART_TIMING_LOG_ENABLED && timer) {
+        console.log(`[chart-prewarm] ${ticker} 1week ${timer.summary()}`);
+      }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      if (CHART_TIMING_LOG_ENABLED) {
+        console.warn(`[chart-prewarm] ${ticker} 1week failed: ${message}`);
+      }
+    }
+  })();
+
+  CHART_IN_FLIGHT_REQUESTS.set(prewarmKey, prewarmPromise);
+  prewarmPromise.finally(() => {
+    if (CHART_IN_FLIGHT_REQUESTS.get(prewarmKey) === prewarmPromise) {
+      CHART_IN_FLIGHT_REQUESTS.delete(prewarmKey);
+    }
+  }).catch(() => {});
+}
+
 function parseChartRequestParams(req) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   const interval = (req.query.interval || '4hour').toString();
@@ -2215,7 +2361,7 @@ async function getOrBuildChartResult(params) {
   if (!buildPromise) {
     buildPromise = (async () => {
       const timer = createChartStageTimer();
-      const parentFetchInterval = interval === '1day' ? '4hour' : interval;
+      const parentFetchInterval = (interval === '1day' || interval === '1week') ? '4hour' : interval;
       const requiredIntervals = Array.from(new Set([
         parentFetchInterval,
         vdSourceInterval,
@@ -2269,6 +2415,16 @@ async function getOrBuildChartResult(params) {
       } else if (interval === '1day') {
         setTimeout(() => {
           prewarmFourHourChartResultFromRows({
+            ticker,
+            vdRsiLength,
+            vdSourceInterval,
+            vdRsiSourceInterval,
+            lookbackDays,
+            rowsByInterval
+          });
+        }, 0);
+        setTimeout(() => {
+          prewarmWeeklyChartResultFromRows({
             ticker,
             vdRsiLength,
             vdSourceInterval,
@@ -2339,7 +2495,7 @@ app.get('/api/chart', async (req, res) => {
 
   // Validate interval
   if (!VALID_CHART_INTERVALS.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week' });
   }
 
   try {
@@ -2358,7 +2514,7 @@ app.get('/api/chart/latest', async (req, res) => {
   const { interval } = params;
 
   if (!VALID_CHART_INTERVALS.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, or 1day' });
+    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week' });
   }
 
   try {
