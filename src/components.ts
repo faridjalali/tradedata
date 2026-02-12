@@ -1,5 +1,6 @@
 import { Alert } from './types';
 import { getRelativeTime, formatVolume, escapeHtml } from './utils';
+import { DIVERGENCE_LOOKBACK_DAYS } from './divergenceTable';
 
 export function createAlertCard(alert: Alert): string {
     const timeStr = getRelativeTime(alert.timestamp);
@@ -20,15 +21,6 @@ export function createAlertCard(alert: Alert): string {
     const cardClass = isBull ? 'bullish-card' : (isBear ? 'bearish-card' : '');
     
     const volStr = formatVolume(alert.signal_volume || 0);
-    const intScore = alert.intensity_score || 0;
-    const cmbScore = alert.combo_score || 0;
-
-    const fillColor = isBull ? '#3fb950' : '#f85149';
-    const emptyColor = '#0d1117'; 
-
-    const intStyle = `background: conic-gradient(${fillColor} ${intScore}%, ${emptyColor} 0%);`;
-    const cmbStyle = `background: conic-gradient(${fillColor} ${cmbScore}%, ${emptyColor} 0%);`;
-
     // Strict boolean check
     const isFav = alert.is_favorite === true || String(alert.is_favorite).toLowerCase() === 'true';
     const starClass = isFav ? 'filled' : '';
@@ -45,17 +37,20 @@ export function createAlertCard(alert: Alert): string {
         </svg>
     `;
 
+    const divergenceMiniCells = DIVERGENCE_LOOKBACK_DAYS
+        .map((days) => `<span class="divergence-mini-cell is-neutral" data-days="${days}">${days}</span>`)
+        .join('');
+
     return `
         <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
             ${starIcon}
             <h3>${escapeHtml(alert.ticker)}</h3>
             
             <div class="metrics-container">
-                <div class="metric-item" title="Intensity: ${intScore}">
-                    <div class="score-circle" style="${intStyle}"></div>
-                </div>
-                <div class="metric-item" title="Combo: ${cmbScore}">
-                    <div class="score-circle" style="${cmbStyle}"></div>
+                <div class="metric-item" title="Daily divergence summary">
+                    <div class="divergence-mini" data-ticker="${escapeHtml(alert.ticker)}">
+                        ${divergenceMiniCells}
+                    </div>
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>

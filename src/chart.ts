@@ -1,6 +1,7 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
+import { DIVERGENCE_LOOKBACK_DAYS, getTickerDivergenceSummary, DivergenceSummaryEntry } from './divergenceTable';
 
 declare const Chart: any;
 
@@ -71,11 +72,6 @@ let chartCacheHydratedFromSession = false;
 let chartCachePersistTimer: number | null = null;
 let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
-let volumeDeltaWindowCache: {
-  unixTimes: number[];
-  closes: number[];
-  deltaPrefix: number[];
-} | null = null;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
@@ -121,7 +117,6 @@ const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; lab
   { value: '1hour', label: '1 hour' },
   { value: '4hour', label: '4 hour' }
 ];
-const VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28] as const;
 const CHART_PERF_SAMPLE_MAX = 180;
 const PREFETCH_INTERVAL_TARGETS: Record<ChartInterval, ChartInterval[]> = {
   '5min': [],
@@ -3680,7 +3675,6 @@ function setVolumeDeltaHistogramData(
   volumeDeltaByTime = new Map(
     histogramData.map((point: any) => [timeKey(point.time), Number(point.value) || 0])
   );
-  rebuildVolumeDeltaWindowCache(bars);
   applyPricePaneDivergentBarColors();
 }
 
@@ -3727,125 +3721,63 @@ function clearVolumeDeltaDivergenceSummary(): void {
   volumeDeltaDivergenceSummaryEl.innerHTML = '';
 }
 
-function rebuildVolumeDeltaWindowCache(bars: any[]): void {
-  if (!Array.isArray(bars) || bars.length === 0) {
-    volumeDeltaWindowCache = null;
-    return;
-  }
-  const unixTimes: number[] = [];
-  const closes: number[] = [];
-  const deltaPrefix: number[] = [0];
-  let runningDelta = 0;
-  for (const bar of bars) {
-    const unix = unixSecondsFromTimeValue(bar?.time);
-    const close = Number(bar?.close);
-    if (unix === null || !Number.isFinite(close)) continue;
-    const delta = Number(volumeDeltaByTime.get(timeKey(bar.time)));
-    const safeDelta = Number.isFinite(delta) ? delta : 0;
-    runningDelta += safeDelta;
-    unixTimes.push(unix);
-    closes.push(close);
-    deltaPrefix.push(runningDelta);
-  }
-  volumeDeltaWindowCache = unixTimes.length
-    ? { unixTimes, closes, deltaPrefix }
-    : null;
-}
-
-function updateVolumeDeltaWindowCacheLatestBar(
-  timeValue: string | number,
-  latestClose: number,
-  latestDelta: number
-): void {
-  if (!volumeDeltaWindowCache) return;
-  const unix = unixSecondsFromTimeValue(timeValue);
-  if (unix === null) return;
-  const lastIndex = volumeDeltaWindowCache.unixTimes.length - 1;
-  if (lastIndex < 0) return;
-  if (volumeDeltaWindowCache.unixTimes[lastIndex] !== unix) return;
-  if (!Number.isFinite(latestClose) || !Number.isFinite(latestDelta)) return;
-
-  const previousPrefix = volumeDeltaWindowCache.deltaPrefix[lastIndex] ?? 0;
-  volumeDeltaWindowCache.closes[lastIndex] = latestClose;
-  volumeDeltaWindowCache.deltaPrefix[lastIndex + 1] = previousPrefix + latestDelta;
-}
-
-function lowerBoundUnixTimes(times: number[], target: number): number {
-  let lo = 0;
-  let hi = times.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (times[mid] < target) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return lo;
-}
-
-function classifyVolumeDeltaDivergenceForDays(days: number, bars: any[]): 'bullish' | 'bearish' | 'neutral' {
-  if (!Array.isArray(bars) || bars.length < 2) return 'neutral';
-  const cache = volumeDeltaWindowCache;
-  if (!cache || cache.unixTimes.length < 2) return 'neutral';
-
-  const lastIndex = cache.unixTimes.length - 1;
-  const latestUnix = cache.unixTimes[lastIndex];
-  if (!Number.isFinite(latestUnix)) return 'neutral';
-  const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
-  const startIndex = lowerBoundUnixTimes(cache.unixTimes, cutoffUnix);
-  if (startIndex < 0 || startIndex > lastIndex) return 'neutral';
-
-  const startClose = cache.closes[startIndex];
-  const endClose = cache.closes[lastIndex];
-  if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) return 'neutral';
-
-  const sumDelta = (cache.deltaPrefix[lastIndex + 1] ?? 0) - (cache.deltaPrefix[startIndex] ?? 0);
-  if (endClose < startClose && sumDelta > 0) return 'bullish';
-  if (endClose > startClose && sumDelta < 0) return 'bearish';
-  return 'neutral';
-}
-
 function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[]): void {
   if (!volumeDeltaSettings.divergenceTable) {
     clearVolumeDeltaDivergenceSummary();
     return;
   }
-  if (!Array.isArray(bars) || bars.length < 2) {
-    clearVolumeDeltaDivergenceSummary();
-    return;
-  }
-
   const summaryEl = ensureVolumeDeltaDivergenceSummaryEl(container);
   summaryEl.innerHTML = '';
   summaryEl.style.display = 'block';
+  const ticker = String(currentChartTicker || '').trim().toUpperCase();
+  const sourceInterval = volumeDeltaSettings.sourceInterval;
+  const requestToken = `${ticker}|${sourceInterval}|${Date.now()}`;
+  summaryEl.dataset.requestToken = requestToken;
 
-  for (let i = 0; i < VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS.length; i++) {
-    const days = VOLUME_DELTA_DIVERGENCE_LOOKBACK_DAYS[i];
-    const state = classifyVolumeDeltaDivergenceForDays(days, bars);
-    const badge = document.createElement('div');
-    badge.textContent = String(days);
-    badge.title = `Last ${days} day${days === 1 ? '' : 's'}`;
-    badge.style.display = 'inline-flex';
-    badge.style.alignItems = 'center';
-    badge.style.justifyContent = 'center';
-    badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    badge.style.padding = '0';
-    badge.style.borderRadius = '4px';
-    badge.style.border = '1px solid #30363d';
-    badge.style.background = '#161b22';
-    badge.style.fontSize = '12px';
-    badge.style.fontWeight = '600';
-    badge.style.lineHeight = '1';
-    badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-    badge.style.color = state === 'bullish'
-      ? '#26a69a'
-      : state === 'bearish'
-        ? '#ef5350'
-        : '#ffffff';
-    summaryEl.appendChild(badge);
+  const renderSummary = (summary: DivergenceSummaryEntry | null) => {
+    if (summaryEl.dataset.requestToken !== requestToken) return;
+    if (String(currentChartTicker || '').trim().toUpperCase() !== ticker) return;
+    summaryEl.innerHTML = '';
+    for (let i = 0; i < DIVERGENCE_LOOKBACK_DAYS.length; i++) {
+      const days = DIVERGENCE_LOOKBACK_DAYS[i];
+      const state = summary?.states?.[String(days)] || 'neutral';
+      const badge = document.createElement('div');
+      badge.textContent = String(days);
+      badge.title = `Last ${days} day${days === 1 ? '' : 's'}${summary?.tradeDate ? ` (as of ${summary.tradeDate})` : ''}`;
+      badge.style.display = 'inline-flex';
+      badge.style.alignItems = 'center';
+      badge.style.justifyContent = 'center';
+      badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+      badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+      badge.style.padding = '0';
+      badge.style.borderRadius = '4px';
+      badge.style.border = '1px solid #30363d';
+      badge.style.background = '#161b22';
+      badge.style.fontSize = '12px';
+      badge.style.fontWeight = '600';
+      badge.style.lineHeight = '1';
+      badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+      badge.style.color = state === 'bullish'
+        ? '#26a69a'
+        : state === 'bearish'
+          ? '#ef5350'
+          : '#ffffff';
+      summaryEl.appendChild(badge);
+    }
+  };
+
+  renderSummary(null);
+  if (!ticker || (!Array.isArray(bars) || bars.length < 2)) {
+    return;
   }
+
+  getTickerDivergenceSummary(ticker, sourceInterval)
+    .then((summary) => {
+      renderSummary(summary);
+    })
+    .catch(() => {
+      renderSummary(null);
+    });
 }
 
 function applyPricePaneDivergentBarColors(): void {
@@ -4142,7 +4074,6 @@ function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
       value: numericDelta,
       color: numericDelta >= 0 ? VOLUME_DELTA_POSITIVE_COLOR : VOLUME_DELTA_NEGATIVE_COLOR
     });
-    updateVolumeDeltaWindowCacheLatestBar(lastTime, latestClose, numericDelta);
   }
 
   if (volumeDeltaSettings.divergentPriceBars) {
@@ -4487,7 +4418,6 @@ export async function renderCustomChart(
       volumeDeltaIndexByTime = new Map();
       volumeDeltaRsiByTime = new Map();
       volumeDeltaByTime = new Map();
-      volumeDeltaWindowCache = null;
       clearVolumeDeltaDivergenceSummary();
       currentBars = [];
       barIndexByTime = new Map();

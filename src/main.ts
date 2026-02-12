@@ -21,6 +21,7 @@ import {
     setDivergenceWeeklySort,
     setupDivergenceFeedDelegation,
     runManualDivergenceScan,
+    runManualDivergenceTableBuild,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -441,6 +442,9 @@ function bootstrapApplication(): void {
     document.getElementById('divergence-btn-month')?.addEventListener('click', () => setDivergenceFeedMode('month'));
     document.getElementById('divergence-run-btn')?.addEventListener('click', () => {
         runManualDivergenceScan();
+    });
+    document.getElementById('divergence-run-table-btn')?.addEventListener('click', () => {
+        runManualDivergenceTableBuild();
     });
     
     // New Date Inputs

@@ -453,6 +453,40 @@ h2 {
   flex-wrap: nowrap;
 }
 
+.divergence-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.divergence-mini-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  color: #ffffff;
+}
+
+.divergence-mini-cell.is-bullish {
+  color: #26a69a;
+}
+
+.divergence-mini-cell.is-bearish {
+  color: #ef5350;
+}
+
+.divergence-mini-cell.is-neutral {
+  color: #ffffff;
+}
+
 .volume-text {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-weight: 500;

@@ -2,6 +2,19 @@ function invalidIntervalErrorMessage() {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
 
+function parseTickerListFromQuery(req) {
+  const singleTicker = String(req.query.ticker || '').trim();
+  const multiTickersRaw = String(req.query.tickers || '').trim();
+  const merged = [singleTicker, multiTickersRaw]
+    .filter(Boolean)
+    .join(',');
+  const tickers = merged
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+  return Array.from(new Set(tickers));
+}
+
 function registerChartRoutes(options = {}) {
   const {
     app,
@@ -12,7 +25,9 @@ function registerChartRoutes(options = {}) {
     sendChartJsonResponse,
     validateChartPayload,
     validateChartLatestPayload,
-    onChartRequestMeasured
+    onChartRequestMeasured,
+    isValidTickerSymbol,
+    getDivergenceSummaryForTickers
   } = options;
 
   if (!app) {
@@ -87,6 +102,41 @@ function registerChartRoutes(options = {}) {
       console.error('Chart Latest API Error:', message);
       const statusCode = Number(err && err.httpStatus);
       res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
+    }
+  });
+
+  app.get('/api/chart/divergence-summary', async (req, res) => {
+    try {
+      if (typeof getDivergenceSummaryForTickers !== 'function') {
+        return res.status(501).json({ error: 'Divergence summary endpoint is not enabled' });
+      }
+      const tickers = parseTickerListFromQuery(req);
+      if (tickers.length === 0) {
+        return res.status(400).json({ error: 'Provide ticker or tickers query parameter' });
+      }
+      const maxTickers = 200;
+      if (tickers.length > maxTickers) {
+        return res.status(400).json({ error: `Too many tickers (max ${maxTickers})` });
+      }
+      if (typeof isValidTickerSymbol === 'function') {
+        for (const ticker of tickers) {
+          if (!isValidTickerSymbol(ticker)) {
+            return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+          }
+        }
+      }
+
+      const vdSourceInterval = String(req.query.vdSourceInterval || '5min').trim();
+      const payload = await getDivergenceSummaryForTickers({
+        tickers,
+        vdSourceInterval
+      });
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      return res.status(200).json(payload);
+    } catch (err) {
+      const message = err && err.message ? err.message : 'Failed to fetch divergence summary';
+      console.error('Chart Divergence Summary API Error:', message);
+      return res.status(502).json({ error: message });
     }
   });
 }

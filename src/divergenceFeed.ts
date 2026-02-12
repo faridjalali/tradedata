@@ -3,11 +3,13 @@ import {
     fetchDivergenceSignalsFromApi,
     toggleDivergenceFavorite,
     startDivergenceScan,
+    startDivergenceTableBuild,
     fetchDivergenceScanStatus,
     DivergenceScanStatus
 } from './divergenceApi';
 import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
+import { hydrateAlertCardDivergenceTables } from './divergenceTable';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let divergenceFeedMode: LiveFeedMode = '1';
@@ -31,6 +33,13 @@ function getRunButtonElements(): { button: HTMLButtonElement | null; status: HTM
     };
 }
 
+function getTableRunButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
+    return {
+        button: document.getElementById('divergence-run-table-btn') as HTMLButtonElement | null,
+        status: document.getElementById('divergence-table-run-status')
+    };
+}
+
 function setRunButtonState(running: boolean): void {
     const { button } = getRunButtonElements();
     if (!button) return;
@@ -41,6 +50,20 @@ function setRunButtonState(running: boolean): void {
 
 function setRunStatusText(text: string): void {
     const { status } = getRunButtonElements();
+    if (!status) return;
+    status.textContent = text;
+}
+
+function setTableRunButtonState(running: boolean): void {
+    const { button } = getTableRunButtonElements();
+    if (!button) return;
+    button.disabled = running;
+    button.classList.toggle('active', running);
+    button.textContent = running ? 'Running' : 'Run Table';
+}
+
+function setTableRunStatusText(text: string): void {
+    const { status } = getTableRunButtonElements();
     if (!status) return;
     status.textContent = text;
 }
@@ -105,6 +128,26 @@ function summarizeStatus(status: DivergenceScanStatus): string {
     return 'Idle';
 }
 
+function summarizeTableStatus(status: DivergenceScanStatus): string {
+    const table = status.tableBuild;
+    if (!table) return 'Table idle';
+    if (table.running) {
+        const processed = Number(table.processed_tickers || 0);
+        const total = Number(table.total_tickers || 0);
+        if (total > 0) return `Table ${processed}/${total}`;
+        return 'Table running';
+    }
+    if (String(table.status || '').toLowerCase() === 'completed') {
+        const dateKey = toDateKey(table.last_published_trade_date || null);
+        const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
+        return mmdd ? `Table ${mmdd}` : 'Table fetched';
+    }
+    if (String(table.status || '').toLowerCase() === 'failed') {
+        return 'Table failed';
+    }
+    return 'Table idle';
+}
+
 function clearDivergenceScanPolling(): void {
     if (divergenceScanPollTimer !== null) {
         window.clearInterval(divergenceScanPollTimer);
@@ -119,7 +162,10 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         const status = await fetchDivergenceScanStatus();
         setRunButtonState(status.running);
         setRunStatusText(summarizeStatus(status));
-        if (!status.running) {
+        const tableRunning = Boolean(status.tableBuild?.running);
+        setTableRunButtonState(tableRunning);
+        setTableRunStatusText(summarizeTableStatus(status));
+        if (!status.running && !tableRunning) {
             clearDivergenceScanPolling();
             if (refreshOnComplete) {
                 await fetchDivergenceSignals(true);
@@ -129,8 +175,10 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
     } catch (error) {
         console.error('Failed to poll divergence scan status:', error);
         setRunStatusText(toStatusTextFromError(error));
+        setTableRunStatusText(toStatusTextFromError(error));
         clearDivergenceScanPolling();
         setRunButtonState(false);
+        setTableRunButtonState(false);
     } finally {
         divergenceScanPollInFlight = false;
     }
@@ -148,7 +196,10 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         const status = await fetchDivergenceScanStatus();
         setRunButtonState(status.running);
         setRunStatusText(summarizeStatus(status));
-        if (status.running) {
+        const tableRunning = Boolean(status.tableBuild?.running);
+        setTableRunButtonState(tableRunning);
+        setTableRunStatusText(summarizeTableStatus(status));
+        if (status.running || tableRunning) {
             ensureDivergenceScanPolling(true);
         } else {
             clearDivergenceScanPolling();
@@ -157,6 +208,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         console.error('Failed to sync divergence scan UI state:', error);
         setRunButtonState(false);
         setRunStatusText(toStatusTextFromError(error));
+        setTableRunButtonState(false);
+        setTableRunStatusText(toStatusTextFromError(error));
     }
 }
 
@@ -179,6 +232,25 @@ export async function runManualDivergenceScan(): Promise<void> {
         console.error('Failed to start divergence scan:', error);
         setRunButtonState(false);
         setRunStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function runManualDivergenceTableBuild(): Promise<void> {
+    setTableRunButtonState(true);
+    setTableRunStatusText('Table starting...');
+    try {
+        const started = await startDivergenceTableBuild();
+        if (started.status === 'running') {
+            setTableRunStatusText('Table running');
+        } else {
+            setTableRunStatusText('Table running');
+        }
+        ensureDivergenceScanPolling(true);
+        await pollDivergenceScanStatus(false);
+    } catch (error) {
+        console.error('Failed to start divergence table build:', error);
+        setTableRunButtonState(false);
+        setTableRunStatusText(toStatusTextFromError(error));
     }
 }
 
@@ -224,6 +296,8 @@ export function renderDivergenceOverview(): void {
 
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+    hydrateAlertCardDivergenceTables(dailyContainer).catch(() => {});
+    hydrateAlertCardDivergenceTables(weeklyContainer).catch(() => {});
 }
 
 export function setupDivergenceFeedDelegation(): void {

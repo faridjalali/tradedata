@@ -51,6 +51,15 @@ export async function toggleDivergenceFavorite(id: number): Promise<Alert> {
 export interface DivergenceScanStatus {
     running: boolean;
     lastScanDateEt: string | null;
+    tableBuild?: {
+        running?: boolean;
+        status?: string;
+        total_tickers?: number;
+        processed_tickers?: number;
+        started_at?: string | null;
+        finished_at?: string | null;
+        last_published_trade_date?: string | null;
+    } | null;
     latestJob: {
         run_for_date?: string;
         scanned_trade_date?: string;
@@ -90,6 +99,26 @@ export async function startDivergenceScan(options?: { force?: boolean; refreshUn
     return { status: String(payload?.status || 'started') };
 }
 
+export async function startDivergenceTableBuild(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/table/run', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && String(payload?.status || '') === 'running') {
+            return { status: 'running' };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to start table build (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'started') };
+}
+
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
     const response = await fetch('/api/divergence/scan/status');
     const payload = await response.json().catch(() => null as any);
@@ -102,6 +131,7 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
     return {
         running: Boolean((payload as any).running),
         lastScanDateEt: (payload as any).lastScanDateEt ?? null,
+        tableBuild: (payload as any).tableBuild ?? null,
         latestJob: (payload as any).latestJob ?? null
     };
 }

@@ -4,6 +4,7 @@ import { toggleDivergenceFavorite } from './divergenceApi';
 import { setAlerts, getAlerts } from './state';
 import { getDivergenceSignals, setDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
+import { hydrateAlertCardDivergenceTables } from './divergenceTable';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let liveFeedMode: LiveFeedMode = '1'; 
@@ -79,6 +80,8 @@ export function renderOverview(): void {
     
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+    hydrateAlertCardDivergenceTables(dailyContainer).catch(() => {});
+    hydrateAlertCardDivergenceTables(weeklyContainer).catch(() => {});
 }
 
 export function setupLiveFeedDelegation(): void {
