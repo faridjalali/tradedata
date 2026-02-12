@@ -2636,8 +2636,8 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
 
   const fallbackTime = currentBars[currentBars.length - 1]?.time;
   const targetKey = time !== null && time !== undefined ? timeKey(time) : timeKey(fallbackTime);
-  const delta = priceChangeByTime.get(targetKey);
-  if (!Number.isFinite(delta)) {
+  const deltaValue = Number(priceChangeByTime.get(targetKey));
+  if (!Number.isFinite(deltaValue)) {
     // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
     changeEl.style.display = 'none';
     changeEl.textContent = '';
@@ -2645,9 +2645,9 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
     return;
   }
 
-  const sign = delta > 0 ? '+' : '';
-  changeEl.textContent = `${sign}${delta.toFixed(2)}%`;
-  changeEl.style.color = delta > 0 ? '#26a69a' : delta < 0 ? '#ef5350' : '#c9d1d9';
+  const sign = deltaValue > 0 ? '+' : '';
+  changeEl.textContent = `${sign}${deltaValue.toFixed(2)}%`;
+  changeEl.style.color = deltaValue > 0 ? '#26a69a' : deltaValue < 0 ? '#ef5350' : '#c9d1d9';
   changeEl.style.display = 'inline-flex';
   layoutTopPaneBadges(container);
 }
@@ -3078,12 +3078,13 @@ function detectAndHandleVolumeDeltaDivergenceClick(clickedTime: string | number)
   const clickedRSI = Number(clickedPoint.value);
   const clickedPrice = priceByTime.get(clickedKey);
   if (!Number.isFinite(clickedRSI) || !Number.isFinite(clickedPrice)) return;
+  const clickedPriceValue = Number(clickedPrice);
 
   if (!volumeDeltaFirstPoint) {
     volumeDeltaFirstPoint = {
       time: clickedTime,
       rsi: clickedRSI,
-      price: Number(clickedPrice),
+      price: clickedPriceValue,
       index: clickedIndex
     };
 
@@ -3097,8 +3098,9 @@ function detectAndHandleVolumeDeltaDivergenceClick(clickedTime: string | number)
       const currentPrice = priceByTime.get(timeKey(currentPoint.time));
       if (!Number.isFinite(currentPrice)) continue;
 
-      const bearishDivergence = currentRSI < clickedRSI && Number(currentPrice) > clickedPrice;
-      const bullishDivergence = currentRSI > clickedRSI && Number(currentPrice) < clickedPrice;
+      const currentPriceValue = Number(currentPrice);
+      const bearishDivergence = currentRSI < clickedRSI && currentPriceValue > clickedPriceValue;
+      const bullishDivergence = currentRSI > clickedRSI && currentPriceValue < clickedPriceValue;
       if (!bearishDivergence && !bullishDivergence) continue;
 
       divergencePoints.push({ time: currentPoint.time, value: currentRSI });
@@ -3340,7 +3342,6 @@ function createVolumeDeltaChart(container: HTMLElement) {
     base: 0,
     priceLineVisible: false,
     lastValueVisible: false,
-    crosshairMarkerVisible: false,
     priceFormat: {
       type: 'custom',
       minMove: 1,
@@ -3940,9 +3941,15 @@ async function refreshLatestChartDataInPlace(ticker: string, interval: ChartInte
 
   if (!currentChartTicker || currentChartTicker !== ticker || currentChartInterval !== interval) return;
   if (!Array.isArray(currentBars) || currentBars.length === 0) return;
-  const currentLastKey = timeKey(currentBars[currentBars.length - 1]?.time);
-  const fetchedLastKey = timeKey(data.latestBar?.time);
-  if (!data.latestBar || currentLastKey !== fetchedLastKey) {
+  const currentLastTime = currentBars[currentBars.length - 1]?.time;
+  const fetchedLast = data.latestBar;
+  if (currentLastTime === undefined || currentLastTime === null || !fetchedLast) {
+    await renderCustomChart(ticker, interval, { silent: true });
+    return;
+  }
+  const currentLastKey = timeKey(currentLastTime);
+  const fetchedLastKey = timeKey(fetchedLast.time);
+  if (currentLastKey !== fetchedLastKey) {
     await renderCustomChart(ticker, interval, { silent: true });
     return;
   }

@@ -663,6 +663,7 @@ export class RSIChart {
       console.log('Corresponding price data not found');
       return;
     }
+    const clickedPriceValue = Number(clickedPrice);
 
     // Check if this is the first or second click
     if (!this.firstPoint) {
@@ -670,7 +671,7 @@ export class RSIChart {
       this.firstPoint = {
         time: clickedTime,
         rsi: clickedRSI,
-        price: clickedPrice,
+        price: clickedPriceValue,
         index: clickedIndex
       };
 
@@ -686,9 +687,10 @@ export class RSIChart {
         const currentPrice = this.priceByTime.get(this.timeKey(currentTime));
 
         if (Number.isFinite(currentPrice)) {
+          const currentPriceValue = Number(currentPrice);
 
-          const bearishDivergence = currentRSI < clickedRSI && currentPrice > clickedPrice;
-          const bullishDivergence = currentRSI > clickedRSI && currentPrice < clickedPrice;
+          const bearishDivergence = currentRSI < clickedRSI && currentPriceValue > clickedPriceValue;
+          const bullishDivergence = currentRSI > clickedRSI && currentPriceValue < clickedPriceValue;
           if (bearishDivergence || bullishDivergence) {
             this.divergencePoints.push({ time: currentTime, value: currentRSI });
             this.divergencePointTimeKeys.add(this.timeKey(currentTime));
@@ -696,7 +698,7 @@ export class RSIChart {
         }
       }
 
-      console.log(`Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPrice.toFixed(2)})`);
+      console.log(`Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPriceValue.toFixed(2)})`);
 
       // Highlight the divergence points
       this.highlightPoints(this.divergencePoints);
@@ -894,7 +896,6 @@ export class RSIChart {
 
     // Create trend line data points extending one year into future bars
     const trendLineData: RSIPoint[] = [];
-    let maxTrendIndex = index1;
     const futureBars = this.futureBarsForOneYear();
     const lastHistoricalIndex = this.data.length - 1;
     const maxIndex = lastHistoricalIndex + futureBars;
@@ -910,7 +911,6 @@ export class RSIChart {
       if (projectedValue < RSIChart.RSI_DATA_MIN || projectedValue > RSIChart.RSI_DATA_MAX) {
         break;
       }
-      maxTrendIndex = i;
       let pointTime: string | number | null = null;
       if (i <= lastHistoricalIndex) {
         pointTime = this.data[i]?.time ?? null;

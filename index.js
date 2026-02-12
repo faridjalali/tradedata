@@ -4,6 +4,12 @@ const { Pool } = require("pg");
 const crypto = require("crypto");
 const zlib = require("zlib");
 const { promisify } = require("util");
+const { registerChartRoutes } = require("./server/routes/chartRoutes");
+const {
+  aggregate4HourBarsToDaily,
+  aggregateDailyBarsToWeekly,
+  classifyDivergenceSignal
+} = require("./server/chartMath");
 require("dotenv").config();
 
 const app = express();
@@ -874,6 +880,11 @@ const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
 const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
 const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 300_000);
+const VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES) || 6000);
+const VD_RSI_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_RESULT_CACHE_MAX_ENTRIES) || 6000);
+const CHART_DATA_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_DATA_CACHE_MAX_ENTRIES) || 6000);
+const CHART_QUOTE_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_QUOTE_CACHE_MAX_ENTRIES) || 4000);
+const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_FINAL_RESULT_CACHE_MAX_ENTRIES) || 4000);
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
 
@@ -949,14 +960,40 @@ function getTimedCacheValue(cacheMap, key) {
     cacheMap.delete(key);
     return null;
   }
+  // Refresh insertion order so capped caches behave as LRU.
+  cacheMap.delete(key);
+  cacheMap.set(key, entry);
   return entry.value;
 }
 
+function getTimedCacheMaxEntries(cacheMap) {
+  if (cacheMap === VD_RSI_LOWER_TF_CACHE) return VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES;
+  if (cacheMap === VD_RSI_RESULT_CACHE) return VD_RSI_RESULT_CACHE_MAX_ENTRIES;
+  if (cacheMap === CHART_DATA_CACHE) return CHART_DATA_CACHE_MAX_ENTRIES;
+  if (cacheMap === CHART_QUOTE_CACHE) return CHART_QUOTE_CACHE_MAX_ENTRIES;
+  if (cacheMap === CHART_FINAL_RESULT_CACHE) return CHART_FINAL_RESULT_CACHE_MAX_ENTRIES;
+  return 0;
+}
+
+function enforceTimedCacheMaxEntries(cacheMap) {
+  const maxEntries = getTimedCacheMaxEntries(cacheMap);
+  if (!Number.isFinite(maxEntries) || maxEntries <= 0) return;
+  while (cacheMap.size > maxEntries) {
+    const oldestKey = cacheMap.keys().next().value;
+    if (typeof oldestKey === 'undefined') break;
+    cacheMap.delete(oldestKey);
+  }
+}
+
 function setTimedCacheValue(cacheMap, key, value, expiresAt) {
+  if (cacheMap.has(key)) {
+    cacheMap.delete(key);
+  }
   cacheMap.set(key, {
     value,
     expiresAt: Number.isFinite(expiresAt) ? expiresAt : getVdRsiCacheExpiryMs(new Date())
   });
+  enforceTimedCacheMaxEntries(cacheMap);
 }
 
 function sweepExpiredTimedCache(cacheMap) {
@@ -1256,151 +1293,6 @@ function dayKeyInLA(unixSeconds) {
     month: '2-digit',
     day: '2-digit'
   });
-}
-
-function aggregate4HourBarsToDaily(fourHourBars) {
-  if (!Array.isArray(fourHourBars) || fourHourBars.length === 0) return [];
-
-  const sorted = fourHourBars
-    .filter((bar) => (
-      bar &&
-      Number.isFinite(Number(bar.time)) &&
-      Number.isFinite(Number(bar.open)) &&
-      Number.isFinite(Number(bar.high)) &&
-      Number.isFinite(Number(bar.low)) &&
-      Number.isFinite(Number(bar.close))
-    ))
-    .sort((a, b) => Number(a.time) - Number(b.time));
-
-  const byDay = new Map();
-
-  for (const bar of sorted) {
-    const time = Number(bar.time);
-    const key = dayKeyInLA(time);
-    if (!key) continue;
-
-    const open = Number(bar.open);
-    const high = Number(bar.high);
-    const low = Number(bar.low);
-    const close = Number(bar.close);
-    const volume = Number.isFinite(Number(bar.volume)) ? Number(bar.volume) : 0;
-
-    const existing = byDay.get(key);
-    if (!existing) {
-      byDay.set(key, {
-        time,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        _lastTime: time
-      });
-      continue;
-    }
-
-    existing.high = Math.max(existing.high, high);
-    existing.low = Math.min(existing.low, low);
-    existing.volume += volume;
-    if (time >= existing._lastTime) {
-      existing.close = close;
-      existing._lastTime = time;
-    }
-  }
-
-  return Array.from(byDay.values())
-    .sort((a, b) => Number(a.time) - Number(b.time))
-    .map((bar) => ({
-      time: bar.time,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume
-    }));
-}
-
-function weekKeyInLA(unixSeconds) {
-  if (!Number.isFinite(unixSeconds)) return '';
-  const dayString = new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
-    timeZone: 'America/Los_Angeles',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const match = dayString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return '';
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return '';
-  const utcDate = new Date(Date.UTC(year, month - 1, day));
-  const weekDay = utcDate.getUTCDay(); // 0=Sun..6=Sat
-  const daysSinceMonday = (weekDay + 6) % 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() - daysSinceMonday);
-  return formatDateUTC(utcDate);
-}
-
-function aggregateDailyBarsToWeekly(dailyBars) {
-  if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
-
-  const sorted = dailyBars
-    .filter((bar) => (
-      bar &&
-      Number.isFinite(Number(bar.time)) &&
-      Number.isFinite(Number(bar.open)) &&
-      Number.isFinite(Number(bar.high)) &&
-      Number.isFinite(Number(bar.low)) &&
-      Number.isFinite(Number(bar.close))
-    ))
-    .sort((a, b) => Number(a.time) - Number(b.time));
-
-  const byWeek = new Map();
-
-  for (const bar of sorted) {
-    const time = Number(bar.time);
-    const key = weekKeyInLA(time);
-    if (!key) continue;
-
-    const open = Number(bar.open);
-    const high = Number(bar.high);
-    const low = Number(bar.low);
-    const close = Number(bar.close);
-    const volume = Number.isFinite(Number(bar.volume)) ? Number(bar.volume) : 0;
-
-    const existing = byWeek.get(key);
-    if (!existing) {
-      byWeek.set(key, {
-        time,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        _lastTime: time
-      });
-      continue;
-    }
-
-    existing.high = Math.max(existing.high, high);
-    existing.low = Math.min(existing.low, low);
-    existing.volume += volume;
-    if (time >= existing._lastTime) {
-      existing.close = close;
-      existing._lastTime = time;
-    }
-  }
-
-  return Array.from(byWeek.values())
-    .sort((a, b) => Number(a.time) - Number(b.time))
-    .map((bar) => ({
-      time: bar.time,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      volume: bar.volume
-    }));
 }
 
 function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
@@ -2488,45 +2380,13 @@ function extractLatestChartPayload(result) {
   };
 }
 
-// --- Chart API ---
-app.get('/api/chart', async (req, res) => {
-  const params = parseChartRequestParams(req);
-  const { interval } = params;
-
-  // Validate interval
-  if (!VALID_CHART_INTERVALS.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week' });
-  }
-
-  try {
-    const { result, serverTiming } = await getOrBuildChartResult(params);
-    await sendChartJsonResponse(req, res, result, serverTiming);
-  } catch (err) {
-    const message = err && err.message ? err.message : 'Failed to fetch chart data';
-    console.error('Chart API Error:', message);
-    const statusCode = Number(err && err.httpStatus);
-    res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
-  }
-});
-
-app.get('/api/chart/latest', async (req, res) => {
-  const params = parseChartRequestParams(req);
-  const { interval } = params;
-
-  if (!VALID_CHART_INTERVALS.includes(interval)) {
-    return res.status(400).json({ error: 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week' });
-  }
-
-  try {
-    const { result, serverTiming } = await getOrBuildChartResult(params);
-    const latestPayload = extractLatestChartPayload(result);
-    await sendChartJsonResponse(req, res, latestPayload, serverTiming);
-  } catch (err) {
-    const message = err && err.message ? err.message : 'Failed to fetch latest chart data';
-    console.error('Chart Latest API Error:', message);
-    const statusCode = Number(err && err.httpStatus);
-    res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
-  }
+registerChartRoutes({
+  app,
+  parseChartRequestParams,
+  validChartIntervals: VALID_CHART_INTERVALS,
+  getOrBuildChartResult,
+  extractLatestChartPayload,
+  sendChartJsonResponse
 });
 
 function sleep(ms) {
@@ -2558,77 +2418,6 @@ function maxEtDateString(a, b) {
   if (!aVal) return bVal || '';
   if (!bVal) return aVal;
   return aVal >= bVal ? aVal : bVal;
-}
-
-function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
-  if (!Number.isFinite(unixSeconds)) return '';
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-  const parts = formatter.formatToParts(new Date(Number(unixSeconds) * 1000));
-  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
-  const month = Number(parts.find((p) => p.type === 'month')?.value || 0);
-  const day = Number(parts.find((p) => p.type === 'day')?.value || 0);
-  if (!year || !month || !day) return '';
-
-  const d = new Date(Date.UTC(year, month - 1, day));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const weekYear = d.getUTCFullYear();
-  const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return `${weekYear}-W${String(weekNo).padStart(2, '0')}`;
-}
-
-function classifyDivergenceSignal(volumeDelta, close, prevClose) {
-  if (!Number.isFinite(volumeDelta) || !Number.isFinite(close) || !Number.isFinite(prevClose)) return null;
-  if (volumeDelta > 0 && close < prevClose) return 'bullish';
-  if (volumeDelta < 0 && close > prevClose) return 'bearish';
-  return null;
-}
-
-function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
-  if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
-  const deltaByTime = new Map((dailyDeltas || []).map((point) => [Number(point.time), Number(point.delta) || 0]));
-  const weekly = [];
-  const byKey = new Map();
-
-  for (const bar of dailyBars) {
-    const time = Number(bar.time);
-    if (!Number.isFinite(time)) continue;
-    const weekKey = isoWeekKeyFromEtUnixSeconds(time);
-    if (!weekKey) continue;
-    const delta = Number(deltaByTime.get(time)) || 0;
-    const existing = byKey.get(weekKey);
-    if (!existing) {
-      const seed = {
-        weekKey,
-        time,
-        _lastTime: time,
-        open: Number(bar.open),
-        high: Number(bar.high),
-        low: Number(bar.low),
-        close: Number(bar.close),
-        delta
-      };
-      byKey.set(weekKey, seed);
-      weekly.push(seed);
-      continue;
-    }
-    existing.high = Math.max(existing.high, Number(bar.high));
-    existing.low = Math.min(existing.low, Number(bar.low));
-    existing.delta += delta;
-    if (time >= existing._lastTime) {
-      existing._lastTime = time;
-      existing.time = time;
-      existing.close = Number(bar.close);
-    }
-  }
-
-  return weekly.sort((a, b) => Number(a.time) - Number(b.time));
 }
 
 async function fetchUsStockUniverseFromFmp() {
