@@ -60,6 +60,7 @@ const VOLUME_DELTA_NEGATIVE_COLOR = '#f23645';
 type MAType = 'SMA' | 'EMA';
 type MASourceMode = 'daily' | 'timeframe';
 type MidlineStyle = 'dotted' | 'solid';
+type PaneId = 'price-chart-container' | 'vd-rsi-chart-container' | 'rsi-chart-container' | 'vd-chart-container';
 
 interface MASetting {
   enabled: boolean;
@@ -106,6 +107,7 @@ interface PersistedChartSettings {
   };
   rsi: RSISettings;
   volumeDeltaRsi?: VolumeDeltaRSISettings;
+  paneOrder?: PaneId[];
 }
 
 const DEFAULT_RSI_SETTINGS: RSISettings = {
@@ -138,6 +140,16 @@ const DEFAULT_PRICE_SETTINGS: {
     { enabled: false, type: 'SMA', length: 200, color: '#90ee90' }
   ]
 };
+
+const DEFAULT_PANE_ORDER: PaneId[] = [
+  'price-chart-container',
+  'vd-rsi-chart-container',
+  'rsi-chart-container',
+  'vd-chart-container'
+];
+
+let paneOrder: PaneId[] = [...DEFAULT_PANE_ORDER];
+let draggedPaneId: PaneId | null = null;
 
 const rsiSettings: RSISettings = {
   ...DEFAULT_RSI_SETTINGS
@@ -317,6 +329,25 @@ function normalizeValueSeries(points: any[]): Array<{ time: string | number, val
   }));
 }
 
+function normalizePaneOrder(order: unknown): PaneId[] {
+  if (!Array.isArray(order)) return [...DEFAULT_PANE_ORDER];
+  const allowed = new Set<PaneId>(DEFAULT_PANE_ORDER);
+  const normalized: PaneId[] = [];
+
+  for (const candidate of order) {
+    if (typeof candidate !== 'string') continue;
+    if (!allowed.has(candidate as PaneId)) continue;
+    const paneId = candidate as PaneId;
+    if (!normalized.includes(paneId)) normalized.push(paneId);
+  }
+
+  for (const paneId of DEFAULT_PANE_ORDER) {
+    if (!normalized.includes(paneId)) normalized.push(paneId);
+  }
+
+  return normalized;
+}
+
 function formatVolumeDeltaScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
   const clamped = Math.max(0, Math.min(100, Number(value)));
@@ -378,7 +409,8 @@ function persistSettingsToStorage(): void {
         lineColor: volumeDeltaRsiSettings.lineColor,
         midlineColor: volumeDeltaRsiSettings.midlineColor,
         midlineStyle: volumeDeltaRsiSettings.midlineStyle
-      }
+      },
+      paneOrder: [...paneOrder]
     };
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
@@ -440,6 +472,8 @@ function ensureSettingsLoadedFromStorage(): void {
       }
       volumeDeltaRsiSettings.midlineStyle = persistedVolumeDeltaRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
     }
+
+    paneOrder = normalizePaneOrder(parsed?.paneOrder);
   } catch {
     // Ignore malformed storage content.
   }
@@ -684,6 +718,122 @@ function hideSettingsPanels(): void {
   if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
 }
 
+function applyPaneOrderToDom(chartContent: HTMLElement): void {
+  for (const paneId of paneOrder) {
+    const pane = document.getElementById(paneId);
+    if (!pane || pane.parentElement !== chartContent) continue;
+    chartContent.appendChild(pane);
+  }
+}
+
+function movePaneInOrder(movingPaneId: PaneId, targetPaneId: PaneId, insertAfter: boolean): void {
+  if (movingPaneId === targetPaneId) return;
+  const nextOrder = paneOrder.filter((paneId) => paneId !== movingPaneId);
+  const targetIndex = nextOrder.indexOf(targetPaneId);
+  if (targetIndex < 0) return;
+  const insertIndex = insertAfter ? targetIndex + 1 : targetIndex;
+  nextOrder.splice(insertIndex, 0, movingPaneId);
+  paneOrder = normalizePaneOrder(nextOrder);
+}
+
+function clearPaneDragOverState(): void {
+  for (const paneId of DEFAULT_PANE_ORDER) {
+    const pane = document.getElementById(paneId);
+    if (!pane) continue;
+    pane.classList.remove('pane-drag-over');
+  }
+}
+
+function applyPaneOrderAndRefreshLayout(chartContent: HTMLElement): void {
+  applyPaneOrderToDom(chartContent);
+  const chartContainer = document.getElementById('price-chart-container');
+  const volumeDeltaRsiContainer = document.getElementById('vd-rsi-chart-container');
+  const rsiContainer = document.getElementById('rsi-chart-container');
+  const volumeDeltaContainer = document.getElementById('vd-chart-container');
+  if (chartContainer && volumeDeltaRsiContainer && rsiContainer && volumeDeltaContainer) {
+    applyChartSizes(
+      chartContainer as HTMLElement,
+      volumeDeltaRsiContainer as HTMLElement,
+      rsiContainer as HTMLElement,
+      volumeDeltaContainer as HTMLElement
+    );
+  }
+}
+
+function ensurePaneReorderHandle(
+  pane: HTMLElement,
+  paneId: PaneId,
+  chartContent: HTMLElement
+): void {
+  if (!pane.dataset.paneId) {
+    pane.dataset.paneId = paneId;
+  }
+
+  let handle = pane.querySelector('.pane-order-handle') as HTMLButtonElement | null;
+  if (!handle) {
+    handle = document.createElement('button');
+    handle.type = 'button';
+    handle.className = 'pane-order-handle';
+    handle.title = 'Drag to reorder panes';
+    handle.textContent = '⋮⋮';
+    pane.appendChild(handle);
+  }
+
+  if (!handle.dataset.bound) {
+    handle.setAttribute('draggable', 'true');
+    handle.addEventListener('dragstart', (event: DragEvent) => {
+      draggedPaneId = paneId;
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', paneId);
+      }
+      clearPaneDragOverState();
+    });
+    handle.addEventListener('dragend', () => {
+      draggedPaneId = null;
+      clearPaneDragOverState();
+    });
+    handle.dataset.bound = '1';
+  }
+
+  if (!pane.dataset.dropBound) {
+    pane.addEventListener('dragover', (event: DragEvent) => {
+      if (!draggedPaneId) return;
+      event.preventDefault();
+      pane.classList.add('pane-drag-over');
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    });
+    pane.addEventListener('dragleave', () => {
+      pane.classList.remove('pane-drag-over');
+    });
+    pane.addEventListener('drop', (event: DragEvent) => {
+      event.preventDefault();
+      pane.classList.remove('pane-drag-over');
+      const source = draggedPaneId;
+      draggedPaneId = null;
+      if (!source || source === paneId) return;
+
+      const rect = pane.getBoundingClientRect();
+      const midpoint = rect.top + (rect.height / 2);
+      const insertAfter = Number.isFinite(event.clientY) ? event.clientY > midpoint : true;
+      movePaneInOrder(source, paneId, insertAfter);
+      applyPaneOrderAndRefreshLayout(chartContent);
+      persistSettingsToStorage();
+    });
+    pane.dataset.dropBound = '1';
+  }
+}
+
+function ensurePaneReorderUI(chartContent: HTMLElement): void {
+  paneOrder = normalizePaneOrder(paneOrder);
+  applyPaneOrderToDom(chartContent);
+  for (const paneId of DEFAULT_PANE_ORDER) {
+    const pane = document.getElementById(paneId);
+    if (!pane || !(pane instanceof HTMLElement) || pane.parentElement !== chartContent) continue;
+    ensurePaneReorderHandle(pane, paneId, chartContent);
+  }
+}
+
 function applyRSISettings(): void {
   if (!rsiChart) return;
   const rsiData = buildRSISeriesFromBars(currentBars, rsiSettings.length);
@@ -736,6 +886,11 @@ function resetPriceSettingsToDefault(): void {
     priceChartSettings.ma[i].length = defaults.length;
     priceChartSettings.ma[i].color = defaults.color;
     priceChartSettings.ma[i].series = null;
+  }
+  paneOrder = [...DEFAULT_PANE_ORDER];
+  const chartContent = document.getElementById('chart-content');
+  if (chartContent && chartContent instanceof HTMLElement) {
+    applyPaneOrderAndRefreshLayout(chartContent);
   }
   applyPriceGridOptions();
   applyMovingAverages();
@@ -1905,6 +2060,13 @@ export async function renderCustomChart(ticker: string, interval: ChartInterval 
   ensureSettingsLoadedFromStorage();
   const requestId = ++latestRenderRequestId;
   currentChartInterval = interval;
+
+  const chartContent = document.getElementById('chart-content');
+  if (!chartContent || !(chartContent instanceof HTMLElement)) {
+    console.error('Chart content container not found');
+    return;
+  }
+  ensurePaneReorderUI(chartContent);
 
   const chartContainer = document.getElementById('price-chart-container');
   const volumeDeltaRsiContainer = document.getElementById('vd-rsi-chart-container');
