@@ -329,7 +329,7 @@ function initializeSiteLock(onUnlock: () => void): void {
     };
 
     const handleFailure = () => {
-        setStatus('Wrong passcode');
+        setStatus('');
         clearEntry();
         if (panel) {
             panel.classList.remove('shake');
