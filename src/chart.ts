@@ -16,6 +16,11 @@ let volumeDeltaRsiPoints: Array<{ time: string | number, value: number }> = [];
 let volumeDeltaIndexByTime = new Map<string, number>();
 let volumeDeltaHighlightSeries: any = null;
 let volumeDeltaTrendLineSeriesList: any[] = [];
+let volumeDeltaTrendlineCrossLabels: Array<{
+  element: HTMLDivElement;
+  anchorTime: string | number;
+  anchorValue: number;
+}> = [];
 let volumeDeltaDivergencePointTimeKeys = new Set<string>();
 let volumeDeltaFirstPoint: { time: string | number, rsi: number, price: number, index: number } | null = null;
 let volumeDeltaDivergenceToolActive = false;
@@ -62,6 +67,7 @@ const PANE_TOOL_BUTTON_SIZE_PX = 24;
 const PANE_TOOL_BUTTON_GAP_PX = 6;
 const VOLUME_DELTA_RSI_COLOR = '#2962FF';
 const VOLUME_DELTA_MIDLINE = 50;
+const RSI_MIDLINE_VALUE = 50;
 const VOLUME_DELTA_AXIS_MIN = 20;
 const VOLUME_DELTA_AXIS_MAX = 80;
 const VOLUME_DELTA_DATA_MIN = 0;
@@ -225,6 +231,12 @@ const LA_DAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit'
+});
+const MM_DD_YY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles',
+  month: '2-digit',
+  day: '2-digit',
+  year: '2-digit'
 });
 
 function ensureMonthGridOverlay(container: HTMLElement, pane: 'price' | 'volumeDeltaRsi' | 'volumeDelta' | 'rsi'): HTMLDivElement {
@@ -735,6 +747,7 @@ function refreshMonthGridLines(): void {
   renderMonthGridLines(volumeDeltaRsiChart, volumeDeltaRsiMonthGridOverlayEl);
   renderMonthGridLines(volumeDeltaChart, volumeDeltaMonthGridOverlayEl);
   renderMonthGridLines(rsiChart?.getChart(), rsiMonthGridOverlayEl);
+  refreshVolumeDeltaTrendlineCrossLabels();
 }
 
 function applyPriceGridOptions(): void {
@@ -1999,6 +2012,126 @@ function toUnixSeconds(time: string | number): number | null {
   return unixSecondsFromTimeValue(time);
 }
 
+function formatMmDdYyFromUnixSeconds(unixSeconds: number | null): string {
+  if (!Number.isFinite(unixSeconds)) return 'N/A';
+  return MM_DD_YY_FORMATTER.format(new Date(Math.round(Number(unixSeconds)) * 1000));
+}
+
+function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
+  const label = document.createElement('div');
+  label.className = 'trendline-cross-label';
+  label.textContent = text;
+  label.style.position = 'absolute';
+  label.style.zIndex = '29';
+  label.style.minHeight = '24px';
+  label.style.display = 'inline-flex';
+  label.style.alignItems = 'center';
+  label.style.padding = '0 8px';
+  label.style.borderRadius = '4px';
+  label.style.border = '1px solid #30363d';
+  label.style.background = '#161b22';
+  label.style.color = '#c9d1d9';
+  label.style.fontSize = '12px';
+  label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  label.style.pointerEvents = 'none';
+  label.style.whiteSpace = 'nowrap';
+  label.style.transform = 'translate(-50%, calc(-100% - 6px))';
+  return label;
+}
+
+function refreshVolumeDeltaTrendlineCrossLabels(): void {
+  const container = document.getElementById('vd-rsi-chart-container');
+  if (!container || !volumeDeltaRsiChart || !volumeDeltaRsiSeries) return;
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  for (const label of volumeDeltaTrendlineCrossLabels) {
+    const x = volumeDeltaRsiChart.timeScale().timeToCoordinate(label.anchorTime);
+    const y = volumeDeltaRsiSeries.priceToCoordinate(label.anchorValue);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > width || y < 0 || y > height) {
+      label.element.style.display = 'none';
+      continue;
+    }
+    label.element.style.display = 'inline-flex';
+    label.element.style.left = `${Math.round(x)}px`;
+    label.element.style.top = `${Math.round(Math.max(8, y))}px`;
+  }
+}
+
+function clearVolumeDeltaTrendlineCrossLabels(): void {
+  for (const label of volumeDeltaTrendlineCrossLabels) {
+    label.element.remove();
+  }
+  volumeDeltaTrendlineCrossLabels = [];
+}
+
+function addVolumeDeltaTrendlineCrossLabel(anchorTime: string | number, anchorValue: number, text: string): void {
+  const container = document.getElementById('vd-rsi-chart-container');
+  if (!container) return;
+  const element = createTrendlineCrossLabelElement(text);
+  container.appendChild(element);
+  volumeDeltaTrendlineCrossLabels.push({
+    element,
+    anchorTime,
+    anchorValue
+  });
+  refreshVolumeDeltaTrendlineCrossLabels();
+}
+
+function volumeDeltaIndexToUnixSeconds(
+  index: number,
+  lastHistoricalIndex: number,
+  firstHistoricalTimeSeconds: number | null,
+  lastHistoricalTimeSeconds: number | null,
+  stepSeconds: number
+): number | null {
+  if (!Number.isFinite(index)) return null;
+
+  if (index > lastHistoricalIndex) {
+    if (lastHistoricalTimeSeconds === null) return null;
+    return lastHistoricalTimeSeconds + ((index - lastHistoricalIndex) * stepSeconds);
+  }
+
+  if (index < 0) {
+    if (firstHistoricalTimeSeconds === null) return null;
+    return firstHistoricalTimeSeconds + (index * stepSeconds);
+  }
+
+  const lowerIndex = Math.max(0, Math.floor(index));
+  const upperIndex = Math.min(lastHistoricalIndex, Math.ceil(index));
+  const lowerTime = toUnixSeconds(volumeDeltaRsiPoints[lowerIndex]?.time);
+  const upperTime = toUnixSeconds(volumeDeltaRsiPoints[upperIndex]?.time);
+  if (lowerIndex === upperIndex) return lowerTime;
+  if (Number.isFinite(lowerTime) && Number.isFinite(upperTime)) {
+    const ratio = index - lowerIndex;
+    return Number(lowerTime) + ((Number(upperTime) - Number(lowerTime)) * ratio);
+  }
+  if (Number.isFinite(lowerTime)) return Number(lowerTime) + ((index - lowerIndex) * stepSeconds);
+  if (firstHistoricalTimeSeconds === null) return null;
+  return firstHistoricalTimeSeconds + (index * stepSeconds);
+}
+
+function computeVolumeDeltaTrendlineMidlineCrossUnixSeconds(
+  index1: number,
+  value1: number,
+  slope: number,
+  lastHistoricalIndex: number,
+  firstHistoricalTimeSeconds: number | null,
+  lastHistoricalTimeSeconds: number | null,
+  stepSeconds: number
+): number | null {
+  if (!Number.isFinite(slope) || Math.abs(slope) < 1e-12) return null;
+  const crossIndex = index1 + ((RSI_MIDLINE_VALUE - value1) / slope);
+  if (!Number.isFinite(crossIndex)) return null;
+  return volumeDeltaIndexToUnixSeconds(
+    crossIndex,
+    lastHistoricalIndex,
+    firstHistoricalTimeSeconds,
+    lastHistoricalTimeSeconds,
+    stepSeconds
+  );
+}
+
 function inferVolumeDeltaBarStepSeconds(): number {
   if (volumeDeltaRsiPoints.length < 2) return 1800;
   const diffs: number[] = [];
@@ -2042,31 +2175,19 @@ function clearVolumeDeltaHighlights(): void {
 function clearVolumeDeltaTrendLines(): void {
   if (!volumeDeltaRsiChart || volumeDeltaTrendLineSeriesList.length === 0) {
     volumeDeltaTrendLineSeriesList = [];
+    clearVolumeDeltaTrendlineCrossLabels();
     return;
   }
 
-  // Preserve viewport position before clearing
-  const visibleRangeBeforeClear = volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.();
-
-  try {
-    for (const series of volumeDeltaTrendLineSeriesList) {
-      try {
-        volumeDeltaRsiChart.removeSeries(series);
-      } catch {
-        // Ignore stale trendline series remove errors.
-      }
-    }
-    volumeDeltaTrendLineSeriesList = [];
-  } finally {
-    // Restore viewport to prevent chart jump
-    if (visibleRangeBeforeClear) {
-      try {
-        volumeDeltaRsiChart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
-      } catch {
-        // Keep the current viewport stable after clearing
-      }
+  for (const series of volumeDeltaTrendLineSeriesList) {
+    try {
+      volumeDeltaRsiChart.removeSeries(series);
+    } catch {
+      // Ignore stale trendline series remove errors.
     }
   }
+  volumeDeltaTrendLineSeriesList = [];
+  clearVolumeDeltaTrendlineCrossLabels();
 }
 
 function clearVolumeDeltaDivergenceState(): void {
@@ -2128,6 +2249,7 @@ function drawVolumeDeltaTrendLine(
   const futureBars = volumeDeltaFutureBarsForOneYear();
   const maxIndex = lastHistoricalIndex + futureBars;
   const stepSeconds = inferVolumeDeltaBarStepSeconds();
+  const firstTimeSeconds = toUnixSeconds(volumeDeltaRsiPoints[0]?.time);
   const lastTimeSeconds = toUnixSeconds(volumeDeltaRsiPoints[lastHistoricalIndex]?.time);
   const visibleRangeBeforeDraw = volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.();
 
@@ -2165,6 +2287,17 @@ function drawVolumeDeltaTrendLine(
     });
     trendLineSeries.setData(trendLineData);
     volumeDeltaTrendLineSeriesList.push(trendLineSeries);
+
+    const crossUnixSeconds = computeVolumeDeltaTrendlineMidlineCrossUnixSeconds(
+      index1,
+      value1,
+      slope,
+      lastHistoricalIndex,
+      firstTimeSeconds,
+      lastTimeSeconds,
+      stepSeconds
+    );
+    addVolumeDeltaTrendlineCrossLabel(time1, value1, formatMmDdYyFromUnixSeconds(crossUnixSeconds));
   } finally {
     if (visibleRangeBeforeDraw) {
       try {
@@ -2718,6 +2851,7 @@ function applyChartSizes(
   }
   if (rsiChart) {
     rsiChart.getChart().applyOptions({ width: rsiWidth, height: rsiHeight });
+    rsiChart.refreshTrendlineLabels();
   }
   if (volumeDeltaChart) {
     volumeDeltaChart.applyOptions({ width: volumeDeltaWidth, height: volumeDeltaHeight });

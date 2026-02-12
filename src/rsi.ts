@@ -6,6 +6,13 @@ import { RSIPoint, RSIDisplayMode } from './chartApi';
 declare const LightweightCharts: any;
 declare const LightweightChartsLineTools: any;
 
+const MM_DD_YY_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles',
+  month: '2-digit',
+  day: '2-digit',
+  year: '2-digit'
+});
+
 export interface RSIChartOptions {
   container: HTMLElement;
   data: RSIPoint[];
@@ -24,6 +31,7 @@ export class RSIChart {
   private static readonly RSI_DATA_MAX = 100;
   private static readonly RSI_AXIS_MIN = 20;
   private static readonly RSI_AXIS_MAX = 80;
+  private static readonly MIDLINE_VALUE = 50;
   private container: HTMLElement;
   private chart: any;
   private series: any;
@@ -47,6 +55,7 @@ export class RSIChart {
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
   private static readonly FUTURE_TIMELINE_DAYS = 370;
   private trendLineSeriesList: any[] = [];
+  private trendlineCrossLabels: Array<{ element: HTMLDivElement, anchorTime: string | number, anchorValue: number }> = [];
   private timelineSeries: any = null;
   private suppressExternalSync: boolean = false;
   private onTrendLineDrawn?: () => void;
@@ -140,6 +149,10 @@ export class RSIChart {
       if (this.divergenceToolActive && param && param.time) {
         this.detectAndHighlightDivergence(param.time);
       }
+    });
+
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      this.refreshTrendlineCrossLabels();
     });
   }
 
@@ -440,6 +453,7 @@ export class RSIChart {
     if (this.displayMode === mode) return;
     this.displayMode = mode;
     this.updateSeries();
+    this.refreshTrendlineCrossLabels();
   }
 
   setLineColor(color: string): void {
@@ -505,6 +519,7 @@ export class RSIChart {
     }
 
     this.updateTimelineSeriesData();
+    this.refreshTrendlineCrossLabels();
   }
 
   getChart(): any {
@@ -513,6 +528,10 @@ export class RSIChart {
 
   getSeries(): any {
     return this.series;
+  }
+
+  refreshTrendlineLabels(): void {
+    this.refreshTrendlineCrossLabels();
   }
 
 
@@ -652,6 +671,118 @@ export class RSIChart {
     }
   }
 
+  private formatMmDdYyFromUnixSeconds(unixSeconds: number | null): string {
+    if (!Number.isFinite(unixSeconds)) return 'N/A';
+    return MM_DD_YY_FORMATTER.format(new Date(Math.round(Number(unixSeconds)) * 1000));
+  }
+
+  private createTrendlineCrossLabelElement(text: string): HTMLDivElement {
+    const label = document.createElement('div');
+    label.className = 'trendline-cross-label';
+    label.textContent = text;
+    label.style.position = 'absolute';
+    label.style.zIndex = '29';
+    label.style.minHeight = '24px';
+    label.style.display = 'inline-flex';
+    label.style.alignItems = 'center';
+    label.style.padding = '0 8px';
+    label.style.borderRadius = '4px';
+    label.style.border = '1px solid #30363d';
+    label.style.background = '#161b22';
+    label.style.color = '#c9d1d9';
+    label.style.fontSize = '12px';
+    label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    label.style.pointerEvents = 'none';
+    label.style.whiteSpace = 'nowrap';
+    label.style.transform = 'translate(-50%, calc(-100% - 6px))';
+    return label;
+  }
+
+  private refreshTrendlineCrossLabels(): void {
+    if (!this.chart || !this.series || !this.container) return;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    for (const label of this.trendlineCrossLabels) {
+      const x = this.chart.timeScale().timeToCoordinate(label.anchorTime);
+      const y = this.series.priceToCoordinate(label.anchorValue);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > width || y < 0 || y > height) {
+        label.element.style.display = 'none';
+        continue;
+      }
+      label.element.style.display = 'inline-flex';
+      label.element.style.left = `${Math.round(x)}px`;
+      label.element.style.top = `${Math.round(Math.max(8, y))}px`;
+    }
+  }
+
+  private clearTrendlineCrossLabels(): void {
+    for (const label of this.trendlineCrossLabels) {
+      label.element.remove();
+    }
+    this.trendlineCrossLabels = [];
+  }
+
+  private addTrendlineCrossLabel(anchorTime: string | number, anchorValue: number, text: string): void {
+    const element = this.createTrendlineCrossLabelElement(text);
+    this.container.appendChild(element);
+    this.trendlineCrossLabels.push({ element, anchorTime, anchorValue });
+    this.refreshTrendlineCrossLabels();
+  }
+
+  private indexToUnixSeconds(
+    index: number,
+    lastHistoricalIndex: number,
+    firstHistoricalTimeSeconds: number | null,
+    lastHistoricalTimeSeconds: number | null,
+    stepSeconds: number
+  ): number | null {
+    if (!Number.isFinite(index)) return null;
+
+    if (index > lastHistoricalIndex) {
+      if (lastHistoricalTimeSeconds === null) return null;
+      return lastHistoricalTimeSeconds + ((index - lastHistoricalIndex) * stepSeconds);
+    }
+
+    if (index < 0) {
+      if (firstHistoricalTimeSeconds === null) return null;
+      return firstHistoricalTimeSeconds + (index * stepSeconds);
+    }
+
+    const lowerIndex = Math.max(0, Math.floor(index));
+    const upperIndex = Math.min(lastHistoricalIndex, Math.ceil(index));
+    const lowerTime = this.toUnixSeconds(this.data[lowerIndex]?.time);
+    const upperTime = this.toUnixSeconds(this.data[upperIndex]?.time);
+    if (lowerIndex === upperIndex) return lowerTime;
+    if (Number.isFinite(lowerTime) && Number.isFinite(upperTime)) {
+      const ratio = index - lowerIndex;
+      return Number(lowerTime) + ((Number(upperTime) - Number(lowerTime)) * ratio);
+    }
+    if (Number.isFinite(lowerTime)) return Number(lowerTime) + ((index - lowerIndex) * stepSeconds);
+    if (firstHistoricalTimeSeconds === null) return null;
+    return firstHistoricalTimeSeconds + (index * stepSeconds);
+  }
+
+  private computeTrendlineMidlineCrossUnixSeconds(
+    index1: number,
+    value1: number,
+    slope: number,
+    lastHistoricalIndex: number,
+    firstHistoricalTimeSeconds: number | null,
+    lastHistoricalTimeSeconds: number | null,
+    stepSeconds: number
+  ): number | null {
+    if (!Number.isFinite(slope) || Math.abs(slope) < 1e-12) return null;
+    const crossIndex = index1 + ((RSIChart.MIDLINE_VALUE - value1) / slope);
+    if (!Number.isFinite(crossIndex)) return null;
+    return this.indexToUnixSeconds(
+      crossIndex,
+      lastHistoricalIndex,
+      firstHistoricalTimeSeconds,
+      lastHistoricalTimeSeconds,
+      stepSeconds
+    );
+  }
+
   private drawTrendLine(time1: string | number, value1: number, time2: string | number, value2: number): void {
     const visibleRangeBeforeDraw = this.chart.timeScale().getVisibleLogicalRange?.();
     this.suppressExternalSync = true;
@@ -678,6 +809,7 @@ export class RSIChart {
     const lastHistoricalIndex = this.data.length - 1;
     const maxIndex = lastHistoricalIndex + futureBars;
     const stepSeconds = this.inferBarStepSeconds();
+    const firstHistoricalTimeSeconds = this.toUnixSeconds(this.data[0]?.time);
     const lastHistoricalTime = this.data[lastHistoricalIndex]?.time;
     const lastHistoricalTimeSeconds = this.toUnixSeconds(lastHistoricalTime);
 
@@ -715,6 +847,16 @@ export class RSIChart {
     this.trendLineSeriesList.push(trendLineSeries);
 
     trendLineSeries.setData(trendLineData);
+    const crossUnixSeconds = this.computeTrendlineMidlineCrossUnixSeconds(
+      index1,
+      value1,
+      slope,
+      lastHistoricalIndex,
+      firstHistoricalTimeSeconds,
+      lastHistoricalTimeSeconds,
+      stepSeconds
+    );
+    this.addTrendlineCrossLabel(time1, value1, this.formatMmDdYyFromUnixSeconds(crossUnixSeconds));
     } finally {
       if (visibleRangeBeforeDraw) {
         try {
@@ -728,44 +870,35 @@ export class RSIChart {
   }
 
   clearDivergence(): void {
-    // Preserve viewport position before clearing
-    const visibleRangeBeforeClear = this.chart.timeScale().getVisibleLogicalRange?.();
-    this.suppressExternalSync = true;
+    this.clearHighlights();
+    this.clearTrendlineCrossLabels();
 
-    try {
-      this.clearHighlights();
-
-      // Clear all trend lines
-      for (const trendLineSeries of this.trendLineSeriesList) {
+    // Clear all trend lines
+    for (const trendLineSeries of this.trendLineSeriesList) {
+      try {
         this.chart.removeSeries(trendLineSeries);
+      } catch {
+        // Ignore stale trendline series remove errors.
       }
-      this.trendLineSeriesList = [];
-
-      // Reset state
-      this.firstPoint = null;
-      this.divergencePoints = [];
-      this.divergencePointTimeKeys.clear();
-    } finally {
-      // Restore viewport to prevent chart jump
-      if (visibleRangeBeforeClear) {
-        try {
-          this.chart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
-        } catch {
-          // Keep the current viewport stable after clearing
-        }
-      }
-      this.suppressExternalSync = false;
     }
+    this.trendLineSeriesList = [];
+
+    // Reset state
+    this.firstPoint = null;
+    this.divergencePoints = [];
+    this.divergencePointTimeKeys.clear();
   }
 
   resize(): void {
     if (this.chart) {
       this.chart.resize(this.chart.options().width, 400);
+      this.refreshTrendlineCrossLabels();
     }
   }
 
   destroy(): void {
     if (this.chart) {
+      this.clearTrendlineCrossLabels();
       this.chart.remove();
     }
   }
