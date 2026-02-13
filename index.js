@@ -3156,11 +3156,13 @@ function computeDivergenceSummaryStatesFromDailyResult(result, options = {}) {
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
     const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
     const startIndex = lowerBoundUnixArray(unixTimes, cutoffUnix);
-    if (startIndex < 0 || startIndex > lastIndex) continue;
+    if (startIndex < 0 || startIndex >= lastIndex) continue;
     const startClose = closes[startIndex];
     const endClose = closes[lastIndex];
     if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) continue;
-    const sumDelta = (deltaPrefix[lastIndex + 1] || 0) - (deltaPrefix[startIndex] || 0);
+    // Sum only the bars strictly after the start close and up to the latest close.
+    // For 1D, this means "latest daily bar delta", not "latest + previous".
+    const sumDelta = (deltaPrefix[lastIndex + 1] || 0) - (deltaPrefix[startIndex + 1] || 0);
     if (endClose < startClose && sumDelta > 0) {
       states[String(days)] = 'bullish';
     } else if (endClose > startClose && sumDelta < 0) {
@@ -4051,11 +4053,12 @@ function classifyDivergenceStateMapFromDailyRows(rows) {
       startIndex += 1;
     }
     const endIndex = safeRows.length - 1;
-    if (startIndex > endIndex) continue;
+    if (startIndex >= endIndex) continue;
     const startClose = closes[startIndex];
     const endClose = closes[endIndex];
     if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) continue;
-    const sumDelta = (deltaPrefix[endIndex + 1] || 0) - (deltaPrefix[startIndex] || 0);
+    // Sum only the bars strictly after the start close and up to the latest close.
+    const sumDelta = (deltaPrefix[endIndex + 1] || 0) - (deltaPrefix[startIndex + 1] || 0);
     if (endClose < startClose && sumDelta > 0) {
       states[String(days)] = 'bullish';
     } else if (endClose > startClose && sumDelta < 0) {
