@@ -688,10 +688,30 @@ const initDivergenceDB = async () => {
         state_7d VARCHAR(10) NOT NULL DEFAULT 'neutral',
         state_14d VARCHAR(10) NOT NULL DEFAULT 'neutral',
         state_28d VARCHAR(10) NOT NULL DEFAULT 'neutral',
+        ma8_above BOOLEAN,
+        ma21_above BOOLEAN,
+        ma50_above BOOLEAN,
+        ma200_above BOOLEAN,
         scan_job_id INTEGER,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (ticker, source_interval)
       );
+    `);
+    await divergencePool.query(`
+      ALTER TABLE divergence_summaries
+      ADD COLUMN IF NOT EXISTS ma8_above BOOLEAN
+    `);
+    await divergencePool.query(`
+      ALTER TABLE divergence_summaries
+      ADD COLUMN IF NOT EXISTS ma21_above BOOLEAN
+    `);
+    await divergencePool.query(`
+      ALTER TABLE divergence_summaries
+      ADD COLUMN IF NOT EXISTS ma50_above BOOLEAN
+    `);
+    await divergencePool.query(`
+      ALTER TABLE divergence_summaries
+      ADD COLUMN IF NOT EXISTS ma200_above BOOLEAN
     `);
     await divergencePool.query(`
       CREATE INDEX IF NOT EXISTS divergence_summaries_trade_date_idx
@@ -813,6 +833,12 @@ app.get('/api/alerts', async (req, res) => {
       return {
         ...row,
         divergence_trade_date: summary?.tradeDate || null,
+        ma_states: {
+          ema8: Boolean(summary?.maStates?.ema8),
+          ema21: Boolean(summary?.maStates?.ema21),
+          sma50: Boolean(summary?.maStates?.sma50),
+          sma200: Boolean(summary?.maStates?.sma200)
+        },
         divergence_states: {
           '1': String(states['1'] || 'neutral'),
           '3': String(states['3'] || 'neutral'),
@@ -970,6 +996,12 @@ app.get('/api/divergence/signals', async (req, res) => {
       return {
         ...row,
         divergence_trade_date: summary?.tradeDate || null,
+        ma_states: {
+          ema8: Boolean(summary?.maStates?.ema8),
+          ema21: Boolean(summary?.maStates?.ema21),
+          sma50: Boolean(summary?.maStates?.sma50),
+          sma200: Boolean(summary?.maStates?.sma200)
+        },
         divergence_states: {
           '1': String(states['1'] || 'neutral'),
           '3': String(states['3'] || 'neutral'),
@@ -1518,6 +1550,88 @@ async function dataApiDaily(symbol) {
 
   if (lastError) throw lastError;
   return null;
+}
+
+function extractLatestIndicatorValue(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const directResults = Array.isArray(payload.results) ? payload.results : [];
+  if (directResults.length > 0) {
+    const first = directResults[0] || {};
+    const directValue = toNumberOrNull(first.value ?? first.v ?? first.close ?? first.c);
+    if (directValue !== null) return directValue;
+    if (Array.isArray(first.values) && first.values.length > 0) {
+      const nested = first.values[0] || {};
+      const nestedValue = toNumberOrNull(nested.value ?? nested.v ?? nested.close ?? nested.c);
+      if (nestedValue !== null) return nestedValue;
+    }
+  }
+  const values = payload.results && Array.isArray(payload.results.values)
+    ? payload.results.values
+    : (Array.isArray(payload.values) ? payload.values : []);
+  if (values.length > 0) {
+    const first = values[0] || {};
+    const nestedValue = toNumberOrNull(first.value ?? first.v ?? first.close ?? first.c);
+    if (nestedValue !== null) return nestedValue;
+  }
+  return null;
+}
+
+async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLength, options = {}) {
+  const ticker = normalizeTickerSymbol(symbol);
+  const type = String(indicatorType || '').trim().toLowerCase();
+  const window = Math.max(1, Math.floor(Number(windowLength) || 1));
+  if (!ticker || !type) throw new Error('Invalid indicator request');
+
+  const candidates = getDataApiSymbolCandidates(ticker);
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    const url = buildDataApiUrl(`/v1/indicators/${encodeURIComponent(type)}/${encodeURIComponent(candidate)}`, {
+      timespan: 'day',
+      window: String(window),
+      series_type: 'close',
+      order: 'desc',
+      limit: '1'
+    });
+    try {
+      const payload = await fetchDataApiJson(url, `DataAPI ${type}${window} ${candidate}`, options);
+      const value = extractLatestIndicatorValue(payload);
+      if (value !== null) {
+        if (candidate !== ticker) {
+          console.log(`DataAPI symbol fallback (${type}${window}): ${ticker} -> ${candidate}`);
+        }
+        return value;
+      }
+      lastError = new Error(`DataAPI ${type}${window} returned no value for ${candidate}`);
+    } catch (err) {
+      lastError = err;
+      if (isDataApiRateLimitedError(err) || isDataApiPausedError(err) || isAbortError(err)) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError || new Error(`DataAPI ${type}${window} request failed for ${ticker}`);
+}
+
+async function fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, options = {}) {
+  const close = Number(latestClose);
+  if (!Number.isFinite(close) || close <= 0) {
+    return null;
+  }
+  const signal = options && options.signal ? options.signal : null;
+  const [ema8, ema21, sma50, sma200] = await Promise.all([
+    fetchDataApiIndicatorLatestValue(ticker, 'ema', 8, { signal }),
+    fetchDataApiIndicatorLatestValue(ticker, 'ema', 21, { signal }),
+    fetchDataApiIndicatorLatestValue(ticker, 'sma', 50, { signal }),
+    fetchDataApiIndicatorLatestValue(ticker, 'sma', 200, { signal })
+  ]);
+  return {
+    ema8: close > ema8,
+    ema21: close > ema21,
+    sma50: close > sma50,
+    sma200: close > sma200
+  };
 }
 
 function normalizeQuoteTimestamp(value) {
@@ -3570,6 +3684,20 @@ function normalizeDivergenceState(value) {
   return 'neutral';
 }
 
+function normalizeSummaryMaState(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    if (numeric === 1) return true;
+    if (numeric === 0) return false;
+  }
+  const text = String(value || '').trim().toLowerCase();
+  if (text === 'true') return true;
+  if (text === 'false') return false;
+  return false;
+}
+
 function buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresAtMs) {
   const ticker = String(row?.ticker || '').toUpperCase();
   if (!ticker) return null;
@@ -3583,6 +3711,12 @@ function buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresA
       '7': normalizeDivergenceState(row?.state_7d),
       '14': normalizeDivergenceState(row?.state_14d),
       '28': normalizeDivergenceState(row?.state_28d)
+    },
+    maStates: {
+      ema8: normalizeSummaryMaState(row?.ma8_above),
+      ema21: normalizeSummaryMaState(row?.ma21_above),
+      sma50: normalizeSummaryMaState(row?.ma50_above),
+      sma200: normalizeSummaryMaState(row?.ma200_above)
     },
     computedAtMs: nowMs,
     expiresAtMs
@@ -3617,7 +3751,11 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval, o
       state_3d,
       state_7d,
       state_14d,
-      state_28d
+      state_28d,
+      ma8_above,
+      ma21_above,
+      ma50_above,
+      ma200_above
     FROM divergence_summaries
     WHERE source_interval = $1
       AND ticker = ANY($2::VARCHAR[])
@@ -3761,7 +3899,8 @@ async function persistOnDemandTickerDivergenceSummary(options = {}) {
       ticker: entry.ticker,
       source_interval: entry.sourceInterval,
       trade_date: entry.tradeDate,
-      states: entry.states
+      states: entry.states,
+      ma_states: entry.maStates || null
     }], null);
   }
 }
@@ -3877,6 +4016,12 @@ async function getDivergenceSummaryForTickers(options = {}) {
       sourceInterval: vdSourceInterval,
       tradeDate: fallbackTradeDate,
       states: neutralStates,
+      maStates: {
+        ema8: false,
+        ema21: false,
+        sma50: false,
+        sma200: false
+      },
       computedAtMs: nowMs,
       expiresAtMs
     });
@@ -3889,6 +4034,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
       ticker: entry.ticker,
       tradeDate: entry.tradeDate,
       states: entry.states,
+      maStates: entry.maStates,
       expiresAtMs: entry.expiresAtMs
     }))
   };
@@ -4509,6 +4655,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
   const state7d = [];
   const state14d = [];
   const state28d = [];
+  const ma8Above = [];
+  const ma21Above = [];
+  const ma50Above = [];
+  const ma200Above = [];
   const scanJobIds = [];
 
   for (const row of rows) {
@@ -4517,6 +4667,7 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
     const tradeDate = String(row?.trade_date || '').trim();
     if (!ticker || !tradeDate) continue;
     const states = row?.states || {};
+    const maStates = row?.ma_states || row?.maStates || {};
     tickers.push(ticker);
     sourceIntervals.push(sourceInterval);
     tradeDates.push(tradeDate);
@@ -4525,6 +4676,26 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
     state7d.push(String(states['7'] || 'neutral'));
     state14d.push(String(states['14'] || 'neutral'));
     state28d.push(String(states['28'] || 'neutral'));
+    ma8Above.push(
+      typeof maStates.ema8 === 'boolean'
+        ? maStates.ema8
+        : null
+    );
+    ma21Above.push(
+      typeof maStates.ema21 === 'boolean'
+        ? maStates.ema21
+        : null
+    );
+    ma50Above.push(
+      typeof maStates.sma50 === 'boolean'
+        ? maStates.sma50
+        : null
+    );
+    ma200Above.push(
+      typeof maStates.sma200 === 'boolean'
+        ? maStates.sma200
+        : null
+    );
     scanJobIds.push(scanJobId ?? null);
   }
 
@@ -4540,6 +4711,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
       state_7d,
       state_14d,
       state_28d,
+      ma8_above,
+      ma21_above,
+      ma50_above,
+      ma200_above,
       scan_job_id,
       updated_at
     )
@@ -4552,6 +4727,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
       s.state_7d,
       s.state_14d,
       s.state_28d,
+      s.ma8_above,
+      s.ma21_above,
+      s.ma50_above,
+      s.ma200_above,
       s.scan_job_id,
       NOW()
     FROM UNNEST(
@@ -4563,7 +4742,11 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
       $6::VARCHAR[],
       $7::VARCHAR[],
       $8::VARCHAR[],
-      $9::INTEGER[]
+      $9::BOOLEAN[],
+      $10::BOOLEAN[],
+      $11::BOOLEAN[],
+      $12::BOOLEAN[],
+      $13::INTEGER[]
     ) AS s(
       ticker,
       source_interval,
@@ -4573,6 +4756,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
       state_7d,
       state_14d,
       state_28d,
+      ma8_above,
+      ma21_above,
+      ma50_above,
+      ma200_above,
       scan_job_id
     )
     ON CONFLICT (ticker, source_interval)
@@ -4583,6 +4770,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
       state_7d = EXCLUDED.state_7d,
       state_14d = EXCLUDED.state_14d,
       state_28d = EXCLUDED.state_28d,
+      ma8_above = COALESCE(EXCLUDED.ma8_above, divergence_summaries.ma8_above),
+      ma21_above = COALESCE(EXCLUDED.ma21_above, divergence_summaries.ma21_above),
+      ma50_above = COALESCE(EXCLUDED.ma50_above, divergence_summaries.ma50_above),
+      ma200_above = COALESCE(EXCLUDED.ma200_above, divergence_summaries.ma200_above),
       scan_job_id = EXCLUDED.scan_job_id,
       updated_at = NOW()
   `, [
@@ -4594,6 +4785,10 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
     state7d,
     state14d,
     state28d,
+    ma8Above,
+    ma21Above,
+    ma50Above,
+    ma200Above,
     scanJobIds
   ]);
 }
@@ -5671,7 +5866,24 @@ async function runDivergenceFetchAllData(options = {}) {
           signal: fetchAllAbortController.signal,
           noCache: true
         });
-        return { ticker, rows };
+        const filteredRows = Array.isArray(rows)
+          ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
+          : [];
+        const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
+        const latestClose = Number(latestRow?.close);
+        let maStates = null;
+        if (Number.isFinite(latestClose)) {
+          try {
+            maStates = await fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, {
+              signal: fetchAllAbortController.signal
+            });
+          } catch (maErr) {
+            if (isAbortError(maErr)) throw maErr;
+            const message = maErr && maErr.message ? maErr.message : String(maErr);
+            console.error(`Fetch-all MA states failed for ${ticker}: ${message}`);
+          }
+        }
+        return { ticker, rows, maStates };
       },
       (result, index) => {
         settledCount += 1;
@@ -5737,6 +5949,7 @@ async function runDivergenceFetchAllData(options = {}) {
             source_interval: sourceInterval,
             trade_date: latestRow.trade_date,
             states,
+            ma_states: result.maStates || null,
             latest_close: Number(latestRow.close),
             latest_prev_close: Number(latestRow.prev_close),
             latest_volume_delta: Number(latestRow.volume_delta)

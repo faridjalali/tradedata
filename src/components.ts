@@ -26,6 +26,7 @@ function formatAlertCardDate(rawDate: string | null | undefined): string {
 export function createAlertCard(alert: Alert): string {
     const timeStr = formatAlertCardDate(alert.divergence_trade_date || alert.timestamp) || '--';
     const source = alert.source === 'TV' ? 'TV' : 'DataAPI';
+    const maStates = alert.ma_states || {};
     
     let isBull = false;
     let isBear = false;
@@ -72,6 +73,14 @@ export function createAlertCard(alert: Alert): string {
     const divergenceTitle = alert.divergence_trade_date
         ? `Daily divergence as of ${escapeHtml(alert.divergence_trade_date)}`
         : 'Daily divergence';
+    const maDots = `
+        <span class="ma-dot-row" title="8 EMA, 21 EMA, 50 SMA, 200 SMA">
+            <span class="ma-dot ${maStates.ema8 ? 'is-up' : 'is-down'}"></span>
+            <span class="ma-dot ${maStates.ema21 ? 'is-up' : 'is-down'}"></span>
+            <span class="ma-dot ${maStates.sma50 ? 'is-up' : 'is-down'}"></span>
+            <span class="ma-dot ${maStates.sma200 ? 'is-up' : 'is-down'}"></span>
+        </span>
+    `;
 
     return `
         <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
@@ -86,6 +95,7 @@ export function createAlertCard(alert: Alert): string {
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>
+                    ${maDots}
                 </div>
             </div>
 

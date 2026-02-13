@@ -595,6 +595,29 @@ h2 {
   white-space: pre;
 }
 
+.ma-dot-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 5ch;
+}
+
+.ma-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef5350;
+  box-shadow: 0 0 0 1px rgba(13, 17, 23, 0.75);
+}
+
+.ma-dot.is-up {
+  background: #26a69a;
+}
+
+.ma-dot.is-down {
+  background: #ef5350;
+}
+
 /* Score Circles */
 .score-circle {
   width: 21px;

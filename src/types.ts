@@ -14,6 +14,12 @@ export interface Alert {
     source?: 'TV' | 'DataAPI';
     divergence_states?: Record<string, string>;
     divergence_trade_date?: string | null;
+    ma_states?: {
+        ema8?: boolean;
+        ema21?: boolean;
+        sma50?: boolean;
+        sma200?: boolean;
+    };
 }
 
 export interface AppState {
