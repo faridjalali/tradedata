@@ -3,7 +3,6 @@ import {
     fetchLiveAlerts, 
     renderOverview, 
     setLiveFeedModeState, 
-    isCurrentTimeframe,
     setDailySort,
     setWeeklySort,
     setupLiveFeedDelegation
@@ -12,6 +11,12 @@ import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard'
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls } from './chart';
+import {
+    initLogsView,
+    refreshLogsView,
+    startLogsPolling,
+    stopLogsPolling
+} from './logs';
 import {
     fetchDivergenceSignals,
     renderDivergenceOverview,
@@ -33,7 +38,7 @@ import {
     setAppTimeZone
 } from './timezone';
 
-let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
+let currentView: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
 let liveDashboardScrollY = 0;
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'live' | 'divergence' = 'live';
@@ -94,11 +99,12 @@ window.showOverview = function() {
 
 }
 
-function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
+function switchView(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth') {
     currentView = view;
     setActiveNavTab(view);
 
     // Hide all views and controls
+    document.getElementById('view-logs')?.classList.add('hidden');
     document.getElementById('view-live')?.classList.add('hidden');
     document.getElementById('view-divergence')?.classList.add('hidden');
     document.getElementById('view-leaderboard')?.classList.add('hidden');
@@ -108,8 +114,14 @@ function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
     document.getElementById('leaderboard-controls')?.classList.add('hidden');
     document.getElementById('breadth-controls')?.classList.add('hidden');
 
+    stopLogsPolling();
+
     // Show the selected view and controls
-    if (view === 'live') {
+    if (view === 'logs') {
+        document.getElementById('view-logs')?.classList.remove('hidden');
+        refreshLogsView().catch(() => {});
+        startLogsPolling();
+    } else if (view === 'live') {
         document.getElementById('view-live')?.classList.remove('hidden');
         document.getElementById('live-controls')?.classList.remove('hidden');
     } else if (view === 'divergence') {
@@ -128,7 +140,7 @@ function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
     }
 }
 
-function setActiveNavTab(view: 'live' | 'divergence' | 'leaderboard' | 'breadth'): void {
+function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth'): void {
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
     document.getElementById(`nav-${view}`)?.classList.add('active');
 }
@@ -322,6 +334,11 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
 
     if (currentView === 'breadth') {
         initBreadth();
+        return;
+    }
+
+    if (currentView === 'logs') {
+        await refreshLogsView();
     }
 }
 
@@ -581,6 +598,7 @@ function bootstrapApplication(): void {
 
     // Initialization
     // Navigation
+    document.getElementById('nav-logs')?.addEventListener('click', () => switchView('logs'));
     document.getElementById('nav-live')?.addEventListener('click', () => switchView('live'));
     document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
     document.getElementById('nav-leaderboard')?.addEventListener('click', () => {
@@ -693,24 +711,10 @@ function bootstrapApplication(): void {
     syncDivergenceScanUiState().catch(() => {});
     switchView('divergence');
     
-    setInterval(() => {
-        // Poll if current
-        if (currentView === 'live' && isCurrentTimeframe()) {
-             fetchLiveAlerts().then(() => {
-                const tickerView = document.getElementById('ticker-view');
-                const ticker = tickerView?.dataset.ticker;
-                if (ticker && !tickerView?.classList.contains('hidden')) {
-                    renderTickerView(ticker, { refreshCharts: false });
-                } else {
-                    renderOverview();
-                }
-             });
-        }
-    }, 10000); 
-
     // Setup Search
     initGlobalSettingsPanel();
     initSearch();
+    initLogsView();
     
     // Setup Event Delegation
     setupLiveFeedDelegation();
@@ -731,23 +735,29 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupMobileCollapse(): void {
-    // Use event delegation on #view-live so it works for both dashboard and ticker views
-    const viewLive = document.getElementById('view-live');
-    if (!viewLive) return;
+    const attachCollapseHandler = (root: HTMLElement | null, allowedContainerSelector: string): void => {
+        if (!root) return;
+        root.addEventListener('click', (e) => {
+            // Only activate on mobile-like viewport widths.
+            if (window.innerWidth > 768) return;
 
-    viewLive.addEventListener('click', (e) => {
-        // Only activate on mobile
-        if (window.innerWidth > 768) return;
+            const target = e.target as HTMLElement | null;
+            if (!target) return;
+            const heading = target.closest('h2');
+            if (!heading) return;
+            const isInHeader = heading.closest('.column-header') || heading.closest('.header-title-group');
+            if (!isInHeader) return;
 
-        const target = e.target as HTMLElement;
-        // Check if click is on an h2 within a column-header or header-title-group
-        if (target.tagName !== 'H2') return;
-        const isInHeader = target.closest('.column-header') || target.closest('.header-title-group');
-        if (!isInHeader) return;
+            const column = heading.closest('.column');
+            if (!column) return;
+            if (!column.closest(allowedContainerSelector)) return;
 
-        const column = target.closest('.column');
-        if (column) {
             column.classList.toggle('collapsed');
-        }
-    });
+        });
+    };
+
+    // Live dashboard columns only (exclude ticker view columns).
+    attachCollapseHandler(document.getElementById('view-live'), '#dashboard-view');
+    // Alerts page (default) dashboard columns.
+    attachCollapseHandler(document.getElementById('view-divergence'), '#divergence-dashboard-view');
 }

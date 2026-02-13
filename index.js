@@ -468,7 +468,8 @@ const DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY = Math.max(25, Number(process.env.DIV
 const DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS = Math.max(45, Number(process.env.DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS) || 60);
 const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 64);
 const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(29, Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29);
-const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
+// Scheduler is intentionally hard-disabled for now; runs are manual-only.
+const DIVERGENCE_SCANNER_ENABLED = false;
 const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 const DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE = Math.max(100, Number(process.env.DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) || 2000);
 const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
@@ -477,6 +478,10 @@ const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
     DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
     Number(process.env.DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE) || 100
   )
+);
+const DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE = Math.max(
+  DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE,
+  Number(process.env.DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE) || 500
 );
 const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
 const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(28, Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 35);
@@ -536,6 +541,272 @@ let divergenceFetchWeeklyDataStatus = {
   finishedAt: null,
   lastPublishedTradeDate: ''
 };
+
+const RUN_METRICS_SAMPLE_CAP = Math.max(100, Number(process.env.RUN_METRICS_SAMPLE_CAP) || 1200);
+const RUN_METRICS_HISTORY_LIMIT = Math.max(10, Number(process.env.RUN_METRICS_HISTORY_LIMIT) || 40);
+const runMetricsByType = {
+  fetchDaily: null,
+  fetchWeekly: null
+};
+const runMetricsHistory = [];
+
+function clampMetricNumber(value, digits = 2) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  const factor = 10 ** Math.max(0, Number(digits) || 0);
+  return Math.round(numeric * factor) / factor;
+}
+
+function percentileFromSortedSamples(samples, percentile) {
+  if (!Array.isArray(samples) || samples.length === 0) return 0;
+  const p = Math.max(0, Math.min(1, Number(percentile) || 0));
+  const index = Math.min(samples.length - 1, Math.max(0, Math.ceil(samples.length * p) - 1));
+  const value = Number(samples[index]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function summarizeRunMetrics(metrics) {
+  if (!metrics || typeof metrics !== 'object') return null;
+  const samples = Array.isArray(metrics.api?.latencySamples)
+    ? [...metrics.api.latencySamples].sort((a, b) => a - b)
+    : [];
+  const calls = Number(metrics.api?.calls || 0);
+  const avgLatencyMs = calls > 0
+    ? clampMetricNumber((Number(metrics.api?.totalLatencyMs || 0) / calls), 2)
+    : 0;
+  const startedMs = Date.parse(String(metrics.startedAt || ''));
+  const finishedMs = Date.parse(String(metrics.finishedAt || metrics.updatedAt || ''));
+  const durationMs = Number.isFinite(startedMs) && Number.isFinite(finishedMs) && finishedMs >= startedMs
+    ? finishedMs - startedMs
+    : 0;
+  const durationSeconds = durationMs > 0 ? durationMs / 1000 : 0;
+  const processed = Number(metrics.tickers?.processed || 0);
+  return {
+    runId: metrics.runId,
+    runType: metrics.runType,
+    status: String(metrics.status || 'unknown'),
+    phase: String(metrics.phase || ''),
+    startedAt: metrics.startedAt || null,
+    finishedAt: metrics.finishedAt || null,
+    updatedAt: metrics.updatedAt || null,
+    durationSeconds: clampMetricNumber(durationSeconds, 2),
+    tickers: {
+      total: Number(metrics.tickers?.total || 0),
+      processed,
+      errors: Number(metrics.tickers?.errors || 0),
+      processedPerSecond: durationSeconds > 0 ? clampMetricNumber(processed / durationSeconds, 3) : 0
+    },
+    api: {
+      calls,
+      successes: Number(metrics.api?.successes || 0),
+      failures: Number(metrics.api?.failures || 0),
+      rateLimited: Number(metrics.api?.rateLimited || 0),
+      timedOut: Number(metrics.api?.timedOut || 0),
+      aborted: Number(metrics.api?.aborted || 0),
+      subscriptionRestricted: Number(metrics.api?.subscriptionRestricted || 0),
+      avgLatencyMs,
+      p50LatencyMs: clampMetricNumber(percentileFromSortedSamples(samples, 0.50), 2),
+      p95LatencyMs: clampMetricNumber(percentileFromSortedSamples(samples, 0.95), 2)
+    },
+    db: {
+      flushCount: Number(metrics.db?.flushCount || 0),
+      dailyRows: Number(metrics.db?.dailyRows || 0),
+      summaryRows: Number(metrics.db?.summaryRows || 0),
+      signalRows: Number(metrics.db?.signalRows || 0),
+      neutralRows: Number(metrics.db?.neutralRows || 0),
+      avgFlushMs: Number(metrics.db?.flushCount || 0) > 0
+        ? clampMetricNumber(Number(metrics.db?.totalFlushMs || 0) / Number(metrics.db?.flushCount || 1), 2)
+        : 0,
+      maxFlushMs: clampMetricNumber(Number(metrics.db?.maxFlushMs || 0), 2)
+    },
+    stalls: {
+      retries: Number(metrics.stalls?.retries || 0),
+      watchdogAborts: Number(metrics.stalls?.watchdogAborts || 0)
+    },
+    meta: metrics.meta || {}
+  };
+}
+
+function pushRunMetricsHistory(snapshot) {
+  if (!snapshot) return;
+  runMetricsHistory.unshift(snapshot);
+  if (runMetricsHistory.length > RUN_METRICS_HISTORY_LIMIT) {
+    runMetricsHistory.length = RUN_METRICS_HISTORY_LIMIT;
+  }
+}
+
+function createRunMetricsTracker(runType, meta = {}) {
+  const normalizedType = String(runType || '').trim() || 'unknown';
+  const runId = `${normalizedType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const metrics = {
+    runId,
+    runType: normalizedType,
+    status: 'running',
+    phase: 'starting',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    updatedAt: new Date().toISOString(),
+    tickers: {
+      total: 0,
+      processed: 0,
+      errors: 0
+    },
+    api: {
+      calls: 0,
+      successes: 0,
+      failures: 0,
+      rateLimited: 0,
+      timedOut: 0,
+      aborted: 0,
+      subscriptionRestricted: 0,
+      totalLatencyMs: 0,
+      latencySamples: []
+    },
+    db: {
+      flushCount: 0,
+      totalFlushMs: 0,
+      maxFlushMs: 0,
+      dailyRows: 0,
+      summaryRows: 0,
+      signalRows: 0,
+      neutralRows: 0
+    },
+    stalls: {
+      retries: 0,
+      watchdogAborts: 0
+    },
+    meta: {
+      ...meta
+    }
+  };
+
+  runMetricsByType[normalizedType] = metrics;
+  let finished = false;
+
+  const touch = () => {
+    metrics.updatedAt = new Date().toISOString();
+  };
+
+  return {
+    get runId() {
+      return runId;
+    },
+    setMeta(patch = {}) {
+      if (!patch || typeof patch !== 'object') return;
+      metrics.meta = { ...metrics.meta, ...patch };
+      touch();
+    },
+    setPhase(phase) {
+      metrics.phase = String(phase || '').trim() || metrics.phase;
+      touch();
+    },
+    setTotals(totalTickers) {
+      metrics.tickers.total = Math.max(0, Number(totalTickers) || 0);
+      touch();
+    },
+    setProgress(processedTickers, errorTickers) {
+      metrics.tickers.processed = Math.max(0, Number(processedTickers) || 0);
+      metrics.tickers.errors = Math.max(0, Number(errorTickers) || 0);
+      touch();
+    },
+    recordApiCall(details = {}) {
+      const latencyMs = Math.max(0, Number(details.latencyMs) || 0);
+      metrics.api.calls += 1;
+      metrics.api.totalLatencyMs += latencyMs;
+      if (metrics.api.latencySamples.length >= RUN_METRICS_SAMPLE_CAP) {
+        metrics.api.latencySamples.shift();
+      }
+      metrics.api.latencySamples.push(latencyMs);
+      if (details.ok) {
+        metrics.api.successes += 1;
+      } else {
+        metrics.api.failures += 1;
+      }
+      if (details.rateLimited) metrics.api.rateLimited += 1;
+      if (details.timedOut) metrics.api.timedOut += 1;
+      if (details.aborted) metrics.api.aborted += 1;
+      if (details.subscriptionRestricted) metrics.api.subscriptionRestricted += 1;
+      touch();
+    },
+    recordDbFlush(details = {}) {
+      const durationMs = Math.max(0, Number(details.durationMs) || 0);
+      metrics.db.flushCount += 1;
+      metrics.db.totalFlushMs += durationMs;
+      metrics.db.maxFlushMs = Math.max(metrics.db.maxFlushMs, durationMs);
+      metrics.db.dailyRows += Math.max(0, Number(details.dailyRows) || 0);
+      metrics.db.summaryRows += Math.max(0, Number(details.summaryRows) || 0);
+      metrics.db.signalRows += Math.max(0, Number(details.signalRows) || 0);
+      metrics.db.neutralRows += Math.max(0, Number(details.neutralRows) || 0);
+      touch();
+    },
+    recordStallRetry() {
+      metrics.stalls.retries += 1;
+      touch();
+    },
+    recordWatchdogAbort() {
+      metrics.stalls.watchdogAborts += 1;
+      touch();
+    },
+    finish(status, patch = {}) {
+      if (finished) return summarizeRunMetrics(metrics);
+      finished = true;
+      metrics.status = String(status || 'completed').trim() || 'completed';
+      if (patch && typeof patch === 'object') {
+        if (Number.isFinite(Number(patch.totalTickers))) {
+          metrics.tickers.total = Math.max(0, Number(patch.totalTickers));
+        }
+        if (Number.isFinite(Number(patch.processedTickers))) {
+          metrics.tickers.processed = Math.max(0, Number(patch.processedTickers));
+        }
+        if (Number.isFinite(Number(patch.errorTickers))) {
+          metrics.tickers.errors = Math.max(0, Number(patch.errorTickers));
+        }
+        if (patch.phase) {
+          metrics.phase = String(patch.phase);
+        }
+        if (patch.meta && typeof patch.meta === 'object') {
+          metrics.meta = { ...metrics.meta, ...patch.meta };
+        }
+      }
+      metrics.finishedAt = new Date().toISOString();
+      touch();
+      const snapshot = summarizeRunMetrics(metrics);
+      pushRunMetricsHistory(snapshot);
+      return snapshot;
+    },
+    snapshot() {
+      return summarizeRunMetrics(metrics);
+    }
+  };
+}
+
+function getLogsRunMetricsPayload() {
+  return {
+    generatedAt: new Date().toISOString(),
+    schedulerEnabled: Boolean(DIVERGENCE_SCANNER_ENABLED),
+    config: {
+      divergenceSourceInterval: DIVERGENCE_SOURCE_INTERVAL,
+      divergenceLookbackDays: DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
+      divergenceConcurrencyConfigured: DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+      divergenceFlushSize: DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
+      dataApiBase: DATA_API_BASE,
+      dataApiTimeoutMs: DATA_API_TIMEOUT_MS,
+      dataApiMaxRequestsPerSecond: DATA_API_MAX_REQUESTS_PER_SECOND,
+      dataApiRateBucketCapacity: DATA_API_RATE_BUCKET_CAPACITY
+    },
+    statuses: {
+      fetchDaily: getDivergenceFetchAllDataStatus(),
+      fetchWeekly: getDivergenceFetchWeeklyDataStatus(),
+      scan: getDivergenceScanControlStatus(),
+      table: getDivergenceTableBuildStatus()
+    },
+    runs: {
+      fetchDaily: summarizeRunMetrics(runMetricsByType.fetchDaily),
+      fetchWeekly: summarizeRunMetrics(runMetricsByType.fetchWeekly)
+    },
+    history: runMetricsHistory.slice(0, RUN_METRICS_HISTORY_LIMIT)
+  };
+}
 
 function isDivergenceConfigured() {
   return Boolean(divergencePool);
@@ -1370,6 +1641,8 @@ async function fetchDataApiJson(url, label, options = {}) {
   }
 
   const externalSignal = options && options.signal ? options.signal : null;
+  const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
+  const requestStartedMs = Date.now();
   await acquireDataApiRateLimitSlot(externalSignal);
   const controller = new AbortController();
   let timedOut = false;
@@ -1423,8 +1696,24 @@ async function fetchDataApiJson(url, label, options = {}) {
       throw error;
     }
 
+    if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
+      metricsTracker.recordApiCall({
+        latencyMs: Date.now() - requestStartedMs,
+        ok: true
+      });
+    }
     return payload;
   } catch (err) {
+    if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
+      metricsTracker.recordApiCall({
+        latencyMs: Date.now() - requestStartedMs,
+        ok: false,
+        rateLimited: isDataApiRateLimitedError(err),
+        timedOut: timedOut === true,
+        aborted: isAbortError(err),
+        subscriptionRestricted: isDataApiSubscriptionRestrictedError(err)
+      });
+    }
     if (isAbortError(err)) {
       if (externalSignal && externalSignal.aborted) {
         const abortError = new Error(`${label} request aborted`);
@@ -1638,11 +1927,12 @@ async function fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, opt
     return null;
   }
   const signal = options && options.signal ? options.signal : null;
+  const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
   const [ema8, ema21, sma50, sma200] = await Promise.all([
-    fetchDataApiIndicatorLatestValue(ticker, 'ema', 8, { signal }),
-    fetchDataApiIndicatorLatestValue(ticker, 'ema', 21, { signal }),
-    fetchDataApiIndicatorLatestValue(ticker, 'sma', 50, { signal }),
-    fetchDataApiIndicatorLatestValue(ticker, 'sma', 200, { signal })
+    fetchDataApiIndicatorLatestValue(ticker, 'ema', 8, { signal, metricsTracker }),
+    fetchDataApiIndicatorLatestValue(ticker, 'ema', 21, { signal, metricsTracker }),
+    fetchDataApiIndicatorLatestValue(ticker, 'sma', 50, { signal, metricsTracker }),
+    fetchDataApiIndicatorLatestValue(ticker, 'sma', 200, { signal, metricsTracker })
   ]);
   return {
     ema8: close > ema8,
@@ -2009,7 +2299,13 @@ if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
 }
 
 async function dataApiIntraday(symbol, interval, options = {}) {
-  const { from, to, signal, noCache = false } = options;
+  const {
+    from,
+    to,
+    signal,
+    noCache = false,
+    metricsTracker = null
+  } = options;
 
   // Check cache first to avoid redundant API calls
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
@@ -2021,7 +2317,7 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   }
 
   const urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
-  const rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal });
+  const rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
   const normalized = rows.map((row) => {
     const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
     const close = toNumberOrNull(row.c ?? row.close ?? row.price);
@@ -2067,10 +2363,41 @@ const CHART_INTRADAY_SLICE_DAYS = {
 async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
   const signal = options && options.signal ? options.signal : null;
   const noCache = options && options.noCache === true;
+  const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
   const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
   const startDate = addUtcDays(endDate, -Math.max(1, lookbackDays));
+  const shouldTrySingleRequest = Math.max(1, lookbackDays) <= (sliceDays + 7);
+
+  if (shouldTrySingleRequest) {
+    try {
+      const rows = await dataApiIntraday(symbol, interval, {
+        from: formatDateUTC(startDate),
+        to: formatDateUTC(endDate),
+        signal,
+        noCache,
+        metricsTracker
+      });
+      if (Array.isArray(rows) && rows.length > 0 && rows.length < 50000) {
+        return rows.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+      }
+      if (Array.isArray(rows) && rows.length === 0) {
+        return [];
+      }
+      // Defensive fallback when the provider returns the request cap.
+      // A capped payload can be incomplete depending on the symbol/session.
+      if (Array.isArray(rows) && rows.length >= 50000) {
+        console.warn(`DataAPI ${interval} single-range payload hit cap for ${symbol}; retrying with slices`);
+      }
+    } catch (err) {
+      if (isAbortError(err) || isDataApiRateLimitedError(err) || isDataApiPausedError(err) || isDataApiSubscriptionRestrictedError(err)) {
+        throw err;
+      }
+      const message = err && err.message ? err.message : String(err);
+      console.warn(`DataAPI ${interval} single-range fetch failed for ${symbol}; falling back to slices: ${message}`);
+    }
+  }
 
   const byDateTime = new Map();
   let cursor = new Date(startDate);
@@ -2089,7 +2416,8 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
         from: formatDateUTC(sliceStart),
         to: formatDateUTC(sliceEnd),
         signal,
-        noCache
+        noCache,
+        metricsTracker
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
@@ -2122,7 +2450,7 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
   if (byDateTime.size === 0) {
     // Fallback to a single request without date filters if slicing returned nothing.
     try {
-      return await dataApiIntraday(symbol, interval, { signal, noCache });
+      return await dataApiIntraday(symbol, interval, { signal, noCache, metricsTracker });
     } catch (fallbackErr) {
       if (lastSliceError) throw lastSliceError;
       throw fallbackErr;
@@ -3866,6 +4194,15 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
   return results;
 }
 
+function resolveAdaptiveFetchConcurrency(runType = 'fetch-all') {
+  const configured = Math.max(1, Number(DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 1);
+  const maxRps = Math.max(1, Number(DATA_API_MAX_REQUESTS_PER_SECOND) || 1);
+  const estimatedApiCallsPerTicker = runType === 'fetch-weekly' ? 10 : 8;
+  const targetTickersPerSecond = Math.max(1, Math.floor(maxRps / estimatedApiCallsPerTicker));
+  const adaptive = Math.max(4, targetTickersPerSecond * 4);
+  return Math.max(1, Math.min(configured, adaptive));
+}
+
 async function buildDailyDivergenceSummaryInput(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
@@ -4287,6 +4624,18 @@ async function getStoredDivergenceSymbolTickers() {
   return existing.rows
     .map((row) => String(row.ticker || '').trim().toUpperCase())
     .filter((ticker) => ticker && isValidTickerSymbol(ticker));
+}
+
+async function getLatestWeeklySignalTradeDate(sourceInterval) {
+  if (!divergencePool) return '';
+  const normalizedSource = String(sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
+  const result = await divergencePool.query(`
+    SELECT MAX(trade_date)::text AS trade_date
+    FROM divergence_signals
+    WHERE timeframe = '1w'
+      AND source_interval = $1
+  `, [normalizedSource]);
+  return String(result.rows[0]?.trade_date || '').trim();
 }
 
 async function computeSymbolDivergenceSignals(ticker, options = {}) {
@@ -5369,10 +5718,12 @@ async function buildLatestWeeklyBarSnapshotForTicker(options = {}) {
   const signal = options && options.signal ? options.signal : null;
   const noCache = options && options.noCache === true;
   if (!ticker) return null;
-
+  const suppliedParentRows = Array.isArray(options.parentRows) ? options.parentRows : null;
+  const suppliedSourceRows = Array.isArray(options.sourceRows) ? options.sourceRows : null;
+  const historyOptions = { signal, noCache, metricsTracker: options.metricsTracker };
   const [parentRows, sourceRows] = await Promise.all([
-    dataApiIntradayChartHistory(ticker, '1week', lookbackDays, { signal, noCache }),
-    dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal, noCache })
+    suppliedParentRows || dataApiIntradayChartHistory(ticker, '1week', lookbackDays, historyOptions),
+    suppliedSourceRows || dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, historyOptions)
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return null;
@@ -5519,9 +5870,12 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   if (!ticker) return [];
 
   const parentFetchInterval = options.parentInterval || '1day';
+  const suppliedParentRows = Array.isArray(options.parentRows) ? options.parentRows : null;
+  const suppliedSourceRows = Array.isArray(options.sourceRows) ? options.sourceRows : null;
+  const historyOptions = { signal, noCache, metricsTracker: options.metricsTracker };
   const [parentRows, sourceRows] = await Promise.all([
-    dataApiIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal, noCache }),
-    dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal, noCache })
+    suppliedParentRows || dataApiIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, historyOptions),
+    suppliedSourceRows || dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, historyOptions)
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
@@ -5912,6 +6266,7 @@ async function runDivergenceTableBuild(options = {}) {
 
     await flushSummaryRows();
 
+    runMetricsTracker?.setPhase('publishing');
     if (lastPublishedTradeDate) {
       await publishDivergenceTradeDate({
         sourceInterval,
@@ -6020,9 +6375,14 @@ async function runDivergenceFetchAllData(options = {}) {
   let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
   let sourceInterval = '';
   let runLookbackDays = DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS;
+  let runConcurrency = resolveAdaptiveFetchConcurrency('fetch-all');
+  const summaryFlushSize = DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE;
   let asOfTradeDate = '';
+  let runMetricsTracker = null;
   const dailyRowsBuffer = [];
   const summaryRowsBuffer = [];
+  const maSummaryRowsBuffer = [];
+  const maSeedRows = [];
 
   try {
     sourceInterval = resumeState?.sourceInterval
@@ -6032,6 +6392,15 @@ async function runDivergenceFetchAllData(options = {}) {
       || Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
     asOfTradeDate = resumeState?.asOfTradeDate
       || resolveLastClosedDailyCandleDate();
+    runConcurrency = resolveAdaptiveFetchConcurrency('fetch-all');
+    runMetricsTracker = createRunMetricsTracker('fetchDaily', {
+      sourceInterval,
+      asOfTradeDate,
+      lookbackDays: runLookbackDays,
+      concurrency: runConcurrency,
+      flushSize: summaryFlushSize
+    });
+    runMetricsTracker.setPhase('core');
 
     if (!resumeRequested) {
       tickers = await getStoredDivergenceSymbolTickers();
@@ -6043,6 +6412,7 @@ async function runDivergenceFetchAllData(options = {}) {
 
     totalTickers = tickers.length;
     divergenceFetchAllDataStatus.totalTickers = totalTickers;
+    runMetricsTracker?.setTotals(totalTickers);
 
     const persistResumeState = (nextIdx) => {
       divergenceFetchAllDataResumeState = normalizeFetchAllDataResumeState({
@@ -6058,12 +6428,20 @@ async function runDivergenceFetchAllData(options = {}) {
       });
     };
 
-    const markStopped = (nextIdx) => {
+    const markStopped = (nextIdx, options = {}) => {
+      const preserveResume = options.preserveResume !== false;
+      const rewind = options.rewind !== false;
       // Rewind by concurrency level so in-flight workers that got aborted
       // (and never wrote their data) will be re-fetched on resume.
       // Upserts make re-fetching already-completed tickers harmless.
-      const safeNextIndex = Math.max(0, Math.min(totalTickers, nextIdx - DIVERGENCE_TABLE_BUILD_CONCURRENCY));
-      persistResumeState(safeNextIndex);
+      const safeNextIndex = rewind
+        ? Math.max(0, Math.min(totalTickers, nextIdx - runConcurrency))
+        : Math.max(0, Math.min(totalTickers, nextIdx));
+      if (preserveResume) {
+        persistResumeState(safeNextIndex);
+      } else {
+        divergenceFetchAllDataResumeState = null;
+      }
       divergenceFetchAllDataStopRequested = false;
       divergenceFetchAllDataStatus = {
         running: false,
@@ -6100,15 +6478,6 @@ async function runDivergenceFetchAllData(options = {}) {
       return { status: 'completed', totalTickers: 0, processedTickers: 0, errorTickers: 0, lastPublishedTradeDate: null };
     }
 
-    if (!resumeRequested) {
-      await divergencePool.query(`
-        DELETE FROM divergence_signals
-        WHERE timeframe = '1d'
-          AND source_interval = $1
-          AND trade_date = $2::date
-      `, [sourceInterval, asOfTradeDate]);
-    }
-
     await publishDivergenceTradeDate({
       sourceInterval,
       tradeDate: asOfTradeDate,
@@ -6122,14 +6491,34 @@ async function runDivergenceFetchAllData(options = {}) {
     let flushChain = Promise.resolve();
 
     const flushBuffers = async () => {
+      const flushStartedAt = Date.now();
+      let flushedDailyRows = 0;
+      let flushedSummaryRows = 0;
+      let flushedSignalRows = 0;
       if (dailyRowsBuffer.length > 0) {
         const batch = dailyRowsBuffer.splice(0, dailyRowsBuffer.length);
+        flushedDailyRows += batch.length;
         await upsertDivergenceDailyBarsBatch(batch, null);
       }
       if (summaryRowsBuffer.length > 0) {
         const batch = summaryRowsBuffer.splice(0, summaryRowsBuffer.length);
+        flushedSummaryRows += batch.length;
         await upsertDivergenceSummaryBatch(batch, null);
         await syncOneDaySignalsFromSummaryRows(batch, sourceInterval, null);
+        flushedSignalRows += batch.length;
+      }
+      if (maSummaryRowsBuffer.length > 0) {
+        const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
+        flushedSummaryRows += batch.length;
+        await upsertDivergenceSummaryBatch(batch, null);
+      }
+      if (flushedDailyRows > 0 || flushedSummaryRows > 0 || flushedSignalRows > 0) {
+        runMetricsTracker?.recordDbFlush({
+          durationMs: Date.now() - flushStartedAt,
+          dailyRows: flushedDailyRows,
+          summaryRows: flushedSummaryRows,
+          signalRows: flushedSignalRows
+        });
       }
     };
 
@@ -6148,7 +6537,7 @@ async function runDivergenceFetchAllData(options = {}) {
 
     await mapWithConcurrency(
       tickerSlice,
-      DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+      runConcurrency,
       async (ticker) => {
         if (divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted) {
           throw buildRequestAbortError('Fetch-all run stopped');
@@ -6160,25 +6549,14 @@ async function runDivergenceFetchAllData(options = {}) {
           asOfTradeDate,
           parentInterval: '1day',
           signal: fetchAllAbortController.signal,
-          noCache: true
+          noCache: true,
+          metricsTracker: runMetricsTracker
         });
         const filteredRows = Array.isArray(rows)
           ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
           : [];
         const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
         const latestClose = Number(latestRow?.close);
-        let maStates = null;
-        if (Number.isFinite(latestClose)) {
-          try {
-            maStates = await fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, {
-              signal: fetchAllAbortController.signal
-            });
-          } catch (maErr) {
-            if (isAbortError(maErr)) throw maErr;
-            const message = maErr && maErr.message ? maErr.message : String(maErr);
-            console.error(`Fetch-all MA states failed for ${ticker}: ${message}`);
-          }
-        }
 
         // --- On-the-fly: process and buffer this ticker's data immediately ---
         if (rows && Array.isArray(rows) && rows.length > 0) {
@@ -6193,17 +6571,28 @@ async function runDivergenceFetchAllData(options = {}) {
             source_interval: sourceInterval,
             trade_date: latestRow.trade_date,
             states,
-            ma_states: maStates || null,
+            ma_states: null,
             latest_close: Number(latestRow.close),
             latest_prev_close: Number(latestRow.prev_close),
             latest_volume_delta: Number(latestRow.volume_delta)
           });
+          if (Number.isFinite(latestClose) && latestClose > 0) {
+            maSeedRows.push({
+              ticker,
+              source_interval: sourceInterval,
+              trade_date: latestRow.trade_date,
+              states,
+              latest_close: latestClose,
+              latest_prev_close: Number(latestRow.prev_close),
+              latest_volume_delta: Number(latestRow.volume_delta)
+            });
+          }
           lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRow.trade_date);
         }
 
         // Flush buffers when thresholds are reached
         if (
-          summaryRowsBuffer.length >= DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE
+          summaryRowsBuffer.length >= summaryFlushSize
           || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
         ) {
           await enqueueFlush();
@@ -6225,6 +6614,7 @@ async function runDivergenceFetchAllData(options = {}) {
         divergenceFetchAllDataStatus.processedTickers = processedTickers;
         divergenceFetchAllDataStatus.errorTickers = errorTickers;
         divergenceFetchAllDataStatus.status = divergenceFetchAllDataStopRequested ? 'stopping' : 'running';
+        runMetricsTracker?.setProgress(processedTickers, errorTickers);
         // Update resume state as we progress
         persistResumeState(startIndex + settledCount);
       },
@@ -6239,6 +6629,51 @@ async function runDivergenceFetchAllData(options = {}) {
 
     // Final flush for any remaining buffered rows
     await enqueueFlush();
+
+    if (maSeedRows.length > 0) {
+      runMetricsTracker?.setPhase('ma-enrichment');
+      divergenceFetchAllDataStatus.status = 'running-ma';
+      const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
+      await mapWithConcurrency(
+        maSeedRows,
+        maConcurrency,
+        async (seed) => {
+          const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
+            signal: fetchAllAbortController.signal,
+            metricsTracker: runMetricsTracker
+          });
+          if (maStates) {
+            maSummaryRowsBuffer.push({
+              ticker: seed.ticker,
+              source_interval: seed.source_interval,
+              trade_date: seed.trade_date,
+              states: seed.states || buildNeutralDivergenceStateMap(),
+              ma_states: maStates,
+              latest_close: Number(seed.latest_close),
+              latest_prev_close: Number(seed.latest_prev_close),
+              latest_volume_delta: Number(seed.latest_volume_delta)
+            });
+            if (maSummaryRowsBuffer.length >= summaryFlushSize) {
+              await enqueueFlush();
+            }
+          }
+          return null;
+        },
+        (result) => {
+          if (result && result.error && !isAbortError(result.error)) {
+            const message = result.error && result.error.message ? result.error.message : String(result.error);
+            console.error(`Fetch-all MA enrichment failed: ${message}`);
+          }
+        },
+        () => divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted
+      );
+
+      if (divergenceFetchAllDataStopRequested) {
+        await enqueueFlush();
+        return markStopped(totalTickers, { preserveResume: false, rewind: false });
+      }
+      await enqueueFlush();
+    }
 
     if (lastPublishedTradeDate) {
       await publishDivergenceTradeDate({
@@ -6282,6 +6717,10 @@ async function runDivergenceFetchAllData(options = {}) {
         await upsertDivergenceSummaryBatch(batch, null);
         await syncOneDaySignalsFromSummaryRows(batch, sourceInterval, null);
       }
+      if (maSummaryRowsBuffer.length > 0) {
+        const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
+        await upsertDivergenceSummaryBatch(batch, null);
+      }
     } catch (flushErr) {
       console.error('Fetch-all error-path flush failed:', flushErr && flushErr.message ? flushErr.message : String(flushErr));
     }
@@ -6289,7 +6728,7 @@ async function runDivergenceFetchAllData(options = {}) {
     if (divergenceFetchAllDataStopRequested || isAbortError(err)) {
       // Persist resume state on stop/abort — rewind by concurrency level
       // so in-flight aborted tickers are re-fetched on resume.
-      const safeNextIndex = Math.max(0, processedTickers - DIVERGENCE_TABLE_BUILD_CONCURRENCY);
+      const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
       divergenceFetchAllDataResumeState = normalizeFetchAllDataResumeState({
         asOfTradeDate,
         sourceInterval,
@@ -6333,6 +6772,19 @@ async function runDivergenceFetchAllData(options = {}) {
     };
     throw err;
   } finally {
+    if (runMetricsTracker) {
+      runMetricsTracker.finish(divergenceFetchAllDataStatus.status || 'completed', {
+        totalTickers,
+        processedTickers: Number(divergenceFetchAllDataStatus.processedTickers || processedTickers || 0),
+        errorTickers: Number(divergenceFetchAllDataStatus.errorTickers || errorTickers || 0),
+        phase: divergenceFetchAllDataStatus.status || 'completed',
+        meta: {
+          sourceInterval,
+          asOfTradeDate,
+          lastPublishedTradeDate
+        }
+      });
+    }
     if (divergenceFetchAllDataAbortController === fetchAllAbortController) {
       divergenceFetchAllDataAbortController = null;
     }
@@ -6389,10 +6841,15 @@ async function runDivergenceFetchWeeklyData(options = {}) {
   let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
   let sourceInterval = '';
   let runLookbackDays = DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS;
+  let runConcurrency = resolveAdaptiveFetchConcurrency('fetch-weekly');
+  const summaryFlushSize = DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE;
   let asOfTradeDate = '';
   let weeklyTradeDate = '';
+  let runMetricsTracker = null;
   const dailyRowsBuffer = [];
   const summaryRowsBuffer = [];
+  const maSummaryRowsBuffer = [];
+  const maSeedRows = [];
   const weeklySignalRowsBuffer = [];
   const weeklyNeutralTickerBuffer = [];
 
@@ -6404,6 +6861,37 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       || Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
     asOfTradeDate = resumeState?.asOfTradeDate || resolveLastClosedDailyCandleDate();
     weeklyTradeDate = resumeState?.weeklyTradeDate || resolveLastClosedWeeklyCandleDate();
+    runConcurrency = resolveAdaptiveFetchConcurrency('fetch-weekly');
+    runMetricsTracker = createRunMetricsTracker('fetchWeekly', {
+      sourceInterval,
+      asOfTradeDate,
+      weeklyTradeDate,
+      lookbackDays: runLookbackDays,
+      concurrency: runConcurrency,
+      flushSize: summaryFlushSize
+    });
+    runMetricsTracker.setPhase('core');
+
+    if (!resumeRequested && !options.force) {
+      const latestStoredWeeklyTradeDate = await getLatestWeeklySignalTradeDate(sourceInterval);
+      if (latestStoredWeeklyTradeDate && latestStoredWeeklyTradeDate >= weeklyTradeDate) {
+        divergenceFetchWeeklyDataStatus = {
+          running: false,
+          status: 'skipped',
+          totalTickers: 0,
+          processedTickers: 0,
+          errorTickers: 0,
+          startedAt: startedAtIso,
+          finishedAt: new Date().toISOString(),
+          lastPublishedTradeDate: latestStoredWeeklyTradeDate
+        };
+        return {
+          status: 'skipped',
+          reason: 'already-up-to-date',
+          lastPublishedTradeDate: latestStoredWeeklyTradeDate
+        };
+      }
+    }
 
     if (!resumeRequested) {
       tickers = await getStoredDivergenceSymbolTickers();
@@ -6415,6 +6903,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
     totalTickers = tickers.length;
     divergenceFetchWeeklyDataStatus.totalTickers = totalTickers;
+    runMetricsTracker?.setTotals(totalTickers);
 
     const persistResumeState = (nextIdx) => {
       divergenceFetchWeeklyDataResumeState = normalizeFetchWeeklyDataResumeState({
@@ -6431,9 +6920,17 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       });
     };
 
-    const markStopped = (nextIdx) => {
-      const safeNextIndex = Math.max(0, Math.min(totalTickers, nextIdx - DIVERGENCE_TABLE_BUILD_CONCURRENCY));
-      persistResumeState(safeNextIndex);
+    const markStopped = (nextIdx, options = {}) => {
+      const preserveResume = options.preserveResume !== false;
+      const rewind = options.rewind !== false;
+      const safeNextIndex = rewind
+        ? Math.max(0, Math.min(totalTickers, nextIdx - runConcurrency))
+        : Math.max(0, Math.min(totalTickers, nextIdx));
+      if (preserveResume) {
+        persistResumeState(safeNextIndex);
+      } else {
+        divergenceFetchWeeklyDataResumeState = null;
+      }
       divergenceFetchWeeklyDataStopRequested = false;
       divergenceFetchWeeklyDataStatus = {
         running: false,
@@ -6470,15 +6967,6 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       return { status: 'completed', totalTickers: 0, processedTickers: 0, errorTickers: 0, lastPublishedTradeDate: null };
     }
 
-    if (!resumeRequested) {
-      await divergencePool.query(`
-        DELETE FROM divergence_signals
-        WHERE timeframe = '1w'
-          AND source_interval = $1
-          AND trade_date = $2::date
-      `, [sourceInterval, weeklyTradeDate]);
-    }
-
     // Keep divergence summaries published at the latest daily closed date.
     await publishDivergenceTradeDate({
       sourceInterval,
@@ -6491,20 +6979,34 @@ async function runDivergenceFetchWeeklyData(options = {}) {
     let flushChain = Promise.resolve();
 
     const flushBuffers = async () => {
+      const flushStartedAt = Date.now();
+      let flushedDailyRows = 0;
+      let flushedSummaryRows = 0;
+      let flushedSignalRows = 0;
+      let flushedNeutralRows = 0;
       if (dailyRowsBuffer.length > 0) {
         const batch = dailyRowsBuffer.splice(0, dailyRowsBuffer.length);
+        flushedDailyRows += batch.length;
         await upsertDivergenceDailyBarsBatch(batch, null);
       }
       if (summaryRowsBuffer.length > 0) {
         const batch = summaryRowsBuffer.splice(0, summaryRowsBuffer.length);
+        flushedSummaryRows += batch.length;
+        await upsertDivergenceSummaryBatch(batch, null);
+      }
+      if (maSummaryRowsBuffer.length > 0) {
+        const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
+        flushedSummaryRows += batch.length;
         await upsertDivergenceSummaryBatch(batch, null);
       }
       if (weeklySignalRowsBuffer.length > 0) {
         const batch = weeklySignalRowsBuffer.splice(0, weeklySignalRowsBuffer.length);
+        flushedSignalRows += batch.length;
         await upsertDivergenceSignalsBatch(batch, null);
       }
       if (weeklyNeutralTickerBuffer.length > 0) {
         const neutralRows = weeklyNeutralTickerBuffer.splice(0, weeklyNeutralTickerBuffer.length);
+        flushedNeutralRows += neutralRows.length;
         const neutralTickers = neutralRows.map((row) => row.ticker);
         const neutralTradeDates = neutralRows.map((row) => row.trade_date);
         await divergencePool.query(`
@@ -6524,6 +7026,15 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             AND ds.source_interval = $3
         `, [neutralTickers, neutralTradeDates, sourceInterval]);
       }
+      if (flushedDailyRows > 0 || flushedSummaryRows > 0 || flushedSignalRows > 0 || flushedNeutralRows > 0) {
+        runMetricsTracker?.recordDbFlush({
+          durationMs: Date.now() - flushStartedAt,
+          dailyRows: flushedDailyRows,
+          summaryRows: flushedSummaryRows,
+          signalRows: flushedSignalRows,
+          neutralRows: flushedNeutralRows
+        });
+      }
     };
 
     const enqueueFlush = () => {
@@ -6540,11 +7051,16 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
     await mapWithConcurrency(
       tickerSlice,
-      DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+      runConcurrency,
       async (ticker) => {
         if (divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted) {
           throw buildRequestAbortError('Fetch-weekly run stopped');
         }
+        const sourceRows = await dataApiIntradayChartHistory(ticker, sourceInterval, runLookbackDays, {
+          signal: fetchWeeklyAbortController.signal,
+          noCache: true,
+          metricsTracker: runMetricsTracker
+        });
         const rows = await buildDivergenceDailyRowsForTicker({
           ticker,
           sourceInterval,
@@ -6552,25 +7068,15 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           asOfTradeDate,
           parentInterval: '1day',
           signal: fetchWeeklyAbortController.signal,
-          noCache: true
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
         });
         const filteredRows = Array.isArray(rows)
           ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
           : [];
         const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
         const latestClose = Number(latestRow?.close);
-        let maStates = null;
-        if (Number.isFinite(latestClose)) {
-          try {
-            maStates = await fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, {
-              signal: fetchWeeklyAbortController.signal
-            });
-          } catch (maErr) {
-            if (isAbortError(maErr)) throw maErr;
-            const message = maErr && maErr.message ? maErr.message : String(maErr);
-            console.error(`Fetch-weekly MA states failed for ${ticker}: ${message}`);
-          }
-        }
 
         if (rows && Array.isArray(rows) && rows.length > 0) {
           dailyRowsBuffer.push(...rows);
@@ -6584,11 +7090,22 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             source_interval: sourceInterval,
             trade_date: latestRow.trade_date,
             states,
-            ma_states: maStates || null,
+            ma_states: null,
             latest_close: Number(latestRow.close),
             latest_prev_close: Number(latestRow.prev_close),
             latest_volume_delta: Number(latestRow.volume_delta)
           });
+          if (Number.isFinite(latestClose) && latestClose > 0) {
+            maSeedRows.push({
+              ticker,
+              source_interval: sourceInterval,
+              trade_date: latestRow.trade_date,
+              states,
+              latest_close: latestClose,
+              latest_prev_close: Number(latestRow.prev_close),
+              latest_volume_delta: Number(latestRow.volume_delta)
+            });
+          }
         }
 
         const weeklySnapshot = await buildLatestWeeklyBarSnapshotForTicker({
@@ -6597,7 +7114,9 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           lookbackDays: runLookbackDays,
           asOfTradeDate: weeklyTradeDate,
           signal: fetchWeeklyAbortController.signal,
-          noCache: true
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
         });
         if (weeklySnapshot?.trade_date) {
           const signalType = classifyDivergenceSignal(
@@ -6625,10 +7144,10 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         }
 
         if (
-          summaryRowsBuffer.length >= DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE
+          summaryRowsBuffer.length >= summaryFlushSize
           || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
-          || weeklySignalRowsBuffer.length >= DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE
-          || weeklyNeutralTickerBuffer.length >= DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE
+          || weeklySignalRowsBuffer.length >= summaryFlushSize
+          || weeklyNeutralTickerBuffer.length >= summaryFlushSize
         ) {
           await enqueueFlush();
         }
@@ -6649,6 +7168,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         divergenceFetchWeeklyDataStatus.processedTickers = processedTickers;
         divergenceFetchWeeklyDataStatus.errorTickers = errorTickers;
         divergenceFetchWeeklyDataStatus.status = divergenceFetchWeeklyDataStopRequested ? 'stopping' : 'running';
+        runMetricsTracker?.setProgress(processedTickers, errorTickers);
         persistResumeState(startIndex + settledCount);
       },
       () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
@@ -6660,6 +7180,53 @@ async function runDivergenceFetchWeeklyData(options = {}) {
     }
 
     await enqueueFlush();
+
+    if (maSeedRows.length > 0) {
+      runMetricsTracker?.setPhase('ma-enrichment');
+      divergenceFetchWeeklyDataStatus.status = 'running-ma';
+      const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
+      await mapWithConcurrency(
+        maSeedRows,
+        maConcurrency,
+        async (seed) => {
+          const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
+            signal: fetchWeeklyAbortController.signal,
+            metricsTracker: runMetricsTracker
+          });
+          if (maStates) {
+            maSummaryRowsBuffer.push({
+              ticker: seed.ticker,
+              source_interval: seed.source_interval,
+              trade_date: seed.trade_date,
+              states: seed.states || buildNeutralDivergenceStateMap(),
+              ma_states: maStates,
+              latest_close: Number(seed.latest_close),
+              latest_prev_close: Number(seed.latest_prev_close),
+              latest_volume_delta: Number(seed.latest_volume_delta)
+            });
+            if (maSummaryRowsBuffer.length >= summaryFlushSize) {
+              await enqueueFlush();
+            }
+          }
+          return null;
+        },
+        (result) => {
+          if (result && result.error && !isAbortError(result.error)) {
+            const message = result.error && result.error.message ? result.error.message : String(result.error);
+            console.error(`Fetch-weekly MA enrichment failed: ${message}`);
+          }
+        },
+        () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
+      );
+
+      if (divergenceFetchWeeklyDataStopRequested) {
+        await enqueueFlush();
+        return markStopped(totalTickers, { preserveResume: false, rewind: false });
+      }
+      await enqueueFlush();
+    }
+
+    runMetricsTracker?.setPhase('publishing');
     clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
     divergenceFetchWeeklyDataResumeState = null;
@@ -6689,6 +7256,10 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       }
       if (summaryRowsBuffer.length > 0) {
         const batch = summaryRowsBuffer.splice(0, summaryRowsBuffer.length);
+        await upsertDivergenceSummaryBatch(batch, null);
+      }
+      if (maSummaryRowsBuffer.length > 0) {
+        const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
         await upsertDivergenceSummaryBatch(batch, null);
       }
       if (weeklySignalRowsBuffer.length > 0) {
@@ -6721,7 +7292,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
     }
 
     if (divergenceFetchWeeklyDataStopRequested || isAbortError(err)) {
-      const safeNextIndex = Math.max(0, processedTickers - DIVERGENCE_TABLE_BUILD_CONCURRENCY);
+      const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
       divergenceFetchWeeklyDataResumeState = normalizeFetchWeeklyDataResumeState({
         asOfTradeDate,
         weeklyTradeDate,
@@ -6766,6 +7337,20 @@ async function runDivergenceFetchWeeklyData(options = {}) {
     };
     throw err;
   } finally {
+    if (runMetricsTracker) {
+      runMetricsTracker.finish(divergenceFetchWeeklyDataStatus.status || 'completed', {
+        totalTickers,
+        processedTickers: Number(divergenceFetchWeeklyDataStatus.processedTickers || processedTickers || 0),
+        errorTickers: Number(divergenceFetchWeeklyDataStatus.errorTickers || errorTickers || 0),
+        phase: divergenceFetchWeeklyDataStatus.status || 'completed',
+        meta: {
+          sourceInterval,
+          asOfTradeDate,
+          weeklyTradeDate,
+          lastPublishedTradeDate
+        }
+      });
+    }
     if (divergenceFetchWeeklyDataAbortController === fetchWeeklyAbortController) {
       divergenceFetchWeeklyDataAbortController = null;
     }
@@ -7306,6 +7891,10 @@ registerDivergenceRoutes({
   getFetchWeeklyDataStatus: () => getDivergenceFetchWeeklyDataStatus(),
   requestStopFetchWeeklyData: () => requestStopDivergenceFetchWeeklyData(),
   canResumeFetchWeeklyData: () => canResumeDivergenceFetchWeeklyData()
+});
+
+app.get('/api/logs/run-metrics', (req, res) => {
+  return res.status(200).json(getLogsRunMetricsPayload());
 });
 
 function getDebugMetricsPayload() {

@@ -387,6 +387,83 @@ h2 {
   gap: 5px;
 }
 
+.logs-page {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.logs-column {
+  min-height: 220px;
+}
+
+.logs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.log-run-card,
+.log-history-entry {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.log-run-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.log-run-card-status {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.log-run-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.log-metric-key {
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.log-metric-val {
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.log-history-entry {
+  margin-bottom: 8px;
+}
+
+.log-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.log-history-sub {
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
 .ticker-history-section .header-sort-controls {
   margin-bottom: 0px;
 }
@@ -900,6 +977,10 @@ button:hover {
   /* Mobile Header Adjustments removed to match desktop behavior */
 
   .split-view {
+    grid-template-columns: 1fr;
+  }
+
+  .logs-page {
     grid-template-columns: 1fr;
   }
 

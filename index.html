@@ -155,6 +155,7 @@
           </div>
         </div>
         <nav class="main-nav">
+          <button id="nav-logs" class="nav-btn">Logs</button>
           <button id="nav-divergence" class="nav-btn active">Alerts</button>
           <button id="nav-live" class="nav-btn" style="display: none;" aria-hidden="true">TV</button>
           <button id="nav-leaderboard" class="nav-btn">Leaders</button>
@@ -279,6 +280,31 @@
           </div>
         </div>
       </div>
+
+      <!-- LOGS VIEW -->
+      <main id="view-logs" class="hidden">
+        <div class="logs-page">
+          <div class="column logs-column">
+            <div class="column-header">
+              <h2>Run Metrics</h2>
+              <div class="header-sort-controls">
+                <button id="logs-refresh-btn" class="tf-btn" title="Refresh metrics">↻</button>
+              </div>
+            </div>
+            <div id="logs-run-cards" class="logs-grid">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+          <div class="column logs-column">
+            <div class="column-header">
+              <h2>Recent Runs</h2>
+            </div>
+            <div id="logs-history-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </main>
 
       <!-- LIVE FEED VIEW -->
       <main id="view-live">
