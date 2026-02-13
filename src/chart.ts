@@ -229,7 +229,7 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
 const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
   sourceInterval: '1min',
   divergenceTable: true,
-  divergentPriceBars: false,
+  divergentPriceBars: true,
   bullishDivergentColor: '#26a69a',
   bearishDivergentColor: '#ef5350',
   neutralDivergentColor: '#8b949e'
@@ -245,9 +245,9 @@ const DEFAULT_PRICE_SETTINGS: {
   verticalGridlines: false,
   horizontalGridlines: false,
   ma: [
-    { enabled: false, type: 'SMA', length: 20, color: '#ffa500' },
-    { enabled: false, type: 'SMA', length: 50, color: '#8a2be2' },
-    { enabled: false, type: 'SMA', length: 100, color: '#00bcd4' },
+    { enabled: true, type: 'EMA', length: 8, color: '#ffa500' },
+    { enabled: true, type: 'EMA', length: 21, color: '#8a2be2' },
+    { enabled: true, type: 'SMA', length: 50, color: '#00bcd4' },
     { enabled: false, type: 'SMA', length: 200, color: '#90ee90' }
   ]
 };
@@ -1146,6 +1146,11 @@ function computeEMA(values: number[], length: number): Array<number | null> {
   return out;
 }
 
+function isRenderableMaValue(value: unknown): value is number {
+  const numeric = typeof value === 'number' ? value : Number.NaN;
+  return Number.isFinite(numeric) && numeric > 0;
+}
+
 function clearMovingAverageSeries(): void {
   for (const setting of priceChartSettings.ma) {
     if (setting.series && priceChart) {
@@ -1200,12 +1205,12 @@ function applyMovingAverages(): void {
 
     const maData = currentBars.map((bar, index) => {
       const value = values[index];
-      if (!Number.isFinite(Number(value))) {
+      if (!isRenderableMaValue(value)) {
         return { time: bar.time };
       }
       return {
         time: bar.time,
-        value: Number(value)
+        value
       };
     });
     setting.series.setData(maData);
@@ -1265,9 +1270,9 @@ function updateMovingAveragesLatestPoint(): void {
     if (setting.values.length !== currentBars.length) {
       setting.values = new Array(currentBars.length).fill(null);
     }
-    setting.values[lastIndex] = Number.isFinite(Number(nextValue)) ? Number(nextValue) : null;
-    if (Number.isFinite(Number(nextValue))) {
-      setting.series.update({ time: lastBar.time, value: Number(nextValue) });
+    setting.values[lastIndex] = isRenderableMaValue(nextValue) ? nextValue : null;
+    if (isRenderableMaValue(nextValue)) {
+      setting.series.update({ time: lastBar.time, value: nextValue });
     } else {
       setting.series.update({ time: lastBar.time });
     }
