@@ -1,17 +1,11 @@
 // RSI Chart configuration and management
 
 import { RSIPoint, RSIDisplayMode } from './chartApi';
+import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 
 // Declare Lightweight Charts global
 declare const LightweightCharts: any;
 declare const LightweightChartsLineTools: any;
-
-const MM_DD_YY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Los_Angeles',
-  month: '2-digit',
-  day: '2-digit',
-  year: '2-digit'
-});
 
 export interface RSIChartOptions {
   container: HTMLElement;
@@ -262,21 +256,21 @@ export class RSIChart {
     if (tickMarkType === 0) {
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
-        timeZone: 'America/Los_Angeles'
+        timeZone: getAppTimeZone()
       });
     }
 
     if (tickMarkType === 1) {
       return date.toLocaleDateString('en-US', {
         month: 'short',
-        timeZone: 'America/Los_Angeles'
+        timeZone: getAppTimeZone()
       });
     }
 
     // Zoomed in (day/time): show day-of-month only.
     return date.toLocaleDateString('en-US', {
       day: 'numeric',
-      timeZone: 'America/Los_Angeles'
+      timeZone: getAppTimeZone()
     });
   }
 
@@ -759,7 +753,11 @@ export class RSIChart {
 
   private formatMmDdYyFromUnixSeconds(unixSeconds: number | null): string {
     if (!Number.isFinite(unixSeconds)) return 'N/A';
-    return MM_DD_YY_FORMATTER.format(new Date(Math.round(Number(unixSeconds)) * 1000));
+    return getAppTimeZoneFormatter('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit'
+    }).format(new Date(Math.round(Number(unixSeconds)) * 1000));
   }
 
   private createTrendlineCrossLabelElement(text: string): HTMLDivElement {

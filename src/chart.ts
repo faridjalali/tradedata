@@ -2,6 +2,7 @@ import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 import { DIVERGENCE_LOOKBACK_DAYS, getTickerDivergenceSummary, DivergenceSummaryEntry } from './divergenceTable';
+import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 
 declare const Chart: any;
 
@@ -111,6 +112,7 @@ const TRENDLINE_COLOR = '#ffa500';
 const VOLUME_DELTA_POSITIVE_COLOR = '#089981';
 const VOLUME_DELTA_NEGATIVE_COLOR = '#f23645';
 const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; label: string }> = [
+  { value: '1min', label: '1 min' },
   { value: '5min', label: '5 min' },
   { value: '15min', label: '15 min' },
   { value: '30min', label: '30 min' },
@@ -212,11 +214,11 @@ const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
   lineColor: VOLUME_DELTA_RSI_COLOR,
   midlineColor: '#ffffff',
   midlineStyle: 'dotted',
-  sourceInterval: '5min'
+  sourceInterval: '1min'
 };
 
 const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
-  sourceInterval: '5min',
+  sourceInterval: '1min',
   divergenceTable: true,
   divergentPriceBars: false,
   bullishDivergentColor: '#26a69a',
@@ -270,24 +272,6 @@ const priceChartSettings: PriceChartSettings = {
   ma: DEFAULT_PRICE_SETTINGS.ma.map((ma) => ({ ...ma, series: null, values: [] }))
 };
 
-const MONTH_KEY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Los_Angeles',
-  year: 'numeric',
-  month: '2-digit'
-});
-const LA_DAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Los_Angeles',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit'
-});
-const MM_DD_YY_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/Los_Angeles',
-  month: '2-digit',
-  day: '2-digit',
-  year: '2-digit'
-});
-
 function ensureMonthGridOverlay(container: HTMLElement, pane: 'price' | 'volumeDeltaRsi' | 'volumeDelta' | 'rsi'): HTMLDivElement {
   const existing = pane === 'price'
     ? priceMonthGridOverlayEl
@@ -337,8 +321,48 @@ function unixSecondsFromTimeValue(time: string | number | null | undefined): num
   return null;
 }
 
-function monthKeyInLA(unixSeconds: number): string {
-  const parts = MONTH_KEY_FORMATTER.formatToParts(new Date(unixSeconds * 1000));
+function toDateFromScaleTime(time: any): Date | null {
+  if (typeof time === 'number' && Number.isFinite(time)) {
+    return new Date(time * 1000);
+  }
+  if (typeof time === 'string' && time.trim()) {
+    const parsed = new Date(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  if (time && typeof time === 'object' && Number.isFinite(time.year) && Number.isFinite(time.month) && Number.isFinite(time.day)) {
+    return new Date(Date.UTC(Number(time.year), Number(time.month) - 1, Number(time.day), 0, 0, 0));
+  }
+  return null;
+}
+
+function formatTimeScaleTickMark(time: any, tickMarkType: number): string {
+  const date = toDateFromScaleTime(time);
+  if (!date) return '';
+  const appTimeZone = getAppTimeZone();
+
+  if (tickMarkType === 0) {
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      timeZone: appTimeZone
+    });
+  }
+  if (tickMarkType === 1) {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      timeZone: appTimeZone
+    });
+  }
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    timeZone: appTimeZone
+  });
+}
+
+function monthKeyInAppTimeZone(unixSeconds: number): string {
+  const parts = getAppTimeZoneFormatter('en-US', {
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(new Date(unixSeconds * 1000));
   const year = parts.find((p) => p.type === 'year')?.value || '';
   const month = parts.find((p) => p.type === 'month')?.value || '';
   return `${year}-${month}`;
@@ -350,7 +374,7 @@ function buildMonthBoundaryTimes(bars: any[]): number[] {
   for (const bar of bars) {
     const unixSeconds = unixSecondsFromTimeValue(bar?.time);
     if (unixSeconds === null) continue;
-    const monthKey = monthKeyInLA(unixSeconds);
+    const monthKey = monthKeyInAppTimeZone(unixSeconds);
     if (monthKey !== lastMonthKey) {
       result.push(unixSeconds);
       lastMonthKey = monthKey;
@@ -359,8 +383,12 @@ function buildMonthBoundaryTimes(bars: any[]): number[] {
   return result;
 }
 
-function dayKeyInLA(unixSeconds: number): string {
-  return LA_DAY_FORMATTER.format(new Date(unixSeconds * 1000));
+function dayKeyInAppTimeZone(unixSeconds: number): string {
+  return getAppTimeZoneFormatter('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date(unixSeconds * 1000));
 }
 
 function calculateRSIFromCloses(closePrices: number[], period: number): number[] {
@@ -963,7 +991,7 @@ function ensureSettingsLoadedFromStorage(): void {
     const persistedVolumeDelta = parsed?.volumeDelta;
     if (persistedVolumeDelta) {
       const source = String(persistedVolumeDelta.sourceInterval || '');
-      if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
+      if (source === '1min' || source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
         volumeDeltaSettings.sourceInterval = source;
       }
       if (typeof persistedVolumeDelta.divergenceTable === 'boolean') {
@@ -994,7 +1022,7 @@ function ensureSettingsLoadedFromStorage(): void {
       }
       volumeDeltaRsiSettings.midlineStyle = persistedVolumeDeltaRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
       const source = String(persistedVolumeDeltaRSI.sourceInterval || '');
-      if (source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
+      if (source === '1min' || source === '5min' || source === '15min' || source === '30min' || source === '1hour' || source === '4hour') {
         volumeDeltaRsiSettings.sourceInterval = source;
       }
     }
@@ -1033,7 +1061,7 @@ function buildDailyMAValuesForBars(bars: any[], type: MAType, length: number): A
     const unixSeconds = unixSecondsFromTimeValue(bar?.time);
     const close = Number(bar?.close);
     if (unixSeconds === null || !Number.isFinite(close)) continue;
-    const key = dayKeyInLA(unixSeconds);
+    const key = dayKeyInAppTimeZone(unixSeconds);
     if (!seen.has(key)) {
       seen.add(key);
       dayOrder.push(key);
@@ -1055,7 +1083,7 @@ function buildDailyMAValuesForBars(bars: any[], type: MAType, length: number): A
   return bars.map((bar) => {
     const unixSeconds = unixSecondsFromTimeValue(bar?.time);
     if (unixSeconds === null) return null;
-    return dailyMAByKey.get(dayKeyInLA(unixSeconds)) ?? null;
+    return dailyMAByKey.get(dayKeyInAppTimeZone(unixSeconds)) ?? null;
   });
 }
 
@@ -1902,10 +1930,14 @@ function formatDivergenceOverlayTimeLabel(time: string | number): string {
   if (unix === null) return '';
   const date = new Date(unix * 1000);
   if (currentChartInterval === '1day' || currentChartInterval === '1week') {
-    return MM_DD_YY_FORMATTER.format(date);
+    return getAppTimeZoneFormatter('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit'
+    }).format(date);
   }
   return date.toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
+    timeZone: getAppTimeZone(),
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -2500,7 +2532,7 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
     const setting = target.dataset.vdSetting || '';
     if (setting === 'source-interval') {
       const nextValue = String((target as HTMLSelectElement).value || '');
-      if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
+      if (nextValue !== '1min' && nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
       volumeDeltaSettings.sourceInterval = nextValue;
       if (currentChartTicker) {
         renderCustomChart(currentChartTicker, currentChartInterval);
@@ -2616,7 +2648,7 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
     }
     if (setting === 'source-interval') {
       const nextValue = String((target as HTMLSelectElement).value || '');
-      if (nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
+      if (nextValue !== '1min' && nextValue !== '5min' && nextValue !== '15min' && nextValue !== '30min' && nextValue !== '1hour' && nextValue !== '4hour') return;
       volumeDeltaRsiSettings.sourceInterval = nextValue;
       applyVolumeDeltaRSISettings(true);
       persistSettingsToStorage();
@@ -2961,7 +2993,11 @@ function toUnixSeconds(time: string | number): number | null {
 
 function formatMmDdYyFromUnixSeconds(unixSeconds: number | null): string {
   if (!Number.isFinite(unixSeconds)) return 'N/A';
-  return MM_DD_YY_FORMATTER.format(new Date(Math.round(Number(unixSeconds)) * 1000));
+  return getAppTimeZoneFormatter('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit'
+  }).format(new Date(Math.round(Number(unixSeconds)) * 1000));
 }
 
 function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
@@ -3398,10 +3434,13 @@ function createPriceChart(container: HTMLElement) {
     },
     timeScale: {
       visible: false,
+      timeVisible: true,
+      secondsVisible: false,
       borderVisible: false,
       fixRightEdge: false,
       rightBarStaysOnScroll: false,
       rightOffset: RIGHT_MARGIN_BARS,
+      tickMarkFormatter: formatTimeScaleTickMark,
     },
   });
 
@@ -3475,6 +3514,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       fixRightEdge: false,
       rightBarStaysOnScroll: false,
       rightOffset: RIGHT_MARGIN_BARS,
+      tickMarkFormatter: formatTimeScaleTickMark,
     },
   });
 
@@ -3560,6 +3600,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
       fixRightEdge: false,
       rightBarStaysOnScroll: false,
       rightOffset: RIGHT_MARGIN_BARS,
+      tickMarkFormatter: formatTimeScaleTickMark,
     },
   });
 

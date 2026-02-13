@@ -64,7 +64,7 @@ Required at startup:
 - `DATABASE_URL`
 
 Recommended:
-- `FMP_API_KEY`
+- `MASSIVE_API_KEY`
 - `DIVERGENCE_DATABASE_URL` (if using Divergence features)
 - `WEBHOOK_SECRET`
 - `DIVERGENCE_SCAN_SECRET`
@@ -91,4 +91,3 @@ If shutdown exceeds 15 seconds, process exits with code `1`.
 curl -sS http://127.0.0.1:3000/healthz | jq
 curl -sS http://127.0.0.1:3000/readyz | jq
 ```
-

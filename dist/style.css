@@ -62,7 +62,7 @@ header {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: 240px;
+  min-width: 272px;
   background: rgba(22, 27, 34, 0.98);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -85,6 +85,23 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.global-settings-timezone-row {
+  justify-content: space-between;
+}
+
+.global-settings-label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.global-settings-select {
+  min-width: 182px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 0.75rem;
 }
 
 .global-settings-toggle-row {

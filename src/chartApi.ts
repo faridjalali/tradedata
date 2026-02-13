@@ -2,10 +2,10 @@
 
 export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day' | '1week';
 export type RSIDisplayMode = 'line' | 'points';
-export type VolumeDeltaSourceInterval = '5min' | '15min' | '30min' | '1hour' | '4hour';
+export type VolumeDeltaSourceInterval = '1min' | '5min' | '15min' | '30min' | '1hour' | '4hour';
 
 export interface CandleBar {
-  time: string | number; // LA timezone: "YYYY-MM-DD" or Unix timestamp
+  time: string | number; // Usually Unix timestamp (seconds) or "YYYY-MM-DD" for day/week bars
   open: number;
   high: number;
   low: number;
@@ -20,7 +20,7 @@ export interface RSIPoint {
 
 export interface ChartData {
   interval: ChartInterval;
-  timezone: 'America/Los_Angeles';
+  timezone: string;
   bars: CandleBar[];
   rsi: RSIPoint[];
   volumeDeltaRsi: {
@@ -34,7 +34,7 @@ export interface ChartData {
 
 export interface ChartLatestData {
   interval: ChartInterval;
-  timezone: 'America/Los_Angeles';
+  timezone: string;
   latestBar: CandleBar | null;
   latestRsi: RSIPoint | null;
   latestVolumeDeltaRsi: RSIPoint | null;

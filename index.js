@@ -176,9 +176,11 @@ function validateStartupEnvironment() {
   if (BASIC_AUTH_ENABLED && !String(BASIC_AUTH_PASSWORD || '').trim()) {
     errors.push('BASIC_AUTH_PASSWORD must be set when BASIC_AUTH_ENABLED is true');
   }
-  warnIfMissing('FMP_API_KEY');
-  if (String(process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true') {
-    warnings.push('FMP_REQUESTS_PAUSED is enabled (outbound FMP calls are blocked)');
+  if (!String(process.env.MASSIVE_API_KEY || process.env.FMP_API_KEY || '').trim()) {
+    warnings.push('MASSIVE_API_KEY is not set');
+  }
+  if (String(process.env.MASSIVE_REQUESTS_PAUSED || process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true') {
+    warnings.push('MASSIVE_REQUESTS_PAUSED is enabled (outbound market-data calls are blocked)');
   }
 
   const positiveNumericEnvNames = [
@@ -453,7 +455,7 @@ const divergencePool = divergenceDatabaseUrl
   ? new Pool({ connectionString: divergenceDatabaseUrl })
   : null;
 
-const DIVERGENCE_SOURCE_INTERVAL = '5min';
+const DIVERGENCE_SOURCE_INTERVAL = '1min';
 const DIVERGENCE_SCAN_PARENT_INTERVAL = '1day';
 const DIVERGENCE_SCAN_LOOKBACK_DAYS = 45;
 const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(1, Number(process.env.DIVERGENCE_SCAN_SPREAD_MINUTES) || 15);
@@ -579,7 +581,7 @@ const initDivergenceDB = async () => {
         prev_close DECIMAL(15, 4) NOT NULL,
         volume_delta DECIMAL(20, 4) NOT NULL,
         timeframe VARCHAR(10) NOT NULL DEFAULT '1d',
-        source_interval VARCHAR(10) NOT NULL DEFAULT '5min',
+        source_interval VARCHAR(10) NOT NULL DEFAULT '1min',
         timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
         scan_job_id INTEGER
@@ -622,7 +624,7 @@ const initDivergenceDB = async () => {
       CREATE TABLE IF NOT EXISTS divergence_daily_bars (
         ticker VARCHAR(20) NOT NULL,
         trade_date DATE NOT NULL,
-        source_interval VARCHAR(10) NOT NULL DEFAULT '5min',
+        source_interval VARCHAR(10) NOT NULL DEFAULT '1min',
         close DECIMAL(15, 4) NOT NULL,
         prev_close DECIMAL(15, 4) NOT NULL,
         volume_delta DECIMAL(20, 4) NOT NULL,
@@ -638,7 +640,7 @@ const initDivergenceDB = async () => {
     await divergencePool.query(`
       CREATE TABLE IF NOT EXISTS divergence_summaries (
         ticker VARCHAR(20) NOT NULL,
-        source_interval VARCHAR(10) NOT NULL DEFAULT '5min',
+        source_interval VARCHAR(10) NOT NULL DEFAULT '1min',
         trade_date DATE NOT NULL,
         state_1d VARCHAR(10) NOT NULL DEFAULT 'neutral',
         state_3d VARCHAR(10) NOT NULL DEFAULT 'neutral',
@@ -934,52 +936,14 @@ app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
   }
 });
 
-app.get('/api/fmp/settings', (_req, res) => {
-  return res.json({
-    enableV3Fetch: isFmpLegacyFallbackEnabled(),
-    requestsPaused: isFmpRequestsPaused()
-  });
-});
+// --- Massive (market data provider) helpers ---
+const MASSIVE_KEY = process.env.MASSIVE_API_KEY || process.env.FMP_API_KEY || '';
+const MASSIVE_BASE = 'https://api.massive.com';
+const MASSIVE_TIMEOUT_MS = 15000;
+const MASSIVE_REQUESTS_PAUSED = String(process.env.MASSIVE_REQUESTS_PAUSED || process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
 
-app.post('/api/fmp/settings', (req, res) => {
-  const body = req.body || {};
-  if (!Object.prototype.hasOwnProperty.call(body, 'enableV3Fetch')) {
-    return res.status(400).json({ error: 'enableV3Fetch is required' });
-  }
-
-  const raw = body.enableV3Fetch;
-  const valid = typeof raw === 'boolean'
-    || typeof raw === 'number'
-    || (typeof raw === 'string' && /^(true|false|1|0|yes|no)$/i.test(raw.trim()));
-  if (!valid) {
-    return res.status(400).json({ error: 'enableV3Fetch must be a boolean-like value' });
-  }
-
-  const next = parseBooleanInput(raw, isFmpLegacyFallbackEnabled());
-  setFmpLegacyFallbackEnabled(next);
-  return res.json({
-    enableV3Fetch: isFmpLegacyFallbackEnabled(),
-    requestsPaused: isFmpRequestsPaused()
-  });
-});
-
-// --- FMP (Financial Modeling Prep) helpers ---
-const FMP_KEY = process.env.FMP_API_KEY || '';
-const FMP_STABLE_BASE = 'https://financialmodelingprep.com/stable';
-const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
-const FMP_TIMEOUT_MS = 15000;
-const FMP_REQUESTS_PAUSED = String(process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
-const FMP_USE_LEGACY_FALLBACK_DEFAULT = parseBooleanInput(process.env.FMP_USE_LEGACY_FALLBACK, true);
-const FMP_RATE_LIMIT_PER_MINUTE = Math.max(1, Number(process.env.FMP_RATE_LIMIT_PER_MINUTE) || 240);
-const FMP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const FMP_RATE_LIMIT_COOLDOWN_MS = Math.max(30_000, Number(process.env.FMP_RATE_LIMIT_COOLDOWN_MS) || 300_000);
-let fmpRateLimitCooldownUntilMs = 0;
-const fmpRecentRequestTimesMs = [];
-let fmpRateLimiterTail = Promise.resolve();
-let fmpUseLegacyFallback = FMP_USE_LEGACY_FALLBACK_DEFAULT;
-
-function buildFmpUrl(base, path, params = {}) {
-  const normalizedBase = base.replace(/\/+$/, '');
+function buildMassiveUrl(path, params = {}) {
+  const normalizedBase = MASSIVE_BASE.replace(/\/+$/, '');
   const normalizedPath = String(path || '').replace(/^\/+/, '');
   const url = new URL(`${normalizedBase}/${normalizedPath}`);
   for (const [key, value] of Object.entries(params)) {
@@ -993,6 +957,7 @@ function buildFmpUrl(base, path, params = {}) {
 function sanitizeFmpUrl(url) {
   try {
     const parsed = new URL(url);
+    if (parsed.searchParams.has('apiKey')) parsed.searchParams.set('apiKey', '***');
     if (parsed.searchParams.has('apikey')) parsed.searchParams.set('apikey', '***');
     return parsed.toString();
   } catch {
@@ -1011,6 +976,9 @@ function parseJsonSafe(text) {
 
 function extractFmpError(payload) {
   if (!payload || typeof payload !== 'object') return null;
+  if (String(payload.status || '').toUpperCase() === 'ERROR') {
+    return String(payload.error || payload.message || 'Massive API returned ERROR status').trim();
+  }
   const candidates = [
     payload.error,
     payload.message,
@@ -1031,6 +999,7 @@ function toNumberOrNull(value) {
 
 function toArrayPayload(payload) {
   if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.results)) return payload.results;
   if (payload && Array.isArray(payload.historical)) return payload.historical;
   return null;
 }
@@ -1060,26 +1029,17 @@ function getFmpSymbolCandidates(rawSymbol) {
 }
 
 function assertFmpKey() {
-  if (!FMP_KEY) {
-    throw new Error('FMP_API_KEY is not configured on the server');
+  if (!MASSIVE_KEY) {
+    throw new Error('MASSIVE_API_KEY is not configured on the server');
   }
 }
 
 function isFmpRequestsPaused() {
-  return FMP_REQUESTS_PAUSED;
-}
-
-function isFmpLegacyFallbackEnabled() {
-  return Boolean(fmpUseLegacyFallback);
-}
-
-function setFmpLegacyFallbackEnabled(value) {
-  fmpUseLegacyFallback = Boolean(value);
-  return fmpUseLegacyFallback;
+  return MASSIVE_REQUESTS_PAUSED;
 }
 
 function buildFmpPausedError(message) {
-  const err = new Error(message || 'FMP requests are paused by server configuration');
+  const err = new Error(message || 'Market-data requests are paused by server configuration');
   err.httpStatus = 503;
   err.isFmpPaused = true;
   return err;
@@ -1096,70 +1056,31 @@ function isFmpRateLimitedError(err) {
 }
 
 function buildFmpRateLimitedError(message) {
-  const err = new Error(message || 'FMP rate limit reached');
+  const err = new Error(message || 'Market-data provider rate limit reached');
   err.httpStatus = 429;
   err.isFmpRateLimited = true;
   return err;
 }
 
-function extendFmpRateLimitCooldown() {
-  const nextUntil = Date.now() + FMP_RATE_LIMIT_COOLDOWN_MS;
-  if (nextUntil > fmpRateLimitCooldownUntilMs) {
-    fmpRateLimitCooldownUntilMs = nextUntil;
-    console.warn(`FMP rate-limit cooldown active for ${Math.round(FMP_RATE_LIMIT_COOLDOWN_MS / 1000)}s`);
+function withMassiveApiKey(url) {
+  const parsed = new URL(url, MASSIVE_BASE);
+  if (!parsed.searchParams.has('apiKey')) {
+    parsed.searchParams.set('apiKey', MASSIVE_KEY);
   }
-}
-
-function getFmpRateLimitCooldownError() {
-  if (Date.now() >= fmpRateLimitCooldownUntilMs) return null;
-  return buildFmpRateLimitedError('FMP rate limit cooldown is active');
-}
-
-function trimFmpRateWindow(nowMs) {
-  while (fmpRecentRequestTimesMs.length > 0 && (nowMs - fmpRecentRequestTimesMs[0]) >= FMP_RATE_LIMIT_WINDOW_MS) {
-    fmpRecentRequestTimesMs.shift();
-  }
-}
-
-async function acquireFmpRateLimitSlot() {
-  while (true) {
-    const nowMs = Date.now();
-    trimFmpRateWindow(nowMs);
-    if (fmpRecentRequestTimesMs.length < FMP_RATE_LIMIT_PER_MINUTE) {
-      fmpRecentRequestTimesMs.push(nowMs);
-      return;
-    }
-    const oldestMs = Number(fmpRecentRequestTimesMs[0] || nowMs);
-    const waitMs = Math.max(25, (oldestMs + FMP_RATE_LIMIT_WINDOW_MS) - nowMs + 5);
-    await sleep(waitMs);
-  }
-}
-
-function waitForFmpRateLimitSlot() {
-  const next = fmpRateLimiterTail.then(() => acquireFmpRateLimitSlot(), () => acquireFmpRateLimitSlot());
-  fmpRateLimiterTail = next.catch(() => {});
-  return next;
+  return parsed.toString();
 }
 
 async function fetchFmpJson(url, label) {
+  assertFmpKey();
   if (isFmpRequestsPaused()) {
     throw buildFmpPausedError(`${label} requests are paused by server configuration`);
   }
 
-  const cooldownErr = getFmpRateLimitCooldownError();
-  if (cooldownErr) {
-    throw cooldownErr;
-  }
-  await waitForFmpRateLimitSlot();
-  const cooldownAfterWaitErr = getFmpRateLimitCooldownError();
-  if (cooldownAfterWaitErr) {
-    throw cooldownAfterWaitErr;
-  }
-
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FMP_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), MASSIVE_TIMEOUT_MS);
   try {
-    const resp = await fetch(url, { signal: controller.signal });
+    const requestUrl = withMassiveApiKey(url);
+    const resp = await fetch(requestUrl, { signal: controller.signal });
     const text = await resp.text();
     const payload = parseJsonSafe(text);
     const apiError = extractFmpError(payload);
@@ -1167,8 +1088,7 @@ async function fetchFmpJson(url, label) {
 
     if (!resp.ok) {
       if (resp.status === 429) {
-        extendFmpRateLimitCooldown();
-        throw buildFmpRateLimitedError(`${label} request failed (429): ${bodyText || 'Limit Reach'}`);
+        throw buildFmpRateLimitedError(`${label} request failed (429): ${bodyText || 'Too Many Requests'}`);
       }
       const details = bodyText || `HTTP ${resp.status}`;
       throw new Error(`${label} request failed (${resp.status}): ${details}`);
@@ -1176,7 +1096,6 @@ async function fetchFmpJson(url, label) {
 
     if (apiError) {
       if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
-        extendFmpRateLimitCooldown();
         throw buildFmpRateLimitedError(`${label} request failed (429): ${apiError}`);
       }
       throw new Error(`${label} API error: ${apiError}`);
@@ -1219,58 +1138,71 @@ async function fetchFmpArrayWithFallback(label, urls) {
   throw lastError || new Error(`${label} request failed`);
 }
 
-async function fmpDailySingle(symbol) {
-  const symbolEncoded = encodeURIComponent(symbol);
-  const urls = [
-    // Prefer non-split-adjusted/full endpoints so daily candlesticks match raw OHLC.
-    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/non-split-adjusted', { symbol, apikey: FMP_KEY, timeseries: 250 }),
-    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 })
-  ];
-  if (isFmpLegacyFallbackEnabled()) {
-    urls.push(
-      buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 }),
-      buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-full', { symbol, apikey: FMP_KEY, timeseries: 250 })
-    );
-  }
-  // Fall back to light only if full is unavailable for the account/endpoint.
-  urls.push(buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }));
-  if (isFmpLegacyFallbackEnabled()) {
-    urls.push(buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }));
-  }
+const MASSIVE_AGG_INTERVAL_MAP = {
+  '1min': { multiplier: 1, timespan: 'minute' },
+  '5min': { multiplier: 5, timespan: 'minute' },
+  '15min': { multiplier: 15, timespan: 'minute' },
+  '30min': { multiplier: 30, timespan: 'minute' },
+  '1hour': { multiplier: 1, timespan: 'hour' },
+  '4hour': { multiplier: 4, timespan: 'hour' },
+  '1day': { multiplier: 1, timespan: 'day' },
+  '1week': { multiplier: 1, timespan: 'week' }
+};
 
-  const rows = await fetchFmpArrayWithFallback('FMP daily', urls);
-  let hasExplicitOHLC = false;
+function getMassiveAggConfig(interval) {
+  return MASSIVE_AGG_INTERVAL_MAP[String(interval || '').trim()] || null;
+}
+
+function buildMassiveAggregateRangeUrl(symbol, interval, options = {}) {
+  const config = getMassiveAggConfig(interval);
+  if (!config) {
+    throw new Error(`Unsupported interval for Massive aggregates: ${interval}`);
+  }
+  const endDate = String(options.to || formatDateUTC(new Date())).trim();
+  const startDate = String(options.from || formatDateUTC(addUtcDays(new Date(), -30))).trim();
+  return buildMassiveUrl(
+    `/v2/aggs/ticker/${encodeURIComponent(symbol)}/range/${config.multiplier}/${config.timespan}/${startDate}/${endDate}`,
+    {
+      adjusted: 'true',
+      sort: 'asc',
+      limit: 50000
+    }
+  );
+}
+
+function normalizeUnixSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric > 1e12) return Math.floor(numeric / 1000);
+  if (numeric > 1e10) return Math.floor(numeric / 1000);
+  return Math.floor(numeric);
+}
+
+async function fmpDailySingle(symbol) {
+  const end = new Date();
+  const start = addUtcDays(end, -400);
+  const url = buildMassiveAggregateRangeUrl(symbol, '1day', {
+    from: formatDateUTC(start),
+    to: formatDateUTC(end)
+  });
+  const rows = await fetchFmpArrayWithFallback('Massive daily', [url]);
   const normalized = rows.map((row) => {
-    const dateRaw = typeof row.date === 'string' ? row.date.trim() : '';
-    const date = dateRaw ? dateRaw.slice(0, 10) : null;
-    // Prefer explicit OHLC values from full endpoints.
-    const close = toNumberOrNull(row.close ?? row.price);
-    const openRaw = toNumberOrNull(row.open);
-    const highRaw = toNumberOrNull(row.high);
-    const lowRaw = toNumberOrNull(row.low);
-    const open = openRaw ?? close;
-    const high = highRaw ?? close;
-    const low = lowRaw ?? close;
-    const volume = toNumberOrNull(row.volume) ?? 0;
+    const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
+    const close = toNumberOrNull(row.c ?? row.close ?? row.price);
+    const open = toNumberOrNull(row.o ?? row.open) ?? close;
+    const high = toNumberOrNull(row.h ?? row.high) ?? close;
+    const low = toNumberOrNull(row.l ?? row.low) ?? close;
+    const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
+    const date = Number.isFinite(time) ? etDateStringFromUnixSeconds(time) : '';
 
     if (!date || close === null || open === null || high === null || low === null) {
       return null;
-    }
-
-    if (openRaw !== null && highRaw !== null && lowRaw !== null) {
-      hasExplicitOHLC = true;
     }
 
     const boundedHigh = Math.max(high, open, close);
     const boundedLow = Math.min(low, open, close);
     return { date, open, high: boundedHigh, low: boundedLow, close, volume };
   }).filter(Boolean);
-
-  // Close-only "light" data renders misleading daily candlesticks. Force real OHLC for daily candles.
-  if (normalized.length > 0 && !hasExplicitOHLC) {
-    throw new Error(`FMP daily for ${symbol} returned close-only data; OHLC endpoint unavailable`);
-  }
-
   return normalized.length ? normalized : null;
 }
 
@@ -1283,14 +1215,14 @@ async function fmpDaily(symbol) {
       const rows = await fmpDailySingle(candidate);
       if (rows && rows.length > 0) {
         if (candidate !== normalizeTickerSymbol(symbol)) {
-          console.log(`FMP symbol fallback (daily): ${symbol} -> ${candidate}`);
+          console.log(`Massive symbol fallback (daily): ${symbol} -> ${candidate}`);
         }
         return rows;
       }
     } catch (err) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
-      console.error(`FMP daily failed for ${candidate} (requested ${symbol}): ${message}`);
+      console.error(`Massive daily failed for ${candidate} (requested ${symbol}): ${message}`);
     }
   }
 
@@ -1323,74 +1255,12 @@ function toQuoteRow(payload) {
 }
 
 async function fmpQuoteSingle(symbol) {
-  assertFmpKey();
-  const symbolEncoded = encodeURIComponent(symbol);
-  const urls = [buildFmpUrl(FMP_STABLE_BASE, '/quote', { symbol, apikey: FMP_KEY })];
-  if (isFmpLegacyFallbackEnabled()) {
-    urls.push(
-      buildFmpUrl(FMP_LEGACY_BASE, `/quote/${symbolEncoded}`, { apikey: FMP_KEY }),
-      buildFmpUrl(FMP_LEGACY_BASE, '/quote', { symbol, apikey: FMP_KEY })
-    );
-  }
-  let lastError = null;
-
-  for (const url of urls) {
-    try {
-      const payload = await fetchFmpJson(url, 'FMP quote');
-      const row = toQuoteRow(payload);
-      if (!row) continue;
-      const price = toNumberOrNull(row.price ?? row.last ?? row.c ?? row.close ?? row.ask ?? row.bid);
-      if (!Number.isFinite(price)) continue;
-      return {
-        price,
-        timestamp: normalizeQuoteTimestamp(row.timestamp ?? row.lastUpdated ?? row.time)
-      };
-    } catch (err) {
-      lastError = err;
-      const message = err && err.message ? err.message : String(err);
-      console.error(`FMP quote fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
-    }
-  }
-
-  if (lastError) throw lastError;
+  void symbol;
   return null;
 }
 
 async function fmpLatestQuote(symbol) {
-  const normalizedSymbol = normalizeTickerSymbol(symbol);
-  if (!normalizedSymbol) return null;
-
-  const cached = getTimedCacheValue(CHART_QUOTE_CACHE, normalizedSymbol);
-  if (cached) {
-    return cached;
-  }
-
-  const candidates = getFmpSymbolCandidates(normalizedSymbol);
-  let lastError = null;
-
-  for (const candidate of candidates) {
-    try {
-      const quote = await fmpQuoteSingle(candidate);
-      if (!quote || !Number.isFinite(Number(quote.price))) continue;
-      setTimedCacheValue(
-        CHART_QUOTE_CACHE,
-        normalizedSymbol,
-        quote,
-        Date.now() + CHART_QUOTE_CACHE_MS
-      );
-      if (candidate !== normalizedSymbol) {
-        console.log(`FMP symbol fallback (quote): ${normalizedSymbol} -> ${candidate}`);
-      }
-      return quote;
-    } catch (err) {
-      lastError = err;
-      const message = err && err.message ? err.message : String(err);
-      console.error(`FMP quote failed for ${candidate} (requested ${normalizedSymbol}): ${message}`);
-      if (isFmpPausedError(err)) throw err;
-    }
-  }
-
-  if (lastError) throw lastError;
+  void symbol;
   return null;
 }
 
@@ -1456,7 +1326,7 @@ function isFmpSubscriptionRestrictedError(err) {
 const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
 const VD_RSI_LOWER_TF_CACHE = new Map();
 const VD_RSI_RESULT_CACHE = new Map();
-const CHART_DATA_CACHE = new Map(); // Cache for FMP intraday chart data
+const CHART_DATA_CACHE = new Map(); // Cache for provider intraday chart data
 const CHART_QUOTE_CACHE = new Map();
 const CHART_IN_FLIGHT_REQUESTS = new Map();
 const CHART_FINAL_RESULT_CACHE = new Map();
@@ -1472,7 +1342,7 @@ const CHART_DATA_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_DATA_C
 const CHART_QUOTE_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_QUOTE_CACHE_MAX_ENTRIES) || 4000);
 const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_FINAL_RESULT_CACHE_MAX_ENTRIES) || 4000);
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
-const VOLUME_DELTA_SOURCE_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour'];
+const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
 const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
 const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 6);
 const DIVERGENCE_SUMMARY_CACHE = new Map();
@@ -1725,36 +1595,21 @@ async function fmpIntraday(symbol, interval, options = {}) {
     return cached;
   }
 
-  const symbolEncoded = encodeURIComponent(symbol);
-  const params = { symbol, apikey: FMP_KEY };
-  if (from) params.from = from;
-  if (to) params.to = to;
-
-  const urls = [buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, params)];
-  if (isFmpLegacyFallbackEnabled()) {
-    urls.push(
-      buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY, from, to }),
-      buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, params)
-    );
-  }
-
-  const rows = await fetchFmpArrayWithFallback(`FMP ${interval}`, urls);
+  const urls = [buildMassiveAggregateRangeUrl(symbol, interval, { from, to })];
+  const rows = await fetchFmpArrayWithFallback(`Massive ${interval}`, urls);
   const normalized = rows.map((row) => {
-    const datetimeRaw = row.date ?? row.datetime;
-    const datetime = typeof datetimeRaw === 'string'
-      ? datetimeRaw.replace('T', ' ').replace('Z', '').trim()
-      : '';
-    const close = toNumberOrNull(row.close ?? row.price);
-    const open = toNumberOrNull(row.open) ?? close;
-    const high = toNumberOrNull(row.high) ?? close;
-    const low = toNumberOrNull(row.low) ?? close;
-    const volume = toNumberOrNull(row.volume) ?? 0;
+    const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
+    const close = toNumberOrNull(row.c ?? row.close ?? row.price);
+    const open = toNumberOrNull(row.o ?? row.open) ?? close;
+    const high = toNumberOrNull(row.h ?? row.high) ?? close;
+    const low = toNumberOrNull(row.l ?? row.low) ?? close;
+    const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
 
-    if (!datetime || close === null || open === null || high === null || low === null) {
+    if (!Number.isFinite(time) || close === null || open === null || high === null || low === null) {
       return null;
     }
 
-    return { datetime, open, high, low, close, volume };
+    return { time, open, high, low, close, volume };
   }).filter(Boolean);
 
   const result = normalized.length ? normalized : null;
@@ -1776,12 +1631,12 @@ function getIntradayLookbackDays(interval) {
 
 const CHART_INTRADAY_LOOKBACK_DAYS = 365; // Legacy fallback
 const CHART_INTRADAY_SLICE_DAYS = {
-  '1min': 3,
-  '5min': 7,
-  '15min': 30,
-  '30min': 30,
-  '1hour': 60,
-  '4hour': 120
+  '1min': 30,
+  '5min': 45,
+  '15min': 45,
+  '30min': 45,
+  '1hour': 45,
+  '4hour': 45
 };
 
 async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
@@ -1806,13 +1661,17 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
-          byDateTime.set(row.datetime, row);
+          const rowKey = Number.isFinite(Number(row?.time))
+            ? String(Math.floor(Number(row.time)))
+            : String(row?.datetime || '');
+          if (!rowKey) continue;
+          byDateTime.set(rowKey, row);
         }
       }
     } catch (err) {
       lastSliceError = err;
       const message = err && err.message ? err.message : String(err);
-      console.error(`FMP ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
+      console.error(`Massive ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
       if (isFmpSubscriptionRestrictedError(err) || isFmpRateLimitedError(err) || isFmpPausedError(err)) {
         throw err;
       }
@@ -1831,7 +1690,7 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
     }
   }
 
-  return Array.from(byDateTime.values()).sort((a, b) => String(a.datetime).localeCompare(String(b.datetime)));
+  return Array.from(byDateTime.values()).sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
 }
 
 async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
@@ -1843,14 +1702,14 @@ async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_IN
       const rows = await fmpIntradayChartHistorySingle(candidate, interval, lookbackDays);
       if (rows && rows.length > 0) {
         if (candidate !== normalizeTickerSymbol(symbol)) {
-          console.log(`FMP symbol fallback (${interval}): ${symbol} -> ${candidate}`);
+          console.log(`Massive symbol fallback (${interval}): ${symbol} -> ${candidate}`);
         }
         return rows;
       }
     } catch (err) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
-      console.error(`FMP ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
+      console.error(`Massive ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
       if (isFmpRateLimitedError(err) || isFmpPausedError(err)) {
         throw err;
       }
@@ -2283,7 +2142,7 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
   return { rsi, deltaValues };
 }
 
-// Convert ET timezone bars to LA timezone
+// Convert provider bars to epoch seconds for chart rendering
 function parseFmpDateTime(datetimeValue) {
   if (typeof datetimeValue !== 'string') return null;
   const normalized = datetimeValue.trim().replace('T', ' ').replace('Z', '');
@@ -2298,28 +2157,27 @@ function parseFmpDateTime(datetimeValue) {
   };
 }
 
+function parseBarTimeToUnixSeconds(bar) {
+  const numeric = normalizeUnixSeconds(bar?.time ?? bar?.timestamp ?? bar?.t);
+  if (Number.isFinite(numeric)) return numeric;
+  const parts = parseFmpDateTime(bar?.datetime || bar?.date);
+  if (!parts) return null;
+  const { year, month, day, hour, minute } = parts;
+  const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const etOffset = testDate.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    timeZoneName: 'short'
+  }).includes('EST') ? -5 : -4;
+  return Math.floor(Date.UTC(year, month - 1, day, hour - etOffset, minute, 0) / 1000);
+}
+
 function convertToLATime(bars, interval) {
+  void interval;
   const converted = [];
 
   for (const bar of bars) {
-    // Intraday: Convert ET to Unix timestamp
-    // FMP returns datetime like "2025-08-10 09:30:00" in ET (America/New_York)
-    const parts = parseFmpDateTime(bar.datetime || bar.date);
-    if (!parts) continue;
-
-    const { year, month, day, hour, minute } = parts;
-
-    // Create a date string that will be interpreted in ET timezone
-    // by using toLocaleString to get the UTC offset
-    const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-    const etOffset = testDate.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      timeZoneName: 'short'
-    }).includes('EST') ? -5 : -4; // -5 for EST, -4 for EDT
-
-    // Create UTC timestamp accounting for ET offset
-    const utcTimestamp = Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
-    const timestamp = Math.floor(utcTimestamp / 1000);
+    const timestamp = parseBarTimeToUnixSeconds(bar);
+    if (!Number.isFinite(timestamp)) continue;
 
     converted.push({
       time: timestamp,
@@ -2345,23 +2203,42 @@ async function getSpyIntraday(lookbackDays = 30) {
 }
 
 function isRegularHoursEt(dateTimeStr) {
-  const parts = String(dateTimeStr || '').split(' ');
-  if (parts.length < 2) return false;
-  const [h, m] = parts[1].split(':').map(Number);
+  const numeric = normalizeUnixSeconds(dateTimeStr);
+  if (Number.isFinite(numeric)) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).formatToParts(new Date(Number(numeric) * 1000));
+    const partMap = {};
+    for (const part of parts) partMap[part.type] = part.value;
+    const h = Number(partMap.hour || 0);
+    const m = Number(partMap.minute || 0);
+    const totalMin = h * 60 + m;
+    return totalMin >= 570 && totalMin <= 960;
+  }
+  const dateTimeParts = String(dateTimeStr || '').split(' ');
+  if (dateTimeParts.length < 2) return false;
+  const [h, m] = dateTimeParts[1].split(':').map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return false;
   const totalMin = h * 60 + m;
   return totalMin >= 570 && totalMin <= 960;
 }
 
 function roundEtTo30MinEpochMs(dateTimeStr) {
-  // Parse FMP string (ET) as proper UTC timestamp
-  // 1. Treat input as UTC
+  const unixSeconds = normalizeUnixSeconds(dateTimeStr);
+  if (Number.isFinite(unixSeconds)) {
+    const d = new Date(Number(unixSeconds) * 1000);
+    d.setSeconds(0, 0);
+    const minutes = d.getUTCMinutes();
+    d.setUTCMinutes(minutes < 30 ? 0 : 30);
+    return d.getTime();
+  }
+
   const asUTC = new Date(String(dateTimeStr).replace(' ', 'T') + 'Z');
-  // 2. Get what time that represents in NY
   const nyStr = asUTC.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
-  // 3. Parse that NY time as if it were UTC
   const nyAsUTC = new Date(nyStr + ' GMT');
-  // 4. Diff is the offset we need to add to convert "ET interpreted as UTC" to "Real UTC"
   const diff = asUTC.getTime() - nyAsUTC.getTime();
   const d = new Date(asUTC.getTime() + diff);
 
@@ -2381,10 +2258,11 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   const spyMap = new Map();
   const spyDayByTs = new Map();
   for (const bar of spyBars || []) {
-    const day = String(bar.datetime || '').slice(0, 10);
+    const unixSeconds = parseBarTimeToUnixSeconds(bar);
+    const day = Number.isFinite(unixSeconds) ? etDateStringFromUnixSeconds(unixSeconds) : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
-    if (!isRegularHoursEt(bar.datetime)) continue;
-    const ts = roundEtTo30MinEpochMs(bar.datetime);
+    if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;
+    const ts = roundEtTo30MinEpochMs(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime);
     spyMap.set(ts, bar.close);
     spyDayByTs.set(ts, day);
   }
@@ -2392,10 +2270,11 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   const compMap = new Map();
   const compDayByTs = new Map();
   for (const bar of compBars || []) {
-    const day = String(bar.datetime || '').slice(0, 10);
+    const unixSeconds = parseBarTimeToUnixSeconds(bar);
+    const day = Number.isFinite(unixSeconds) ? etDateStringFromUnixSeconds(unixSeconds) : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
-    if (!isRegularHoursEt(bar.datetime)) continue;
-    const ts = roundEtTo30MinEpochMs(bar.datetime);
+    if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;
+    const ts = roundEtTo30MinEpochMs(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime);
     compMap.set(ts, bar.close);
     compDayByTs.set(ts, day);
   }
@@ -2484,7 +2363,7 @@ app.get('/api/breadth', async (req, res) => {
   }
 });
 
-function toVolumeDeltaSourceInterval(value, fallback = '5min') {
+function toVolumeDeltaSourceInterval(value, fallback = '1min') {
   const normalized = String(value || '').trim();
   return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
 }
@@ -2609,8 +2488,8 @@ function buildChartResultFromRows(options = {}) {
   const interval = String(options.interval || '4hour');
   const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : new Map();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const timer = options.timer || null;
 
   const parentFetchInterval = (interval === '1day' || interval === '1week') ? '4hour' : interval;
@@ -2743,8 +2622,8 @@ function buildChartResultFromRows(options = {}) {
 function prewarmDailyChartResultFromRows(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1day')));
   const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
   if (!ticker || !rowsByInterval) return;
@@ -2803,8 +2682,8 @@ function prewarmDailyChartResultFromRows(options = {}) {
 function prewarmFourHourChartResultFromRows(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('4hour')));
   const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
   if (!ticker || !rowsByInterval) return;
@@ -2863,8 +2742,8 @@ function prewarmFourHourChartResultFromRows(options = {}) {
 function prewarmWeeklyChartResultFromRows(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1week')));
   const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : null;
   if (!ticker || !rowsByInterval) return;
@@ -2924,8 +2803,8 @@ function prewarmWeeklyChartResultFromRequest(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   if (!ticker) return;
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1week')));
   const requestKey = buildChartRequestKey({
     ticker,
@@ -2958,8 +2837,8 @@ function prewarmFourHourChartResultFromRequest(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   if (!ticker) return;
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('4hour')));
   const requestKey = buildChartRequestKey({
     ticker,
@@ -2997,8 +2876,8 @@ function parseChartRequestParams(req) {
   }
   const interval = (req.query.interval || '4hour').toString();
   const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(req.query.vdRsiLength) || 14)));
-  const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '5min');
-  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(req.query.vdRsiSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(req.query.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(req.query.vdRsiSourceInterval, '1min');
   const lookbackDays = getIntradayLookbackDays(interval);
   const requestKey = buildChartRequestKey({
     ticker,
@@ -3279,7 +3158,7 @@ function computeDivergenceSummaryStatesFromDailyResult(result, options = {}) {
 }
 
 function getDivergenceSummaryCacheKey(ticker, sourceInterval) {
-  return `${String(ticker || '').toUpperCase()}|${String(sourceInterval || '5min')}`;
+  return `${String(ticker || '').toUpperCase()}|${String(sourceInterval || '1min')}`;
 }
 
 function getCachedDivergenceSummaryEntry(ticker, sourceInterval) {
@@ -3411,7 +3290,7 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled) {
 
 async function buildDailyDivergenceSummaryInput(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1day')));
   if (!ticker) {
     return { bars: [], volumeDelta: [] };
@@ -3453,7 +3332,7 @@ async function buildDailyDivergenceSummaryInput(options = {}) {
 
 async function getOrBuildTickerDivergenceSummary(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   if (!ticker || !isValidTickerSymbol(ticker)) return null;
 
   const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
@@ -3490,7 +3369,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
   const tickers = Array.isArray(options.tickers)
     ? options.tickers.map((ticker) => String(ticker || '').toUpperCase()).filter((ticker) => ticker && isValidTickerSymbol(ticker))
     : [];
-  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '5min');
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   if (tickers.length === 0) {
     return {
       sourceInterval: vdSourceInterval,
@@ -3639,49 +3518,40 @@ async function getPublishedTradeDateForSourceInterval(sourceInterval) {
 
 async function fetchUsStockUniverseFromFmp() {
   assertFmpKey();
-  const urls = [buildFmpUrl(FMP_STABLE_BASE, '/stock/list', { apikey: FMP_KEY })];
-  if (isFmpLegacyFallbackEnabled()) {
-    urls.push(buildFmpUrl(FMP_LEGACY_BASE, '/stock/list', { apikey: FMP_KEY }));
+  const rows = [];
+  let nextUrl = buildMassiveUrl('/v3/reference/tickers', {
+    market: 'stocks',
+    locale: 'us',
+    active: 'true',
+    order: 'asc',
+    sort: 'ticker',
+    limit: 1000
+  });
+  let guard = 0;
+  while (nextUrl && guard < 1000) {
+    guard += 1;
+    const payload = await fetchFmpJson(nextUrl, 'Massive stock universe');
+    const pageRows = Array.isArray(payload?.results) ? payload.results : [];
+    rows.push(...pageRows);
+    nextUrl = typeof payload?.next_url === 'string' && payload.next_url.trim()
+      ? payload.next_url.trim()
+      : '';
   }
 
-  let rows = null;
-  let lastError = null;
-  for (const url of urls) {
-    try {
-      const payload = await fetchFmpJson(url, 'FMP stock universe');
-      if (Array.isArray(payload) && payload.length > 0) {
-        rows = payload;
-        break;
-      }
-    } catch (err) {
-      lastError = err;
-      const message = err && err.message ? err.message : String(err);
-      console.error(`FMP stock universe fetch failed (${sanitizeFmpUrl(url)}): ${message}`);
-      if (isFmpPausedError(err)) {
-        break;
-      }
-    }
-  }
-
-  if (!rows) {
-    throw lastError || new Error('Unable to fetch stock universe from FMP');
-  }
-
-  const allowedExchangeFragments = ['NASDAQ', 'NYSE', 'AMEX', 'ARCA', 'BATS', 'NEW YORK'];
   const symbols = [];
   for (const row of rows) {
-    const symbol = normalizeTickerSymbol(row?.symbol);
-    if (!symbol || symbol.includes('.') || symbol.includes('/')) continue;
-    const exchange = String(row?.exchangeShortName || row?.exchange || row?.exchangeName || '').toUpperCase();
-    const type = String(row?.type || row?.assetType || '').toLowerCase();
-    const isEtf = String(row?.isEtf || '').toLowerCase() === 'true';
-    const isFund = String(row?.isFund || '').toLowerCase() === 'true';
-    const active = row?.isActivelyTrading;
-    if (!allowedExchangeFragments.some((fragment) => exchange.includes(fragment))) continue;
-    if (type && !type.includes('stock') && !type.includes('common')) continue;
-    if (isEtf || isFund) continue;
+    const symbol = normalizeTickerSymbol(row?.ticker || row?.symbol);
+    if (!symbol || symbol.includes('/')) continue;
+    const exchange = String(row?.primary_exchange || row?.exchange || '').toUpperCase();
+    const type = String(row?.type || row?.asset_type || '').toLowerCase();
+    const active = row?.active;
     if (active === false || String(active).toLowerCase() === 'false') continue;
-    symbols.push({ ticker: symbol, exchange: exchange || null, assetType: type || null });
+    if (type.includes('etf') || type.includes('fund') || type.includes('etn')) continue;
+    symbols.push({
+      ticker: symbol,
+      exchange: exchange || null,
+      assetType: type || null
+    });
   }
 
   const unique = new Map();
@@ -3749,7 +3619,7 @@ async function getDivergenceUniverseTickers(options = {}) {
     return [];
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    console.error(`FMP universe bootstrap failed, falling back to cached divergence symbols: ${message}`);
+    console.error(`Massive universe bootstrap failed, falling back to cached divergence symbols: ${message}`);
     return storedTickers;
   }
 }
@@ -4794,7 +4664,7 @@ async function runDailyDivergenceScan(options = {}) {
 function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const candidate = new Date(nowEt);
-  candidate.setHours(16, 2, 0, 0);
+  candidate.setHours(16, 20, 0, 0);
 
   if (!isEtWeekday(candidate) || nowEt.getTime() >= candidate.getTime()) {
     candidate.setDate(candidate.getDate() + 1);
@@ -4808,8 +4678,30 @@ function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
     candidate.getMonth() + 1,
     candidate.getDate(),
     16,
-    2
+    20
   );
+}
+
+async function runScheduledDivergencePipeline() {
+  const scanSummary = await runDailyDivergenceScan({ trigger: 'scheduler' });
+  const scanStatus = String(scanSummary?.status || 'unknown');
+  if (scanStatus !== 'completed') {
+    console.log(`Scheduled divergence scan status=${scanStatus}; skipping scheduled table build.`);
+    return scanSummary;
+  }
+
+  try {
+    const tableSummary = await runDivergenceTableBuild({
+      trigger: 'scheduler-post-scan',
+      sourceInterval: DIVERGENCE_SOURCE_INTERVAL
+    });
+    console.log('Scheduled divergence table build completed after scan:', tableSummary);
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`Scheduled divergence table build failed after scan: ${message}`);
+  }
+
+  return scanSummary;
 }
 
 function scheduleNextDivergenceScan() {
@@ -4819,7 +4711,7 @@ function scheduleNextDivergenceScan() {
   const delayMs = Math.max(1000, nextRunMs - Date.now());
   divergenceSchedulerTimer = setTimeout(async () => {
     try {
-      await runDailyDivergenceScan({ trigger: 'scheduler' });
+      await runScheduledDivergencePipeline();
     } catch (err) {
       const message = err && err.message ? err.message : String(err);
       console.error(`Scheduled divergence scan failed: ${message}`);

@@ -36,7 +36,7 @@ function normalizeTicker(value: unknown): string {
 }
 
 function cacheKeyFor(ticker: string, sourceInterval: string): string {
-  return `${normalizeTicker(ticker)}|${String(sourceInterval || '5min').trim() || '5min'}`;
+  return `${normalizeTicker(ticker)}|${String(sourceInterval || '1min').trim() || '1min'}`;
 }
 
 function getCachedSummary(ticker: string, sourceInterval: string): DivergenceSummaryEntry | null {
@@ -126,10 +126,10 @@ async function fetchDivergenceSummariesBatch(tickers: string[], sourceInterval: 
 
 export async function getTickerDivergenceSummary(
   ticker: string,
-  sourceInterval: string = '5min'
+  sourceInterval: string = '1min'
 ): Promise<DivergenceSummaryEntry | null> {
   const normalizedTicker = normalizeTicker(ticker);
-  const normalizedSource = String(sourceInterval || '5min').trim() || '5min';
+  const normalizedSource = String(sourceInterval || '1min').trim() || '1min';
   if (!normalizedTicker) return null;
 
   const cached = getCachedSummary(normalizedTicker, normalizedSource);
@@ -179,7 +179,7 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
 
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
-  sourceInterval: string = '5min'
+  sourceInterval: string = '1min'
 ): Promise<void> {
   const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
   if (!cells.length) return;

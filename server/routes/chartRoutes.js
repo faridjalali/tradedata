@@ -126,7 +126,7 @@ function registerChartRoutes(options = {}) {
         }
       }
 
-      const vdSourceInterval = String(req.query.vdSourceInterval || '5min').trim();
+      const vdSourceInterval = String(req.query.vdSourceInterval || '1min').trim();
       const payload = await getDivergenceSummaryForTickers({
         tickers,
         vdSourceInterval

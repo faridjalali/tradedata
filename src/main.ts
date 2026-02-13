@@ -24,8 +24,14 @@ import {
     runManualDivergenceTableBuild,
     syncDivergenceScanUiState
 } from './divergenceFeed';
-import { fetchFmpSettings, updateFmpSettings } from './divergenceApi';
 import { SortMode, LiveFeedMode } from './types';
+import {
+    getAppTimeZone,
+    getAppTimeZoneLabel,
+    getAppTimeZoneOptions,
+    onAppTimeZoneChange,
+    setAppTimeZone
+} from './timezone';
 
 let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live'; 
 let liveDashboardScrollY = 0;
@@ -259,14 +265,68 @@ function initSearch() {
     });
 }
 
+function syncCurrentDateInputsForTimeZoneChange(nextTimeZone: string, previousTimeZone: string): void {
+    const previousWeek = getCurrentWeekISO(previousTimeZone);
+    const previousMonth = getCurrentMonthISO(previousTimeZone);
+    const nextWeek = getCurrentWeekISO(nextTimeZone);
+    const nextMonth = getCurrentMonthISO(nextTimeZone);
+
+    const liveWeekInput = document.getElementById('history-week') as HTMLInputElement | null;
+    const liveMonthInput = document.getElementById('history-month') as HTMLInputElement | null;
+    const divergenceWeekInput = document.getElementById('divergence-history-week') as HTMLInputElement | null;
+    const divergenceMonthInput = document.getElementById('divergence-history-month') as HTMLInputElement | null;
+
+    if (liveWeekInput && (!liveWeekInput.value || liveWeekInput.value === previousWeek)) {
+        liveWeekInput.value = nextWeek;
+    }
+    if (divergenceWeekInput && (!divergenceWeekInput.value || divergenceWeekInput.value === previousWeek)) {
+        divergenceWeekInput.value = nextWeek;
+    }
+    if (liveMonthInput && (!liveMonthInput.value || liveMonthInput.value === previousMonth)) {
+        liveMonthInput.value = nextMonth;
+    }
+    if (divergenceMonthInput && (!divergenceMonthInput.value || divergenceMonthInput.value === previousMonth)) {
+        divergenceMonthInput.value = nextMonth;
+    }
+}
+
+async function refreshViewAfterTimeZoneChange(): Promise<void> {
+    if (currentView === 'live') {
+        await fetchLiveAlerts(true);
+        const tickerView = document.getElementById('ticker-view');
+        const ticker = tickerView?.dataset.ticker;
+        if (ticker && !tickerView?.classList.contains('hidden')) {
+            renderTickerView(ticker, { refreshCharts: true });
+        } else {
+            renderOverview();
+        }
+        return;
+    }
+
+    if (currentView === 'divergence') {
+        await fetchDivergenceSignals(true);
+        renderDivergenceOverview();
+        return;
+    }
+
+    if (currentView === 'leaderboard') {
+        fetchLeaderboardData();
+        return;
+    }
+
+    if (currentView === 'breadth') {
+        initBreadth();
+    }
+}
+
 function initGlobalSettingsPanel() {
     const container = document.getElementById('global-settings-container');
     const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
     const panel = document.getElementById('global-settings-panel');
-    const v3Toggle = document.getElementById('global-enable-v3-fetch') as HTMLInputElement | null;
     const status = document.getElementById('global-settings-message');
+    const timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
 
-    if (!container || !toggleBtn || !panel || !v3Toggle || !status) return;
+    if (!container || !toggleBtn || !panel || !status) return;
 
     const setStatus = (text: string) => {
         status.textContent = text;
@@ -280,28 +340,40 @@ function initGlobalSettingsPanel() {
     const openPanel = () => {
         panel.classList.remove('hidden');
         toggleBtn.classList.add('active');
+        if (timezoneSelect) {
+            timezoneSelect.value = getAppTimeZone();
+        }
+        setStatus(`Timezone: ${getAppTimeZoneLabel()}`);
     };
 
-    const syncV3Toggle = async () => {
-        try {
-            v3Toggle.disabled = true;
-            const payload = await fetchFmpSettings();
-            v3Toggle.checked = payload.enableV3Fetch;
-            setStatus('');
-        } catch (error) {
-            const message = String((error as any)?.message || 'Failed to load settings');
-            setStatus(message.length > 48 ? `${message.slice(0, 48)}...` : message);
-        } finally {
-            v3Toggle.disabled = false;
+    if (timezoneSelect) {
+        const options = getAppTimeZoneOptions();
+        timezoneSelect.innerHTML = options
+            .map((option) => `<option value="${option.value}">${option.label}</option>`)
+            .join('');
+        timezoneSelect.value = getAppTimeZone();
+        timezoneSelect.addEventListener('change', () => {
+            setAppTimeZone(timezoneSelect.value);
+        });
+    }
+
+    onAppTimeZoneChange((nextTimeZone, previousTimeZone) => {
+        syncCurrentDateInputsForTimeZoneChange(nextTimeZone, previousTimeZone);
+        if (timezoneSelect) {
+            timezoneSelect.value = nextTimeZone;
         }
-    };
+        setStatus(`Timezone: ${getAppTimeZoneLabel(nextTimeZone)}`);
+        refreshViewAfterTimeZoneChange().catch((error) => {
+            console.error('Failed to refresh UI after timezone change:', error);
+            setStatus('Timezone set (refresh failed)');
+        });
+    });
 
     toggleBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         if (panel.classList.contains('hidden')) {
             openPanel();
             syncDivergenceScanUiState().catch(() => {});
-            syncV3Toggle().catch(() => {});
         } else {
             closePanel();
         }
@@ -318,25 +390,6 @@ function initGlobalSettingsPanel() {
         closePanel();
     });
 
-    v3Toggle.addEventListener('change', async () => {
-        const previous = !v3Toggle.checked;
-        v3Toggle.disabled = true;
-        setStatus('Saving...');
-        try {
-            const payload = await updateFmpSettings({ enableV3Fetch: v3Toggle.checked });
-            v3Toggle.checked = payload.enableV3Fetch;
-            setStatus(payload.enableV3Fetch ? 'V3 fetch enabled' : 'V3 fetch disabled');
-            window.setTimeout(() => {
-                if (!panel.classList.contains('hidden')) setStatus('');
-            }, 1200);
-        } catch (error) {
-            v3Toggle.checked = previous;
-            const message = String((error as any)?.message || 'Failed to save');
-            setStatus(message.length > 48 ? `${message.slice(0, 48)}...` : message);
-        } finally {
-            v3Toggle.disabled = false;
-        }
-    });
 }
 
 function isSiteLockAlreadyUnlocked(): boolean {

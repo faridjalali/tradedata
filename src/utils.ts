@@ -1,31 +1,174 @@
-export function getCurrentWeekISO(): string {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-    const yearStart = new Date(d.getFullYear(), 0, 1);
-    const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-    return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+import { SortMode, Alert } from './types';
+import { getAppTimeZone } from './timezone';
+
+interface DateParts {
+    year: number;
+    month: number;
+    day: number;
 }
 
-export function getCurrentMonthISO(): string {
-    const d = new Date();
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    return `${d.getFullYear()}-${month}`;
+interface DateTimeParts extends DateParts {
+    hour: number;
+    minute: number;
+    second: number;
 }
 
-export function getRelativeTime(timestamp?: string): string {
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const dateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getDateFormatterForTimeZone(timeZone: string): Intl.DateTimeFormat {
+    const key = `${timeZone}|date`;
+    const cached = dateFormatterCache.get(key);
+    if (cached) return cached;
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+    dateFormatterCache.set(key, formatter);
+    return formatter;
+}
+
+function getDateTimeFormatterForTimeZone(timeZone: string): Intl.DateTimeFormat {
+    const key = `${timeZone}|datetime`;
+    const cached = dateTimeFormatterCache.get(key);
+    if (cached) return cached;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    dateTimeFormatterCache.set(key, formatter);
+    return formatter;
+}
+
+function toNumberPart(parts: Intl.DateTimeFormatPart[], type: string): number {
+    const value = Number(parts.find((part) => part.type === type)?.value);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function getDatePartsForTimeZone(date: Date, timeZone: string): DateParts {
+    const parts = getDateFormatterForTimeZone(timeZone).formatToParts(date);
+    return {
+        year: toNumberPart(parts, 'year'),
+        month: toNumberPart(parts, 'month'),
+        day: toNumberPart(parts, 'day')
+    };
+}
+
+function getDateTimePartsForTimeZone(date: Date, timeZone: string): DateTimeParts {
+    const parts = getDateTimeFormatterForTimeZone(timeZone).formatToParts(date);
+    return {
+        year: toNumberPart(parts, 'year'),
+        month: toNumberPart(parts, 'month'),
+        day: toNumberPart(parts, 'day'),
+        hour: toNumberPart(parts, 'hour'),
+        minute: toNumberPart(parts, 'minute'),
+        second: toNumberPart(parts, 'second')
+    };
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+    const parts = getDateTimePartsForTimeZone(date, timeZone);
+    const asUtcMs = Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second,
+        0
+    );
+    return asUtcMs - date.getTime();
+}
+
+function zonedDateTimeToUtc(
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    second: number,
+    millisecond: number,
+    timeZone: string
+): Date {
+    const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+    let utcMs = baseUtcMs;
+
+    for (let i = 0; i < 3; i++) {
+        const offsetMs = getTimeZoneOffsetMs(new Date(utcMs), timeZone);
+        const candidate = baseUtcMs - offsetMs;
+        if (candidate === utcMs) break;
+        utcMs = candidate;
+    }
+
+    return new Date(utcMs);
+}
+
+function dayKeyToUtcMs(dayKey: string): number | null {
+    const match = String(dayKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return Date.UTC(year, month - 1, day);
+}
+
+function getIsoWeekStartUtc(year: number, week: number): Date {
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const jan4Day = jan4.getUTCDay() || 7;
+    const week1Monday = new Date(jan4);
+    week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+
+    const monday = new Date(week1Monday);
+    monday.setUTCDate(week1Monday.getUTCDate() + ((week - 1) * 7));
+    return monday;
+}
+
+export function getCurrentWeekISO(timeZone: string = getAppTimeZone()): string {
+    const now = new Date();
+    const parts = getDatePartsForTimeZone(now, timeZone);
+    const dateUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+
+    const dayNumber = dateUtc.getUTCDay() || 7;
+    dateUtc.setUTCDate(dateUtc.getUTCDate() + 4 - dayNumber);
+
+    const yearStart = new Date(Date.UTC(dateUtc.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((dateUtc.getTime() - yearStart.getTime()) / DAY_MS) + 1) / 7);
+    return `${dateUtc.getUTCFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+}
+
+export function getCurrentMonthISO(timeZone: string = getAppTimeZone()): string {
+    const now = new Date();
+    const parts = getDatePartsForTimeZone(now, timeZone);
+    return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
+}
+
+export function getRelativeTime(timestamp?: string, timeZone: string = getAppTimeZone()): string {
     if (!timestamp) return '';
     const date = new Date(timestamp);
-    const now = new Date();
-    
-    const d1 = new Date(date); d1.setHours(0,0,0,0);
-    const d2 = new Date(now); d2.setHours(0,0,0,0);
-    
-    const diffTime = d2.getTime() - d1.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "1d ago";
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const dayFormatter = getDateFormatterForTimeZone(timeZone);
+    const alertDayKey = dayFormatter.format(date);
+    const nowDayKey = dayFormatter.format(new Date());
+
+    const alertDayMs = dayKeyToUtcMs(alertDayKey);
+    const nowDayMs = dayKeyToUtcMs(nowDayKey);
+    if (!Number.isFinite(alertDayMs) || !Number.isFinite(nowDayMs)) return '';
+
+    const diffDays = Math.floor(((nowDayMs as number) - (alertDayMs as number)) / DAY_MS);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return '1d ago';
+    if (diffDays < 0) return 'Today';
     return `${diffDays}d ago`;
 }
 
@@ -37,46 +180,76 @@ export function formatVolume(vol?: number): string {
     return str.padEnd(7);
 }
 
-export function getDateRangeForMode(mode: string, weekVal: string, monthVal: string): { startDate: string, endDate: string } {
-    let startDate = '', endDate = '';
-    
+export function getDateRangeForMode(
+    mode: string,
+    weekVal: string,
+    monthVal: string,
+    timeZone: string = getAppTimeZone()
+): { startDate: string, endDate: string } {
+    let startDate = '';
+    let endDate = '';
+
     if (mode === '30' || mode === '7' || mode === '1') {
-        const days = parseInt(mode);
+        const days = Math.max(1, Math.floor(Number(mode)));
         const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - days);
+        const start = new Date(end.getTime() - (days * DAY_MS));
         endDate = end.toISOString();
         startDate = start.toISOString();
     } else if (mode === 'week') {
-        if (!weekVal) return { startDate: '', endDate: '' };
-        const parts = weekVal.split('-W');
-        const yearStr = parts[0];
-        const weekStr = parts[1];
-        
-        const year = parseInt(yearStr);
-        const week = parseInt(weekStr);
-        const d = new Date(year, 0, 4);
-        const dayShift = d.getDay() === 0 ? 6 : d.getDay() - 1;
-        const week1Monday = new Date(d.setDate(d.getDate() - dayShift));
-        const monday = new Date(week1Monday.setDate(week1Monday.getDate() + (week - 1) * 7));
-        monday.setHours(0,0,0,0);
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
-        sunday.setHours(23,59,59,999);
-        startDate = monday.toISOString();
-        endDate = sunday.toISOString();
+        const match = String(weekVal || '').trim().match(/^(\d{4})-W(\d{2})$/);
+        if (!match) return { startDate: '', endDate: '' };
+        const year = Number(match[1]);
+        const week = Number(match[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(week) || week < 1 || week > 53) {
+            return { startDate: '', endDate: '' };
+        }
+
+        const mondayUtc = getIsoWeekStartUtc(year, week);
+        const mondayYear = mondayUtc.getUTCFullYear();
+        const mondayMonth = mondayUtc.getUTCMonth() + 1;
+        const mondayDay = mondayUtc.getUTCDate();
+
+        const sundayUtc = new Date(mondayUtc);
+        sundayUtc.setUTCDate(mondayUtc.getUTCDate() + 6);
+        const sundayYear = sundayUtc.getUTCFullYear();
+        const sundayMonth = sundayUtc.getUTCMonth() + 1;
+        const sundayDay = sundayUtc.getUTCDate();
+
+        startDate = zonedDateTimeToUtc(
+            mondayYear,
+            mondayMonth,
+            mondayDay,
+            0,
+            0,
+            0,
+            0,
+            timeZone
+        ).toISOString();
+
+        endDate = zonedDateTimeToUtc(
+            sundayYear,
+            sundayMonth,
+            sundayDay,
+            23,
+            59,
+            59,
+            999,
+            timeZone
+        ).toISOString();
     } else {
-        if (!monthVal) return { startDate: '', endDate: '' };
-        const parts = monthVal.split('-');
-        const year = Number(parts[0]);
-        const month = Number(parts[1]);
-        
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 0); 
-        end.setHours(23,59,59,999);
-        startDate = start.toISOString();
-        endDate = end.toISOString();
+        const match = String(monthVal || '').trim().match(/^(\d{4})-(\d{2})$/);
+        if (!match) return { startDate: '', endDate: '' };
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+            return { startDate: '', endDate: '' };
+        }
+
+        const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        startDate = zonedDateTimeToUtc(year, month, 1, 0, 0, 0, 0, timeZone).toISOString();
+        endDate = zonedDateTimeToUtc(year, month, lastDay, 23, 59, 59, 999, timeZone).toISOString();
     }
+
     return { startDate, endDate };
 }
 
@@ -88,8 +261,6 @@ export function escapeHtml(s: string): string {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-
-import { SortMode, Alert } from './types';
 
 export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => number {
     return (a: Alert, b: Alert): number => {
@@ -114,4 +285,3 @@ export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => numbe
         return (b.timestamp || '').localeCompare(a.timestamp || '');
     };
 }
-

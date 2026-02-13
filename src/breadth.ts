@@ -1,3 +1,5 @@
+import { getAppTimeZone } from './timezone';
+
 // Chart.js is loaded globally via CDN in index.html
 declare const Chart: any;
 
@@ -42,6 +44,7 @@ function normalize(values: number[]): number[] {
 function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intraday: boolean): void {
     const canvas = document.getElementById('breadth-chart') as HTMLCanvasElement;
     if (!canvas) return;
+    const appTimeZone = getAppTimeZone();
 
     // Destroy previous chart
     if (breadthChart) {
@@ -53,7 +56,7 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
         ? new Set(
             data.map(d =>
                 new Date(d.date).toLocaleDateString('en-US', {
-                    timeZone: 'America/Los_Angeles',
+                    timeZone: appTimeZone,
                 })
             )
         ).size
@@ -66,17 +69,21 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
                 return date.toLocaleDateString('en-US', {
                     month: 'numeric',
                     day: 'numeric',
-                    timeZone: 'America/Los_Angeles'
+                    timeZone: appTimeZone
                 });
             }
             return date.toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
-                timeZone: 'America/Los_Angeles'
+                timeZone: appTimeZone
             });
         }
         const date = new Date(d.date + 'T00:00:00');
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            timeZone: appTimeZone
+        });
     });
 
     const spyRaw = data.map(d => d.spy);

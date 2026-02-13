@@ -5,6 +5,7 @@ import { hydrateAlertCardDivergenceTables } from './divergenceTable';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
 import { renderCustomChart } from './chart';
+import { getAppTimeZone } from './timezone';
 
 // Declare TradingView and Chart.js globals
 declare const TradingView: any;
@@ -13,6 +14,7 @@ declare const Chart: any;
 let tickerDailySortMode: SortMode = 'time';
 let tickerWeeklySortMode: SortMode = 'time';
 let currentChartTicker: string | null = null;
+let currentTradingViewTimeZone: string | null = null;
 
 interface RenderTickerViewOptions {
     refreshCharts?: boolean;
@@ -120,16 +122,22 @@ function renderAvg(containerId: string, list: Alert[]): void {
 
 function renderTradingViewChart(ticker: string): void {
     if (typeof TradingView === 'undefined') return;
-    if (currentChartTicker === ticker) return; 
+    const activeTimeZone = getAppTimeZone();
+    if (currentChartTicker === ticker && currentTradingViewTimeZone === activeTimeZone) return; 
 
     currentChartTicker = ticker;
+    currentTradingViewTimeZone = activeTimeZone;
+    const container = document.getElementById('tradingview_chart');
+    if (container) {
+        container.innerHTML = '';
+    }
 
     new TradingView.widget({
         "width": "100%",
         "height": 600,
         "symbol": ticker,
         "interval": "D",
-        "timezone": "Etc/UTC",
+        "timezone": activeTimeZone,
         "theme": "dark",
         "style": "1",
         "locale": "en",
