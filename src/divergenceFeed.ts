@@ -345,27 +345,33 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     if (!fetchAll) return 'All data idle';
     const fetchAllState = String(fetchAll.status || '').toLowerCase();
     const errorTickers = Number(fetchAll.error_tickers || 0);
+    const batchTotal = Math.max(0, Number(fetchAll.total_batches || 0));
+    const batchDone = Math.max(0, Number(fetchAll.completed_batches || 0));
+    const batchNow = Math.max(0, Number(fetchAll.current_batch || 0));
+    const batchText = batchTotal > 0
+        ? ` B${Math.min(batchNow || (batchDone + 1), batchTotal)}/${batchTotal}`
+        : '';
     if (fetchAllState === 'stopped') {
         return 'All data stopped';
     }
     if (fetchAllState === 'paused') {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
-        if (total > 0) return `Paused ${processed}/${total}`;
+        if (total > 0) return `Paused ${processed}/${total}${batchText}`;
         return 'All data paused';
     }
     if (fetchAll.running) {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
         if (fetchAll.stop_requested) {
-            if (total > 0) return `Stopping ${processed}/${total}`;
+            if (total > 0) return `Stopping ${processed}/${total}${batchText}`;
             return 'Stopping';
         }
         if (fetchAll.pause_requested) {
-            if (total > 0) return `Pausing ${processed}/${total}`;
+            if (total > 0) return `Pausing ${processed}/${total}${batchText}`;
             return 'Pausing';
         }
-        if (total > 0) return `All data ${processed}/${total}`;
+        if (total > 0) return `All data ${processed}/${total}${batchText}`;
         return 'All data running';
     }
     if (fetchAllState === 'completed') {

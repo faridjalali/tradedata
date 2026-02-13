@@ -186,6 +186,7 @@ function validateStartupEnvironment() {
   const positiveNumericEnvNames = [
     'DIVERGENCE_SCAN_SPREAD_MINUTES',
     'DIVERGENCE_MIN_UNIVERSE_SIZE',
+    'DIVERGENCE_FETCH_ALL_BATCH_SIZE',
     'DIVERGENCE_STALL_TIMEOUT_MS',
     'DIVERGENCE_STALL_CHECK_INTERVAL_MS',
     'DIVERGENCE_STALL_RETRY_BASE_MS',
@@ -479,6 +480,7 @@ const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
   )
 );
 const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
+const DIVERGENCE_FETCH_ALL_BATCH_SIZE = Math.max(1, Number(process.env.DIVERGENCE_FETCH_ALL_BATCH_SIZE) || 200);
 const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
 const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000);
 const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
@@ -517,6 +519,10 @@ let divergenceFetchAllDataStatus = {
   totalTickers: 0,
   processedTickers: 0,
   errorTickers: 0,
+  batchSize: DIVERGENCE_FETCH_ALL_BATCH_SIZE,
+  totalBatches: 0,
+  completedBatches: 0,
+  currentBatch: 0,
   startedAt: null,
   finishedAt: null,
   lastPublishedTradeDate: ''
@@ -4726,15 +4732,21 @@ function canResumeDivergenceTableBuild() {
 }
 
 function getDivergenceFetchAllDataStatus() {
+  const statusValue = String(divergenceFetchAllDataStatus.status || 'idle').toLowerCase();
+  const displayRunning = Boolean(divergenceFetchAllDataRunning) && statusValue !== 'stopped';
   return {
-    running: Boolean(divergenceFetchAllDataRunning),
+    running: displayRunning,
     pause_requested: Boolean(divergenceFetchAllDataPauseRequested),
     stop_requested: Boolean(divergenceFetchAllDataStopRequested),
-    can_resume: !divergenceFetchAllDataRunning && Boolean(divergenceFetchAllDataResumeState),
+    can_resume: !displayRunning && Boolean(divergenceFetchAllDataResumeState),
     status: String(divergenceFetchAllDataStatus.status || 'idle'),
     total_tickers: Number(divergenceFetchAllDataStatus.totalTickers || 0),
     processed_tickers: Number(divergenceFetchAllDataStatus.processedTickers || 0),
     error_tickers: Number(divergenceFetchAllDataStatus.errorTickers || 0),
+    batch_size: Number(divergenceFetchAllDataStatus.batchSize || DIVERGENCE_FETCH_ALL_BATCH_SIZE),
+    total_batches: Number(divergenceFetchAllDataStatus.totalBatches || 0),
+    completed_batches: Number(divergenceFetchAllDataStatus.completedBatches || 0),
+    current_batch: Number(divergenceFetchAllDataStatus.currentBatch || 0),
     started_at: divergenceFetchAllDataStatus.startedAt || null,
     finished_at: divergenceFetchAllDataStatus.finishedAt || null,
     last_published_trade_date: divergenceFetchAllDataStatus.lastPublishedTradeDate || null
@@ -4744,6 +4756,14 @@ function getDivergenceFetchAllDataStatus() {
 function requestPauseDivergenceFetchAllData() {
   if (!divergenceFetchAllDataRunning) return false;
   divergenceFetchAllDataPauseRequested = true;
+  divergenceFetchAllDataStatus.status = 'pausing';
+  if (divergenceFetchAllDataAbortController && !divergenceFetchAllDataAbortController.signal.aborted) {
+    try {
+      divergenceFetchAllDataAbortController.abort();
+    } catch {
+      // Ignore duplicate aborts.
+    }
+  }
   return true;
 }
 
@@ -4765,7 +4785,12 @@ function requestStopDivergenceFetchAllData() {
   }
   divergenceFetchAllDataStopRequested = true;
   divergenceFetchAllDataPauseRequested = false;
-  divergenceFetchAllDataStatus.status = 'stopping';
+  divergenceFetchAllDataResumeState = null;
+  divergenceFetchAllDataStatus = {
+    ...divergenceFetchAllDataStatus,
+    status: 'stopped',
+    finishedAt: new Date().toISOString()
+  };
   if (divergenceFetchAllDataAbortController && !divergenceFetchAllDataAbortController.signal.aborted) {
     try {
       divergenceFetchAllDataAbortController.abort();
@@ -4796,6 +4821,7 @@ function normalizeDivergenceFetchAllResumeState(state = {}) {
     ? Math.max(0, Math.floor(Number(state.totalTickers)))
     : tickers.length;
   const nextIndex = Math.max(0, Math.min(tickers.length, Math.floor(Number(state.nextIndex) || 0)));
+  const batchSize = Math.max(1, Math.floor(Number(state.batchSize) || DIVERGENCE_FETCH_ALL_BATCH_SIZE));
   const errorTickers = Math.max(0, Math.floor(Number(state.errorTickers) || 0));
   return {
     sourceInterval,
@@ -4804,6 +4830,7 @@ function normalizeDivergenceFetchAllResumeState(state = {}) {
     tickers,
     totalTickers,
     nextIndex,
+    batchSize,
     errorTickers,
     lastPublishedTradeDate: String(state.lastPublishedTradeDate || '').trim()
   };
@@ -5561,10 +5588,32 @@ async function runDivergenceFetchAllData(options = {}) {
     return { status: 'running' };
   }
 
-  const resumeRequested = options.resume === true;
-  const resumeState = resumeRequested
+  const requestedSourceInterval = String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
+  const requestedLookbackDays = Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
+  const explicitAsOfTradeDate = String(options.asOfTradeDate || '').trim();
+  const continueFromFailedBatch = options.continueFromFailedBatch !== false;
+  let resumeRequested = options.resume === true;
+  let resumeState = resumeRequested
     ? normalizeDivergenceFetchAllResumeState(divergenceFetchAllDataResumeState || {})
     : null;
+
+  if (!resumeRequested && continueFromFailedBatch && divergenceFetchAllDataResumeState) {
+    const candidate = normalizeDivergenceFetchAllResumeState(divergenceFetchAllDataResumeState);
+    const targetAsOfTradeDate = await resolveDivergenceAsOfTradeDate(requestedSourceInterval, explicitAsOfTradeDate);
+    if (
+      candidate.tickers.length > 0
+      && candidate.sourceInterval === requestedSourceInterval
+      && candidate.asOfTradeDate === targetAsOfTradeDate
+    ) {
+      resumeRequested = true;
+      resumeState = candidate;
+      console.log(
+        `Fetch-all auto-resume: continuing from batch ${Math.floor(candidate.nextIndex / Math.max(1, candidate.batchSize)) + 1} ` +
+        `at ticker ${candidate.nextIndex + 1}/${Math.max(candidate.totalTickers, candidate.tickers.length)} for ${candidate.asOfTradeDate}`
+      );
+    }
+  }
+
   if (resumeRequested && (!resumeState || resumeState.tickers.length === 0)) {
     return { status: 'no-resume' };
   }
@@ -5580,6 +5629,8 @@ async function runDivergenceFetchAllData(options = {}) {
   let totalTickers = 0;
   let errorTickers = Math.max(0, Number(resumeState?.errorTickers || 0));
   let lastPublishedTradeDate = String(resumeState?.lastPublishedTradeDate || '').trim();
+  let batchSize = Math.max(1, Math.floor(Number(resumeState?.batchSize) || Number(options.batchSize) || DIVERGENCE_FETCH_ALL_BATCH_SIZE));
+  let lastCompletedBatchEndIndex = processedTickers;
   const startedAtIso = new Date().toISOString();
   const fetchAllAbortController = new AbortController();
   divergenceFetchAllDataAbortController = fetchAllAbortController;
@@ -5589,20 +5640,22 @@ async function runDivergenceFetchAllData(options = {}) {
     totalTickers: Number(resumeState?.totalTickers || 0),
     processedTickers: Number(resumeState?.nextIndex || 0),
     errorTickers,
+    batchSize: Number(resumeState?.batchSize || DIVERGENCE_FETCH_ALL_BATCH_SIZE),
+    totalBatches: 0,
+    completedBatches: 0,
+    currentBatch: Number(resumeState?.nextIndex || 0) > 0 ? 1 : 0,
     startedAt: startedAtIso,
     finishedAt: null,
     lastPublishedTradeDate: divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
   };
 
   try {
-    const sourceInterval = resumeState?.sourceInterval
-      || (String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL);
-    const requestedLookbackDays = resumeState?.requestedLookbackDays
-      || Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
+    const sourceInterval = resumeState?.sourceInterval || requestedSourceInterval;
+    const runLookbackDays = resumeState?.requestedLookbackDays || requestedLookbackDays;
     const asOfTradeDate = resumeState?.asOfTradeDate
       || await resolveDivergenceAsOfTradeDate(
         sourceInterval,
-        String(options.asOfTradeDate || '').trim()
+        explicitAsOfTradeDate
       );
     const tickers = resumeState?.tickers?.length
       ? resumeState.tickers
@@ -5610,17 +5663,25 @@ async function runDivergenceFetchAllData(options = {}) {
 
     totalTickers = tickers.length;
     processedTickers = Math.max(0, Math.min(totalTickers, Math.floor(Number(resumeState?.nextIndex) || 0)));
+    lastCompletedBatchEndIndex = processedTickers;
     divergenceFetchAllDataStatus.totalTickers = totalTickers;
     divergenceFetchAllDataStatus.processedTickers = processedTickers;
+    divergenceFetchAllDataStatus.batchSize = batchSize;
+    divergenceFetchAllDataStatus.totalBatches = Math.ceil(totalTickers / batchSize);
+    divergenceFetchAllDataStatus.completedBatches = Math.floor(processedTickers / batchSize);
+    divergenceFetchAllDataStatus.currentBatch = processedTickers < totalTickers
+      ? (Math.floor(processedTickers / batchSize) + 1)
+      : Math.ceil(totalTickers / batchSize);
 
     const persistResumeState = (nextIndex) => {
       divergenceFetchAllDataResumeState = normalizeDivergenceFetchAllResumeState({
         sourceInterval,
         asOfTradeDate,
-        requestedLookbackDays,
+        requestedLookbackDays: runLookbackDays,
         tickers,
         totalTickers,
         nextIndex,
+        batchSize,
         errorTickers,
         lastPublishedTradeDate
       });
@@ -5637,6 +5698,12 @@ async function runDivergenceFetchAllData(options = {}) {
         totalTickers,
         processedTickers: safeNextIndex,
         errorTickers,
+        batchSize,
+        totalBatches: Math.ceil(totalTickers / batchSize),
+        completedBatches: Math.floor(safeNextIndex / batchSize),
+        currentBatch: safeNextIndex < totalTickers
+          ? (Math.floor(safeNextIndex / batchSize) + 1)
+          : Math.ceil(totalTickers / batchSize),
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
@@ -5661,6 +5728,12 @@ async function runDivergenceFetchAllData(options = {}) {
         totalTickers,
         processedTickers: safeNextIndex,
         errorTickers,
+        batchSize,
+        totalBatches: Math.ceil(totalTickers / batchSize),
+        completedBatches: Math.floor(safeNextIndex / batchSize),
+        currentBatch: safeNextIndex < totalTickers
+          ? (Math.floor(safeNextIndex / batchSize) + 1)
+          : Math.ceil(totalTickers / batchSize),
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
@@ -5684,6 +5757,10 @@ async function runDivergenceFetchAllData(options = {}) {
         totalTickers: 0,
         processedTickers: 0,
         errorTickers: 0,
+        batchSize,
+        totalBatches: 0,
+        completedBatches: 0,
+        currentBatch: 0,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
@@ -5708,9 +5785,8 @@ async function runDivergenceFetchAllData(options = {}) {
     }
 
     persistResumeState(processedTickers);
-    const chunkSize = Math.max(1, Math.floor(Number(options.chunkSize) || DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE));
 
-    for (let i = processedTickers; i < tickers.length; i += chunkSize) {
+    for (let i = processedTickers; i < tickers.length; i += batchSize) {
       if (divergenceFetchAllDataStopRequested) {
         return markStopped(i);
       }
@@ -5718,8 +5794,10 @@ async function runDivergenceFetchAllData(options = {}) {
         return markPaused(i);
       }
 
-      const chunk = tickers.slice(i, i + chunkSize);
+      const chunk = tickers.slice(i, i + batchSize);
       const chunkStartProcessed = processedTickers;
+      const currentBatchNumber = Math.floor(chunkStartProcessed / batchSize) + 1;
+      divergenceFetchAllDataStatus.currentBatch = currentBatchNumber;
       let batchResults = [];
       let chunkCompleted = false;
       for (let chunkRetryAttempt = 0; !chunkCompleted; chunkRetryAttempt++) {
@@ -5741,7 +5819,7 @@ async function runDivergenceFetchAllData(options = {}) {
               const rows = await buildDivergenceDailyRowsForTicker({
                 ticker,
                 sourceInterval,
-                lookbackDays: requestedLookbackDays,
+                lookbackDays: runLookbackDays,
                 asOfTradeDate,
                 signal: attemptController.signal,
                 noCache: true
@@ -5749,6 +5827,9 @@ async function runDivergenceFetchAllData(options = {}) {
               return { ticker, rows };
             },
             (result) => {
+              if (divergenceFetchAllDataStopRequested || divergenceFetchAllDataPauseRequested) {
+                return;
+              }
               chunkSettledCount += 1;
               divergenceFetchAllDataStatus.processedTickers = Math.min(totalTickers, chunkStartProcessed + chunkSettledCount);
               divergenceFetchAllDataStatus.errorTickers = errorTickers;
@@ -5770,12 +5851,15 @@ async function runDivergenceFetchAllData(options = {}) {
           const retryAttempt = chunkRetryAttempt + 1;
           if (retryAttempt <= DIVERGENCE_STALL_MAX_RETRIES) {
             const retryDelayMs = getStallRetryBackoffMs(retryAttempt);
+            processedTickers = chunkStartProcessed;
             divergenceFetchAllDataStatus.processedTickers = chunkStartProcessed;
             divergenceFetchAllDataStatus.errorTickers = errorTickers;
             divergenceFetchAllDataStatus.status = 'running';
+            divergenceFetchAllDataStatus.currentBatch = currentBatchNumber;
             persistResumeState(chunkStartProcessed);
             console.warn(
-              `Fetch-all stalled at ticker ${chunkStartProcessed + 1}/${tickers.length}; retry ${retryAttempt}/${DIVERGENCE_STALL_MAX_RETRIES} in ${retryDelayMs}ms`
+              `Fetch-all stalled in batch ${currentBatchNumber}/${Math.ceil(totalTickers / batchSize)} at ticker ` +
+              `${chunkStartProcessed + 1}/${tickers.length}; retry ${retryAttempt}/${DIVERGENCE_STALL_MAX_RETRIES} in ${retryDelayMs}ms`
             );
             try {
               await sleepWithAbort(retryDelayMs, fetchAllAbortController.signal);
@@ -5786,8 +5870,10 @@ async function runDivergenceFetchAllData(options = {}) {
             }
             continue;
           }
+          processedTickers = chunkStartProcessed;
+          persistResumeState(chunkStartProcessed);
           throw new Error(
-            `Fetch-all stalled at ticker ${chunkStartProcessed + 1}/${tickers.length} and exhausted ${DIVERGENCE_STALL_MAX_RETRIES} retries`
+            `Fetch-all stalled in batch ${currentBatchNumber}/${Math.ceil(totalTickers / batchSize)} and exhausted ${DIVERGENCE_STALL_MAX_RETRIES} retries`
           );
         }
 
@@ -5860,6 +5946,11 @@ async function runDivergenceFetchAllData(options = {}) {
       divergenceFetchAllDataStatus.processedTickers = processedTickers;
       divergenceFetchAllDataStatus.errorTickers = errorTickers;
       divergenceFetchAllDataStatus.status = 'running';
+      divergenceFetchAllDataStatus.completedBatches = Math.ceil(processedTickers / batchSize);
+      divergenceFetchAllDataStatus.currentBatch = processedTickers < totalTickers
+        ? (Math.floor(processedTickers / batchSize) + 1)
+        : Math.ceil(totalTickers / batchSize);
+      lastCompletedBatchEndIndex = processedTickers;
       persistResumeState(processedTickers);
     }
 
@@ -5882,6 +5973,10 @@ async function runDivergenceFetchAllData(options = {}) {
       totalTickers,
       processedTickers,
       errorTickers,
+      batchSize,
+      totalBatches: Math.ceil(totalTickers / batchSize),
+      completedBatches: Math.ceil(processedTickers / batchSize),
+      currentBatch: Math.ceil(totalTickers / batchSize),
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: lastPublishedTradeDate || divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
@@ -5894,6 +5989,76 @@ async function runDivergenceFetchAllData(options = {}) {
       lastPublishedTradeDate: lastPublishedTradeDate || null
     };
   } catch (err) {
+    if (divergenceFetchAllDataStopRequested) {
+      divergenceFetchAllDataPauseRequested = false;
+      divergenceFetchAllDataStopRequested = false;
+      divergenceFetchAllDataResumeState = null;
+      const safeNextIndex = Math.max(0, Math.min(totalTickers, lastCompletedBatchEndIndex));
+      divergenceFetchAllDataStatus = {
+        running: false,
+        status: 'stopped',
+        totalTickers,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        batchSize,
+        totalBatches: Math.ceil(totalTickers / batchSize),
+        completedBatches: Math.floor(safeNextIndex / batchSize),
+        currentBatch: safeNextIndex < totalTickers
+          ? (Math.floor(safeNextIndex / batchSize) + 1)
+          : Math.ceil(totalTickers / batchSize),
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        lastPublishedTradeDate: divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
+      };
+      return {
+        status: 'stopped',
+        totalTickers,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        lastPublishedTradeDate: lastPublishedTradeDate || null
+      };
+    }
+    if (divergenceFetchAllDataPauseRequested) {
+      const safeNextIndex = Math.max(0, Math.min(totalTickers, lastCompletedBatchEndIndex));
+      divergenceFetchAllDataPauseRequested = false;
+      divergenceFetchAllDataStopRequested = false;
+      divergenceFetchAllDataResumeState = normalizeDivergenceFetchAllResumeState({
+        sourceInterval: String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL,
+        asOfTradeDate: await resolveDivergenceAsOfTradeDate(
+          String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL
+        ),
+        requestedLookbackDays: Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS)),
+        tickers: await getStoredDivergenceSymbolTickers(),
+        totalTickers,
+        nextIndex: safeNextIndex,
+        batchSize,
+        errorTickers,
+        lastPublishedTradeDate
+      });
+      divergenceFetchAllDataStatus = {
+        running: false,
+        status: 'paused',
+        totalTickers,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        batchSize,
+        totalBatches: Math.ceil(totalTickers / batchSize),
+        completedBatches: Math.floor(safeNextIndex / batchSize),
+        currentBatch: safeNextIndex < totalTickers
+          ? (Math.floor(safeNextIndex / batchSize) + 1)
+          : Math.ceil(totalTickers / batchSize),
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        lastPublishedTradeDate: divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
+      };
+      return {
+        status: 'paused',
+        totalTickers,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        lastPublishedTradeDate: lastPublishedTradeDate || null
+      };
+    }
     divergenceFetchAllDataPauseRequested = false;
     divergenceFetchAllDataStopRequested = false;
     divergenceFetchAllDataStatus = {
@@ -5902,6 +6067,12 @@ async function runDivergenceFetchAllData(options = {}) {
       totalTickers,
       processedTickers,
       errorTickers,
+      batchSize,
+      totalBatches: Math.ceil(totalTickers / batchSize),
+      completedBatches: Math.floor(lastCompletedBatchEndIndex / batchSize),
+      currentBatch: totalTickers > 0
+        ? (Math.floor(lastCompletedBatchEndIndex / batchSize) + 1)
+        : 0,
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: divergenceFetchAllDataStatus.lastPublishedTradeDate || ''
@@ -5915,7 +6086,8 @@ async function runDivergenceFetchAllData(options = {}) {
         requestedLookbackDays: Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS)),
         tickers: await getStoredDivergenceSymbolTickers(),
         totalTickers,
-        nextIndex: processedTickers,
+        nextIndex: lastCompletedBatchEndIndex,
+        batchSize,
         errorTickers,
         lastPublishedTradeDate
       });

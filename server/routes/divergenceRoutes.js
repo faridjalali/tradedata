@@ -312,7 +312,8 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     runDivergenceFetchAllData({
-      trigger: 'manual-api'
+      trigger: 'manual-api',
+      continueFromFailedBatch: true
     })
       .then((summary) => {
         console.log('Manual divergence fetch-all completed:', summary);

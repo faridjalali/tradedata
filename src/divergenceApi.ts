@@ -82,6 +82,10 @@ export interface DivergenceScanStatus {
         total_tickers?: number;
         processed_tickers?: number;
         error_tickers?: number;
+        batch_size?: number;
+        total_batches?: number;
+        completed_batches?: number;
+        current_batch?: number;
         started_at?: string | null;
         finished_at?: string | null;
         last_published_trade_date?: string | null;
