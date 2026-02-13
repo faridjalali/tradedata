@@ -1950,6 +1950,9 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
   let lastSliceError = null;
 
   while (cursor <= endDate) {
+    if (signal && signal.aborted) {
+      throw buildRequestAbortError(`Massive ${interval} fetch aborted for ${symbol}`);
+    }
     const sliceStart = new Date(cursor);
     let sliceEnd = addUtcDays(sliceStart, sliceDays - 1);
     if (sliceEnd > endDate) sliceEnd = new Date(endDate);
@@ -1983,6 +1986,10 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
     }
 
     cursor = addUtcDays(sliceEnd, 1);
+  }
+
+  if (signal && signal.aborted) {
+    throw buildRequestAbortError(`Massive ${interval} fetch aborted for ${symbol}`);
   }
 
   if (byDateTime.size === 0) {
@@ -3642,12 +3649,23 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
   const maxConcurrency = Math.max(1, Math.min(list.length, Number(concurrency) || 1));
   const results = new Array(list.length);
   let cursor = 0;
+  let cancelled = false;
+  let cancelResolve = null;
+  const cancelPromise = new Promise((resolve) => { cancelResolve = resolve; });
 
   async function runOneWorker() {
     while (cursor < list.length) {
+      if (cancelled) break;
       if (typeof shouldStop === 'function') {
         try {
-          if (shouldStop()) break;
+          if (shouldStop()) {
+            if (!cancelled) {
+              cancelled = true;
+              cursor = list.length;
+              cancelResolve();
+            }
+            break;
+          }
         } catch {
           // Ignore stop-check callback errors and continue processing.
         }
@@ -3658,6 +3676,20 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
         results[currentIndex] = await worker(list[currentIndex], currentIndex);
       } catch (err) {
         results[currentIndex] = { error: err };
+        if (isAbortError(err) && typeof shouldStop === 'function') {
+          try {
+            if (shouldStop()) {
+              if (!cancelled) {
+                cancelled = true;
+                cursor = list.length;
+                cancelResolve();
+              }
+              break;
+            }
+          } catch {
+            // Ignore stop-check callback errors.
+          }
+        }
       } finally {
         if (typeof onSettled === 'function') {
           try {
@@ -3674,7 +3706,7 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
   for (let i = 0; i < maxConcurrency; i++) {
     workers.push(runOneWorker());
   }
-  await Promise.all(workers);
+  await Promise.race([Promise.all(workers), cancelPromise]);
   return results;
 }
 
@@ -6007,7 +6039,19 @@ async function runDivergenceFetchAllData(options = {}) {
       }
 
       await upsertDivergenceDailyBarsBatch(batchDailyRows, null);
+      if (divergenceFetchAllDataStopRequested) {
+        processedTickers = chunkStartProcessed;
+        divergenceFetchAllDataStatus.processedTickers = processedTickers;
+        persistResumeState(processedTickers);
+        return markStopped(processedTickers);
+      }
       await upsertDivergenceSummaryBatch(summaryRows, null);
+      if (divergenceFetchAllDataStopRequested) {
+        processedTickers = chunkStartProcessed;
+        divergenceFetchAllDataStatus.processedTickers = processedTickers;
+        persistResumeState(processedTickers);
+        return markStopped(processedTickers);
+      }
       await syncOneDaySignalsFromSummaryRows(summaryRows, sourceInterval, null);
 
       processedTickers = Math.min(totalTickers, chunkStartProcessed + chunk.length);
