@@ -15,12 +15,15 @@ let currentChartTicker: string | null = null;
 let currentChartInterval: ChartInterval = '4hour';
 let priceChart: any = null;
 let candleSeries: any = null;
+let priceTimelineSeries: any = null;
 let rsiChart: RSIChart | null = null;
 let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
+let volumeDeltaRsiTimelineSeries: any = null;
 let volumeDeltaRsiMidlineLine: any = null;
 let volumeDeltaChart: any = null;
 let volumeDeltaHistogramSeries: any = null;
+let volumeDeltaTimelineSeries: any = null;
 let volumeDeltaRsiPoints: Array<{ time: string | number, value: number }> = [];
 let volumeDeltaIndexByTime = new Map<string, number>();
 let volumeDeltaHighlightSeries: any = null;
@@ -89,6 +92,7 @@ const CHART_SESSION_CACHE_KEY = 'custom_chart_session_cache_v1';
 const CHART_SESSION_CACHE_MAX_ENTRIES = 6;
 const CHART_SESSION_CACHE_MAX_BYTES = 900_000;
 const RIGHT_MARGIN_BARS = 10;
+const FUTURE_TIMELINE_DAYS = 370;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
@@ -394,6 +398,30 @@ function dayKeyInAppTimeZone(unixSeconds: number): string {
     month: '2-digit',
     day: '2-digit'
   }).format(new Date(unixSeconds * 1000));
+}
+
+function buildFutureTimelinePointsFromBars(bars: any[]): Array<{ time: number }> {
+  if (!Array.isArray(bars) || bars.length === 0) return [];
+  const lastUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
+  if (!Number.isFinite(lastUnix)) return [];
+  const points: Array<{ time: number }> = [{ time: Number(lastUnix) }];
+  for (let day = 1; day <= FUTURE_TIMELINE_DAYS; day++) {
+    points.push({ time: Number(lastUnix) + (day * 86400) });
+  }
+  return points;
+}
+
+function applyFutureTimelineSeriesData(bars: any[]): void {
+  const timelinePoints = buildFutureTimelinePointsFromBars(bars);
+  if (priceTimelineSeries) {
+    priceTimelineSeries.setData(timelinePoints);
+  }
+  if (volumeDeltaRsiTimelineSeries) {
+    volumeDeltaRsiTimelineSeries.setData(timelinePoints);
+  }
+  if (volumeDeltaTimelineSeries) {
+    volumeDeltaTimelineSeries.setData(timelinePoints);
+  }
 }
 
 function calculateRSIFromCloses(closePrices: number[], period: number): number[] {
@@ -3462,9 +3490,18 @@ function createPriceChart(container: HTMLElement) {
     }
   });
 
+  const timelineSeries = chart.addLineSeries({
+    color: 'rgba(0, 0, 0, 0)',
+    lineVisible: false,
+    pointMarkersVisible: false,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false
+  });
+
   // No line tools for price chart - divergence tool only on RSI chart
 
-  return { chart, series };
+  return { chart, series, timelineSeries };
 }
 
 function createVolumeDeltaRsiChart(container: HTMLElement) {
@@ -3537,6 +3574,15 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
   });
 
+  const timelineSeries = chart.addLineSeries({
+    color: 'rgba(0, 0, 0, 0)',
+    lineVisible: false,
+    pointMarkersVisible: false,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false
+  });
+
   volumeDeltaRsiMidlineLine = rsiSeries.createPriceLine({
     price: VOLUME_DELTA_MIDLINE,
     color: volumeDeltaRsiSettings.midlineColor,
@@ -3556,7 +3602,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     detectAndHandleVolumeDeltaDivergenceClick(param.time);
   });
 
-  return { chart, rsiSeries };
+  return { chart, rsiSeries, timelineSeries };
 }
 
 function createVolumeDeltaChart(container: HTMLElement) {
@@ -3620,6 +3666,15 @@ function createVolumeDeltaChart(container: HTMLElement) {
     },
   });
 
+  const timelineSeries = chart.addLineSeries({
+    color: 'rgba(0, 0, 0, 0)',
+    lineVisible: false,
+    pointMarkersVisible: false,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false
+  });
+
   histogramSeries.createPriceLine({
     price: 0,
     color: '#8b949e',
@@ -3629,7 +3684,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
     title: '',
   });
 
-  return { chart, histogramSeries };
+  return { chart, histogramSeries, timelineSeries };
 }
 
 function setVolumeDeltaRsiData(
@@ -4311,6 +4366,7 @@ function applyChartDataToUi(
   }
 
   monthBoundaryTimes = buildMonthBoundaryTimes(bars);
+  applyFutureTimelineSeriesData(bars);
   const rsiData = buildRSISeriesFromBars(bars, rsiSettings.length);
   const volumeDeltaRsiData = {
     rsi: normalizeValueSeries(data.volumeDeltaRsi?.rsi || []),
@@ -4458,21 +4514,24 @@ export async function renderCustomChart(
 
   // Initialize charts if needed
   if (!priceChart) {
-    const { chart, series } = createPriceChart(chartContainer);
+    const { chart, series, timelineSeries } = createPriceChart(chartContainer);
     priceChart = chart;
     candleSeries = series;
+    priceTimelineSeries = timelineSeries;
     applyPriceGridOptions();
   }
   if (!volumeDeltaRsiChart) {
-    const { chart, rsiSeries } = createVolumeDeltaRsiChart(volumeDeltaRsiContainer);
+    const { chart, rsiSeries, timelineSeries } = createVolumeDeltaRsiChart(volumeDeltaRsiContainer);
     volumeDeltaRsiChart = chart;
     volumeDeltaRsiSeries = rsiSeries;
+    volumeDeltaRsiTimelineSeries = timelineSeries;
     applyVolumeDeltaRSIVisualSettings();
   }
   if (!volumeDeltaChart) {
-    const { chart, histogramSeries } = createVolumeDeltaChart(volumeDeltaContainer);
+    const { chart, histogramSeries, timelineSeries } = createVolumeDeltaChart(volumeDeltaContainer);
     volumeDeltaChart = chart;
     volumeDeltaHistogramSeries = histogramSeries;
+    volumeDeltaTimelineSeries = timelineSeries;
   }
 
   ensureResizeObserver(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
@@ -4584,6 +4643,7 @@ export async function renderCustomChart(
       if (volumeDeltaChart) {
         volumeDeltaHistogramSeries?.setData([]);
       }
+      applyFutureTimelineSeriesData([]);
       clearVolumeDeltaDivergence();
       volumeDeltaRsiPoints = [];
       volumeDeltaIndexByTime = new Map();
@@ -4689,6 +4749,26 @@ function applyWeeklyInitialVisibleRange(): void {
   }
 }
 
+function getNearestMappedValueAtOrBefore(time: string | number, valuesByTime: Map<string, number>): number | null {
+  const direct = Number(valuesByTime.get(timeKey(time)));
+  if (Number.isFinite(direct)) return direct;
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
+
+  const targetUnix = toUnixSeconds(time);
+  for (let i = currentBars.length - 1; i >= 0; i--) {
+    const bar = currentBars[i];
+    if (!bar) continue;
+    const barTime = bar.time;
+    if (targetUnix !== null) {
+      const barUnix = toUnixSeconds(barTime);
+      if (barUnix !== null && barUnix > targetUnix) continue;
+    }
+    const candidate = Number(valuesByTime.get(timeKey(barTime)));
+    if (Number.isFinite(candidate)) return candidate;
+  }
+  return null;
+}
+
 // Setup sync between price, Volume Delta RSI, RSI, and Volume Delta charts.
 function setupChartSync() {
   if (isChartSyncBound) return;
@@ -4771,10 +4851,10 @@ function setupChartSync() {
   });
 
   const setCrosshairOnPrice = (time: string | number) => {
-    const mappedPrice = priceByTime.get(timeKey(time));
+    const mappedPrice = getNearestMappedValueAtOrBefore(time, priceByTime);
     if (Number.isFinite(mappedPrice) && candleSeries) {
       try {
-        priceChart.setCrosshairPosition(mappedPrice, time, candleSeries);
+        priceChart.setCrosshairPosition(Number(mappedPrice), time, candleSeries);
       } catch {
         priceChart.clearCrosshairPosition();
       }
@@ -4784,10 +4864,10 @@ function setupChartSync() {
   };
 
   const setCrosshairOnVolumeDeltaRsi = (time: string | number) => {
-    const mappedVdRsi = volumeDeltaRsiByTime.get(timeKey(time));
+    const mappedVdRsi = getNearestMappedValueAtOrBefore(time, volumeDeltaRsiByTime);
     if (Number.isFinite(mappedVdRsi)) {
       try {
-        volumeDeltaRsiChartInstance.setCrosshairPosition(mappedVdRsi, time, volumeDeltaRsiSeries);
+        volumeDeltaRsiChartInstance.setCrosshairPosition(Number(mappedVdRsi), time, volumeDeltaRsiSeries);
       } catch {
         volumeDeltaRsiChartInstance.clearCrosshairPosition();
       }
@@ -4797,11 +4877,11 @@ function setupChartSync() {
   };
 
   const setCrosshairOnRsi = (time: string | number) => {
-    const mappedRsi = rsiByTime.get(timeKey(time));
+    const mappedRsi = getNearestMappedValueAtOrBefore(time, rsiByTime);
     const rsiSeries = rsiChart?.getSeries();
     if (Number.isFinite(mappedRsi) && rsiSeries) {
       try {
-        rsiChartInstance.setCrosshairPosition(mappedRsi, time, rsiSeries);
+        rsiChartInstance.setCrosshairPosition(Number(mappedRsi), time, rsiSeries);
       } catch {
         rsiChartInstance.clearCrosshairPosition();
       }
@@ -4811,10 +4891,10 @@ function setupChartSync() {
   };
 
   const setCrosshairOnVolumeDelta = (time: string | number) => {
-    const mappedVd = volumeDeltaByTime.get(timeKey(time));
+    const mappedVd = getNearestMappedValueAtOrBefore(time, volumeDeltaByTime);
     if (Number.isFinite(mappedVd)) {
       try {
-        volumeDeltaChartInstance.setCrosshairPosition(mappedVd, time, volumeDeltaHistogramSeries);
+        volumeDeltaChartInstance.setCrosshairPosition(Number(mappedVd), time, volumeDeltaHistogramSeries);
       } catch {
         volumeDeltaChartInstance.clearCrosshairPosition();
       }
