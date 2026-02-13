@@ -254,6 +254,32 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
   });
 }
 
+export function syncTickerDivergenceSummaryToVisibleCards(
+  ticker: string,
+  summary: DivergenceSummaryEntry | null,
+  sourceInterval?: string
+): void {
+  const normalizedTicker = normalizeTicker(ticker);
+  if (!normalizedTicker) return;
+  const normalizedSource = sourceInterval
+    ? normalizeSourceInterval(sourceInterval)
+    : getPreferredDivergenceSourceInterval();
+
+  if (summary) {
+    setCachedSummary(normalizedSource, {
+      ...summary,
+      ticker: normalizedTicker
+    });
+  }
+
+  const fallbackSummary = summary || getCachedSummary(normalizedTicker, normalizedSource);
+  const cells = Array.from(document.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
+  for (const cell of cells) {
+    if (normalizeTicker(cell.dataset.ticker) !== normalizedTicker) continue;
+    renderMiniDivergenceRow(cell, fallbackSummary);
+  }
+}
+
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
   sourceInterval?: string,

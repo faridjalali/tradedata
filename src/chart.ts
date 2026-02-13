@@ -1,7 +1,12 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
-import { DIVERGENCE_LOOKBACK_DAYS, getTickerDivergenceSummary, DivergenceSummaryEntry } from './divergenceTable';
+import {
+  DIVERGENCE_LOOKBACK_DAYS,
+  getTickerDivergenceSummary,
+  DivergenceSummaryEntry,
+  syncTickerDivergenceSummaryToVisibleCards
+} from './divergenceTable';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 
 declare const Chart: any;
@@ -3817,6 +3822,7 @@ function renderVolumeDeltaDivergenceSummary(
         if (summaryEl.dataset.requestToken !== requestToken) return;
         if (String(currentChartTicker || '').trim().toUpperCase() !== ticker) return;
         lastSummary = summary || null;
+        syncTickerDivergenceSummaryToVisibleCards(ticker, lastSummary, sourceInterval);
         renderSummary(lastSummary, false);
       })
       .catch(() => {
@@ -3837,7 +3843,6 @@ function renderVolumeDeltaDivergenceSummary(
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
     refreshButton.title = loading ? 'Refreshing divergence table...' : 'Refresh divergence table';
-    refreshButton.textContent = loading ? '...' : '↻';
     refreshButton.style.display = 'inline-flex';
     refreshButton.style.alignItems = 'center';
     refreshButton.style.justifyContent = 'center';
@@ -3856,6 +3861,30 @@ function renderVolumeDeltaDivergenceSummary(
     refreshButton.style.pointerEvents = 'auto';
     refreshButton.style.userSelect = 'none';
     refreshButton.disabled = loading;
+    if (loading) {
+      const spinner = document.createElement('span');
+      spinner.style.display = 'inline-block';
+      spinner.style.width = '12px';
+      spinner.style.height = '12px';
+      spinner.style.border = '2px solid #30363d';
+      spinner.style.borderTopColor = '#8b949e';
+      spinner.style.borderRadius = '50%';
+      spinner.style.boxSizing = 'border-box';
+      spinner.animate(
+        [
+          { transform: 'rotate(0deg)' },
+          { transform: 'rotate(360deg)' }
+        ],
+        {
+          duration: 700,
+          iterations: Infinity,
+          easing: 'linear'
+        }
+      );
+      refreshButton.appendChild(spinner);
+    } else {
+      refreshButton.textContent = '↻';
+    }
     refreshButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -3895,6 +3924,7 @@ function renderVolumeDeltaDivergenceSummary(
   )
     .then((summary) => {
       lastSummary = summary || null;
+      syncTickerDivergenceSummaryToVisibleCards(ticker, lastSummary, sourceInterval);
       renderSummary(lastSummary, false);
     })
     .catch(() => {
