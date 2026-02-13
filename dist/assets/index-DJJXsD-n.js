@@ -16,7 +16,6 @@
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${o}</span>
-                    <span class="source-text">${e}</span>
                 </div>
             </div>
 

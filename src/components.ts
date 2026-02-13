@@ -86,7 +86,6 @@ export function createAlertCard(alert: Alert): string {
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>
-                    <span class="source-text">${source}</span>
                 </div>
             </div>
 
