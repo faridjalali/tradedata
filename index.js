@@ -5037,18 +5037,29 @@ function normalizeFetchAllDataResumeState(state = {}) {
   };
 }
 
-function isFetchAllResumeAllowedByTime(nowUtc = new Date()) {
+function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const dayOfWeek = nowEt.getDay();
-  // Weekend (Saturday=6, Sunday=0): falls within Friday close+20min to Monday open-60min
-  if (dayOfWeek === 0 || dayOfWeek === 6) return true;
-  // Weekday: resume allowed only between close+20min (4:20 PM) and next open-60min (8:30 AM)
-  // i.e. block resume during 8:30 AM – 4:20 PM ET (the active trading window + grace margins)
+  const dayOfWeek = nowEt.getDay(); // 0=Sun, 6=Sat
   const totalMinutes = nowEt.getHours() * 60 + nowEt.getMinutes();
-  const nextOpenMinus60 = 510;  // 08:30 ET  (9:30 AM open - 60 min)
-  const closePlus20 = 980;      // 16:20 ET  (4:00 PM close + 20 min)
-  if (totalMinutes >= nextOpenMinus60 && totalMinutes < closePlus20) return false;
-  return true;
+  // Massive API has a ~15-min delay; treat 4:16 PM ET as the earliest moment today's
+  // closed daily candle is available (16 * 60 + 16 = 976).
+  const candleAvailableMinute = 976;
+
+  // Weekday, 4:16 PM ET or later → today's daily candle is closed and available
+  if (dayOfWeek >= 1 && dayOfWeek <= 5 && totalMinutes >= candleAvailableMinute) {
+    return currentEtDateString(nowUtc);
+  }
+
+  // Otherwise return the previous trading day (skip weekends)
+  const prev = new Date(nowEt);
+  prev.setDate(prev.getDate() - 1);
+  while (prev.getDay() === 0 || prev.getDay() === 6) {
+    prev.setDate(prev.getDate() - 1);
+  }
+  const yyyy = prev.getFullYear();
+  const mm = String(prev.getMonth() + 1).padStart(2, '0');
+  const dd = String(prev.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function canResumeDivergenceFetchAllData() {
@@ -5056,7 +5067,6 @@ function canResumeDivergenceFetchAllData() {
   if (!divergenceFetchAllDataResumeState) return false;
   const rs = normalizeFetchAllDataResumeState(divergenceFetchAllDataResumeState);
   if (!rs.asOfTradeDate || rs.totalTickers === 0 || rs.nextIndex >= rs.totalTickers) return false;
-  if (!isFetchAllResumeAllowedByTime()) return false;
   return true;
 }
 
@@ -5818,10 +5828,6 @@ async function runDivergenceFetchAllData(options = {}) {
   if (resumeRequested && (!resumeState || !resumeState.asOfTradeDate || resumeState.totalTickers === 0 || resumeState.nextIndex >= resumeState.totalTickers)) {
     return { status: 'no-resume' };
   }
-  if (resumeRequested && !isFetchAllResumeAllowedByTime()) {
-    return { status: 'no-resume', reason: 'too-close-to-market-close' };
-  }
-
   divergenceFetchAllDataRunning = true;
   divergenceFetchAllDataStopRequested = false;
   if (!resumeRequested) {
@@ -5860,9 +5866,8 @@ async function runDivergenceFetchAllData(options = {}) {
       || DIVERGENCE_SOURCE_INTERVAL;
     runLookbackDays = resumeState?.lookbackDays
       || Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
-    const explicitAsOfTradeDate = String(options.asOfTradeDate || '').trim();
     asOfTradeDate = resumeState?.asOfTradeDate
-      || await resolveDivergenceAsOfTradeDate(sourceInterval, explicitAsOfTradeDate);
+      || resolveLastClosedDailyCandleDate();
 
     if (!resumeRequested) {
       tickers = await getStoredDivergenceSymbolTickers();
