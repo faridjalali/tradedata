@@ -22,9 +22,12 @@ import {
     setupDivergenceFeedDelegation,
     runManualDivergenceScan,
     runManualDivergenceTableBuild,
-    requestPauseManualDivergenceTableBuild,
-    requestResumeManualDivergenceTableBuild,
+    togglePauseResumeManualDivergenceScan,
+    stopManualDivergenceScan,
+    togglePauseResumeManualDivergenceTableBuild,
+    stopManualDivergenceTableBuild,
     hydrateDivergenceTablesNow,
+    shouldAutoRefreshDivergenceFeed,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -604,13 +607,19 @@ function bootstrapApplication(): void {
     document.getElementById('divergence-run-table-btn')?.addEventListener('click', () => {
         runManualDivergenceTableBuild();
     });
-    document.getElementById('divergence-pause-table-btn')?.addEventListener('click', () => {
-        requestPauseManualDivergenceTableBuild();
+    document.getElementById('divergence-run-pause-resume-btn')?.addEventListener('click', () => {
+        togglePauseResumeManualDivergenceScan();
     });
-    document.getElementById('divergence-resume-table-btn')?.addEventListener('click', () => {
-        requestResumeManualDivergenceTableBuild();
+    document.getElementById('divergence-run-stop-btn')?.addEventListener('click', () => {
+        stopManualDivergenceScan();
     });
-    document.getElementById('divergence-hydrate-table-btn')?.addEventListener('click', () => {
+    document.getElementById('divergence-table-pause-resume-btn')?.addEventListener('click', () => {
+        togglePauseResumeManualDivergenceTableBuild();
+    });
+    document.getElementById('divergence-table-stop-btn')?.addEventListener('click', () => {
+        stopManualDivergenceTableBuild();
+    });
+    document.getElementById('divergence-manual-update-btn')?.addEventListener('click', () => {
         hydrateDivergenceTablesNow();
     });
     
@@ -703,7 +712,7 @@ function bootstrapApplication(): void {
                     renderOverview();
                 }
              });
-        } else if (currentView === 'divergence' && isCurrentDivergenceTimeframe()) {
+        } else if (currentView === 'divergence' && isCurrentDivergenceTimeframe() && shouldAutoRefreshDivergenceFeed()) {
             fetchDivergenceSignals().then(renderDivergenceOverview);
         }
     }, 10000); 

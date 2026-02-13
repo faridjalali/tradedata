@@ -51,9 +51,16 @@ export async function toggleDivergenceFavorite(id: number): Promise<Alert> {
 export interface DivergenceScanStatus {
     running: boolean;
     lastScanDateEt: string | null;
+    scanControl?: {
+        running?: boolean;
+        pause_requested?: boolean;
+        stop_requested?: boolean;
+        can_resume?: boolean;
+    } | null;
     tableBuild?: {
         running?: boolean;
         pause_requested?: boolean;
+        stop_requested?: boolean;
         can_resume?: boolean;
         status?: string;
         total_tickers?: number;
@@ -99,6 +106,66 @@ export async function startDivergenceScan(options?: { force?: boolean; refreshUn
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'started') };
+}
+
+export async function pauseDivergenceScan(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/scan/pause', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to pause divergence scan (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'pause-requested') };
+}
+
+export async function resumeDivergenceScan(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/scan/resume', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to resume divergence scan (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'started') };
+}
+
+export async function stopDivergenceScan(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/scan/stop', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to stop divergence scan (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'stop-requested') };
 }
 
 export async function startDivergenceTableBuild(): Promise<{ status: string }> {
@@ -161,6 +228,26 @@ export async function resumeDivergenceTableBuild(): Promise<{ status: string }> 
     return { status: String(payload?.status || 'started') };
 }
 
+export async function stopDivergenceTableBuild(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/table/stop', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to stop table build (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'stop-requested') };
+}
+
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
     const response = await fetch('/api/divergence/scan/status');
     const payload = await response.json().catch(() => null as any);
@@ -173,6 +260,7 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
     return {
         running: Boolean((payload as any).running),
         lastScanDateEt: (payload as any).lastScanDateEt ?? null,
+        scanControl: (payload as any).scanControl ?? null,
         tableBuild: (payload as any).tableBuild ?? null,
         latestJob: (payload as any).latestJob ?? null
     };

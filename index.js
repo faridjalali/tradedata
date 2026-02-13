@@ -480,8 +480,12 @@ let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
 let divergenceLastScanDateEt = '';
 let divergenceLastFetchedTradeDateEt = '';
+let divergenceScanPauseRequested = false;
+let divergenceScanStopRequested = false;
+let divergenceScanResumeState = null;
 let divergenceTableBuildRunning = false;
 let divergenceTableBuildPauseRequested = false;
+let divergenceTableBuildStopRequested = false;
 let divergenceTableBuildResumeState = null;
 let divergenceTableBuildStatus = {
   running: false,
@@ -4255,6 +4259,7 @@ function getDivergenceTableBuildStatus() {
   return {
     running: Boolean(divergenceTableBuildRunning),
     pause_requested: Boolean(divergenceTableBuildPauseRequested),
+    stop_requested: Boolean(divergenceTableBuildStopRequested),
     can_resume: !divergenceTableBuildRunning && Boolean(divergenceTableBuildResumeState),
     status: String(divergenceTableBuildStatus.status || 'idle'),
     total_tickers: Number(divergenceTableBuildStatus.totalTickers || 0),
@@ -4265,14 +4270,72 @@ function getDivergenceTableBuildStatus() {
   };
 }
 
+function getDivergenceScanControlStatus() {
+  return {
+    running: Boolean(divergenceScanRunning),
+    pause_requested: Boolean(divergenceScanPauseRequested),
+    stop_requested: Boolean(divergenceScanStopRequested),
+    can_resume: !divergenceScanRunning && Boolean(divergenceScanResumeState)
+  };
+}
+
+function requestPauseDivergenceScan() {
+  if (!divergenceScanRunning) return false;
+  divergenceScanPauseRequested = true;
+  return true;
+}
+
+function requestStopDivergenceScan() {
+  if (!divergenceScanRunning) return false;
+  divergenceScanStopRequested = true;
+  return true;
+}
+
+function canResumeDivergenceScan() {
+  return !divergenceScanRunning && Boolean(divergenceScanResumeState);
+}
+
 function requestPauseDivergenceTableBuild() {
   if (!divergenceTableBuildRunning) return false;
   divergenceTableBuildPauseRequested = true;
   return true;
 }
 
+function requestStopDivergenceTableBuild() {
+  if (!divergenceTableBuildRunning) return false;
+  divergenceTableBuildStopRequested = true;
+  return true;
+}
+
 function canResumeDivergenceTableBuild() {
   return !divergenceTableBuildRunning && Boolean(divergenceTableBuildResumeState);
+}
+
+function normalizeDivergenceScanResumeState(state = {}) {
+  const runDateEt = String(state.runDateEt || '').trim();
+  const trigger = String(state.trigger || 'manual').trim() || 'manual';
+  const symbols = Array.isArray(state.symbols)
+    ? state.symbols
+      .map((symbol) => String(symbol || '').trim().toUpperCase())
+      .filter((symbol) => symbol && isValidTickerSymbol(symbol))
+    : [];
+  const totalSymbols = symbols.length;
+  const nextIndex = Math.max(0, Math.min(totalSymbols, Math.floor(Number(state.nextIndex) || 0)));
+  const scanJobId = Number(state.scanJobId) || null;
+  return {
+    runDateEt,
+    trigger,
+    symbols,
+    totalSymbols,
+    nextIndex,
+    processed: Math.max(0, Math.floor(Number(state.processed) || 0)),
+    bullishCount: Math.max(0, Math.floor(Number(state.bullishCount) || 0)),
+    bearishCount: Math.max(0, Math.floor(Number(state.bearishCount) || 0)),
+    errorCount: Math.max(0, Math.floor(Number(state.errorCount) || 0)),
+    latestScannedTradeDate: String(state.latestScannedTradeDate || '').trim(),
+    summaryProcessedTickers: Math.max(0, Math.floor(Number(state.summaryProcessedTickers) || 0)),
+    scanJobId
+  };
 }
 
 function normalizeDivergenceTableResumeState(state = {}) {
@@ -4584,6 +4647,7 @@ async function runDivergenceTableBuild(options = {}) {
 
   divergenceTableBuildRunning = true;
   divergenceTableBuildPauseRequested = false;
+  divergenceTableBuildStopRequested = false;
   if (!resumeRequested) {
     divergenceTableBuildResumeState = null;
   }
@@ -4679,6 +4743,7 @@ async function runDivergenceTableBuild(options = {}) {
     const markPaused = () => {
       processedTickers = phase === 'summarizing' ? summarizeOffset : backfillOffset;
       divergenceTableBuildPauseRequested = false;
+      divergenceTableBuildStopRequested = false;
       persistResumeState();
       divergenceTableBuildStatus = {
         running: false,
@@ -4697,6 +4762,28 @@ async function runDivergenceTableBuild(options = {}) {
       };
     };
 
+    const markStopped = () => {
+      processedTickers = phase === 'summarizing' ? summarizeOffset : backfillOffset;
+      divergenceTableBuildPauseRequested = false;
+      divergenceTableBuildStopRequested = false;
+      divergenceTableBuildResumeState = null;
+      divergenceTableBuildStatus = {
+        running: false,
+        status: 'stopped',
+        totalTickers,
+        processedTickers,
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        lastPublishedTradeDate: lastPublishedTradeDate || divergenceTableBuildStatus.lastPublishedTradeDate || ''
+      };
+      return {
+        status: 'stopped',
+        totalTickers,
+        processedTickers,
+        lastPublishedTradeDate: lastPublishedTradeDate || null
+      };
+    };
+
     if (phase === 'backfilling' && backfillTickers.length > 0) {
       divergenceTableBuildStatus.status = 'backfilling';
       backfillOffset = Math.min(backfillOffset, backfillTickers.length);
@@ -4704,6 +4791,9 @@ async function runDivergenceTableBuild(options = {}) {
       divergenceTableBuildStatus.processedTickers = processedTickers;
 
       while (backfillOffset < backfillTickers.length) {
+        if (divergenceTableBuildStopRequested) {
+          return markStopped();
+        }
         if (divergenceTableBuildPauseRequested) {
           return markPaused();
         }
@@ -4777,6 +4867,11 @@ async function runDivergenceTableBuild(options = {}) {
     };
 
     for (let idx = summarizeOffset; idx < tickers.length; idx++) {
+      if (divergenceTableBuildStopRequested) {
+        await flushSummaryRows();
+        summarizeOffset = idx;
+        return markStopped();
+      }
       if (divergenceTableBuildPauseRequested) {
         await flushSummaryRows();
         summarizeOffset = idx;
@@ -4818,6 +4913,7 @@ async function runDivergenceTableBuild(options = {}) {
       divergenceLastFetchedTradeDateEt = maxEtDateString(divergenceLastFetchedTradeDateEt, lastPublishedTradeDate);
     }
     divergenceTableBuildPauseRequested = false;
+    divergenceTableBuildStopRequested = false;
     divergenceTableBuildResumeState = null;
     clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
@@ -4838,6 +4934,7 @@ async function runDivergenceTableBuild(options = {}) {
     };
   } catch (err) {
     divergenceTableBuildPauseRequested = false;
+    divergenceTableBuildStopRequested = false;
     divergenceTableBuildStatus = {
       running: false,
       status: 'failed',
@@ -4875,39 +4972,89 @@ async function runDailyDivergenceScan(options = {}) {
     return { status: 'running' };
   }
 
-  const force = Boolean(options.force);
-  const refreshUniverse = Boolean(options.refreshUniverse);
-  const runDate = String(options.runDateEt || currentEtDateString()).trim();
-  const trigger = String(options.trigger || 'manual');
-  if (!force && divergenceLastScanDateEt === runDate) {
-    return { status: 'skipped', reason: 'already-scanned', runDate };
+  const resumeRequested = options.resume === true;
+  const resumeState = resumeRequested ? normalizeDivergenceScanResumeState(divergenceScanResumeState || {}) : null;
+  if (resumeRequested && (!resumeState || resumeState.totalSymbols === 0)) {
+    return { status: 'no-resume' };
   }
 
   divergenceScanRunning = true;
-  let scanJobId = null;
-  let processed = 0;
-  let bullishCount = 0;
-  let bearishCount = 0;
-  let errorCount = 0;
-  let latestScannedTradeDate = '';
-  let summaryProcessedTickers = 0;
+  divergenceScanPauseRequested = false;
+  divergenceScanStopRequested = false;
+  if (!resumeRequested) {
+    divergenceScanResumeState = null;
+  }
+
+  const force = Boolean(options.force);
+  const refreshUniverse = Boolean(options.refreshUniverse);
+  const trigger = String(options.trigger || 'manual').trim() || 'manual';
+  const runDate = resumeState?.runDateEt || String(options.runDateEt || currentEtDateString()).trim();
+  if (!resumeRequested && !force && divergenceLastScanDateEt === runDate) {
+    divergenceScanRunning = false;
+    return { status: 'skipped', reason: 'already-scanned', runDate };
+  }
+
+  let scanJobId = resumeState?.scanJobId || null;
+  let processed = Math.max(0, Number(resumeState?.processed || 0));
+  let bullishCount = Math.max(0, Number(resumeState?.bullishCount || 0));
+  let bearishCount = Math.max(0, Number(resumeState?.bearishCount || 0));
+  let errorCount = Math.max(0, Number(resumeState?.errorCount || 0));
+  let latestScannedTradeDate = String(resumeState?.latestScannedTradeDate || '').trim();
+  let summaryProcessedTickers = Math.max(0, Number(resumeState?.summaryProcessedTickers || 0));
+  let symbols = resumeState?.symbols || [];
+  let totalSymbols = Math.max(0, Number(resumeState?.totalSymbols || symbols.length));
+  let nextIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
+
+  const persistResumeState = () => {
+    divergenceScanResumeState = normalizeDivergenceScanResumeState({
+      runDateEt: runDate,
+      trigger,
+      symbols,
+      nextIndex,
+      processed,
+      bullishCount,
+      bearishCount,
+      errorCount,
+      latestScannedTradeDate,
+      summaryProcessedTickers,
+      scanJobId
+    });
+  };
 
   try {
-    const symbols = await getDivergenceUniverseTickers({ forceRefresh: refreshUniverse });
-    const totalSymbols = symbols.length;
-    scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
+    if (!resumeRequested) {
+      symbols = await getDivergenceUniverseTickers({ forceRefresh: refreshUniverse });
+      totalSymbols = symbols.length;
+      nextIndex = 0;
+      processed = 0;
+      bullishCount = 0;
+      bearishCount = 0;
+      errorCount = 0;
+      latestScannedTradeDate = '';
+      summaryProcessedTickers = 0;
+      scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
 
-    await divergencePool.query(`
-      DELETE FROM divergence_signals
-      WHERE source_interval = $1
-        AND timeframe <> '1d'
-    `, [DIVERGENCE_SOURCE_INTERVAL]);
-    await divergencePool.query(`
-      DELETE FROM divergence_signals
-      WHERE trade_date = $1
-        AND source_interval = $2
-        AND timeframe = '1d'
-    `, [runDate, DIVERGENCE_SOURCE_INTERVAL]);
+      await divergencePool.query(`
+        DELETE FROM divergence_signals
+        WHERE source_interval = $1
+          AND timeframe <> '1d'
+      `, [DIVERGENCE_SOURCE_INTERVAL]);
+      await divergencePool.query(`
+        DELETE FROM divergence_signals
+        WHERE trade_date = $1
+          AND source_interval = $2
+          AND timeframe = '1d'
+      `, [runDate, DIVERGENCE_SOURCE_INTERVAL]);
+    } else if (scanJobId) {
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'running',
+        processed_symbols: processed,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        error_count: errorCount,
+        scanned_trade_date: latestScannedTradeDate || null
+      });
+    }
 
     if (totalSymbols === 0) {
       await updateDivergenceScanJob(scanJobId, {
@@ -4918,6 +5065,7 @@ async function runDailyDivergenceScan(options = {}) {
       });
       divergenceLastScanDateEt = runDate;
       divergenceLastFetchedTradeDateEt = runDate;
+      divergenceScanResumeState = null;
       return { status: 'completed', runDate, processed: 0 };
     }
 
@@ -4925,7 +5073,53 @@ async function runDailyDivergenceScan(options = {}) {
       ? Math.max(0, Math.floor((DIVERGENCE_SCAN_SPREAD_MINUTES * 60 * 1000) / totalSymbols))
       : 0;
 
-    for (let i = 0; i < symbols.length; i += DIVERGENCE_SCAN_CONCURRENCY) {
+    persistResumeState();
+    for (let i = nextIndex; i < symbols.length; i += DIVERGENCE_SCAN_CONCURRENCY) {
+      if (divergenceScanStopRequested) {
+        divergenceScanPauseRequested = false;
+        divergenceScanStopRequested = false;
+        divergenceScanResumeState = null;
+        await updateDivergenceScanJob(scanJobId, {
+          status: 'stopped',
+          finished_at: new Date(),
+          processed_symbols: processed,
+          bullish_count: bullishCount,
+          bearish_count: bearishCount,
+          error_count: errorCount,
+          scanned_trade_date: latestScannedTradeDate || null
+        });
+        return {
+          status: 'stopped',
+          runDate,
+          processed,
+          bullishCount,
+          bearishCount,
+          errorCount
+        };
+      }
+      if (divergenceScanPauseRequested) {
+        nextIndex = i;
+        divergenceScanPauseRequested = false;
+        divergenceScanStopRequested = false;
+        persistResumeState();
+        await updateDivergenceScanJob(scanJobId, {
+          status: 'paused',
+          processed_symbols: processed,
+          bullish_count: bullishCount,
+          bearish_count: bearishCount,
+          error_count: errorCount,
+          scanned_trade_date: latestScannedTradeDate || null
+        });
+        return {
+          status: 'paused',
+          runDate,
+          processed,
+          bullishCount,
+          bearishCount,
+          errorCount
+        };
+      }
+
       const batch = symbols.slice(i, i + DIVERGENCE_SCAN_CONCURRENCY);
       const batchResults = await Promise.all(batch.map(async (ticker) => {
         try {
@@ -4973,6 +5167,8 @@ async function runDailyDivergenceScan(options = {}) {
         });
       }
 
+      nextIndex = Math.min(symbols.length, i + DIVERGENCE_SCAN_CONCURRENCY);
+      persistResumeState();
       if (targetSpacingMs > 0) {
         await sleep(targetSpacingMs);
       }
@@ -5012,6 +5208,9 @@ async function runDailyDivergenceScan(options = {}) {
       scanned_trade_date: latestScannedTradeDate || null,
       notes: `summary_tickers=${summaryProcessedTickers}`
     });
+    divergenceScanPauseRequested = false;
+    divergenceScanStopRequested = false;
+    divergenceScanResumeState = null;
     divergenceLastScanDateEt = runDate;
     divergenceLastFetchedTradeDateEt = publishedTradeDate || latestScannedTradeDate || runDate;
     return {
@@ -5025,6 +5224,11 @@ async function runDailyDivergenceScan(options = {}) {
       summaryProcessedTickers
     };
   } catch (err) {
+    divergenceScanPauseRequested = false;
+    divergenceScanStopRequested = false;
+    if (!divergenceScanResumeState && symbols.length > 0) {
+      persistResumeState();
+    }
     await updateDivergenceScanJob(scanJobId, {
       status: 'failed',
       finished_at: new Date(),
@@ -5118,8 +5322,13 @@ registerDivergenceRoutes({
   getLastFetchedTradeDateEt: () => divergenceLastFetchedTradeDateEt,
   getLastScanDateEt: () => divergenceLastScanDateEt,
   getIsTableBuildRunning: () => divergenceTableBuildRunning,
+  getScanControlStatus: () => getDivergenceScanControlStatus(),
+  requestPauseScan: () => requestPauseDivergenceScan(),
+  requestStopScan: () => requestStopDivergenceScan(),
+  canResumeScan: () => canResumeDivergenceScan(),
   getTableBuildStatus: () => getDivergenceTableBuildStatus(),
   requestPauseTableBuild: () => requestPauseDivergenceTableBuild(),
+  requestStopTableBuild: () => requestStopDivergenceTableBuild(),
   canResumeTableBuild: () => canResumeDivergenceTableBuild()
 });
 

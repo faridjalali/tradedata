@@ -232,6 +232,12 @@ h2 {
   min-width: 52px !important;
   padding: 2px 8px !important;
 }
+.divergence-control-icon-btn {
+  min-width: 30px !important;
+  width: 30px !important;
+  padding: 2px 0 !important;
+  text-align: center;
+}
 .divergence-run-status {
   color: var(--text-secondary);
   font-size: 0.78rem;

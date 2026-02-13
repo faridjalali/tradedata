@@ -19,7 +19,12 @@ function registerDivergenceRoutes(options = {}) {
     getLastScanDateEt,
     getIsTableBuildRunning,
     getTableBuildStatus,
+    getScanControlStatus,
+    requestPauseScan,
+    requestStopScan,
+    canResumeScan,
     requestPauseTableBuild,
+    requestStopTableBuild,
     canResumeTableBuild
   } = options;
 
@@ -39,6 +44,9 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     if (getIsScanRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -67,6 +75,78 @@ function registerDivergenceRoutes(options = {}) {
       });
 
     return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/scan/pause', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestPauseScan !== 'function') {
+      return res.status(501).json({ error: 'Scan pause endpoint is not enabled' });
+    }
+    const accepted = requestPauseScan();
+    if (accepted) return res.status(202).json({ status: 'pause-requested' });
+    if (typeof canResumeScan === 'function' && canResumeScan()) return res.status(200).json({ status: 'paused' });
+    return res.status(409).json({ status: 'idle' });
+  });
+
+  app.post('/api/divergence/scan/resume', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof runDailyDivergenceScan !== 'function') {
+      return res.status(501).json({ error: 'Scan resume endpoint is not enabled' });
+    }
+    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof canResumeScan === 'function' && !canResumeScan()) {
+      return res.status(409).json({ status: 'no-resume' });
+    }
+
+    runDailyDivergenceScan({
+      trigger: 'manual-api-resume',
+      resume: true
+    })
+      .then((summary) => {
+        console.log('Manual divergence scan resume completed:', summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual divergence scan resume failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/scan/stop', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestStopScan !== 'function') {
+      return res.status(501).json({ error: 'Scan stop endpoint is not enabled' });
+    }
+    const accepted = requestStopScan();
+    if (accepted) return res.status(202).json({ status: 'stop-requested' });
+    return res.status(409).json({ status: 'idle' });
   });
 
   app.post('/api/divergence/table/run', async (req, res) => {
@@ -168,6 +248,27 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(202).json({ status: 'started' });
   });
 
+  app.post('/api/divergence/table/stop', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (typeof requestStopTableBuild !== 'function') {
+      return res.status(501).json({ error: 'Table stop endpoint is not enabled' });
+    }
+    const accepted = requestStopTableBuild();
+    if (accepted) {
+      return res.status(202).json({ status: 'stop-requested' });
+    }
+    return res.status(409).json({ status: 'idle' });
+  });
+
   app.get('/api/divergence/scan/status', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
@@ -184,8 +285,12 @@ function registerDivergenceRoutes(options = {}) {
       const tableBuild = typeof getTableBuildStatus === 'function'
         ? getTableBuildStatus()
         : null;
+      const scanControl = typeof getScanControlStatus === 'function'
+        ? getScanControlStatus()
+        : null;
       return res.json({
         ...statusPayload,
+        scanControl,
         tableBuild
       });
     } catch (err) {
