@@ -39,7 +39,7 @@ import {
     setAppTimeZone
 } from './timezone';
 
-let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live'; 
+let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
 let liveDashboardScrollY = 0;
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'live' | 'divergence' = 'live';
@@ -709,6 +709,7 @@ function bootstrapApplication(): void {
     setLiveFeedMode('1'); 
     setDivergenceFeedMode('1', false);
     syncDivergenceScanUiState().catch(() => {});
+    switchView('divergence');
     
     setInterval(() => {
         // Poll if current
