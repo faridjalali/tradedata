@@ -412,8 +412,18 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     if (fetchAll.running) {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
+        const errors = Number(fetchAll.error_tickers || 0);
         if (fetchAll.stop_requested) {
             return 'Stopping';
+        }
+        if (fetchAllState === 'running-retry') {
+            return `Retrying ${errors} failed (${processed}/${total})`;
+        }
+        if (fetchAllState === 'running-ma') {
+            return `MA ${processed}/${total}`;
+        }
+        if (fetchAllState === 'running-ma-retry') {
+            return `Retrying failed MA (${processed}/${total})`;
         }
         return `${processed} / ${total}`;
     }
@@ -457,8 +467,18 @@ function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
     if (fetchWeekly.running) {
         const processed = Number(fetchWeekly.processed_tickers || 0);
         const total = Number(fetchWeekly.total_tickers || 0);
+        const errors = Number(fetchWeekly.error_tickers || 0);
         if (fetchWeekly.stop_requested) {
             return 'Stopping';
+        }
+        if (fetchWeeklyState === 'running-retry') {
+            return `Retrying ${errors} failed (${processed}/${total})`;
+        }
+        if (fetchWeeklyState === 'running-ma') {
+            return `MA ${processed}/${total}`;
+        }
+        if (fetchWeeklyState === 'running-ma-retry') {
+            return `Retrying failed MA (${processed}/${total})`;
         }
         return `${processed} / ${total}`;
     }

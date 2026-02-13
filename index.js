@@ -6628,88 +6628,93 @@ async function runDivergenceFetchAllData(options = {}) {
     // Slice tickers to only the remaining portion for resume
     const tickerSlice = tickers.slice(startIndex);
     let settledCount = 0;
+    const failedTickers = [];
 
     persistResumeState(startIndex);
 
-    await mapWithConcurrency(
-      tickerSlice,
-      runConcurrency,
-      async (ticker) => {
-        return runWithAbortAndTimeout(async (tickerSignal) => {
-          if (divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted) {
-            throw buildRequestAbortError('Fetch-all run stopped');
-          }
-          const rows = await buildDivergenceDailyRowsForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: runLookbackDays,
-            asOfTradeDate,
-            parentInterval: '1day',
-            signal: tickerSignal,
-            noCache: true,
-            metricsTracker: runMetricsTracker
-          });
-          const filteredRows = Array.isArray(rows)
-            ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
-            : [];
-          const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
-          const latestClose = Number(latestRow?.close);
+    // --- Worker function shared by main pass and retry pass ---
+    const fetchAllTickerWorker = async (ticker) => {
+      return runWithAbortAndTimeout(async (tickerSignal) => {
+        if (divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted) {
+          throw buildRequestAbortError('Fetch-all run stopped');
+        }
+        const rows = await buildDivergenceDailyRowsForTicker({
+          ticker,
+          sourceInterval,
+          lookbackDays: runLookbackDays,
+          asOfTradeDate,
+          parentInterval: '1day',
+          signal: tickerSignal,
+          noCache: true,
+          metricsTracker: runMetricsTracker
+        });
+        const filteredRows = Array.isArray(rows)
+          ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
+          : [];
+        const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
+        const latestClose = Number(latestRow?.close);
 
-          // --- On-the-fly: process and buffer this ticker's data immediately ---
-          if (rows && Array.isArray(rows) && rows.length > 0) {
-            dailyRowsBuffer.push(...rows);
-          }
-          if (filteredRows.length >= 1 && latestRow?.trade_date) {
-            const states = filteredRows.length >= 2
-              ? classifyDivergenceStateMapFromDailyRows(filteredRows)
-              : neutralStates;
-            summaryRowsBuffer.push({
+        // --- On-the-fly: process and buffer this ticker's data immediately ---
+        if (rows && Array.isArray(rows) && rows.length > 0) {
+          dailyRowsBuffer.push(...rows);
+        }
+        if (filteredRows.length >= 1 && latestRow?.trade_date) {
+          const states = filteredRows.length >= 2
+            ? classifyDivergenceStateMapFromDailyRows(filteredRows)
+            : neutralStates;
+          summaryRowsBuffer.push({
+            ticker,
+            source_interval: sourceInterval,
+            trade_date: latestRow.trade_date,
+            states,
+            ma_states: null,
+            latest_close: Number(latestRow.close),
+            latest_prev_close: Number(latestRow.prev_close),
+            latest_volume_delta: Number(latestRow.volume_delta)
+          });
+          if (Number.isFinite(latestClose) && latestClose > 0) {
+            maSeedRows.push({
               ticker,
               source_interval: sourceInterval,
               trade_date: latestRow.trade_date,
               states,
-              ma_states: null,
-              latest_close: Number(latestRow.close),
+              latest_close: latestClose,
               latest_prev_close: Number(latestRow.prev_close),
               latest_volume_delta: Number(latestRow.volume_delta)
             });
-            if (Number.isFinite(latestClose) && latestClose > 0) {
-              maSeedRows.push({
-                ticker,
-                source_interval: sourceInterval,
-                trade_date: latestRow.trade_date,
-                states,
-                latest_close: latestClose,
-                latest_prev_close: Number(latestRow.prev_close),
-                latest_volume_delta: Number(latestRow.volume_delta)
-              });
-            }
-            lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRow.trade_date);
           }
+          lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRow.trade_date);
+        }
 
-          // Flush buffers when thresholds are reached
-          if (
-            summaryRowsBuffer.length >= summaryFlushSize
-            || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
-          ) {
-            await enqueueFlush();
-          }
+        // Flush buffers when thresholds are reached
+        if (
+          summaryRowsBuffer.length >= summaryFlushSize
+          || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
+        ) {
+          await enqueueFlush();
+        }
 
-          return { ticker };
-        }, {
-          signal: fetchAllAbortController.signal,
-          timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
-          label: `Fetch-all ticker ${ticker}`
-        });
-      },
+        return { ticker };
+      }, {
+        signal: fetchAllAbortController.signal,
+        timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
+        label: `Fetch-all ticker ${ticker}`
+      });
+    };
+
+    await mapWithConcurrency(
+      tickerSlice,
+      runConcurrency,
+      fetchAllTickerWorker,
       (result, sliceIndex) => {
         settledCount += 1;
         processedTickers = startIndex + settledCount;
         const ticker = tickerSlice[sliceIndex] || '';
         if (result && result.error && !(divergenceFetchAllDataStopRequested && isAbortError(result.error))) {
           errorTickers += 1;
-          const message = result.error && result.error.message ? result.error.message : String(result.error);
           if (!isAbortError(result.error)) {
+            failedTickers.push(ticker);
+            const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-all divergence build failed for ${ticker}: ${message}`);
           }
         }
@@ -6732,43 +6737,82 @@ async function runDivergenceFetchAllData(options = {}) {
     // Final flush for any remaining buffered rows
     await enqueueFlush();
 
+    // --- Retry pass for failed tickers ---
+    if (failedTickers.length > 0 && !divergenceFetchAllDataStopRequested && !fetchAllAbortController.signal.aborted) {
+      const retryCount = failedTickers.length;
+      console.log(`Fetch-all: retrying ${retryCount} failed ticker(s)...`);
+      runMetricsTracker?.setPhase('retry');
+      divergenceFetchAllDataStatus.status = 'running-retry';
+      let retryRecovered = 0;
+      await mapWithConcurrency(
+        failedTickers,
+        Math.max(1, Math.floor(runConcurrency / 2)),
+        fetchAllTickerWorker,
+        (result, idx) => {
+          const ticker = failedTickers[idx] || '';
+          if (result && result.error) {
+            if (!isAbortError(result.error)) {
+              const message = result.error && result.error.message ? result.error.message : String(result.error);
+              console.error(`Fetch-all retry still failed for ${ticker}: ${message}`);
+            }
+          } else {
+            retryRecovered += 1;
+            errorTickers = Math.max(0, errorTickers - 1);
+          }
+          divergenceFetchAllDataStatus.errorTickers = errorTickers;
+          runMetricsTracker?.setProgress(processedTickers, errorTickers);
+        },
+        () => divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted
+      );
+      if (retryRecovered > 0) {
+        console.log(`Fetch-all: retry recovered ${retryRecovered}/${retryCount} ticker(s)`);
+      }
+      await enqueueFlush();
+      runMetricsTracker?.recordStallRetry();
+    }
+
     if (maSeedRows.length > 0) {
       runMetricsTracker?.setPhase('ma-enrichment');
       divergenceFetchAllDataStatus.status = 'running-ma';
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
+      const failedMaSeeds = [];
+
+      const fetchAllMaWorker = async (seed) => {
+        return runWithAbortAndTimeout(async (tickerSignal) => {
+          const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
+            signal: tickerSignal,
+            metricsTracker: runMetricsTracker
+          });
+          if (maStates) {
+            maSummaryRowsBuffer.push({
+              ticker: seed.ticker,
+              source_interval: seed.source_interval,
+              trade_date: seed.trade_date,
+              states: seed.states || buildNeutralDivergenceStateMap(),
+              ma_states: maStates,
+              latest_close: Number(seed.latest_close),
+              latest_prev_close: Number(seed.latest_prev_close),
+              latest_volume_delta: Number(seed.latest_volume_delta)
+            });
+            if (maSummaryRowsBuffer.length >= summaryFlushSize) {
+              await enqueueFlush();
+            }
+          }
+          return null;
+        }, {
+          signal: fetchAllAbortController.signal,
+          timeoutMs: DIVERGENCE_FETCH_MA_TIMEOUT_MS,
+          label: `Fetch-all MA ${seed.ticker}`
+        });
+      };
+
       await mapWithConcurrency(
         maSeedRows,
         maConcurrency,
-        async (seed) => {
-          return runWithAbortAndTimeout(async (tickerSignal) => {
-            const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
-              signal: tickerSignal,
-              metricsTracker: runMetricsTracker
-            });
-            if (maStates) {
-              maSummaryRowsBuffer.push({
-                ticker: seed.ticker,
-                source_interval: seed.source_interval,
-                trade_date: seed.trade_date,
-                states: seed.states || buildNeutralDivergenceStateMap(),
-                ma_states: maStates,
-                latest_close: Number(seed.latest_close),
-                latest_prev_close: Number(seed.latest_prev_close),
-                latest_volume_delta: Number(seed.latest_volume_delta)
-              });
-              if (maSummaryRowsBuffer.length >= summaryFlushSize) {
-                await enqueueFlush();
-              }
-            }
-            return null;
-          }, {
-            signal: fetchAllAbortController.signal,
-            timeoutMs: DIVERGENCE_FETCH_MA_TIMEOUT_MS,
-            label: `Fetch-all MA ${seed.ticker}`
-          });
-        },
-        (result) => {
+        fetchAllMaWorker,
+        (result, idx) => {
           if (result && result.error && !isAbortError(result.error)) {
+            failedMaSeeds.push(maSeedRows[idx]);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-all MA enrichment failed: ${message}`);
           }
@@ -6781,6 +6825,35 @@ async function runDivergenceFetchAllData(options = {}) {
         return markStopped(totalTickers, { preserveResume: false, rewind: false });
       }
       await enqueueFlush();
+
+      // --- Retry pass for failed MA tickers ---
+      if (failedMaSeeds.length > 0 && !divergenceFetchAllDataStopRequested && !fetchAllAbortController.signal.aborted) {
+        const maRetryCount = failedMaSeeds.length;
+        console.log(`Fetch-all: retrying ${maRetryCount} failed MA ticker(s)...`);
+        divergenceFetchAllDataStatus.status = 'running-ma-retry';
+        let maRetryRecovered = 0;
+        await mapWithConcurrency(
+          failedMaSeeds,
+          Math.max(1, Math.floor(maConcurrency / 2)),
+          fetchAllMaWorker,
+          (result, idx) => {
+            const seed = failedMaSeeds[idx];
+            if (result && result.error) {
+              if (!isAbortError(result.error)) {
+                const message = result.error && result.error.message ? result.error.message : String(result.error);
+                console.error(`Fetch-all MA retry still failed for ${seed?.ticker}: ${message}`);
+              }
+            } else {
+              maRetryRecovered += 1;
+            }
+          },
+          () => divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted
+        );
+        if (maRetryRecovered > 0) {
+          console.log(`Fetch-all: MA retry recovered ${maRetryRecovered}/${maRetryCount} ticker(s)`);
+        }
+        await enqueueFlush();
+      }
     }
 
     if (lastPublishedTradeDate) {
@@ -7154,128 +7227,133 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
     const tickerSlice = tickers.slice(startIndex);
     let settledCount = 0;
+    const failedTickers = [];
 
     persistResumeState(startIndex);
 
-    await mapWithConcurrency(
-      tickerSlice,
-      runConcurrency,
-      async (ticker) => {
-        return runWithAbortAndTimeout(async (tickerSignal) => {
-          if (divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted) {
-            throw buildRequestAbortError('Fetch-weekly run stopped');
-          }
-          const sourceRows = await dataApiIntradayChartHistory(ticker, sourceInterval, runLookbackDays, {
-            signal: tickerSignal,
-            noCache: true,
-            metricsTracker: runMetricsTracker
-          });
-          const rows = await buildDivergenceDailyRowsForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: runLookbackDays,
-            asOfTradeDate,
-            parentInterval: '1day',
-            signal: tickerSignal,
-            noCache: true,
-            sourceRows,
-            metricsTracker: runMetricsTracker
-          });
-          const filteredRows = Array.isArray(rows)
-            ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
-            : [];
-          const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
-          const latestClose = Number(latestRow?.close);
+    // --- Worker function shared by main pass and retry pass ---
+    const fetchWeeklyTickerWorker = async (ticker) => {
+      return runWithAbortAndTimeout(async (tickerSignal) => {
+        if (divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted) {
+          throw buildRequestAbortError('Fetch-weekly run stopped');
+        }
+        const sourceRows = await dataApiIntradayChartHistory(ticker, sourceInterval, runLookbackDays, {
+          signal: tickerSignal,
+          noCache: true,
+          metricsTracker: runMetricsTracker
+        });
+        const rows = await buildDivergenceDailyRowsForTicker({
+          ticker,
+          sourceInterval,
+          lookbackDays: runLookbackDays,
+          asOfTradeDate,
+          parentInterval: '1day',
+          signal: tickerSignal,
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
+        });
+        const filteredRows = Array.isArray(rows)
+          ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
+          : [];
+        const latestRow = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
+        const latestClose = Number(latestRow?.close);
 
-          if (rows && Array.isArray(rows) && rows.length > 0) {
-            dailyRowsBuffer.push(...rows);
-          }
-          if (filteredRows.length >= 1 && latestRow?.trade_date) {
-            const states = filteredRows.length >= 2
-              ? classifyDivergenceStateMapFromDailyRows(filteredRows)
-              : neutralStates;
-            summaryRowsBuffer.push({
+        if (rows && Array.isArray(rows) && rows.length > 0) {
+          dailyRowsBuffer.push(...rows);
+        }
+        if (filteredRows.length >= 1 && latestRow?.trade_date) {
+          const states = filteredRows.length >= 2
+            ? classifyDivergenceStateMapFromDailyRows(filteredRows)
+            : neutralStates;
+          summaryRowsBuffer.push({
+            ticker,
+            source_interval: sourceInterval,
+            trade_date: latestRow.trade_date,
+            states,
+            ma_states: null,
+            latest_close: Number(latestRow.close),
+            latest_prev_close: Number(latestRow.prev_close),
+            latest_volume_delta: Number(latestRow.volume_delta)
+          });
+          if (Number.isFinite(latestClose) && latestClose > 0) {
+            maSeedRows.push({
               ticker,
               source_interval: sourceInterval,
               trade_date: latestRow.trade_date,
               states,
-              ma_states: null,
-              latest_close: Number(latestRow.close),
+              latest_close: latestClose,
               latest_prev_close: Number(latestRow.prev_close),
               latest_volume_delta: Number(latestRow.volume_delta)
             });
-            if (Number.isFinite(latestClose) && latestClose > 0) {
-              maSeedRows.push({
-                ticker,
-                source_interval: sourceInterval,
-                trade_date: latestRow.trade_date,
-                states,
-                latest_close: latestClose,
-                latest_prev_close: Number(latestRow.prev_close),
-                latest_volume_delta: Number(latestRow.volume_delta)
-              });
-            }
           }
+        }
 
-          const weeklySnapshot = await buildLatestWeeklyBarSnapshotForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: runLookbackDays,
-            asOfTradeDate: weeklyTradeDate,
-            signal: tickerSignal,
-            noCache: true,
-            sourceRows,
-            metricsTracker: runMetricsTracker
-          });
-          if (weeklySnapshot?.trade_date) {
-            const signalType = classifyDivergenceSignal(
-              Number(weeklySnapshot.volume_delta),
-              Number(weeklySnapshot.close),
-              Number(weeklySnapshot.prev_close)
-            );
-            if (signalType === 'bullish' || signalType === 'bearish') {
-              weeklySignalRowsBuffer.push({
-                ticker,
-                signal_type: signalType,
-                trade_date: weeklySnapshot.trade_date,
-                timeframe: '1w',
-                source_interval: sourceInterval,
-                price: Number(weeklySnapshot.close),
-                prev_close: Number(weeklySnapshot.prev_close),
-                volume_delta: Number(weeklySnapshot.volume_delta)
-              });
-            } else {
-              weeklyNeutralTickerBuffer.push({
-                ticker,
-                trade_date: weeklySnapshot.trade_date
-              });
-            }
-          }
-
-          if (
-            summaryRowsBuffer.length >= summaryFlushSize
-            || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
-            || weeklySignalRowsBuffer.length >= summaryFlushSize
-            || weeklyNeutralTickerBuffer.length >= summaryFlushSize
-          ) {
-            await enqueueFlush();
-          }
-
-          return { ticker };
-        }, {
-          signal: fetchWeeklyAbortController.signal,
-          timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
-          label: `Fetch-weekly ticker ${ticker}`
+        const weeklySnapshot = await buildLatestWeeklyBarSnapshotForTicker({
+          ticker,
+          sourceInterval,
+          lookbackDays: runLookbackDays,
+          asOfTradeDate: weeklyTradeDate,
+          signal: tickerSignal,
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
         });
-      },
+        if (weeklySnapshot?.trade_date) {
+          const signalType = classifyDivergenceSignal(
+            Number(weeklySnapshot.volume_delta),
+            Number(weeklySnapshot.close),
+            Number(weeklySnapshot.prev_close)
+          );
+          if (signalType === 'bullish' || signalType === 'bearish') {
+            weeklySignalRowsBuffer.push({
+              ticker,
+              signal_type: signalType,
+              trade_date: weeklySnapshot.trade_date,
+              timeframe: '1w',
+              source_interval: sourceInterval,
+              price: Number(weeklySnapshot.close),
+              prev_close: Number(weeklySnapshot.prev_close),
+              volume_delta: Number(weeklySnapshot.volume_delta)
+            });
+          } else {
+            weeklyNeutralTickerBuffer.push({
+              ticker,
+              trade_date: weeklySnapshot.trade_date
+            });
+          }
+        }
+
+        if (
+          summaryRowsBuffer.length >= summaryFlushSize
+          || dailyRowsBuffer.length >= DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE
+          || weeklySignalRowsBuffer.length >= summaryFlushSize
+          || weeklyNeutralTickerBuffer.length >= summaryFlushSize
+        ) {
+          await enqueueFlush();
+        }
+
+        return { ticker };
+      }, {
+        signal: fetchWeeklyAbortController.signal,
+        timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
+        label: `Fetch-weekly ticker ${ticker}`
+      });
+    };
+
+    await mapWithConcurrency(
+      tickerSlice,
+      runConcurrency,
+      fetchWeeklyTickerWorker,
       (result, sliceIndex) => {
         settledCount += 1;
         processedTickers = startIndex + settledCount;
         const ticker = tickerSlice[sliceIndex] || '';
         if (result && result.error && !(divergenceFetchWeeklyDataStopRequested && isAbortError(result.error))) {
           errorTickers += 1;
-          const message = result.error && result.error.message ? result.error.message : String(result.error);
           if (!isAbortError(result.error)) {
+            failedTickers.push(ticker);
+            const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-weekly divergence build failed for ${ticker}: ${message}`);
           }
         }
@@ -7295,43 +7373,82 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
     await enqueueFlush();
 
+    // --- Retry pass for failed tickers ---
+    if (failedTickers.length > 0 && !divergenceFetchWeeklyDataStopRequested && !fetchWeeklyAbortController.signal.aborted) {
+      const retryCount = failedTickers.length;
+      console.log(`Fetch-weekly: retrying ${retryCount} failed ticker(s)...`);
+      runMetricsTracker?.setPhase('retry');
+      divergenceFetchWeeklyDataStatus.status = 'running-retry';
+      let retryRecovered = 0;
+      await mapWithConcurrency(
+        failedTickers,
+        Math.max(1, Math.floor(runConcurrency / 2)),
+        fetchWeeklyTickerWorker,
+        (result, idx) => {
+          const ticker = failedTickers[idx] || '';
+          if (result && result.error) {
+            if (!isAbortError(result.error)) {
+              const message = result.error && result.error.message ? result.error.message : String(result.error);
+              console.error(`Fetch-weekly retry still failed for ${ticker}: ${message}`);
+            }
+          } else {
+            retryRecovered += 1;
+            errorTickers = Math.max(0, errorTickers - 1);
+          }
+          divergenceFetchWeeklyDataStatus.errorTickers = errorTickers;
+          runMetricsTracker?.setProgress(processedTickers, errorTickers);
+        },
+        () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
+      );
+      if (retryRecovered > 0) {
+        console.log(`Fetch-weekly: retry recovered ${retryRecovered}/${retryCount} ticker(s)`);
+      }
+      await enqueueFlush();
+      runMetricsTracker?.recordStallRetry();
+    }
+
     if (maSeedRows.length > 0) {
       runMetricsTracker?.setPhase('ma-enrichment');
       divergenceFetchWeeklyDataStatus.status = 'running-ma';
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
+      const failedMaSeeds = [];
+
+      const fetchWeeklyMaWorker = async (seed) => {
+        return runWithAbortAndTimeout(async (tickerSignal) => {
+          const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
+            signal: tickerSignal,
+            metricsTracker: runMetricsTracker
+          });
+          if (maStates) {
+            maSummaryRowsBuffer.push({
+              ticker: seed.ticker,
+              source_interval: seed.source_interval,
+              trade_date: seed.trade_date,
+              states: seed.states || buildNeutralDivergenceStateMap(),
+              ma_states: maStates,
+              latest_close: Number(seed.latest_close),
+              latest_prev_close: Number(seed.latest_prev_close),
+              latest_volume_delta: Number(seed.latest_volume_delta)
+            });
+            if (maSummaryRowsBuffer.length >= summaryFlushSize) {
+              await enqueueFlush();
+            }
+          }
+          return null;
+        }, {
+          signal: fetchWeeklyAbortController.signal,
+          timeoutMs: DIVERGENCE_FETCH_MA_TIMEOUT_MS,
+          label: `Fetch-weekly MA ${seed.ticker}`
+        });
+      };
+
       await mapWithConcurrency(
         maSeedRows,
         maConcurrency,
-        async (seed) => {
-          return runWithAbortAndTimeout(async (tickerSignal) => {
-            const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
-              signal: tickerSignal,
-              metricsTracker: runMetricsTracker
-            });
-            if (maStates) {
-              maSummaryRowsBuffer.push({
-                ticker: seed.ticker,
-                source_interval: seed.source_interval,
-                trade_date: seed.trade_date,
-                states: seed.states || buildNeutralDivergenceStateMap(),
-                ma_states: maStates,
-                latest_close: Number(seed.latest_close),
-                latest_prev_close: Number(seed.latest_prev_close),
-                latest_volume_delta: Number(seed.latest_volume_delta)
-              });
-              if (maSummaryRowsBuffer.length >= summaryFlushSize) {
-                await enqueueFlush();
-              }
-            }
-            return null;
-          }, {
-            signal: fetchWeeklyAbortController.signal,
-            timeoutMs: DIVERGENCE_FETCH_MA_TIMEOUT_MS,
-            label: `Fetch-weekly MA ${seed.ticker}`
-          });
-        },
-        (result) => {
+        fetchWeeklyMaWorker,
+        (result, idx) => {
           if (result && result.error && !isAbortError(result.error)) {
+            failedMaSeeds.push(maSeedRows[idx]);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-weekly MA enrichment failed: ${message}`);
           }
@@ -7344,6 +7461,35 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         return markStopped(totalTickers, { preserveResume: false, rewind: false });
       }
       await enqueueFlush();
+
+      // --- Retry pass for failed MA tickers ---
+      if (failedMaSeeds.length > 0 && !divergenceFetchWeeklyDataStopRequested && !fetchWeeklyAbortController.signal.aborted) {
+        const maRetryCount = failedMaSeeds.length;
+        console.log(`Fetch-weekly: retrying ${maRetryCount} failed MA ticker(s)...`);
+        divergenceFetchWeeklyDataStatus.status = 'running-ma-retry';
+        let maRetryRecovered = 0;
+        await mapWithConcurrency(
+          failedMaSeeds,
+          Math.max(1, Math.floor(maConcurrency / 2)),
+          fetchWeeklyMaWorker,
+          (result, idx) => {
+            const seed = failedMaSeeds[idx];
+            if (result && result.error) {
+              if (!isAbortError(result.error)) {
+                const message = result.error && result.error.message ? result.error.message : String(result.error);
+                console.error(`Fetch-weekly MA retry still failed for ${seed?.ticker}: ${message}`);
+              }
+            } else {
+              maRetryRecovered += 1;
+            }
+          },
+          () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
+        );
+        if (maRetryRecovered > 0) {
+          console.log(`Fetch-weekly: MA retry recovered ${maRetryRecovered}/${maRetryCount} ticker(s)`);
+        }
+        await enqueueFlush();
+      }
     }
 
     runMetricsTracker?.setPhase('publishing');
