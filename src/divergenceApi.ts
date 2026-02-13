@@ -20,7 +20,7 @@ function normalizeAlert(raw: unknown): Alert {
         ...item,
         id,
         is_favorite: toFavoriteBoolean(item.is_favorite),
-        source: 'FMP',
+        source: 'DataAPI',
     } as Alert;
 }
 
@@ -75,17 +75,11 @@ export interface DivergenceScanStatus {
     } | null;
     fetchAllData?: {
         running?: boolean;
-        pause_requested?: boolean;
         stop_requested?: boolean;
-        can_resume?: boolean;
         status?: string;
         total_tickers?: number;
         processed_tickers?: number;
         error_tickers?: number;
-        batch_size?: number;
-        total_batches?: number;
-        completed_batches?: number;
-        current_batch?: number;
         started_at?: string | null;
         finished_at?: string | null;
         last_published_trade_date?: string | null;
@@ -287,46 +281,6 @@ export async function startDivergenceFetchAllData(): Promise<{ status: string }>
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
             : `Failed to start fetch-all run (HTTP ${response.status})`;
-        throw new Error(reason);
-    }
-    return { status: String(payload?.status || 'started') };
-}
-
-export async function pauseDivergenceFetchAllData(): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/fetch-all/pause', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
-    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
-    if (!response.ok) {
-        if (response.status === 409 && typeof payload?.status === 'string') {
-            return { status: payload.status };
-        }
-        const reason = typeof payload?.error === 'string' && payload.error.trim()
-            ? payload.error.trim()
-            : `Failed to pause fetch-all run (HTTP ${response.status})`;
-        throw new Error(reason);
-    }
-    return { status: String(payload?.status || 'pause-requested') };
-}
-
-export async function resumeDivergenceFetchAllData(): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/fetch-all/resume', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
-    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
-    if (!response.ok) {
-        if (response.status === 409 && typeof payload?.status === 'string') {
-            return { status: payload.status };
-        }
-        const reason = typeof payload?.error === 'string' && payload.error.trim()
-            ? payload.error.trim()
-            : `Failed to resume fetch-all run (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'started') };

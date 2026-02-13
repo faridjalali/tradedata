@@ -29,9 +29,7 @@ function registerDivergenceRoutes(options = {}) {
     requestStopTableBuild,
     canResumeTableBuild,
     getFetchAllDataStatus,
-    requestPauseFetchAllData,
-    requestStopFetchAllData,
-    canResumeFetchAllData
+    requestStopFetchAllData
   } = options;
 
   if (!app) {
@@ -311,9 +309,7 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     runDivergenceFetchAllData({
-      trigger: 'manual-api',
-      continueFromFailedBatch: true,
-      queueIfRunning: true
+      trigger: 'manual-api'
     })
       .then((summary) => {
         console.log('Manual divergence fetch-all completed:', summary);
@@ -321,64 +317,6 @@ function registerDivergenceRoutes(options = {}) {
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
         console.error(`Manual divergence fetch-all failed: ${message}`);
-      });
-
-    return res.status(202).json({ status: 'started' });
-  });
-
-  app.post('/api/divergence/fetch-all/pause', async (req, res) => {
-    if (!isDivergenceConfigured()) {
-      return res.status(503).json({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    if (typeof requestPauseFetchAllData !== 'function') {
-      return res.status(501).json({ error: 'Fetch-all pause endpoint is not enabled' });
-    }
-    const accepted = requestPauseFetchAllData();
-    if (accepted) return res.status(202).json({ status: 'pause-requested' });
-    if (typeof canResumeFetchAllData === 'function' && canResumeFetchAllData()) return res.status(200).json({ status: 'paused' });
-    return res.status(409).json({ status: 'idle' });
-  });
-
-  app.post('/api/divergence/fetch-all/resume', async (req, res) => {
-    if (!isDivergenceConfigured()) {
-      return res.status(503).json({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    if (typeof runDivergenceFetchAllData !== 'function') {
-      return res.status(501).json({ error: 'Fetch-all resume endpoint is not enabled' });
-    }
-    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
-      return res.status(409).json({ status: 'running' });
-    }
-    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
-      return res.status(409).json({ status: 'running' });
-    }
-    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
-      return res.status(409).json({ status: 'running' });
-    }
-    if (typeof canResumeFetchAllData === 'function' && !canResumeFetchAllData()) {
-      return res.status(409).json({ status: 'no-resume' });
-    }
-
-    runDivergenceFetchAllData({
-      trigger: 'manual-api-resume',
-      resume: true
-    })
-      .then((summary) => {
-        console.log('Manual divergence fetch-all resume completed:', summary);
-      })
-      .catch((err) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-all resume failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });

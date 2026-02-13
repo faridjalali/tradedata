@@ -4,7 +4,7 @@ import { DIVERGENCE_LOOKBACK_DAYS } from './divergenceTable';
 
 export function createAlertCard(alert: Alert): string {
     const timeStr = getRelativeTime(alert.timestamp);
-    const source = alert.source === 'FMP' ? 'FMP' : 'TV';
+    const source = alert.source === 'TV' ? 'TV' : 'DataAPI';
     
     let isBull = false;
     let isBear = false;

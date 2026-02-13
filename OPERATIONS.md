@@ -64,7 +64,7 @@ Required at startup:
 - `DATABASE_URL`
 
 Recommended:
-- `MASSIVE_API_KEY`
+- `DATA_API_KEY`
 - `DIVERGENCE_DATABASE_URL` (if using Divergence features)
 - `WEBHOOK_SECRET`
 - `DIVERGENCE_SCAN_SECRET`

@@ -97,7 +97,7 @@ export function setupLiveFeedDelegation(): void {
         if (starBtn) {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
-            const source = (starBtn as HTMLElement).dataset.source === 'FMP' ? 'FMP' : 'TV';
+            const source = (starBtn as HTMLElement).dataset.source === 'TV' ? 'TV' : 'DataAPI';
             if (id) {
                 // Optimistic UI Update: Find ALL instances of this alert's star icon
                 const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
@@ -120,12 +120,12 @@ export function setupLiveFeedDelegation(): void {
                     }
                 });
 
-                const togglePromise = source === 'FMP'
+                const togglePromise = source === 'DataAPI'
                     ? toggleDivergenceFavorite(Number(id))
                     : toggleFavorite(Number(id));
 
                 togglePromise.then(updatedAlert => {
-                    if (source === 'FMP') {
+                    if (source === 'DataAPI') {
                         const allSignals = getDivergenceSignals();
                         const idx = allSignals.findIndex(a => a.id === updatedAlert.id);
                         if (idx !== -1) {

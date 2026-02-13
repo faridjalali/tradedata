@@ -11,8 +11,6 @@ import {
     resumeDivergenceTableBuild,
     stopDivergenceTableBuild,
     startDivergenceFetchAllData,
-    pauseDivergenceFetchAllData,
-    resumeDivergenceFetchAllData,
     stopDivergenceFetchAllData,
     fetchDivergenceScanStatus,
     DivergenceScanStatus
@@ -91,11 +89,9 @@ function getTableControlButtons(): {
 }
 
 function getFetchAllControlButtons(): {
-    pauseResumeButton: HTMLButtonElement | null;
     stopButton: HTMLButtonElement | null;
 } {
     return {
-        pauseResumeButton: document.getElementById('divergence-fetch-all-pause-resume-btn') as HTMLButtonElement | null,
         stopButton: document.getElementById('divergence-fetch-all-stop-btn') as HTMLButtonElement | null,
     };
 }
@@ -128,10 +124,10 @@ function setTableRunStatusText(text: string): void {
     status.textContent = text;
 }
 
-function setFetchAllButtonState(running: boolean, canResume = false): void {
+function setFetchAllButtonState(running: boolean): void {
     const { button } = getFetchAllButtonElements();
     if (!button) return;
-    button.disabled = running || canResume;
+    button.disabled = running;
     button.classList.toggle('active', running);
     button.textContent = running ? 'Running' : 'Fetch All Data';
 }
@@ -193,20 +189,10 @@ function setTableControlButtonState(status: DivergenceScanStatus | null): void {
 }
 
 function setFetchAllControlButtonState(status: DivergenceScanStatus | null): void {
-    const { pauseResumeButton, stopButton } = getFetchAllControlButtons();
+    const { stopButton } = getFetchAllControlButtons();
     const fetchAll = status?.fetchAllData || null;
     const running = Boolean(fetchAll?.running);
-    const pauseRequested = Boolean(fetchAll?.pause_requested);
     const stopRequested = Boolean(fetchAll?.stop_requested);
-    const canResume = Boolean(fetchAll?.can_resume);
-
-    if (pauseResumeButton) {
-        pauseResumeButton.textContent = canResume && !running ? '▶' : '⏸';
-        pauseResumeButton.disabled = running ? pauseRequested : !canResume;
-        pauseResumeButton.classList.toggle('active', running || canResume);
-        pauseResumeButton.setAttribute('aria-label', canResume && !running ? 'Resume Fetch All Data' : 'Pause Fetch All Data');
-        pauseResumeButton.title = canResume && !running ? 'Resume Fetch All Data' : 'Pause Fetch All Data';
-    }
     if (stopButton) {
         stopButton.textContent = '⏹';
         stopButton.disabled = !running || stopRequested;
@@ -345,42 +331,23 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     if (!fetchAll) return 'All data idle';
     const fetchAllState = String(fetchAll.status || '').toLowerCase();
     const errorTickers = Number(fetchAll.error_tickers || 0);
-    const batchTotal = Math.max(0, Number(fetchAll.total_batches || 0));
-    const batchDone = Math.max(0, Number(fetchAll.completed_batches || 0));
-    const batchNow = Math.max(0, Number(fetchAll.current_batch || 0));
-    const batchText = batchTotal > 0
-        ? ` B${Math.min(batchNow || (batchDone + 1), batchTotal)}/${batchTotal}`
-        : '';
-    if (fetchAllState === 'queued-restart') {
-        return batchTotal > 0 ? `Restart queued${batchText}` : 'Restart queued';
-    }
     if (fetchAllState === 'stopping') {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
-        if (total > 0) return `Stopping ${processed}/${total}${batchText}`;
+        if (total > 0) return `Stopping ${processed}/${total}`;
         return 'Stopping';
     }
     if (fetchAllState === 'stopped') {
         return 'All data stopped';
     }
-    if (fetchAllState === 'paused') {
-        const processed = Number(fetchAll.processed_tickers || 0);
-        const total = Number(fetchAll.total_tickers || 0);
-        if (total > 0) return `Paused ${processed}/${total}${batchText}`;
-        return 'All data paused';
-    }
     if (fetchAll.running) {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
         if (fetchAll.stop_requested) {
-            if (total > 0) return `Stopping ${processed}/${total}${batchText}`;
+            if (total > 0) return `Stopping ${processed}/${total}`;
             return 'Stopping';
         }
-        if (fetchAll.pause_requested) {
-            if (total > 0) return `Pausing ${processed}/${total}${batchText}`;
-            return 'Pausing';
-        }
-        if (total > 0) return `All data ${processed}/${total}${batchText}`;
+        if (total > 0) return `All data ${processed}/${total}`;
         return 'All data running';
     }
     if (fetchAllState === 'completed') {
@@ -458,7 +425,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setTableRunStatusText(summarizeTableStatus(status));
         setTableControlButtonState(status);
         const fetchAllRunning = divergenceFetchAllRunningState;
-        setFetchAllButtonState(fetchAllRunning, Boolean(status.fetchAllData?.can_resume));
+        setFetchAllButtonState(fetchAllRunning);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
@@ -492,7 +459,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setRunControlButtonState(null);
         setTableRunButtonState(false, false);
         setTableControlButtonState(null);
-        setFetchAllButtonState(false, false);
+        setFetchAllButtonState(false);
         setFetchAllControlButtonState(null);
     } finally {
         divergenceScanPollInFlight = false;
@@ -519,7 +486,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setTableRunStatusText(summarizeTableStatus(status));
         setTableControlButtonState(status);
         const fetchAllRunning = divergenceFetchAllRunningState;
-        setFetchAllButtonState(fetchAllRunning, Boolean(status.fetchAllData?.can_resume));
+        setFetchAllButtonState(fetchAllRunning);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
@@ -549,7 +516,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setTableRunButtonState(false, false);
         setTableRunStatusText(toStatusTextFromError(error));
         setTableControlButtonState(null);
-        setFetchAllButtonState(false, false);
+        setFetchAllButtonState(false);
         setFetchAllStatusText(toStatusTextFromError(error));
         setFetchAllControlButtonState(null);
     }
@@ -599,7 +566,7 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
 }
 
 export async function runManualDivergenceFetchAllData(): Promise<void> {
-    setFetchAllButtonState(true, false);
+    setFetchAllButtonState(true);
     setFetchAllStatusText('All data starting...');
     allowAutoCardRefreshFromFetchAll = true;
     try {
@@ -613,7 +580,7 @@ export async function runManualDivergenceFetchAllData(): Promise<void> {
         await pollDivergenceScanStatus(false);
     } catch (error) {
         console.error('Failed to start fetch-all run:', error);
-        setFetchAllButtonState(false, false);
+        setFetchAllButtonState(false);
         setFetchAllStatusText(toStatusTextFromError(error));
     }
 }
@@ -704,37 +671,6 @@ export async function stopManualDivergenceTableBuild(): Promise<void> {
     }
 }
 
-export async function togglePauseResumeManualDivergenceFetchAllData(): Promise<void> {
-    try {
-        const status = await fetchDivergenceScanStatus();
-        const running = Boolean(status.fetchAllData?.running);
-        const canResume = Boolean(status.fetchAllData?.can_resume);
-        if (running) {
-            const result = await pauseDivergenceFetchAllData();
-            if (result.status === 'pause-requested') {
-                setFetchAllStatusText('Pausing');
-            } else if (result.status === 'paused') {
-                setFetchAllStatusText('All data paused');
-            }
-        } else if (canResume) {
-            const result = await resumeDivergenceFetchAllData();
-            if (result.status === 'no-resume') {
-                setFetchAllStatusText('Nothing to resume');
-            } else {
-                allowAutoCardRefreshFromFetchAll = true;
-                setFetchAllStatusText('All data running');
-                ensureDivergenceScanPolling(true);
-                await pollDivergenceScanStatus(false);
-                return;
-            }
-        }
-        await syncDivergenceScanUiState();
-    } catch (error) {
-        console.error('Failed to toggle fetch-all pause/resume:', error);
-        setFetchAllStatusText(toStatusTextFromError(error));
-    }
-}
-
 export async function stopManualDivergenceFetchAllData(): Promise<void> {
     try {
         const result = await stopDivergenceFetchAllData();
@@ -818,7 +754,7 @@ export function setupDivergenceFeedDelegation(): void {
         if (starBtn) {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
-            const source = (starBtn as HTMLElement).dataset.source === 'TV' ? 'TV' : 'FMP';
+            const source = (starBtn as HTMLElement).dataset.source === 'TV' ? 'TV' : 'DataAPI';
             if (!id) return;
 
             const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);

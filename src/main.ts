@@ -19,16 +19,8 @@ import {
     setDivergenceDailySort,
     setDivergenceWeeklySort,
     setupDivergenceFeedDelegation,
-    runManualDivergenceScan,
-    runManualDivergenceTableBuild,
     runManualDivergenceFetchAllData,
-    togglePauseResumeManualDivergenceScan,
-    stopManualDivergenceScan,
-    togglePauseResumeManualDivergenceTableBuild,
-    stopManualDivergenceTableBuild,
-    togglePauseResumeManualDivergenceFetchAllData,
     stopManualDivergenceFetchAllData,
-    hydrateDivergenceTablesNow,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -605,32 +597,8 @@ function bootstrapApplication(): void {
     document.getElementById('divergence-fetch-all-btn')?.addEventListener('click', () => {
         runManualDivergenceFetchAllData();
     });
-    document.getElementById('divergence-fetch-all-pause-resume-btn')?.addEventListener('click', () => {
-        togglePauseResumeManualDivergenceFetchAllData();
-    });
     document.getElementById('divergence-fetch-all-stop-btn')?.addEventListener('click', () => {
         stopManualDivergenceFetchAllData();
-    });
-    document.getElementById('divergence-run-btn')?.addEventListener('click', () => {
-        runManualDivergenceScan();
-    });
-    document.getElementById('divergence-run-table-btn')?.addEventListener('click', () => {
-        runManualDivergenceTableBuild();
-    });
-    document.getElementById('divergence-run-pause-resume-btn')?.addEventListener('click', () => {
-        togglePauseResumeManualDivergenceScan();
-    });
-    document.getElementById('divergence-run-stop-btn')?.addEventListener('click', () => {
-        stopManualDivergenceScan();
-    });
-    document.getElementById('divergence-table-pause-resume-btn')?.addEventListener('click', () => {
-        togglePauseResumeManualDivergenceTableBuild();
-    });
-    document.getElementById('divergence-table-stop-btn')?.addEventListener('click', () => {
-        stopManualDivergenceTableBuild();
-    });
-    document.getElementById('divergence-manual-update-btn')?.addEventListener('click', () => {
-        hydrateDivergenceTablesNow();
     });
     
     // New Date Inputs

@@ -26,7 +26,7 @@
     ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-Ddhta6vt.js"></script>
+    <script type="module" crossorigin src="./assets/index-K6lPaSbv.js"></script>
   </head>
   <body>
     <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
@@ -83,67 +83,21 @@
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
                   class="tf-btn divergence-run-btn"
-                  id="divergence-run-btn"
-                  data-tooltip="Run divergence scan now"
+                  id="divergence-fetch-all-btn"
+                  data-tooltip="Fetch all divergence data from divergence_symbols and build daily cards"
                 >
-                  Run Fetch
+                  Fetch All Data
                 </button>
                 <button
                   class="tf-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-run-pause-resume-btn"
-                  data-tooltip="Pause or resume Run Fetch"
-                  aria-label="Pause Run Fetch"
-                  disabled
-                >
-                  ⏸
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-run-stop-btn"
-                  data-tooltip="Stop Run Fetch"
-                  aria-label="Stop Run Fetch"
+                  id="divergence-fetch-all-stop-btn"
+                  data-tooltip="Stop Fetch All Data"
+                  aria-label="Stop Fetch All Data"
                   disabled
                 >
                   ⏹
                 </button>
-                <span id="divergence-run-status" class="divergence-run-status">Idle</span>
-              </div>
-              <div class="global-settings-row global-settings-table-controls-row">
-                <button
-                  class="tf-btn divergence-run-btn"
-                  id="divergence-run-table-btn"
-                  data-tooltip="Build divergence tables for current TV/FML tickers"
-                >
-                  Run Table
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-table-pause-resume-btn"
-                  data-tooltip="Pause or resume Run Table"
-                  aria-label="Pause Run Table"
-                  disabled
-                >
-                  ⏸
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-table-stop-btn"
-                  data-tooltip="Stop Run Table"
-                  aria-label="Stop Run Table"
-                  disabled
-                >
-                  ⏹
-                </button>
-                <span id="divergence-table-run-status" class="divergence-run-status">Table idle</span>
-              </div>
-              <div class="global-settings-row">
-                <button
-                  class="tf-btn divergence-run-btn"
-                  id="divergence-manual-update-btn"
-                  data-tooltip="Hydrate visible alert-card divergence tables immediately"
-                >
-                  Manual Update
-                </button>
+                <span id="divergence-fetch-all-status" class="divergence-run-status">All data idle</span>
               </div>
               <div class="global-settings-row global-settings-timezone-row">
                 <label for="global-timezone-select" class="global-settings-label">Timezone</label>
@@ -177,10 +131,10 @@
           </div>
         </div>
         <nav class="main-nav">
-          <button id="nav-breadth" class="nav-btn">Breadth</button>
-          <button id="nav-live" class="nav-btn active">TV</button>
-          <button id="nav-divergence" class="nav-btn">FMP</button>
+          <button id="nav-divergence" class="nav-btn active">Alerts</button>
+          <button id="nav-live" class="nav-btn">TV</button>
           <button id="nav-leaderboard" class="nav-btn">Leaders</button>
+          <button id="nav-breadth" class="nav-btn">Breadth</button>
         </nav>
       </header>
 

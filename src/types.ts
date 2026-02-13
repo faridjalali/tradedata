@@ -11,7 +11,7 @@ export interface Alert {
     intensity_score?: number;
     combo_score?: number;
     is_favorite: boolean;
-    source?: 'TV' | 'FMP';
+    source?: 'TV' | 'DataAPI';
     divergence_states?: Record<string, string>;
     divergence_trade_date?: string | null;
 }
