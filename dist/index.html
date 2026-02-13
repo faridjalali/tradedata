@@ -32,7 +32,7 @@
     ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-kE0x8_T4.js"></script>
+    <script type="module" crossorigin src="./assets/index-kQjICM7B.js"></script>
   </head>
   <body>
     <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
@@ -94,20 +94,39 @@
                 <button
                   class="tf-btn divergence-run-btn"
                   id="divergence-fetch-all-btn"
-                  data-tooltip="Fetch all divergence data from divergence_symbols and build daily cards"
+                  data-tooltip="Fetch daily divergence data from divergence_symbols and build daily cards"
                 >
-                  Fetch All Data
+                  Fetch Daily
                 </button>
                 <button
                   class="tf-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-fetch-all-stop-btn"
-                  data-tooltip="Stop Fetch All Data"
-                  aria-label="Stop Fetch All Data"
+                  data-tooltip="Stop Fetch Daily"
+                  aria-label="Stop Fetch Daily"
                   disabled
                 >
                   ⏹
                 </button>
                 <span id="divergence-fetch-all-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="global-settings-row global-settings-table-controls-row">
+                <button
+                  class="tf-btn divergence-run-btn"
+                  id="divergence-fetch-weekly-btn"
+                  data-tooltip="Fetch weekly divergence data from divergence_symbols and build weekly cards"
+                >
+                  Fetch Weekly
+                </button>
+                <button
+                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  id="divergence-fetch-weekly-stop-btn"
+                  data-tooltip="Stop Fetch Weekly"
+                  aria-label="Stop Fetch Weekly"
+                  disabled
+                >
+                  ⏹
+                </button>
+                <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
               </div>
             </div>
           </div>
@@ -137,6 +156,7 @@
           </div>
         </div>
         <nav class="main-nav">
+          <button id="nav-logs" class="nav-btn">Logs</button>
           <button id="nav-divergence" class="nav-btn active">Alerts</button>
           <button id="nav-live" class="nav-btn" style="display: none;" aria-hidden="true">TV</button>
           <button id="nav-leaderboard" class="nav-btn">Leaders</button>
@@ -261,6 +281,31 @@
           </div>
         </div>
       </div>
+
+      <!-- LOGS VIEW -->
+      <main id="view-logs" class="hidden">
+        <div class="logs-page">
+          <div class="column logs-column">
+            <div class="column-header">
+              <h2>Run Metrics</h2>
+              <div class="header-sort-controls">
+                <button id="logs-refresh-btn" class="tf-btn" title="Refresh metrics">↻</button>
+              </div>
+            </div>
+            <div id="logs-run-cards" class="logs-grid">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+          <div class="column logs-column">
+            <div class="column-header">
+              <h2>Recent Runs</h2>
+            </div>
+            <div id="logs-history-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </main>
 
       <!-- LIVE FEED VIEW -->
       <main id="view-live">

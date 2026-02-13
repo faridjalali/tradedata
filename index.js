@@ -1185,6 +1185,8 @@ app.get('/api/divergence/signals', async (req, res) => {
     const days = parseInt(req.query.days) || 0;
     const startDate = req.query.start_date;
     const endDate = req.query.end_date;
+    const timeframeParam = req.query.timeframe; // optional: '1d' or '1w'
+    const allowedTimeframes = timeframeParam === '1d' ? ['1d'] : timeframeParam === '1w' ? ['1w'] : ['1d', '1w'];
     const publishedTradeDate = await getPublishedTradeDateForSourceInterval(DIVERGENCE_SOURCE_INTERVAL);
     if (!publishedTradeDate && divergenceScanRunning) {
       return res.json([]);
@@ -1211,7 +1213,7 @@ app.get('/api/divergence/signals', async (req, res) => {
           FROM divergence_signals
           WHERE timestamp >= $1
             AND timestamp <= $2
-            AND timeframe IN ('1d', '1w')
+            AND timeframe = ANY($5::text[])
             AND ($3::date IS NULL OR trade_date <= $3::date)
         )
         SELECT
@@ -1231,7 +1233,7 @@ app.get('/api/divergence/signals', async (req, res) => {
         WHERE timeframe_rank <= $4
         ORDER BY timestamp DESC
       `;
-      values = [startDate, endDate, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
+      values = [startDate, endDate, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT, allowedTimeframes];
     } else if (days > 0) {
       query = `
         WITH filtered AS (
@@ -1248,7 +1250,7 @@ app.get('/api/divergence/signals', async (req, res) => {
             ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY timestamp DESC) AS timeframe_rank
           FROM divergence_signals
           WHERE timestamp >= NOW() - $1::interval
-            AND timeframe IN ('1d', '1w')
+            AND timeframe = ANY($4::text[])
             AND ($2::date IS NULL OR trade_date <= $2::date)
         )
         SELECT
@@ -1268,7 +1270,7 @@ app.get('/api/divergence/signals', async (req, res) => {
         WHERE timeframe_rank <= $3
         ORDER BY timestamp DESC
       `;
-      values = [`${days} days`, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
+      values = [`${days} days`, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT, allowedTimeframes];
     } else {
       query = `
         WITH filtered AS (
@@ -1284,7 +1286,7 @@ app.get('/api/divergence/signals', async (req, res) => {
             is_favorite,
             ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY timestamp DESC) AS timeframe_rank
           FROM divergence_signals
-          WHERE timeframe IN ('1d', '1w')
+          WHERE timeframe = ANY($3::text[])
             AND ($1::date IS NULL OR trade_date <= $1::date)
         )
         SELECT
@@ -1304,7 +1306,7 @@ app.get('/api/divergence/signals', async (req, res) => {
         WHERE timeframe_rank <= $2
         ORDER BY timestamp DESC
       `;
-      values = [publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
+      values = [publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT, allowedTimeframes];
     }
 
     const result = await divergencePool.query(query, values);

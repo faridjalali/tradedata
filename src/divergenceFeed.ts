@@ -17,7 +17,7 @@ import {
     fetchDivergenceScanStatus,
     DivergenceScanStatus
 } from './divergenceApi';
-import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
+import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { refreshActiveTickerDivergenceSummary } from './chart';
@@ -507,13 +507,17 @@ async function hydrateVisibleDivergenceTables(force = false, noCache = false): P
     refreshActiveTickerDivergenceSummary({ noCache });
 }
 
-function refreshDivergenceCardsWhileRunning(force = false): void {
+function refreshDivergenceCardsWhileRunning(force = false, timeframe?: '1d' | '1w'): void {
     const nowMs = Date.now();
     if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
         return;
     }
     divergenceTableLastUiRefreshAtMs = nowMs;
-    void fetchDivergenceSignals().then(renderDivergenceOverview).catch(() => {});
+    if (timeframe) {
+        void fetchDivergenceSignalsByTimeframe(timeframe).then(() => renderDivergenceContainer(timeframe)).catch(() => {});
+    } else {
+        void fetchDivergenceSignals().then(renderDivergenceOverview).catch(() => {});
+    }
 }
 
 async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<void> {
@@ -552,7 +556,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
             divergenceFetchAllLastProcessedTickers = processed;
-            refreshDivergenceCardsWhileRunning(progressed);
+            refreshDivergenceCardsWhileRunning(progressed, '1d');
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
@@ -560,7 +564,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
             const processed = Number(status.fetchWeeklyData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchWeeklyLastProcessedTickers;
             divergenceFetchWeeklyLastProcessedTickers = processed;
-            refreshDivergenceCardsWhileRunning(progressed);
+            refreshDivergenceCardsWhileRunning(progressed, '1w');
         } else {
             divergenceFetchWeeklyLastProcessedTickers = -1;
         }
@@ -569,9 +573,15 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         }
         if (!status.running && !tableRunning && !fetchAllRunning && !fetchWeeklyRunning) {
             clearDivergenceScanPolling();
-            if (refreshOnComplete && (allowAutoCardRefreshFromFetchAll || allowAutoCardRefreshFromFetchWeekly)) {
-                await fetchDivergenceSignals(true);
-                renderDivergenceOverview();
+            if (refreshOnComplete) {
+                if (allowAutoCardRefreshFromFetchAll) {
+                    await fetchDivergenceSignalsByTimeframe('1d');
+                    renderDivergenceContainer('1d');
+                }
+                if (allowAutoCardRefreshFromFetchWeekly) {
+                    await fetchDivergenceSignalsByTimeframe('1w');
+                    renderDivergenceContainer('1w');
+                }
             }
             allowAutoCardRefreshFromFetchAll = false;
             allowAutoCardRefreshFromFetchWeekly = false;
@@ -642,7 +652,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
             divergenceFetchAllLastProcessedTickers = processed;
-            refreshDivergenceCardsWhileRunning(progressed);
+            refreshDivergenceCardsWhileRunning(progressed, '1d');
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
@@ -650,7 +660,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
             const processed = Number(status.fetchWeeklyData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchWeeklyLastProcessedTickers;
             divergenceFetchWeeklyLastProcessedTickers = processed;
-            refreshDivergenceCardsWhileRunning(progressed);
+            refreshDivergenceCardsWhileRunning(progressed, '1w');
         } else {
             divergenceFetchWeeklyLastProcessedTickers = -1;
         }
@@ -938,6 +948,46 @@ export function renderDivergenceOverview(): void {
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
 }
 
+/**
+ * Fetch signals for a single timeframe and update only that timeframe's state.
+ * The other timeframe's signals are left completely untouched.
+ */
+export async function fetchDivergenceSignalsByTimeframe(timeframe: '1d' | '1w'): Promise<Alert[]> {
+    try {
+        const weekVal = (document.getElementById('divergence-history-week') as HTMLInputElement | null)?.value || '';
+        const monthVal = (document.getElementById('divergence-history-month') as HTMLInputElement | null)?.value || '';
+
+        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, weekVal, monthVal);
+        if (!startDate || !endDate) return [];
+
+        const params = `?start_date=${startDate}&end_date=${endDate}&timeframe=${timeframe}`;
+        const data = await fetchDivergenceSignalsFromApi(params);
+        primeDivergenceSummaryCacheFromAlerts(data);
+        setDivergenceSignalsByTimeframe(timeframe, data);
+        return data;
+    } catch (error) {
+        console.error(`Error fetching divergence signals for ${timeframe}:`, error);
+        return [];
+    }
+}
+
+/**
+ * Re-render only a single timeframe container, leaving the other untouched.
+ */
+export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
+    const allSignals = getDivergenceSignals();
+    const containerId = timeframe === '1d' ? 'divergence-daily-container' : 'divergence-weekly-container';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const sortMode = timeframe === '1d' ? dailySortMode : weeklySortMode;
+    const signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
+    signals.sort(createAlertSortFn(sortMode));
+
+    container.innerHTML = signals.map(createAlertCard).join('');
+    renderAlertCardDivergenceTablesFromCache(container);
+}
+
 export function setupDivergenceFeedDelegation(): void {
     const view = document.getElementById('view-divergence');
     if (!view) return;
@@ -1034,7 +1084,7 @@ export function setDivergenceDailySort(mode: SortMode): void {
             else el.classList.remove('active');
         });
     }
-    renderDivergenceOverview();
+    renderDivergenceContainer('1d');
 }
 
 export function setDivergenceWeeklySort(mode: SortMode): void {
@@ -1047,5 +1097,5 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
             else el.classList.remove('active');
         });
     }
-    renderDivergenceOverview();
+    renderDivergenceContainer('1w');
 }
