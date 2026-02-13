@@ -4,6 +4,17 @@ const { Pool } = require("pg");
 const crypto = require("crypto");
 const zlib = require("zlib");
 const { promisify } = require("util");
+const compression = require("compression");
+const { setGlobalDispatcher, Agent } = require("undici");
+
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 15000,
+  keepAliveMaxTimeout: 30000,
+  connect: {
+    timeout: 15000
+  }
+}));
+
 const { registerChartRoutes } = require("./server/routes/chartRoutes");
 const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
 const { registerHealthRoutes } = require("./server/routes/healthRoutes");
@@ -27,6 +38,7 @@ const brotliCompressAsync = promisify(zlib.brotliCompress);
 // NOTE: cors() allows all origins. Restrict in production if needed:
 // app.use(cors({ origin: 'https://yourdomain.com' }));
 app.use(cors());
+app.use(compression());
 app.use(express.json());
 
 const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
@@ -415,7 +427,10 @@ function basicAuthMiddleware(req, res, next) {
 }
 
 app.use(basicAuthMiddleware);
-app.use(express.static('dist'));
+app.use(express.static('dist', {
+  maxAge: '1y',
+  immutable: true
+}));
 app.use((req, res, next) => {
   if (!isShuttingDown) return next();
   res.setHeader('Connection', 'close');
@@ -427,8 +442,7 @@ app.use((req, res, next) => {
   res.setHeader('x-request-id', requestId);
 
   httpDebugMetrics.totalRequests += 1;
-  if (String(req.path || '').startsWith('/api/')) {
-    httpDebugMetrics.apiRequests += 1;
+  if (String(req.path || '').startsWith('/api/')) {    httpDebugMetrics.apiRequests += 1;
   }
 
   if (!REQUEST_LOG_ENABLED || !shouldLogRequestPath(req.path)) {
@@ -890,6 +904,9 @@ const initDB = async () => {
         is_favorite BOOLEAN DEFAULT FALSE
       );
     `);
+
+    // Create index concurrently to avoid locking table on startup
+    await pool.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)`);
     
     // Attempt to add new columns if they don't exist
     const columns = [
@@ -1112,11 +1129,12 @@ app.get('/api/alerts', async (req, res) => {
     let values = [];
 
     if (hasDateKeyRange) {
+        // Optimized sargable query using timestamp range
         query = `
           SELECT *
           FROM alerts
-          WHERE DATE(timestamp AT TIME ZONE 'America/New_York') >= $1::date
-            AND DATE(timestamp AT TIME ZONE 'America/New_York') <= $2::date
+          WHERE timestamp >= ($1 || ' 00:00:00 America/New_York')::timestamptz
+            AND timestamp < ($2 || ' 00:00:00 America/New_York')::timestamptz + INTERVAL '1 day'
           ORDER BY timestamp DESC
           LIMIT 500
         `;
@@ -2370,15 +2388,22 @@ function getVdRsiCacheExpiryMs(nowUtc = new Date()) {
 
 function getTimedCacheValue(cacheMap, key) {
   const entry = cacheMap.get(key);
-  if (!entry) return null;
-  if (!Number.isFinite(entry.expiresAt) || entry.expiresAt <= Date.now()) {
+  if (!entry) return { status: 'miss', value: null };
+
+  const now = Date.now();
+  if (now > entry.staleUntil) {
     cacheMap.delete(key);
-    return null;
+    return { status: 'miss', value: null };
   }
+
   // Refresh insertion order so capped caches behave as LRU.
   cacheMap.delete(key);
   cacheMap.set(key, entry);
-  return entry.value;
+
+  if (now <= entry.freshUntil) {
+    return { status: 'fresh', value: entry.value };
+  }
+  return { status: 'stale', value: entry.value };
 }
 
 function getTimedCacheMaxEntries(cacheMap) {
@@ -2400,13 +2425,20 @@ function enforceTimedCacheMaxEntries(cacheMap) {
   }
 }
 
-function setTimedCacheValue(cacheMap, key, value, expiresAt) {
+function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
   if (cacheMap.has(key)) {
     cacheMap.delete(key);
   }
+  
+  // Default fallback if not provided
+  const now = Date.now();
+  const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : (now + 60000); // 1 min default
+  const safeStaleUntil = Number.isFinite(staleUntil) ? staleUntil : (safeFreshUntil + 300000); // +5 min default
+
   cacheMap.set(key, {
     value,
-    expiresAt: Number.isFinite(expiresAt) ? expiresAt : getVdRsiCacheExpiryMs(new Date())
+    freshUntil: safeFreshUntil,
+    staleUntil: safeStaleUntil
   });
   enforceTimedCacheMaxEntries(cacheMap);
 }
@@ -2414,7 +2446,7 @@ function setTimedCacheValue(cacheMap, key, value, expiresAt) {
 function sweepExpiredTimedCache(cacheMap) {
   const now = Date.now();
   for (const [key, entry] of cacheMap.entries()) {
-    if (!entry || !Number.isFinite(entry.expiresAt) || entry.expiresAt <= now) {
+    if (!entry || !Number.isFinite(entry.staleUntil) || entry.staleUntil <= now) {
       cacheMap.delete(key);
     }
   }
@@ -2442,39 +2474,62 @@ async function dataApiIntraday(symbol, interval, options = {}) {
 
   // Check cache first to avoid redundant API calls
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
+  let cached = { status: 'miss', value: null };
+  
   if (!noCache) {
-    const cached = getTimedCacheValue(CHART_DATA_CACHE, cacheKey);
-    if (cached) {
-      return cached;
+    cached = getTimedCacheValue(CHART_DATA_CACHE, cacheKey);
+    if (cached.status === 'fresh') {
+      return cached.value;
     }
   }
 
-  const urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
-  const rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
-  const normalized = rows.map((row) => {
-    const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
-    const close = toNumberOrNull(row.c ?? row.close ?? row.price);
-    const open = toNumberOrNull(row.o ?? row.open) ?? close;
-    const high = toNumberOrNull(row.h ?? row.high) ?? close;
-    const low = toNumberOrNull(row.l ?? row.low) ?? close;
-    const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
+  // The actual fetching logic wrapped as a standalone function
+  const executeFetch = async () => {
+    const urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
+    const rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
+    const normalized = rows.map((row) => {
+      const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
+      const close = toNumberOrNull(row.c ?? row.close ?? row.price);
+      const open = toNumberOrNull(row.o ?? row.open) ?? close;
+      const high = toNumberOrNull(row.h ?? row.high) ?? close;
+      const low = toNumberOrNull(row.l ?? row.low) ?? close;
+      const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
 
-    if (!Number.isFinite(time) || close === null || open === null || high === null || low === null) {
-      return null;
+      if (!Number.isFinite(time) || close === null || open === null || high === null || low === null) {
+        return null;
+      }
+
+      return { time, open, high, low, close, volume };
+    }).filter(Boolean);
+
+    const result = normalized.length ? normalized : null;
+
+    // Cache the result with SWR logic
+    if (result && !noCache) {
+      const now = Date.now();
+      const freshExpiryMs = getVdRsiCacheExpiryMs(new Date());
+      // SWR window: allow serving stale data for another 10 minutes after expiry
+      const staleExpiryMs = freshExpiryMs + (10 * 60 * 1000); 
+      setTimedCacheValue(CHART_DATA_CACHE, cacheKey, result, freshExpiryMs, staleExpiryMs);
     }
+    return result;
+  };
 
-    return { time, open, high, low, close, volume };
-  }).filter(Boolean);
-
-  const result = normalized.length ? normalized : null;
-
-  // Cache the result with smart expiry
-  if (result && !noCache) {
-    const expiryMs = getVdRsiCacheExpiryMs(new Date());
-    setTimedCacheValue(CHART_DATA_CACHE, cacheKey, result, expiryMs);
+  // If stale, return immediately but trigger background refresh
+  if (cached.status === 'stale') {
+    // console.log(`[SWR] Serving stale data for ${cacheKey} while refreshing in background`);
+    
+    // Trigger background fetch without awaiting. 
+    // We catch errors to prevent unhandled rejections from crashing the process.
+    executeFetch().catch((err) => {
+      console.error(`[SWR] Background refresh failed for ${cacheKey}:`, err.message);
+    });
+    
+    return cached.value;
   }
 
-  return result;
+  // If miss (or noCache), await the fetch properly
+  return await executeFetch();
 }
 
 function getIntradayLookbackDays(interval) {
