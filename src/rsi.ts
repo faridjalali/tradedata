@@ -54,7 +54,7 @@ export class RSIChart {
   private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
   private divergencePoints: RSIPoint[] = [];
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
-  private static readonly FUTURE_TIMELINE_DAYS = 370;
+  private static readonly FUTURE_TIMELINE_TRADING_DAYS = 252;
   private trendLineSeriesList: any[] = [];
   private trendlineCrossLabels: Array<{ element: HTMLDivElement, anchorTime: string | number, anchorValue: number }> = [];
   private trendlineDefinitions: RSIPersistedTrendline[] = [];
@@ -334,8 +334,14 @@ export class RSIChart {
     if (lastTimeSeconds === null) return;
 
     const timelinePoints: Array<{ time: number }> = [{ time: lastTimeSeconds }];
-    for (let day = 1; day <= RSIChart.FUTURE_TIMELINE_DAYS; day++) {
-      timelinePoints.push({ time: lastTimeSeconds + (day * 86400) });
+    let cursor = lastTimeSeconds;
+    let tradingDaysAdded = 0;
+    while (tradingDaysAdded < RSIChart.FUTURE_TIMELINE_TRADING_DAYS) {
+      cursor += 86400;
+      const dayOfWeek = new Date(cursor * 1000).getUTCDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+      timelinePoints.push({ time: cursor });
+      tradingDaysAdded += 1;
     }
 
     this.timelineSeries.setData(timelinePoints);

@@ -92,7 +92,7 @@ const CHART_SESSION_CACHE_KEY = 'custom_chart_session_cache_v1';
 const CHART_SESSION_CACHE_MAX_ENTRIES = 6;
 const CHART_SESSION_CACHE_MAX_BYTES = 900_000;
 const RIGHT_MARGIN_BARS = 10;
-const FUTURE_TIMELINE_DAYS = 370;
+const FUTURE_TIMELINE_TRADING_DAYS = 252;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
@@ -405,8 +405,14 @@ function buildFutureTimelinePointsFromBars(bars: any[]): Array<{ time: number }>
   const lastUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
   if (!Number.isFinite(lastUnix)) return [];
   const points: Array<{ time: number }> = [{ time: Number(lastUnix) }];
-  for (let day = 1; day <= FUTURE_TIMELINE_DAYS; day++) {
-    points.push({ time: Number(lastUnix) + (day * 86400) });
+  let cursor = Number(lastUnix);
+  let tradingDaysAdded = 0;
+  while (tradingDaysAdded < FUTURE_TIMELINE_TRADING_DAYS) {
+    cursor += 86400;
+    const dayOfWeek = new Date(cursor * 1000).getUTCDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+    points.push({ time: cursor });
+    tradingDaysAdded += 1;
   }
   return points;
 }
