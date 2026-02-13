@@ -223,8 +223,9 @@ function dateKeyToMmDd(dateKey: string): string {
     const parts = dateKey.split('-');
     if (parts.length !== 3) return '';
     const month = Number(parts[1]);
-    if (!Number.isFinite(month) || month <= 0) return '';
-    return `${month}/${parts[2]}`;
+    const day = Number(parts[2]);
+    if (!Number.isFinite(month) || month <= 0 || !Number.isFinite(day) || day <= 0) return '';
+    return `${month}/${day}`;
 }
 
 function summarizeLastRunDate(status: DivergenceScanStatus): string {
@@ -328,44 +329,42 @@ function summarizeTableStatus(status: DivergenceScanStatus): string {
 
 function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     const fetchAll = status.fetchAllData;
-    if (!fetchAll) return 'All data idle';
+    const latest = status.latestJob as (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string }) | null;
+    const lastRunDateKey =
+        toDateKey(fetchAll?.last_published_trade_date || null)
+        || toDateKey(status.lastScanDateEt)
+        || toDateKey(latest?.scanned_trade_date)
+        || toDateKey(latest?.run_for_date)
+        || toDateKey(latest?.finished_at)
+        || toDateKey(latest?.started_at);
+    const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
+    const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
+    if (!fetchAll) return ranText;
     const fetchAllState = String(fetchAll.status || '').toLowerCase();
-    const errorTickers = Number(fetchAll.error_tickers || 0);
     if (fetchAllState === 'stopping') {
-        const processed = Number(fetchAll.processed_tickers || 0);
-        const total = Number(fetchAll.total_tickers || 0);
-        if (total > 0) return `Stopping ${processed}/${total}`;
         return 'Stopping';
     }
     if (fetchAllState === 'stopped') {
-        return 'All data stopped';
+        return 'Stopped';
     }
     if (fetchAll.running) {
         const processed = Number(fetchAll.processed_tickers || 0);
         const total = Number(fetchAll.total_tickers || 0);
         if (fetchAll.stop_requested) {
-            if (total > 0) return `Stopping ${processed}/${total}`;
             return 'Stopping';
         }
-        if (total > 0) return `All data ${processed}/${total}`;
-        return 'All data running';
+        return `${processed} / ${total}`;
     }
     if (fetchAllState === 'completed') {
-        const dateKey = toDateKey(fetchAll.last_published_trade_date || null);
-        const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
-        return mmdd ? `All data ${mmdd}` : 'All data fetched';
+        return ranText;
     }
     if (fetchAllState === 'completed-with-errors') {
-        const dateKey = toDateKey(fetchAll.last_published_trade_date || null);
-        const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
-        if (mmdd && errorTickers > 0) return `All data ${mmdd} (${errorTickers} errors)`;
-        if (errorTickers > 0) return `All data done (${errorTickers} errors)`;
-        return mmdd ? `All data ${mmdd}` : 'All data fetched';
+        return ranText;
     }
     if (fetchAllState === 'failed') {
-        return 'All data failed';
+        return ranText;
     }
-    return 'All data idle';
+    return ranText;
 }
 
 function clearDivergenceScanPolling(): void {
@@ -567,15 +566,11 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
 
 export async function runManualDivergenceFetchAllData(): Promise<void> {
     setFetchAllButtonState(true);
-    setFetchAllStatusText('All data starting...');
+    setFetchAllStatusText('0 / 0');
     allowAutoCardRefreshFromFetchAll = true;
     try {
         const started = await startDivergenceFetchAllData();
-        if (started.status === 'running') {
-            setFetchAllStatusText('Already running');
-        } else {
-            setFetchAllStatusText('All data running');
-        }
+        if (started.status === 'running') setFetchAllStatusText('0 / 0');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {

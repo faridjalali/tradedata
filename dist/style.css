@@ -62,7 +62,7 @@ header {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: 372px;
+  min-width: 272px;
   background: rgba(22, 27, 34, 0.98);
   border: 1px solid var(--border-color);
   border-radius: 8px;
