@@ -254,6 +254,43 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
   });
 }
 
+const DIVERGENCE_SCORE_WEIGHTS: Record<string, number> = {
+  '1': 3,
+  '3': 3,
+  '7': 2,
+  '14': 2,
+  '28': 1
+};
+
+export function computeDivergenceScoreFromStates(states?: Record<string, string | DivergenceState | null | undefined>): number {
+  let total = 0;
+  for (const days of DIVERGENCE_LOOKBACK_DAYS) {
+    const key = String(days);
+    const raw = String(states?.[key] || '').trim().toLowerCase();
+    const weight = Number(DIVERGENCE_SCORE_WEIGHTS[key] || 0);
+    if (raw === 'bullish') {
+      total += weight;
+    } else if (raw === 'bearish') {
+      total -= weight;
+    }
+  }
+  return total;
+}
+
+export function getTickerDivergenceScoreFromCache(
+  ticker: string,
+  sourceInterval?: string
+): number {
+  const normalizedTicker = normalizeTicker(ticker);
+  if (!normalizedTicker) return 0;
+  const normalizedSource = sourceInterval
+    ? normalizeSourceInterval(sourceInterval)
+    : getPreferredDivergenceSourceInterval();
+  const summary = getCachedSummary(normalizedTicker, normalizedSource);
+  if (!summary) return 0;
+  return computeDivergenceScoreFromStates(summary.states);
+}
+
 export function syncTickerDivergenceSummaryToVisibleCards(
   ticker: string,
   summary: DivergenceSummaryEntry | null,

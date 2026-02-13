@@ -1,5 +1,6 @@
 import { SortMode, Alert } from './types';
 import { getAppTimeZone } from './timezone';
+import { getTickerDivergenceScoreFromCache } from './divergenceTable';
 
 interface DateParts {
     year: number;
@@ -276,11 +277,17 @@ export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => numbe
         if (mode === 'volume') {
             return (b.signal_volume || 0) - (a.signal_volume || 0);
         }
-        if (mode === 'intensity') {
-            return (b.intensity_score || 0) - (a.intensity_score || 0);
-        }
         if (mode === 'combo') {
-            return (b.combo_score || 0) - (a.combo_score || 0);
+            const bScore = getTickerDivergenceScoreFromCache(b.ticker);
+            const aScore = getTickerDivergenceScoreFromCache(a.ticker);
+            if (bScore !== aScore) {
+                return bScore - aScore;
+            }
+            const volumeDiff = (b.signal_volume || 0) - (a.signal_volume || 0);
+            if (volumeDiff !== 0) {
+                return volumeDiff;
+            }
+            return (b.timestamp || '').localeCompare(a.timestamp || '');
         }
         return (b.timestamp || '').localeCompare(a.timestamp || '');
     };
