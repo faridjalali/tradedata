@@ -186,6 +186,9 @@ function validateStartupEnvironment() {
   const positiveNumericEnvNames = [
     'DIVERGENCE_SCAN_SPREAD_MINUTES',
     'DIVERGENCE_MIN_UNIVERSE_SIZE',
+    'DIVERGENCE_STALL_TIMEOUT_MS',
+    'DIVERGENCE_STALL_CHECK_INTERVAL_MS',
+    'DIVERGENCE_STALL_RETRY_BASE_MS',
     'CHART_QUOTE_CACHE_MS',
     'CHART_TIMING_SAMPLE_MAX',
     'VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES',
@@ -196,6 +199,7 @@ function validateStartupEnvironment() {
   ];
   positiveNumericEnvNames.forEach(warnIfInvalidPositiveNumber);
   const nonNegativeNumericEnvNames = [
+    'DIVERGENCE_STALL_MAX_RETRIES',
     'CHART_RESULT_CACHE_TTL_SECONDS',
     'CHART_RESPONSE_MAX_AGE_SECONDS',
     'CHART_RESPONSE_SWR_SECONDS',
@@ -475,6 +479,10 @@ const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
   )
 );
 const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
+const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
+const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000);
+const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
+const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.DIVERGENCE_STALL_MAX_RETRIES) || 3));
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -1140,6 +1148,60 @@ function sleepWithAbort(ms, signal) {
       signal.addEventListener('abort', onAbort, { once: true });
     }
   });
+}
+
+function linkAbortSignalToController(parentSignal, controller) {
+  if (!parentSignal || !controller) return () => {};
+  const forwardAbort = () => {
+    try {
+      controller.abort();
+    } catch {
+      // Ignore duplicate abort errors.
+    }
+  };
+  if (parentSignal.aborted) {
+    forwardAbort();
+    return () => {};
+  }
+  parentSignal.addEventListener('abort', forwardAbort);
+  return () => {
+    parentSignal.removeEventListener('abort', forwardAbort);
+  };
+}
+
+function createProgressStallWatchdog(onStall) {
+  let lastProgressMs = Date.now();
+  let stalled = false;
+  const timer = setInterval(() => {
+    if (stalled) return;
+    if ((Date.now() - lastProgressMs) < DIVERGENCE_STALL_TIMEOUT_MS) return;
+    stalled = true;
+    try {
+      onStall();
+    } catch {
+      // Ignore stall callback errors.
+    }
+  }, DIVERGENCE_STALL_CHECK_INTERVAL_MS);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  return {
+    markProgress() {
+      lastProgressMs = Date.now();
+    },
+    stop() {
+      clearInterval(timer);
+    },
+    isStalled() {
+      return stalled;
+    }
+  };
+}
+
+function getStallRetryBackoffMs(retryAttempt) {
+  const attempt = Math.max(1, Math.floor(Number(retryAttempt) || 1));
+  const delay = DIVERGENCE_STALL_RETRY_BASE_MS * (2 ** (attempt - 1));
+  return Math.min(60_000, delay);
 }
 
 async function acquireMassiveRateLimitSlot(signal) {
@@ -5186,42 +5248,97 @@ async function runDivergenceTableBuild(options = {}) {
 
         const chunk = backfillTickers.slice(backfillOffset, backfillOffset + DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE);
         const chunkStartOffset = backfillOffset;
-        let chunkProcessed = 0;
-        await mapWithConcurrency(
-          chunk,
-          DIVERGENCE_TABLE_BUILD_CONCURRENCY,
-          async (ticker) => {
-            const rows = await buildDivergenceDailyRowsForTicker({
-              ticker,
-              sourceInterval,
-              lookbackDays: requestedLookbackDays,
-              asOfTradeDate,
-              signal: tableAbortController.signal,
-              noCache: true
-            });
-            if (rows.length > 0) {
-              await upsertDivergenceDailyBarsBatch(rows, null);
+        let chunkCompleted = false;
+        for (let chunkRetryAttempt = 0; !chunkCompleted; chunkRetryAttempt++) {
+          const attemptController = new AbortController();
+          const unlinkAbort = linkAbortSignalToController(tableAbortController.signal, attemptController);
+          const stallWatchdog = createProgressStallWatchdog(() => {
+            try {
+              attemptController.abort();
+            } catch {
+              // Ignore duplicate abort calls.
             }
-            return { ticker, rowCount: rows.length };
-          },
-          (result, _index, ticker) => {
-            chunkProcessed += 1;
-            backfillOffset = Math.min(backfillTickers.length, chunkStartOffset + chunkProcessed);
-            processedTickers = backfillOffset;
-            divergenceTableBuildStatus.processedTickers = processedTickers;
-            if (result && result.error) {
-              if (isAbortError(result.error) && divergenceTableBuildStopRequested) {
+          });
+          let chunkProcessed = 0;
+          try {
+            await mapWithConcurrency(
+              chunk,
+              DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+              async (ticker) => {
+                const rows = await buildDivergenceDailyRowsForTicker({
+                  ticker,
+                  sourceInterval,
+                  lookbackDays: requestedLookbackDays,
+                  asOfTradeDate,
+                  signal: attemptController.signal,
+                  noCache: true
+                });
+                if (rows.length > 0) {
+                  await upsertDivergenceDailyBarsBatch(rows, null);
+                }
+                return { ticker, rowCount: rows.length };
+              },
+              (result, _index, ticker) => {
+                chunkProcessed += 1;
+                processedTickers = Math.min(backfillTickers.length, chunkStartOffset + chunkProcessed);
+                divergenceTableBuildStatus.processedTickers = processedTickers;
+                stallWatchdog.markProgress();
+                if (result && result.error) {
+                  if (isAbortError(result.error)) {
+                    if (divergenceTableBuildStopRequested || divergenceTableBuildPauseRequested || stallWatchdog.isStalled()) {
+                      persistResumeState();
+                      return;
+                    }
+                  }
+                  errorTickers += 1;
+                  divergenceTableBuildStatus.errorTickers = errorTickers;
+                  const message = result.error && result.error.message ? result.error.message : String(result.error);
+                  console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
+                }
                 persistResumeState();
-                return;
               }
-              errorTickers += 1;
-              divergenceTableBuildStatus.errorTickers = errorTickers;
-              const message = result.error && result.error.message ? result.error.message : String(result.error);
-              console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
-            }
-            persistResumeState();
+            );
+          } finally {
+            stallWatchdog.stop();
+            unlinkAbort();
           }
-        );
+
+          if (stallWatchdog.isStalled() && !divergenceTableBuildStopRequested && !divergenceTableBuildPauseRequested) {
+            const retryAttempt = chunkRetryAttempt + 1;
+            if (retryAttempt <= DIVERGENCE_STALL_MAX_RETRIES) {
+              const retryDelayMs = getStallRetryBackoffMs(retryAttempt);
+              divergenceTableBuildStatus.processedTickers = chunkStartOffset;
+              persistResumeState();
+              console.warn(
+                `Divergence table backfill stalled at ticker ${chunkStartOffset + 1}/${backfillTickers.length}; retry ${retryAttempt}/${DIVERGENCE_STALL_MAX_RETRIES} in ${retryDelayMs}ms`
+              );
+              try {
+                await sleepWithAbort(retryDelayMs, tableAbortController.signal);
+              } catch (sleepErr) {
+                if (!isAbortError(sleepErr) || (!divergenceTableBuildStopRequested && !divergenceTableBuildPauseRequested)) {
+                  throw sleepErr;
+                }
+              }
+              continue;
+            }
+            throw new Error(
+              `Divergence table backfill stalled at ticker ${chunkStartOffset + 1}/${backfillTickers.length} and exhausted ${DIVERGENCE_STALL_MAX_RETRIES} retries`
+            );
+          }
+
+          if (divergenceTableBuildStopRequested) {
+            return markStopped();
+          }
+          if (divergenceTableBuildPauseRequested) {
+            return markPaused();
+          }
+          chunkCompleted = true;
+        }
+
+        backfillOffset = Math.min(backfillTickers.length, chunkStartOffset + chunk.length);
+        processedTickers = backfillOffset;
+        divergenceTableBuildStatus.processedTickers = processedTickers;
+        persistResumeState();
       }
 
       rowsByTicker = await loadDivergenceDailyHistoryByTicker({
@@ -5535,30 +5652,89 @@ async function runDivergenceFetchAllData(options = {}) {
 
       const chunk = tickers.slice(i, i + chunkSize);
       const chunkStartProcessed = processedTickers;
-      let chunkSettledCount = 0;
-      const batchResults = await mapWithConcurrency(
-        chunk,
-        DIVERGENCE_TABLE_BUILD_CONCURRENCY,
-        async (ticker) => {
-          const rows = await buildDivergenceDailyRowsForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: requestedLookbackDays,
-            asOfTradeDate,
-            signal: fetchAllAbortController.signal,
-            noCache: true
-          });
-          return { ticker, rows };
-        },
-        () => {
-          chunkSettledCount += 1;
-          processedTickers = Math.min(totalTickers, chunkStartProcessed + chunkSettledCount);
-          divergenceFetchAllDataStatus.processedTickers = processedTickers;
-          divergenceFetchAllDataStatus.errorTickers = errorTickers;
-          divergenceFetchAllDataStatus.status = 'running';
-          persistResumeState(processedTickers);
+      let batchResults = [];
+      let chunkCompleted = false;
+      for (let chunkRetryAttempt = 0; !chunkCompleted; chunkRetryAttempt++) {
+        const attemptController = new AbortController();
+        const unlinkAbort = linkAbortSignalToController(fetchAllAbortController.signal, attemptController);
+        const stallWatchdog = createProgressStallWatchdog(() => {
+          try {
+            attemptController.abort();
+          } catch {
+            // Ignore duplicate abort calls.
+          }
+        });
+        let chunkSettledCount = 0;
+        try {
+          batchResults = await mapWithConcurrency(
+            chunk,
+            DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+            async (ticker) => {
+              const rows = await buildDivergenceDailyRowsForTicker({
+                ticker,
+                sourceInterval,
+                lookbackDays: requestedLookbackDays,
+                asOfTradeDate,
+                signal: attemptController.signal,
+                noCache: true
+              });
+              return { ticker, rows };
+            },
+            (result) => {
+              chunkSettledCount += 1;
+              divergenceFetchAllDataStatus.processedTickers = Math.min(totalTickers, chunkStartProcessed + chunkSettledCount);
+              divergenceFetchAllDataStatus.errorTickers = errorTickers;
+              divergenceFetchAllDataStatus.status = 'running';
+              stallWatchdog.markProgress();
+              if (result && result.error && isAbortError(result.error)) {
+                if (divergenceFetchAllDataStopRequested || divergenceFetchAllDataPauseRequested || stallWatchdog.isStalled()) {
+                  return;
+                }
+              }
+            }
+          );
+        } finally {
+          stallWatchdog.stop();
+          unlinkAbort();
         }
-      );
+
+        if (stallWatchdog.isStalled() && !divergenceFetchAllDataStopRequested && !divergenceFetchAllDataPauseRequested) {
+          const retryAttempt = chunkRetryAttempt + 1;
+          if (retryAttempt <= DIVERGENCE_STALL_MAX_RETRIES) {
+            const retryDelayMs = getStallRetryBackoffMs(retryAttempt);
+            divergenceFetchAllDataStatus.processedTickers = chunkStartProcessed;
+            divergenceFetchAllDataStatus.errorTickers = errorTickers;
+            divergenceFetchAllDataStatus.status = 'running';
+            persistResumeState(chunkStartProcessed);
+            console.warn(
+              `Fetch-all stalled at ticker ${chunkStartProcessed + 1}/${tickers.length}; retry ${retryAttempt}/${DIVERGENCE_STALL_MAX_RETRIES} in ${retryDelayMs}ms`
+            );
+            try {
+              await sleepWithAbort(retryDelayMs, fetchAllAbortController.signal);
+            } catch (sleepErr) {
+              if (!isAbortError(sleepErr) || (!divergenceFetchAllDataStopRequested && !divergenceFetchAllDataPauseRequested)) {
+                throw sleepErr;
+              }
+            }
+            continue;
+          }
+          throw new Error(
+            `Fetch-all stalled at ticker ${chunkStartProcessed + 1}/${tickers.length} and exhausted ${DIVERGENCE_STALL_MAX_RETRIES} retries`
+          );
+        }
+
+        if (divergenceFetchAllDataStopRequested) {
+          divergenceFetchAllDataStatus.processedTickers = chunkStartProcessed;
+          persistResumeState(chunkStartProcessed);
+          return markStopped(chunkStartProcessed);
+        }
+        if (divergenceFetchAllDataPauseRequested) {
+          divergenceFetchAllDataStatus.processedTickers = chunkStartProcessed;
+          persistResumeState(chunkStartProcessed);
+          return markPaused(chunkStartProcessed);
+        }
+        chunkCompleted = true;
+      }
 
       const batchDailyRows = [];
       const summaryRows = [];
