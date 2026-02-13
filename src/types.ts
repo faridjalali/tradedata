@@ -5,6 +5,7 @@ export interface Alert {
     price?: number;
     message?: string;
     timestamp?: string;
+    signal_trade_date?: string | null;
     timeframe?: string;
     signal_direction?: number;
     signal_volume?: number;

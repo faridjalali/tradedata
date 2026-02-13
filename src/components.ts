@@ -24,7 +24,7 @@ function formatAlertCardDate(rawDate: string | null | undefined): string {
 }
 
 export function createAlertCard(alert: Alert): string {
-    const timeStr = formatAlertCardDate(alert.divergence_trade_date || alert.timestamp) || '--';
+    const timeStr = formatAlertCardDate(alert.signal_trade_date || alert.divergence_trade_date || alert.timestamp) || '--';
     const source = alert.source === 'TV' ? 'TV' : 'DataAPI';
     const maStates = alert.ma_states || {};
     

@@ -21,6 +21,8 @@ import {
     setupDivergenceFeedDelegation,
     runManualDivergenceFetchAllData,
     stopManualDivergenceFetchAllData,
+    runManualDivergenceFetchWeeklyData,
+    stopManualDivergenceFetchWeeklyData,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -605,6 +607,12 @@ function bootstrapApplication(): void {
     });
     document.getElementById('divergence-fetch-all-stop-btn')?.addEventListener('click', () => {
         stopManualDivergenceFetchAllData();
+    });
+    document.getElementById('divergence-fetch-weekly-btn')?.addEventListener('click', () => {
+        runManualDivergenceFetchWeeklyData();
+    });
+    document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
+        stopManualDivergenceFetchWeeklyData();
     });
     
     // New Date Inputs

@@ -12,6 +12,8 @@ import {
     stopDivergenceTableBuild,
     startDivergenceFetchAllData,
     stopDivergenceFetchAllData,
+    startDivergenceFetchWeeklyData,
+    stopDivergenceFetchWeeklyData,
     fetchDivergenceScanStatus,
     DivergenceScanStatus
 } from './divergenceApi';
@@ -27,11 +29,14 @@ let weeklySortMode: SortMode = 'time';
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
 let divergenceFetchAllLastProcessedTickers = -1;
+let divergenceFetchWeeklyLastProcessedTickers = -1;
 let divergenceTableLastUiRefreshAtMs = 0;
 const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
 let divergenceTableRunningState = false;
 let divergenceFetchAllRunningState = false;
+let divergenceFetchWeeklyRunningState = false;
 let allowAutoCardRefreshFromFetchAll = false;
+let allowAutoCardRefreshFromFetchWeekly = false;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -42,7 +47,8 @@ export function setDivergenceFeedModeState(mode: LiveFeedMode): void {
 }
 
 export function shouldAutoRefreshDivergenceFeed(): boolean {
-    return divergenceFetchAllRunningState && allowAutoCardRefreshFromFetchAll;
+    return (divergenceFetchAllRunningState && allowAutoCardRefreshFromFetchAll)
+        || (divergenceFetchWeeklyRunningState && allowAutoCardRefreshFromFetchWeekly);
 }
 
 function getRunButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
@@ -63,6 +69,13 @@ function getFetchAllButtonElements(): { button: HTMLButtonElement | null; status
     return {
         button: document.getElementById('divergence-fetch-all-btn') as HTMLButtonElement | null,
         status: document.getElementById('divergence-fetch-all-status')
+    };
+}
+
+function getFetchWeeklyButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
+    return {
+        button: document.getElementById('divergence-fetch-weekly-btn') as HTMLButtonElement | null,
+        status: document.getElementById('divergence-fetch-weekly-status')
     };
 }
 
@@ -93,6 +106,14 @@ function getFetchAllControlButtons(): {
 } {
     return {
         stopButton: document.getElementById('divergence-fetch-all-stop-btn') as HTMLButtonElement | null,
+    };
+}
+
+function getFetchWeeklyControlButtons(): {
+    stopButton: HTMLButtonElement | null;
+} {
+    return {
+        stopButton: document.getElementById('divergence-fetch-weekly-stop-btn') as HTMLButtonElement | null,
     };
 }
 
@@ -134,12 +155,32 @@ function setFetchAllButtonState(running: boolean, canResume = false): void {
     } else if (canResume) {
         button.textContent = 'Resume Fetch';
     } else {
-        button.textContent = 'Fetch All Data';
+        button.textContent = 'Fetch Daily';
     }
 }
 
 function setFetchAllStatusText(text: string): void {
     const { status } = getFetchAllButtonElements();
+    if (!status) return;
+    status.textContent = text;
+}
+
+function setFetchWeeklyButtonState(running: boolean, canResume = false): void {
+    const { button } = getFetchWeeklyButtonElements();
+    if (!button) return;
+    button.disabled = running;
+    button.classList.toggle('active', running);
+    if (running) {
+        button.textContent = 'Running';
+    } else if (canResume) {
+        button.textContent = 'Resume Fetch';
+    } else {
+        button.textContent = 'Fetch Weekly';
+    }
+}
+
+function setFetchWeeklyStatusText(text: string): void {
+    const { status } = getFetchWeeklyButtonElements();
     if (!status) return;
     status.textContent = text;
 }
@@ -203,8 +244,22 @@ function setFetchAllControlButtonState(status: DivergenceScanStatus | null): voi
         stopButton.textContent = '⏹';
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
-        stopButton.setAttribute('aria-label', 'Stop Fetch All Data');
-        stopButton.title = 'Stop Fetch All Data';
+        stopButton.setAttribute('aria-label', 'Stop Fetch Daily');
+        stopButton.title = 'Stop Fetch Daily';
+    }
+}
+
+function setFetchWeeklyControlButtonState(status: DivergenceScanStatus | null): void {
+    const { stopButton } = getFetchWeeklyControlButtons();
+    const fetchWeekly = status?.fetchWeeklyData || null;
+    const running = Boolean(fetchWeekly?.running);
+    const stopRequested = Boolean(fetchWeekly?.stop_requested);
+    if (stopButton) {
+        stopButton.textContent = '⏹';
+        stopButton.disabled = !running || stopRequested;
+        stopButton.classList.toggle('active', running);
+        stopButton.setAttribute('aria-label', 'Stop Fetch Weekly');
+        stopButton.title = 'Stop Fetch Weekly';
     }
 }
 
@@ -378,6 +433,51 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     return ranText;
 }
 
+function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
+    const fetchWeekly = status.fetchWeeklyData;
+    const latest = status.latestJob as (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string }) | null;
+    const lastRunDateKey =
+        toDateKey(fetchWeekly?.last_published_trade_date || null)
+        || toDateKey(status.lastScanDateEt)
+        || toDateKey(latest?.scanned_trade_date)
+        || toDateKey(latest?.run_for_date)
+        || toDateKey(latest?.finished_at)
+        || toDateKey(latest?.started_at);
+    const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
+    const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
+    if (!fetchWeekly) return ranText;
+    const fetchWeeklyState = String(fetchWeekly.status || '').toLowerCase();
+    if (fetchWeeklyState === 'stopping') {
+        return 'Stopping';
+    }
+    if (fetchWeeklyState === 'stopped') {
+        if (fetchWeekly.can_resume) {
+            const processed = Number(fetchWeekly.processed_tickers || 0);
+            const total = Number(fetchWeekly.total_tickers || 0);
+            return total > 0 ? `Stopped ${processed}/${total} (resumable)` : 'Stopped (resumable)';
+        }
+        return 'Stopped';
+    }
+    if (fetchWeekly.running) {
+        const processed = Number(fetchWeekly.processed_tickers || 0);
+        const total = Number(fetchWeekly.total_tickers || 0);
+        if (fetchWeekly.stop_requested) {
+            return 'Stopping';
+        }
+        return `${processed} / ${total}`;
+    }
+    if (fetchWeeklyState === 'completed') {
+        return ranText;
+    }
+    if (fetchWeeklyState === 'completed-with-errors') {
+        return ranText;
+    }
+    if (fetchWeeklyState === 'failed') {
+        return ranText;
+    }
+    return ranText;
+}
+
 function clearDivergenceScanPolling(): void {
   if (divergenceScanPollTimer !== null) {
     window.clearInterval(divergenceScanPollTimer);
@@ -427,6 +527,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         const status = await fetchDivergenceScanStatus();
         divergenceTableRunningState = Boolean(status.tableBuild?.running);
         divergenceFetchAllRunningState = Boolean(status.fetchAllData?.running);
+        divergenceFetchWeeklyRunningState = Boolean(status.fetchWeeklyData?.running);
         setRunButtonState(status.running, Boolean(status.scanControl?.can_resume));
         setRunStatusText(summarizeStatus(status));
         setRunControlButtonState(status);
@@ -439,6 +540,11 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setFetchAllButtonState(fetchAllRunning, fetchAllCanResume);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
+        const fetchWeeklyRunning = divergenceFetchWeeklyRunningState;
+        const fetchWeeklyCanResume = Boolean(status.fetchWeeklyData?.can_resume);
+        setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
+        setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
+        setFetchWeeklyControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
@@ -447,24 +553,35 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
-        if (!fetchAllRunning) {
+        if (fetchWeeklyRunning && allowAutoCardRefreshFromFetchWeekly) {
+            const processed = Number(status.fetchWeeklyData?.processed_tickers || 0);
+            const progressed = processed !== divergenceFetchWeeklyLastProcessedTickers;
+            divergenceFetchWeeklyLastProcessedTickers = processed;
+            refreshDivergenceCardsWhileRunning(progressed);
+        } else {
+            divergenceFetchWeeklyLastProcessedTickers = -1;
+        }
+        if (!fetchAllRunning && !fetchWeeklyRunning) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
-        if (!status.running && !tableRunning && !fetchAllRunning) {
+        if (!status.running && !tableRunning && !fetchAllRunning && !fetchWeeklyRunning) {
             clearDivergenceScanPolling();
-            if (refreshOnComplete && allowAutoCardRefreshFromFetchAll) {
+            if (refreshOnComplete && (allowAutoCardRefreshFromFetchAll || allowAutoCardRefreshFromFetchWeekly)) {
                 await fetchDivergenceSignals(true);
                 renderDivergenceOverview();
             }
             allowAutoCardRefreshFromFetchAll = false;
+            allowAutoCardRefreshFromFetchWeekly = false;
         }
     } catch (error) {
         console.error('Failed to poll divergence scan status:', error);
         divergenceTableRunningState = false;
         divergenceFetchAllRunningState = false;
+        divergenceFetchWeeklyRunningState = false;
         setRunStatusText(toStatusTextFromError(error));
         setTableRunStatusText(toStatusTextFromError(error));
         setFetchAllStatusText(toStatusTextFromError(error));
+        setFetchWeeklyStatusText(toStatusTextFromError(error));
         clearDivergenceScanPolling();
         setRunButtonState(false, false);
         setRunControlButtonState(null);
@@ -472,6 +589,10 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setTableControlButtonState(null);
         setFetchAllButtonState(false, false);
         setFetchAllControlButtonState(null);
+        setFetchWeeklyButtonState(false, false);
+        setFetchWeeklyControlButtonState(null);
+        allowAutoCardRefreshFromFetchAll = false;
+        allowAutoCardRefreshFromFetchWeekly = false;
     } finally {
         divergenceScanPollInFlight = false;
     }
@@ -489,6 +610,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         const status = await fetchDivergenceScanStatus();
         divergenceTableRunningState = Boolean(status.tableBuild?.running);
         divergenceFetchAllRunningState = Boolean(status.fetchAllData?.running);
+        divergenceFetchWeeklyRunningState = Boolean(status.fetchWeeklyData?.running);
         setRunButtonState(status.running, Boolean(status.scanControl?.can_resume));
         setRunStatusText(summarizeStatus(status));
         setRunControlButtonState(status);
@@ -501,6 +623,11 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchAllButtonState(fetchAllRunning, fetchAllCanResume);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
+        const fetchWeeklyRunning = divergenceFetchWeeklyRunningState;
+        const fetchWeeklyCanResume = Boolean(status.fetchWeeklyData?.can_resume);
+        setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
+        setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
+        setFetchWeeklyControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
@@ -509,19 +636,29 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
-        if (!fetchAllRunning) {
+        if (fetchWeeklyRunning && allowAutoCardRefreshFromFetchWeekly) {
+            const processed = Number(status.fetchWeeklyData?.processed_tickers || 0);
+            const progressed = processed !== divergenceFetchWeeklyLastProcessedTickers;
+            divergenceFetchWeeklyLastProcessedTickers = processed;
+            refreshDivergenceCardsWhileRunning(progressed);
+        } else {
+            divergenceFetchWeeklyLastProcessedTickers = -1;
+        }
+        if (!fetchAllRunning && !fetchWeeklyRunning) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
-        if (status.running || tableRunning || fetchAllRunning) {
+        if (status.running || tableRunning || fetchAllRunning || fetchWeeklyRunning) {
             ensureDivergenceScanPolling(true);
         } else {
             clearDivergenceScanPolling();
             allowAutoCardRefreshFromFetchAll = false;
+            allowAutoCardRefreshFromFetchWeekly = false;
         }
     } catch (error) {
         console.error('Failed to sync divergence scan UI state:', error);
         divergenceTableRunningState = false;
         divergenceFetchAllRunningState = false;
+        divergenceFetchWeeklyRunningState = false;
         setRunButtonState(false, false);
         setRunControlButtonState(null);
         setRunStatusText(toStatusTextFromError(error));
@@ -531,6 +668,11 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchAllButtonState(false, false);
         setFetchAllStatusText(toStatusTextFromError(error));
         setFetchAllControlButtonState(null);
+        setFetchWeeklyButtonState(false, false);
+        setFetchWeeklyStatusText(toStatusTextFromError(error));
+        setFetchWeeklyControlButtonState(null);
+        allowAutoCardRefreshFromFetchAll = false;
+        allowAutoCardRefreshFromFetchWeekly = false;
     }
 }
 
@@ -581,6 +723,7 @@ export async function runManualDivergenceFetchAllData(): Promise<void> {
     setFetchAllButtonState(true);
     setFetchAllStatusText('Starting...');
     allowAutoCardRefreshFromFetchAll = true;
+    allowAutoCardRefreshFromFetchWeekly = false;
     try {
         const started = await startDivergenceFetchAllData();
         if (started.status === 'running') setFetchAllStatusText('Already running');
@@ -591,6 +734,24 @@ export async function runManualDivergenceFetchAllData(): Promise<void> {
         console.error('Failed to start fetch-all run:', error);
         setFetchAllButtonState(false);
         setFetchAllStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function runManualDivergenceFetchWeeklyData(): Promise<void> {
+    setFetchWeeklyButtonState(true);
+    setFetchWeeklyStatusText('Starting...');
+    allowAutoCardRefreshFromFetchWeekly = true;
+    allowAutoCardRefreshFromFetchAll = false;
+    try {
+        const started = await startDivergenceFetchWeeklyData();
+        if (started.status === 'running') setFetchWeeklyStatusText('Already running');
+        else if (started.status === 'resumed') setFetchWeeklyStatusText('Resuming...');
+        ensureDivergenceScanPolling(true);
+        await pollDivergenceScanStatus(false);
+    } catch (error) {
+        console.error('Failed to start fetch-weekly run:', error);
+        setFetchWeeklyButtonState(false);
+        setFetchWeeklyStatusText(toStatusTextFromError(error));
     }
 }
 
@@ -691,6 +852,20 @@ export async function stopManualDivergenceFetchAllData(): Promise<void> {
     } catch (error) {
         console.error('Failed to stop fetch-all run:', error);
         setFetchAllStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function stopManualDivergenceFetchWeeklyData(): Promise<void> {
+    try {
+        const result = await stopDivergenceFetchWeeklyData();
+        if (result.status === 'stop-requested') {
+            setFetchWeeklyStatusText('Stopping');
+        }
+        allowAutoCardRefreshFromFetchWeekly = false;
+        await syncDivergenceScanUiState();
+    } catch (error) {
+        console.error('Failed to stop fetch-weekly run:', error);
+        setFetchWeeklyStatusText(toStatusTextFromError(error));
     }
 }
 

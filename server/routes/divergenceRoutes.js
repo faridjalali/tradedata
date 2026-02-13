@@ -10,11 +10,13 @@ function registerDivergenceRoutes(options = {}) {
     divergenceScanSecret,
     getIsScanRunning,
     getIsFetchAllDataRunning,
+    getIsFetchWeeklyDataRunning,
     parseBooleanInput,
     parseEtDateInput,
     runDailyDivergenceScan,
     runDivergenceTableBuild,
     runDivergenceFetchAllData,
+    runDivergenceFetchWeeklyData,
     divergencePool,
     divergenceSourceInterval,
     getLastFetchedTradeDateEt,
@@ -30,7 +32,10 @@ function registerDivergenceRoutes(options = {}) {
     canResumeTableBuild,
     getFetchAllDataStatus,
     requestStopFetchAllData,
-    canResumeFetchAllData
+    canResumeFetchAllData,
+    getFetchWeeklyDataStatus,
+    requestStopFetchWeeklyData,
+    canResumeFetchWeeklyData
   } = options;
 
   if (!app) {
@@ -55,6 +60,9 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(409).json({ status: 'running' });
     }
     if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -124,6 +132,9 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
+    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
     if (typeof canResumeScan === 'function' && !canResumeScan()) {
       return res.status(409).json({ status: 'no-resume' });
     }
@@ -172,7 +183,9 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())) {
+      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
+      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -248,6 +261,9 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
+    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
     if (typeof canResumeTableBuild === 'function' && !canResumeTableBuild()) {
       return res.status(409).json({ status: 'no-resume' });
     }
@@ -301,7 +317,8 @@ function registerDivergenceRoutes(options = {}) {
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
       || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())) {
+      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -343,6 +360,62 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
+  app.post('/api/divergence/fetch-weekly/run', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
+      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
+      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
+      return res.status(409).json({ status: 'running' });
+    }
+
+    if (typeof runDivergenceFetchWeeklyData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-weekly endpoint is not enabled' });
+    }
+
+    const shouldResume = typeof canResumeFetchWeeklyData === 'function' && canResumeFetchWeeklyData();
+
+    runDivergenceFetchWeeklyData({
+      trigger: 'manual-api',
+      resume: shouldResume
+    })
+      .then((summary) => {
+        console.log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual divergence fetch-weekly failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
+  });
+
+  app.post('/api/divergence/fetch-weekly/stop', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestStopFetchWeeklyData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-weekly stop endpoint is not enabled' });
+    }
+    const accepted = requestStopFetchWeeklyData();
+    if (accepted) return res.status(202).json({ status: 'stop-requested' });
+    return res.status(409).json({ status: 'idle' });
+  });
+
   app.get('/api/divergence/scan/status', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
@@ -365,11 +438,15 @@ function registerDivergenceRoutes(options = {}) {
       const fetchAllData = typeof getFetchAllDataStatus === 'function'
         ? getFetchAllDataStatus()
         : null;
+      const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function'
+        ? getFetchWeeklyDataStatus()
+        : null;
       return res.json({
         ...statusPayload,
         scanControl,
         tableBuild,
-        fetchAllData
+        fetchAllData,
+        fetchWeeklyData
       });
     } catch (err) {
       console.error('Failed to fetch divergence scan status:', err);
