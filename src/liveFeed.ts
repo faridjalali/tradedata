@@ -4,13 +4,12 @@ import { toggleDivergenceFavorite } from './divergenceApi';
 import { setAlerts, getAlerts } from './state';
 import { getDivergenceSignals, setDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import { hydrateAlertCardDivergenceTables, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
+import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let liveFeedMode: LiveFeedMode = '1'; 
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
-let liveHydrationInFlight = false;
 
 // We need to declare the window Interface extension to avoid TS errors
 declare global {
@@ -53,6 +52,7 @@ export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
         
         const params = `?start_date=${startDate}&end_date=${endDate}`;
         const data = await fetchAlertsFromApi(params);
+        primeDivergenceSummaryCacheFromAlerts(data);
         setAlerts(data);
         
         return data; 
@@ -66,6 +66,7 @@ export async function fetchLiveAlerts(_force?: boolean): Promise<Alert[]> {
 
 export function renderOverview(): void {
     const allAlerts = getAlerts();
+    primeDivergenceSummaryCacheFromAlerts(allAlerts);
     document.getElementById('ticker-view')!.classList.add('hidden');
     document.getElementById('dashboard-view')!.classList.remove('hidden');
     document.getElementById('reset-filter')!.classList.add('hidden');
@@ -83,15 +84,6 @@ export function renderOverview(): void {
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
-    if (!liveHydrationInFlight) {
-        liveHydrationInFlight = true;
-        void Promise.allSettled([
-            hydrateAlertCardDivergenceTables(dailyContainer),
-            hydrateAlertCardDivergenceTables(weeklyContainer)
-        ]).finally(() => {
-            liveHydrationInFlight = false;
-        });
-    }
 }
 
 export function setupLiveFeedDelegation(): void {

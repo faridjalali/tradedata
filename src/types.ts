@@ -12,6 +12,8 @@ export interface Alert {
     combo_score?: number;
     is_favorite: boolean;
     source?: 'TV' | 'FMP';
+    divergence_states?: Record<string, string>;
+    divergence_trade_date?: string | null;
 }
 
 export interface AppState {

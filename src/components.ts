@@ -38,8 +38,19 @@ export function createAlertCard(alert: Alert): string {
     `;
 
     const divergenceMiniCells = DIVERGENCE_LOOKBACK_DAYS
-        .map((days) => `<span class="divergence-mini-cell is-neutral" data-days="${days}">${days}</span>`)
+        .map((days) => {
+            const key = String(days);
+            const state = String(alert.divergence_states?.[key] || 'neutral').toLowerCase();
+            const cls = state === 'bullish'
+                ? 'is-bullish'
+                : (state === 'bearish' ? 'is-bearish' : 'is-neutral');
+            return `<span class="divergence-mini-cell ${cls}" data-days="${days}">${days}</span>`;
+        })
         .join('');
+
+    const divergenceTitle = alert.divergence_trade_date
+        ? `Daily divergence as of ${escapeHtml(alert.divergence_trade_date)}`
+        : 'Daily divergence';
 
     return `
         <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
@@ -48,7 +59,7 @@ export function createAlertCard(alert: Alert): string {
             
             <div class="metrics-container">
                 <div class="metric-item" title="Daily divergence summary">
-                    <div class="divergence-mini" data-ticker="${escapeHtml(alert.ticker)}">
+                    <div class="divergence-mini" data-ticker="${escapeHtml(alert.ticker)}" title="${divergenceTitle}">
                         ${divergenceMiniCells}
                     </div>
                 </div>

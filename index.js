@@ -788,7 +788,41 @@ app.get('/api/alerts', async (req, res) => {
     }
     
     const result = await pool.query(query, values);
-    res.json(result.rows);
+    const sourceInterval = toVolumeDeltaSourceInterval(req.query.vd_source_interval, DIVERGENCE_SOURCE_INTERVAL);
+    const tickers = Array.from(new Set(
+      result.rows
+        .map((row) => String(row?.ticker || '').trim().toUpperCase())
+        .filter(Boolean)
+    ));
+    let summariesByTicker = new Map();
+    try {
+      summariesByTicker = await getStoredDivergenceSummariesForTickers(
+        tickers,
+        sourceInterval,
+        { includeLatestFallbackForMissing: true }
+      );
+    } catch (summaryErr) {
+      const message = summaryErr && summaryErr.message ? summaryErr.message : String(summaryErr);
+      console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
+    }
+    const neutralStates = buildNeutralDivergenceStateMap();
+    const enrichedRows = result.rows.map((row) => {
+      const ticker = String(row?.ticker || '').trim().toUpperCase();
+      const summary = summariesByTicker.get(ticker) || null;
+      const states = summary?.states || neutralStates;
+      return {
+        ...row,
+        divergence_trade_date: summary?.tradeDate || null,
+        divergence_states: {
+          '1': String(states['1'] || 'neutral'),
+          '3': String(states['3'] || 'neutral'),
+          '7': String(states['7'] || 'neutral'),
+          '14': String(states['14'] || 'neutral'),
+          '28': String(states['28'] || 'neutral')
+        }
+      };
+    });
+    res.json(enrichedRows);
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
@@ -911,7 +945,41 @@ app.get('/api/divergence/signals', async (req, res) => {
     }
 
     const result = await divergencePool.query(query, values);
-    res.json(result.rows);
+    const sourceInterval = toVolumeDeltaSourceInterval(req.query.vd_source_interval, DIVERGENCE_SOURCE_INTERVAL);
+    const tickers = Array.from(new Set(
+      result.rows
+        .map((row) => String(row?.ticker || '').trim().toUpperCase())
+        .filter(Boolean)
+    ));
+    let summariesByTicker = new Map();
+    try {
+      summariesByTicker = await getStoredDivergenceSummariesForTickers(
+        tickers,
+        sourceInterval,
+        { includeLatestFallbackForMissing: true }
+      );
+    } catch (summaryErr) {
+      const message = summaryErr && summaryErr.message ? summaryErr.message : String(summaryErr);
+      console.error(`Failed to enrich divergence signals with divergence summaries: ${message}`);
+    }
+    const neutralStates = buildNeutralDivergenceStateMap();
+    const enrichedRows = result.rows.map((row) => {
+      const ticker = String(row?.ticker || '').trim().toUpperCase();
+      const summary = summariesByTicker.get(ticker) || null;
+      const states = summary?.states || neutralStates;
+      return {
+        ...row,
+        divergence_trade_date: summary?.tradeDate || null,
+        divergence_states: {
+          '1': String(states['1'] || 'neutral'),
+          '3': String(states['3'] || 'neutral'),
+          '7': String(states['7'] || 'neutral'),
+          '14': String(states['14'] || 'neutral'),
+          '28': String(states['28'] || 'neutral')
+        }
+      };
+    });
+    res.json(enrichedRows);
   } catch (err) {
     console.error('Divergence API error:', err);
     res.status(500).json({ error: 'Failed to fetch divergence signals' });

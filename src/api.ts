@@ -1,4 +1,5 @@
 import { Alert } from './types';
+import { getPreferredDivergenceSourceInterval } from './divergenceTable';
 
 function toFavoriteBoolean(value: unknown): boolean {
     if (typeof value === 'boolean') return value;
@@ -25,7 +26,9 @@ function normalizeAlert(raw: unknown): Alert {
 
 export async function fetchAlertsFromApi(params: string = ''): Promise<Alert[]> {
     try {
-        const response = await fetch(`/api/alerts${params}`);
+        const query = new URLSearchParams(String(params || '').replace(/^\?/, ''));
+        query.set('vd_source_interval', getPreferredDivergenceSourceInterval());
+        const response = await fetch(`/api/alerts?${query.toString()}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const payload = await response.json();
         if (!Array.isArray(payload)) {

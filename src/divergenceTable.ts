@@ -51,7 +51,7 @@ function normalizeSourceInterval(raw: unknown): string {
     : DEFAULT_DIVERGENCE_SOURCE_INTERVAL;
 }
 
-function getPreferredDivergenceSourceInterval(): string {
+export function getPreferredDivergenceSourceInterval(): string {
   try {
     if (typeof window === 'undefined') return DEFAULT_DIVERGENCE_SOURCE_INTERVAL;
     const raw = window.localStorage.getItem(CHART_SETTINGS_STORAGE_KEY);
@@ -294,7 +294,44 @@ export function syncTickerDivergenceSummaryToVisibleCards(
 export function renderAlertCardDivergenceTablesFromCache(
   container: ParentNode
 ): void {
-  renderMiniDivergencePlaceholders(container);
+  const normalizedSource = getPreferredDivergenceSourceInterval();
+  const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
+  for (const cell of cells) {
+    const ticker = normalizeTicker(cell.dataset.ticker);
+    if (!ticker) continue;
+    const cached = getCachedSummary(ticker, normalizedSource);
+    if (cached) {
+      renderMiniDivergenceRow(cell, cached);
+    }
+  }
+}
+
+export function primeDivergenceSummaryCacheFromAlerts(
+  alerts: Array<{ ticker?: string; divergence_states?: Record<string, string | null | undefined>; divergence_trade_date?: string | null }>,
+  sourceInterval?: string
+): void {
+  const normalizedSource = sourceInterval
+    ? normalizeSourceInterval(sourceInterval)
+    : getPreferredDivergenceSourceInterval();
+  const nowMs = Date.now();
+  const expiresAtMs = nowMs + (60 * 60 * 1000);
+  for (const alert of alerts || []) {
+    const ticker = normalizeTicker(alert?.ticker);
+    if (!ticker) continue;
+    const states = buildNeutralStates();
+    const rawStates = alert?.divergence_states || {};
+    for (const days of DIVERGENCE_LOOKBACK_DAYS) {
+      states[String(days)] = normalizeState(rawStates[String(days)]);
+    }
+    setCachedSummary(normalizedSource, {
+      ticker,
+      tradeDate: typeof alert?.divergence_trade_date === 'string'
+        ? alert.divergence_trade_date
+        : null,
+      states,
+      expiresAtMs
+    });
+  }
 }
 
 export async function hydrateAlertCardDivergenceTables(

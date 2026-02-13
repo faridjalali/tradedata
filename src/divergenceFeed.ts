@@ -19,7 +19,7 @@ import {
 } from './divergenceApi';
 import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import { hydrateAlertCardDivergenceTables, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
+import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { refreshActiveTickerDivergenceSummary } from './chart';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
@@ -33,7 +33,6 @@ let divergenceTableLastUiRefreshAtMs = 0;
 const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
 let divergenceTableRunningState = false;
 let divergenceFetchAllRunningState = false;
-let divergenceHydrationInFlight = false;
 let allowAutoCardRefreshFromFetchAll = false;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
@@ -766,6 +765,7 @@ export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]>
 
         const params = `?start_date=${startDate}&end_date=${endDate}`;
         const data = await fetchDivergenceSignalsFromApi(params);
+        primeDivergenceSummaryCacheFromAlerts(data);
         setDivergenceSignals(data);
         return data;
     } catch (error) {
@@ -776,6 +776,7 @@ export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]>
 
 export function renderDivergenceOverview(): void {
     const allSignals = getDivergenceSignals();
+    primeDivergenceSummaryCacheFromAlerts(allSignals);
     const dailyContainer = document.getElementById('divergence-daily-container');
     const weeklyContainer = document.getElementById('divergence-weekly-container');
     if (!dailyContainer || !weeklyContainer) return;
@@ -790,15 +791,6 @@ export function renderDivergenceOverview(): void {
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
-    if (!divergenceHydrationInFlight) {
-        divergenceHydrationInFlight = true;
-        void Promise.allSettled([
-            hydrateAlertCardDivergenceTables(dailyContainer),
-            hydrateAlertCardDivergenceTables(weeklyContainer)
-        ]).finally(() => {
-            divergenceHydrationInFlight = false;
-        });
-    }
 }
 
 export function setupDivergenceFeedDelegation(): void {
