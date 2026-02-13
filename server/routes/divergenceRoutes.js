@@ -9,10 +9,12 @@ function registerDivergenceRoutes(options = {}) {
     isDivergenceConfigured,
     divergenceScanSecret,
     getIsScanRunning,
+    getIsFetchAllDataRunning,
     parseBooleanInput,
     parseEtDateInput,
     runDailyDivergenceScan,
     runDivergenceTableBuild,
+    runDivergenceFetchAllData,
     divergencePool,
     divergenceSourceInterval,
     getLastFetchedTradeDateEt,
@@ -25,7 +27,11 @@ function registerDivergenceRoutes(options = {}) {
     canResumeScan,
     requestPauseTableBuild,
     requestStopTableBuild,
-    canResumeTableBuild
+    canResumeTableBuild,
+    getFetchAllDataStatus,
+    requestPauseFetchAllData,
+    requestStopFetchAllData,
+    canResumeFetchAllData
   } = options;
 
   if (!app) {
@@ -47,6 +53,9 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(409).json({ status: 'running' });
     }
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -113,6 +122,9 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
+    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
     if (typeof canResumeScan === 'function' && !canResumeScan()) {
       return res.status(409).json({ status: 'no-resume' });
     }
@@ -161,7 +173,8 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())) {
+      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
+      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -234,6 +247,9 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
+    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
     if (typeof canResumeTableBuild === 'function' && !canResumeTableBuild()) {
       return res.status(409).json({ status: 'no-resume' });
     }
@@ -274,6 +290,116 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
+  app.post('/api/divergence/fetch-all/run', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
+      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
+      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())) {
+      return res.status(409).json({ status: 'running' });
+    }
+
+    if (typeof runDivergenceFetchAllData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-all endpoint is not enabled' });
+    }
+
+    runDivergenceFetchAllData({
+      trigger: 'manual-api'
+    })
+      .then((summary) => {
+        console.log('Manual divergence fetch-all completed:', summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual divergence fetch-all failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/fetch-all/pause', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestPauseFetchAllData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-all pause endpoint is not enabled' });
+    }
+    const accepted = requestPauseFetchAllData();
+    if (accepted) return res.status(202).json({ status: 'pause-requested' });
+    if (typeof canResumeFetchAllData === 'function' && canResumeFetchAllData()) return res.status(200).json({ status: 'paused' });
+    return res.status(409).json({ status: 'idle' });
+  });
+
+  app.post('/api/divergence/fetch-all/resume', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof runDivergenceFetchAllData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-all resume endpoint is not enabled' });
+    }
+    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof canResumeFetchAllData === 'function' && !canResumeFetchAllData()) {
+      return res.status(409).json({ status: 'no-resume' });
+    }
+
+    runDivergenceFetchAllData({
+      trigger: 'manual-api-resume',
+      resume: true
+    })
+      .then((summary) => {
+        console.log('Manual divergence fetch-all resume completed:', summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual divergence fetch-all resume failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/fetch-all/stop', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestStopFetchAllData !== 'function') {
+      return res.status(501).json({ error: 'Fetch-all stop endpoint is not enabled' });
+    }
+    const accepted = requestStopFetchAllData();
+    if (accepted) return res.status(202).json({ status: 'stop-requested' });
+    return res.status(409).json({ status: 'idle' });
+  });
+
   app.get('/api/divergence/scan/status', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
@@ -293,10 +419,14 @@ function registerDivergenceRoutes(options = {}) {
       const scanControl = typeof getScanControlStatus === 'function'
         ? getScanControlStatus()
         : null;
+      const fetchAllData = typeof getFetchAllDataStatus === 'function'
+        ? getFetchAllDataStatus()
+        : null;
       return res.json({
         ...statusPayload,
         scanControl,
-        tableBuild
+        tableBuild,
+        fetchAllData
       });
     } catch (err) {
       console.error('Failed to fetch divergence scan status:', err);

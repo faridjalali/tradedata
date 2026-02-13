@@ -22,10 +22,13 @@ import {
     setupDivergenceFeedDelegation,
     runManualDivergenceScan,
     runManualDivergenceTableBuild,
+    runManualDivergenceFetchAllData,
     togglePauseResumeManualDivergenceScan,
     stopManualDivergenceScan,
     togglePauseResumeManualDivergenceTableBuild,
     stopManualDivergenceTableBuild,
+    togglePauseResumeManualDivergenceFetchAllData,
+    stopManualDivergenceFetchAllData,
     hydrateDivergenceTablesNow,
     shouldAutoRefreshDivergenceFeed,
     syncDivergenceScanUiState
@@ -601,6 +604,15 @@ function bootstrapApplication(): void {
     document.getElementById('divergence-btn-1')?.addEventListener('click', () => setDivergenceFeedMode('1'));
     document.getElementById('divergence-btn-week')?.addEventListener('click', () => setDivergenceFeedMode('week'));
     document.getElementById('divergence-btn-month')?.addEventListener('click', () => setDivergenceFeedMode('month'));
+    document.getElementById('divergence-fetch-all-btn')?.addEventListener('click', () => {
+        runManualDivergenceFetchAllData();
+    });
+    document.getElementById('divergence-fetch-all-pause-resume-btn')?.addEventListener('click', () => {
+        togglePauseResumeManualDivergenceFetchAllData();
+    });
+    document.getElementById('divergence-fetch-all-stop-btn')?.addEventListener('click', () => {
+        stopManualDivergenceFetchAllData();
+    });
     document.getElementById('divergence-run-btn')?.addEventListener('click', () => {
         runManualDivergenceScan();
     });
