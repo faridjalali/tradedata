@@ -2496,9 +2496,59 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   }
 
   // The actual fetching logic wrapped as a standalone function
-  const executeFetch = async () => {
-    const urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
-    const rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
+    const executeFetch = async () => {
+      // Parallel Chunking for 1min and 5min to bypass 50k bar limit
+      const CHUNK_SIZE_DAYS = {
+        '1min': 30,
+        '5min': 150,
+        '15min': 150
+      };
+      
+      const maxDays = CHUNK_SIZE_DAYS[interval];
+      const startDt = options.from ? new Date(options.from) : addUtcDays(new Date(), -30); // Default if missing
+      const endDt = options.to ? new Date(options.to) : new Date();
+
+      let urls = [];
+      if (maxDays && !options.from && !options.to) {
+         // Special case: Default lookback handled by helper defaults if not specified? 
+         // Actually options.from/to are usually passed by dataApiIntradayChartHistory.
+         // If not, we fall back to single URL (let helper handle defaults).
+         urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
+      } else if (maxDays) {
+        // Chunk it
+        let current = new Date(startDt);
+        const ranges = [];
+        while (current < endDt) {
+          const next = addUtcDays(new Date(current), maxDays);
+          const chunkEnd = next < endDt ? next : endDt;
+          ranges.push({ from: formatDateUTC(current), to: formatDateUTC(chunkEnd) });
+          current = addUtcDays(chunkEnd, 1); // Advance by 1 day to avoid overlap
+        }
+        urls = ranges.map(r => buildDataApiAggregateRangeUrl(symbol, interval, r));
+      } else {
+        urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
+      }
+
+
+      
+      let rows = [];
+      if (urls.length > 1) {
+        // Parallel fetch for chunks
+        const results = await Promise.all(urls.map(url => 
+          fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
+            .then(payload => toArrayPayload(payload) || [])
+            .catch(err => {
+              console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
+              throw err;
+            })
+        ));
+        // Flatten results
+        rows = results.flat();
+      } else {
+        // Single URL (fallback to standard behavior)
+        rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
+      }
+
     const normalized = rows.map((row) => {
       const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
       const close = toNumberOrNull(row.c ?? row.close ?? row.price);
