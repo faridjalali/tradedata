@@ -4,6 +4,8 @@ import {
     toggleDivergenceFavorite,
     startDivergenceScan,
     startDivergenceTableBuild,
+    pauseDivergenceTableBuild,
+    resumeDivergenceTableBuild,
     fetchDivergenceScanStatus,
     DivergenceScanStatus
 } from './divergenceApi';
@@ -44,6 +46,18 @@ function getTableRunButtonElements(): { button: HTMLButtonElement | null; status
     };
 }
 
+function getTableControlButtons(): {
+    pauseButton: HTMLButtonElement | null;
+    resumeButton: HTMLButtonElement | null;
+    hydrateButton: HTMLButtonElement | null;
+} {
+    return {
+        pauseButton: document.getElementById('divergence-pause-table-btn') as HTMLButtonElement | null,
+        resumeButton: document.getElementById('divergence-resume-table-btn') as HTMLButtonElement | null,
+        hydrateButton: document.getElementById('divergence-hydrate-table-btn') as HTMLButtonElement | null,
+    };
+}
+
 function setRunButtonState(running: boolean): void {
     const { button } = getRunButtonElements();
     if (!button) return;
@@ -70,6 +84,25 @@ function setTableRunStatusText(text: string): void {
     const { status } = getTableRunButtonElements();
     if (!status) return;
     status.textContent = text;
+}
+
+function setTableControlButtonState(status: DivergenceScanStatus | null): void {
+    const { pauseButton, resumeButton, hydrateButton } = getTableControlButtons();
+    const table = status?.tableBuild || null;
+    const running = Boolean(table?.running);
+    const pauseRequested = Boolean(table?.pause_requested);
+    const canResume = Boolean(table?.can_resume);
+
+    if (pauseButton) {
+        pauseButton.disabled = !running || pauseRequested;
+        pauseButton.textContent = pauseRequested ? 'Pausing' : 'Pause';
+    }
+    if (resumeButton) {
+        resumeButton.disabled = running || !canResume;
+    }
+    if (hydrateButton) {
+        hydrateButton.disabled = false;
+    }
 }
 
 function toStatusTextFromError(error: unknown): string {
@@ -135,18 +168,29 @@ function summarizeStatus(status: DivergenceScanStatus): string {
 function summarizeTableStatus(status: DivergenceScanStatus): string {
     const table = status.tableBuild;
     if (!table) return 'Table idle';
+    const tableState = String(table.status || '').toLowerCase();
+    if (tableState === 'paused') {
+        const processed = Number(table.processed_tickers || 0);
+        const total = Number(table.total_tickers || 0);
+        if (total > 0) return `Paused ${processed}/${total}`;
+        return 'Table paused';
+    }
     if (table.running) {
         const processed = Number(table.processed_tickers || 0);
         const total = Number(table.total_tickers || 0);
+        if (table.pause_requested) {
+            if (total > 0) return `Pausing ${processed}/${total}`;
+            return 'Pausing';
+        }
         if (total > 0) return `Table ${processed}/${total}`;
         return 'Table running';
     }
-    if (String(table.status || '').toLowerCase() === 'completed') {
+    if (tableState === 'completed') {
         const dateKey = toDateKey(table.last_published_trade_date || null);
         const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
         return mmdd ? `Table ${mmdd}` : 'Table fetched';
     }
-    if (String(table.status || '').toLowerCase() === 'failed') {
+    if (tableState === 'failed') {
         return 'Table failed';
     }
     return 'Table idle';
@@ -159,7 +203,7 @@ function clearDivergenceScanPolling(): void {
   }
 }
 
-function refreshDivergenceTablesWhileRunning(force = false): void {
+async function hydrateVisibleDivergenceTables(force = false): Promise<void> {
     const nowMs = Date.now();
     if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
         return;
@@ -173,11 +217,15 @@ function refreshDivergenceTablesWhileRunning(force = false): void {
         containers.push(el);
     }
     if (containers.length > 0) {
-        void Promise.allSettled(
+        await Promise.allSettled(
             containers.map((container) => hydrateAlertCardDivergenceTables(container, undefined, { forceRefresh: true }))
         );
     }
     refreshActiveTickerDivergenceSummary();
+}
+
+function refreshDivergenceTablesWhileRunning(force = false): void {
+    void hydrateVisibleDivergenceTables(force);
 }
 
 async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<void> {
@@ -190,6 +238,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         const tableRunning = Boolean(status.tableBuild?.running);
         setTableRunButtonState(tableRunning);
         setTableRunStatusText(summarizeTableStatus(status));
+        setTableControlButtonState(status);
         if (tableRunning) {
             const processed = Number(status.tableBuild?.processed_tickers || 0);
             const progressed = processed !== divergenceTableLastProcessedTickers;
@@ -213,6 +262,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         clearDivergenceScanPolling();
         setRunButtonState(false);
         setTableRunButtonState(false);
+        setTableControlButtonState(null);
     } finally {
         divergenceScanPollInFlight = false;
     }
@@ -233,6 +283,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         const tableRunning = Boolean(status.tableBuild?.running);
         setTableRunButtonState(tableRunning);
         setTableRunStatusText(summarizeTableStatus(status));
+        setTableControlButtonState(status);
         if (tableRunning) {
             const processed = Number(status.tableBuild?.processed_tickers || 0);
             const progressed = processed !== divergenceTableLastProcessedTickers;
@@ -253,6 +304,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setRunStatusText(toStatusTextFromError(error));
         setTableRunButtonState(false);
         setTableRunStatusText(toStatusTextFromError(error));
+        setTableControlButtonState(null);
     }
 }
 
@@ -293,6 +345,50 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
     } catch (error) {
         console.error('Failed to start divergence table build:', error);
         setTableRunButtonState(false);
+        setTableRunStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function requestPauseManualDivergenceTableBuild(): Promise<void> {
+    try {
+        const result = await pauseDivergenceTableBuild();
+        if (result.status === 'pause-requested') {
+            setTableRunStatusText('Pausing');
+        } else if (result.status === 'paused') {
+            setTableRunStatusText('Table paused');
+        }
+        await syncDivergenceScanUiState();
+    } catch (error) {
+        console.error('Failed to pause divergence table build:', error);
+        setTableRunStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function requestResumeManualDivergenceTableBuild(): Promise<void> {
+    try {
+        const result = await resumeDivergenceTableBuild();
+        if (result.status === 'running') {
+            setTableRunStatusText('Table running');
+        } else if (result.status === 'no-resume') {
+            setTableRunStatusText('Nothing to resume');
+        } else {
+            setTableRunStatusText('Table running');
+        }
+        ensureDivergenceScanPolling(true);
+        await pollDivergenceScanStatus(false);
+    } catch (error) {
+        console.error('Failed to resume divergence table build:', error);
+        setTableRunStatusText(toStatusTextFromError(error));
+    }
+}
+
+export async function hydrateDivergenceTablesNow(): Promise<void> {
+    try {
+        setTableRunStatusText('Hydrating...');
+        await hydrateVisibleDivergenceTables(true);
+        await syncDivergenceScanUiState();
+    } catch (error) {
+        console.error('Failed to hydrate divergence tables:', error);
         setTableRunStatusText(toStatusTextFromError(error));
     }
 }

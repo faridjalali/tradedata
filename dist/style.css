@@ -87,6 +87,10 @@ header {
   gap: 8px;
 }
 
+.global-settings-table-controls-row {
+  flex-wrap: wrap;
+}
+
 .global-settings-timezone-row {
   justify-content: space-between;
 }

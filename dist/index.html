@@ -26,7 +26,7 @@
     ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-BnZc9MtZ.js"></script>
+    <script type="module" crossorigin src="./assets/index-CbyiANDq.js"></script>
   </head>
   <body>
     <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
@@ -90,7 +90,7 @@
                 </button>
                 <span id="divergence-run-status" class="divergence-run-status">Idle</span>
               </div>
-              <div class="global-settings-row">
+              <div class="global-settings-row global-settings-table-controls-row">
                 <button
                   class="tf-btn divergence-run-btn"
                   id="divergence-run-table-btn"
@@ -99,6 +99,29 @@
                   Run Table
                 </button>
                 <span id="divergence-table-run-status" class="divergence-run-status">Table idle</span>
+              </div>
+              <div class="global-settings-row">
+                <button
+                  class="tf-btn divergence-run-btn"
+                  id="divergence-pause-table-btn"
+                  data-tooltip="Pause current table build after the active chunk"
+                >
+                  Pause
+                </button>
+                <button
+                  class="tf-btn divergence-run-btn"
+                  id="divergence-resume-table-btn"
+                  data-tooltip="Resume a paused table build from the last checkpoint"
+                >
+                  Resume
+                </button>
+                <button
+                  class="tf-btn divergence-run-btn"
+                  id="divergence-hydrate-table-btn"
+                  data-tooltip="Hydrate visible alert-card divergence tables immediately"
+                >
+                  Hydrate
+                </button>
               </div>
               <div class="global-settings-row global-settings-timezone-row">
                 <label for="global-timezone-select" class="global-settings-label">Timezone</label>

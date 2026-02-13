@@ -22,6 +22,9 @@ import {
     setupDivergenceFeedDelegation,
     runManualDivergenceScan,
     runManualDivergenceTableBuild,
+    requestPauseManualDivergenceTableBuild,
+    requestResumeManualDivergenceTableBuild,
+    hydrateDivergenceTablesNow,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -600,6 +603,15 @@ function bootstrapApplication(): void {
     });
     document.getElementById('divergence-run-table-btn')?.addEventListener('click', () => {
         runManualDivergenceTableBuild();
+    });
+    document.getElementById('divergence-pause-table-btn')?.addEventListener('click', () => {
+        requestPauseManualDivergenceTableBuild();
+    });
+    document.getElementById('divergence-resume-table-btn')?.addEventListener('click', () => {
+        requestResumeManualDivergenceTableBuild();
+    });
+    document.getElementById('divergence-hydrate-table-btn')?.addEventListener('click', () => {
+        hydrateDivergenceTablesNow();
     });
     
     // New Date Inputs

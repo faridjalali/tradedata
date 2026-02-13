@@ -18,7 +18,9 @@ function registerDivergenceRoutes(options = {}) {
     getLastFetchedTradeDateEt,
     getLastScanDateEt,
     getIsTableBuildRunning,
-    getTableBuildStatus
+    getTableBuildStatus,
+    requestPauseTableBuild,
+    canResumeTableBuild
   } = options;
 
   if (!app) {
@@ -96,6 +98,71 @@ function registerDivergenceRoutes(options = {}) {
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
         console.error(`Manual divergence table run failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/table/pause', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (typeof requestPauseTableBuild !== 'function') {
+      return res.status(501).json({ error: 'Pause endpoint is not enabled' });
+    }
+
+    const accepted = requestPauseTableBuild();
+    if (accepted) {
+      return res.status(202).json({ status: 'pause-requested' });
+    }
+    if (typeof canResumeTableBuild === 'function' && canResumeTableBuild()) {
+      return res.status(200).json({ status: 'paused' });
+    }
+    return res.status(409).json({ status: 'idle' });
+  });
+
+  app.post('/api/divergence/table/resume', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (typeof runDivergenceTableBuild !== 'function') {
+      return res.status(501).json({ error: 'Table resume endpoint is not enabled' });
+    }
+
+    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+    if (typeof canResumeTableBuild === 'function' && !canResumeTableBuild()) {
+      return res.status(409).json({ status: 'no-resume' });
+    }
+
+    runDivergenceTableBuild({
+      trigger: 'manual-api-resume',
+      resume: true
+    })
+      .then((summary) => {
+        console.log('Manual divergence table resume completed:', summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual divergence table resume failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });

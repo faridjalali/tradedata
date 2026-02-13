@@ -53,6 +53,8 @@ export interface DivergenceScanStatus {
     lastScanDateEt: string | null;
     tableBuild?: {
         running?: boolean;
+        pause_requested?: boolean;
+        can_resume?: boolean;
         status?: string;
         total_tickers?: number;
         processed_tickers?: number;
@@ -114,6 +116,46 @@ export async function startDivergenceTableBuild(): Promise<{ status: string }> {
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
             : `Failed to start table build (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'started') };
+}
+
+export async function pauseDivergenceTableBuild(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/table/pause', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to pause table build (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return { status: String(payload?.status || 'pause-requested') };
+}
+
+export async function resumeDivergenceTableBuild(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/table/resume', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+    const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
+    if (!response.ok) {
+        if (response.status === 409 && typeof payload?.status === 'string') {
+            return { status: payload.status };
+        }
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to resume table build (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'started') };
