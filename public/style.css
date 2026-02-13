@@ -464,6 +464,67 @@ h2 {
   color: var(--text-secondary);
 }
 
+.log-failed-details {
+  margin-top: 6px;
+}
+
+.log-failed-summary {
+  font-size: 0.73rem;
+  color: #e06c75;
+  cursor: pointer;
+  user-select: none;
+}
+
+.log-failed-summary:hover {
+  opacity: 0.85;
+}
+
+.log-failed-body {
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: rgba(224, 108, 117, 0.06);
+  border-radius: 4px;
+}
+
+.log-failed-label {
+  font-size: 0.7rem;
+  color: #e06c75;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.log-recovered-label {
+  font-size: 0.7rem;
+  color: #98c379;
+  margin-top: 4px;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+.log-failed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 5px;
+}
+
+.log-failed-ticker {
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  color: #e06c75;
+  background: rgba(224, 108, 117, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.log-recovered-ticker {
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
 .ticker-history-section .header-sort-controls {
   margin-bottom: 0px;
 }

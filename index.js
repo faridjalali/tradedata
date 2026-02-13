@@ -627,6 +627,8 @@ function summarizeRunMetrics(metrics) {
       retries: Number(metrics.stalls?.retries || 0),
       watchdogAborts: Number(metrics.stalls?.watchdogAborts || 0)
     },
+    failedTickers: Array.isArray(metrics.failedTickers) ? [...metrics.failedTickers] : [],
+    retryRecovered: Array.isArray(metrics.retryRecovered) ? [...metrics.retryRecovered] : [],
     meta: metrics.meta || {}
   };
 }
@@ -679,6 +681,8 @@ function createRunMetricsTracker(runType, meta = {}) {
       retries: 0,
       watchdogAborts: 0
     },
+    failedTickers: [],
+    retryRecovered: [],
     meta: {
       ...meta
     }
@@ -741,6 +745,23 @@ function createRunMetricsTracker(runType, meta = {}) {
       metrics.db.summaryRows += Math.max(0, Number(details.summaryRows) || 0);
       metrics.db.signalRows += Math.max(0, Number(details.signalRows) || 0);
       metrics.db.neutralRows += Math.max(0, Number(details.neutralRows) || 0);
+      touch();
+    },
+    recordFailedTicker(ticker) {
+      const name = String(ticker || '').trim().toUpperCase();
+      if (name && metrics.failedTickers.length < 500) {
+        metrics.failedTickers.push(name);
+      }
+      touch();
+    },
+    recordRetryRecovered(ticker) {
+      const name = String(ticker || '').trim().toUpperCase();
+      if (name && metrics.retryRecovered.length < 500) {
+        metrics.retryRecovered.push(name);
+      }
+      // Also remove from failedTickers
+      const idx = metrics.failedTickers.indexOf(name);
+      if (idx !== -1) metrics.failedTickers.splice(idx, 1);
       touch();
     },
     recordStallRetry() {
@@ -6714,6 +6735,7 @@ async function runDivergenceFetchAllData(options = {}) {
           errorTickers += 1;
           if (!isAbortError(result.error)) {
             failedTickers.push(ticker);
+            runMetricsTracker?.recordFailedTicker(ticker);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-all divergence build failed for ${ticker}: ${message}`);
           }
@@ -6757,6 +6779,7 @@ async function runDivergenceFetchAllData(options = {}) {
             }
           } else {
             retryRecovered += 1;
+            runMetricsTracker?.recordRetryRecovered(ticker);
             errorTickers = Math.max(0, errorTickers - 1);
           }
           divergenceFetchAllDataStatus.errorTickers = errorTickers;
@@ -7353,6 +7376,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           errorTickers += 1;
           if (!isAbortError(result.error)) {
             failedTickers.push(ticker);
+            runMetricsTracker?.recordFailedTicker(ticker);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-weekly divergence build failed for ${ticker}: ${message}`);
           }
@@ -7393,6 +7417,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             }
           } else {
             retryRecovered += 1;
+            runMetricsTracker?.recordRetryRecovered(ticker);
             errorTickers = Math.max(0, errorTickers - 1);
           }
           divergenceFetchWeeklyDataStatus.errorTickers = errorTickers;

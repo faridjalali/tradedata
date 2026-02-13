@@ -32,6 +32,8 @@ interface RunMetricsSnapshot {
     tickers?: RunTickerMetrics;
     api?: RunApiMetrics;
     db?: RunDbMetrics;
+    failedTickers?: string[];
+    retryRecovered?: string[];
 }
 
 interface RunMetricsPayload {
@@ -110,6 +112,28 @@ function buildRunCardHtml(
     const duration = fmtNumber(run?.durationSeconds, 1);
     const phase = escapeHtml(run?.phase || '--');
 
+    const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
+    const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
+    const failedCount = failedList.length;
+    const recoveredCount = recoveredList.length;
+
+    let failedSection = '';
+    if (failedCount > 0 || recoveredCount > 0) {
+        const failedItems = failedList.map(t => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
+        const recoveredItems = recoveredList.map(t => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`).join('');
+        failedSection = `
+          <details class="log-failed-details">
+            <summary class="log-failed-summary">
+              ${failedCount > 0 ? `${failedCount} failed` : ''}${failedCount > 0 && recoveredCount > 0 ? ', ' : ''}${recoveredCount > 0 ? `${recoveredCount} recovered via retry` : ''}
+            </summary>
+            <div class="log-failed-body">
+              ${failedCount > 0 ? `<div class="log-failed-label">Failed:</div><div class="log-failed-list">${failedItems}</div>` : ''}
+              ${recoveredCount > 0 ? `<div class="log-recovered-label">Recovered:</div><div class="log-failed-list">${recoveredItems}</div>` : ''}
+            </div>
+          </details>
+        `;
+    }
+
     return `
       <article class="log-run-card">
         <div class="log-run-card-title">
@@ -130,6 +154,7 @@ function buildRunCardHtml(
           <span class="log-metric-key">Duration s</span><span class="log-metric-val">${duration}</span>
           <span class="log-metric-key">Phase</span><span class="log-metric-val">${phase}</span>
         </div>
+        ${failedSection}
       </article>
     `;
 }
@@ -186,8 +211,31 @@ function renderHistory(payload: RunMetricsPayload): void {
     host.innerHTML = history.slice(0, 24).map((run) => {
         const processed = Number(run?.tickers?.processed || 0);
         const total = Number(run?.tickers?.total || 0);
+        const errors = Number(run?.tickers?.errors || 0);
         const calls = Number(run?.api?.calls || 0);
         const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
+        const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
+        const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
+        const failedCount = failedList.length;
+        const recoveredCount = recoveredList.length;
+
+        let failedSection = '';
+        if (failedCount > 0 || recoveredCount > 0) {
+            const failedItems = failedList.map(t => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
+            const recoveredItems = recoveredList.map(t => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`).join('');
+            failedSection = `
+              <details class="log-failed-details">
+                <summary class="log-failed-summary">
+                  ${failedCount > 0 ? `${failedCount} failed` : ''}${failedCount > 0 && recoveredCount > 0 ? ', ' : ''}${recoveredCount > 0 ? `${recoveredCount} recovered` : ''}
+                </summary>
+                <div class="log-failed-body">
+                  ${failedCount > 0 ? `<div class="log-failed-label">Failed:</div><div class="log-failed-list">${failedItems}</div>` : ''}
+                  ${recoveredCount > 0 ? `<div class="log-recovered-label">Recovered:</div><div class="log-failed-list">${recoveredItems}</div>` : ''}
+                </div>
+              </details>
+            `;
+        }
+
         return `
           <article class="log-history-entry">
             <div class="log-history-header">
@@ -196,10 +244,11 @@ function renderHistory(payload: RunMetricsPayload): void {
             </div>
             <div class="log-history-sub">
               ${escapeHtml(fmtIsoToLocal(run?.startedAt))} |
-              tickers ${processed}/${total} |
+              tickers ${processed}/${total}${errors > 0 ? ` (${errors} err)` : ''} |
               api ${calls} |
               p95 ${p95}ms
             </div>
+            ${failedSection}
           </article>
         `;
     }).join('');
