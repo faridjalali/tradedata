@@ -493,6 +493,7 @@ let divergenceLastFetchedTradeDateEt = '';
 let divergenceScanPauseRequested = false;
 let divergenceScanStopRequested = false;
 let divergenceScanResumeState = null;
+let divergenceScanAbortController = null;
 let divergenceTableBuildRunning = false;
 let divergenceTableBuildPauseRequested = false;
 let divergenceTableBuildStopRequested = false;
@@ -4091,11 +4092,12 @@ async function getStoredDivergenceSymbolTickers() {
     .filter((ticker) => ticker && isValidTickerSymbol(ticker));
 }
 
-async function computeSymbolDivergenceSignals(ticker) {
+async function computeSymbolDivergenceSignals(ticker, options = {}) {
+  const signal = options && options.signal ? options.signal : null;
   const parentFetchInterval = '4hour';
   const [parentRows, sourceRows] = await Promise.all([
-    fmpIntradayChartHistory(ticker, parentFetchInterval, DIVERGENCE_SCAN_LOOKBACK_DAYS),
-    fmpIntradayChartHistory(ticker, DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_LOOKBACK_DAYS)
+    fmpIntradayChartHistory(ticker, parentFetchInterval, DIVERGENCE_SCAN_LOOKBACK_DAYS, { signal }),
+    fmpIntradayChartHistory(ticker, DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_LOOKBACK_DAYS, { signal })
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) {
@@ -4687,12 +4689,27 @@ function getDivergenceScanControlStatus() {
 function requestPauseDivergenceScan() {
   if (!divergenceScanRunning) return false;
   divergenceScanPauseRequested = true;
+  if (divergenceScanAbortController && !divergenceScanAbortController.signal.aborted) {
+    try {
+      divergenceScanAbortController.abort();
+    } catch {
+      // Ignore duplicate aborts.
+    }
+  }
   return true;
 }
 
 function requestStopDivergenceScan() {
   if (!divergenceScanRunning) return false;
   divergenceScanStopRequested = true;
+  divergenceScanPauseRequested = false;
+  if (divergenceScanAbortController && !divergenceScanAbortController.signal.aborted) {
+    try {
+      divergenceScanAbortController.abort();
+    } catch {
+      // Ignore duplicate aborts.
+    }
+  }
   return true;
 }
 
@@ -6184,6 +6201,8 @@ async function runDailyDivergenceScan(options = {}) {
   divergenceScanRunning = true;
   divergenceScanPauseRequested = false;
   divergenceScanStopRequested = false;
+  const scanAbortController = new AbortController();
+  divergenceScanAbortController = scanAbortController;
   if (!resumeRequested) {
     divergenceScanResumeState = null;
   }
@@ -6193,6 +6212,9 @@ async function runDailyDivergenceScan(options = {}) {
   const trigger = String(options.trigger || 'manual').trim() || 'manual';
   const runDate = resumeState?.runDateEt || String(options.runDateEt || currentEtDateString()).trim();
   if (!resumeRequested && !force && divergenceLastScanDateEt === runDate) {
+    if (divergenceScanAbortController === scanAbortController) {
+      divergenceScanAbortController = null;
+    }
     divergenceScanRunning = false;
     return { status: 'skipped', reason: 'already-scanned', runDate };
   }
@@ -6323,21 +6345,77 @@ async function runDailyDivergenceScan(options = {}) {
         };
       }
 
+      nextIndex = i;
       const batch = symbols.slice(i, i + DIVERGENCE_SCAN_CONCURRENCY);
-      const batchResults = await Promise.all(batch.map(async (ticker) => {
-        try {
-          const outcome = await computeSymbolDivergenceSignals(ticker);
-          return { ticker, ...outcome, error: null };
-        } catch (err) {
-          return { ticker, signals: [], latestTradeDate: '', error: err };
-        }
-      }));
+      const attemptController = new AbortController();
+      const unlinkAbort = linkAbortSignalToController(scanAbortController.signal, attemptController);
+      let batchResults = [];
+      try {
+        batchResults = await Promise.all(batch.map(async (ticker) => {
+          try {
+            const outcome = await computeSymbolDivergenceSignals(ticker, { signal: attemptController.signal });
+            return { ticker, ...outcome, error: null };
+          } catch (err) {
+            return { ticker, signals: [], latestTradeDate: '', error: err };
+          }
+        }));
+      } finally {
+        unlinkAbort();
+      }
+
+      if (divergenceScanStopRequested) {
+        divergenceScanPauseRequested = false;
+        divergenceScanStopRequested = false;
+        divergenceScanResumeState = null;
+        await updateDivergenceScanJob(scanJobId, {
+          status: 'stopped',
+          finished_at: new Date(),
+          processed_symbols: processed,
+          bullish_count: bullishCount,
+          bearish_count: bearishCount,
+          error_count: errorCount,
+          scanned_trade_date: latestScannedTradeDate || null
+        });
+        return {
+          status: 'stopped',
+          runDate,
+          processed,
+          bullishCount,
+          bearishCount,
+          errorCount
+        };
+      }
+      if (divergenceScanPauseRequested) {
+        nextIndex = i;
+        divergenceScanPauseRequested = false;
+        divergenceScanStopRequested = false;
+        persistResumeState();
+        await updateDivergenceScanJob(scanJobId, {
+          status: 'paused',
+          processed_symbols: processed,
+          bullish_count: bullishCount,
+          bearish_count: bearishCount,
+          error_count: errorCount,
+          scanned_trade_date: latestScannedTradeDate || null
+        });
+        return {
+          status: 'paused',
+          runDate,
+          processed,
+          bullishCount,
+          bearishCount,
+          errorCount
+        };
+      }
 
       const batchSignals = [];
       const batchDailyBars = [];
       for (const result of batchResults) {
         processed += 1;
         if (result.error) {
+          if (isAbortError(result.error) && (scanAbortController.signal.aborted || divergenceScanStopRequested || divergenceScanPauseRequested)) {
+            continue;
+          }
           errorCount += 1;
           const message = result.error && result.error.message ? result.error.message : String(result.error);
           console.error(`Divergence scan failed for ${result.ticker}: ${message}`);
@@ -6373,8 +6451,58 @@ async function runDailyDivergenceScan(options = {}) {
       nextIndex = Math.min(symbols.length, i + DIVERGENCE_SCAN_CONCURRENCY);
       persistResumeState();
       if (targetSpacingMs > 0) {
-        await sleep(targetSpacingMs);
+        try {
+          await sleepWithAbort(targetSpacingMs, scanAbortController.signal);
+        } catch (sleepErr) {
+          if (!(isAbortError(sleepErr) && (divergenceScanStopRequested || divergenceScanPauseRequested))) {
+            throw sleepErr;
+          }
+        }
       }
+    }
+
+    if (divergenceScanStopRequested) {
+      divergenceScanPauseRequested = false;
+      divergenceScanStopRequested = false;
+      divergenceScanResumeState = null;
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'stopped',
+        finished_at: new Date(),
+        processed_symbols: processed,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        error_count: errorCount,
+        scanned_trade_date: latestScannedTradeDate || null
+      });
+      return {
+        status: 'stopped',
+        runDate,
+        processed,
+        bullishCount,
+        bearishCount,
+        errorCount
+      };
+    }
+    if (divergenceScanPauseRequested) {
+      divergenceScanPauseRequested = false;
+      divergenceScanStopRequested = false;
+      persistResumeState();
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'paused',
+        processed_symbols: processed,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        error_count: errorCount,
+        scanned_trade_date: latestScannedTradeDate || null
+      });
+      return {
+        status: 'paused',
+        runDate,
+        processed,
+        bullishCount,
+        bearishCount,
+        errorCount
+      };
     }
 
     await updateDivergenceScanJob(scanJobId, {
@@ -6427,6 +6555,49 @@ async function runDailyDivergenceScan(options = {}) {
       summaryProcessedTickers
     };
   } catch (err) {
+    if (divergenceScanStopRequested || (isAbortError(err) && scanAbortController.signal.aborted && !divergenceScanPauseRequested)) {
+      divergenceScanPauseRequested = false;
+      divergenceScanStopRequested = false;
+      divergenceScanResumeState = null;
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'stopped',
+        finished_at: new Date(),
+        processed_symbols: processed,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        error_count: errorCount,
+        scanned_trade_date: latestScannedTradeDate || null
+      });
+      return {
+        status: 'stopped',
+        runDate,
+        processed,
+        bullishCount,
+        bearishCount,
+        errorCount
+      };
+    }
+    if (divergenceScanPauseRequested || (isAbortError(err) && scanAbortController.signal.aborted)) {
+      divergenceScanPauseRequested = false;
+      divergenceScanStopRequested = false;
+      persistResumeState();
+      await updateDivergenceScanJob(scanJobId, {
+        status: 'paused',
+        processed_symbols: processed,
+        bullish_count: bullishCount,
+        bearish_count: bearishCount,
+        error_count: errorCount,
+        scanned_trade_date: latestScannedTradeDate || null
+      });
+      return {
+        status: 'paused',
+        runDate,
+        processed,
+        bullishCount,
+        bearishCount,
+        errorCount
+      };
+    }
     divergenceScanPauseRequested = false;
     divergenceScanStopRequested = false;
     if (!divergenceScanResumeState && symbols.length > 0) {
@@ -6443,6 +6614,9 @@ async function runDailyDivergenceScan(options = {}) {
     });
     throw err;
   } finally {
+    if (divergenceScanAbortController === scanAbortController) {
+      divergenceScanAbortController = null;
+    }
     divergenceScanRunning = false;
   }
 }
