@@ -538,23 +538,25 @@ h2 {
 .divergence-mini {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .divergence-mini-cell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
   border: 1px solid #30363d;
   background: #161b22;
-  font-size: 8px;
+  font-size: 12px;
   line-height: 1;
   font-weight: 600;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   color: #ffffff;
+  flex: 0 0 auto;
 }
 
 .divergence-mini-cell.is-bullish {
