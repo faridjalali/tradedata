@@ -56,6 +56,8 @@ function registerChartRoutes(options = {}) {
       const useTupleFormat = req.query.format === 'tuple';
       let payload = result;
 
+      // console.log(`[ChartAPI] Request for ${params.ticker} ${interval} (tuple=${useTupleFormat})`);
+
       if (useTupleFormat && typeof barsToTuples === 'function') {
         payload = {
           ...result,
@@ -67,6 +69,8 @@ function registerChartRoutes(options = {}) {
             rsi: pointsToTuples(result.volumeDeltaRsi?.rsi)
           }
         };
+      } else if (useTupleFormat) {
+          console.warn('[ChartAPI] Tuple format requested but helpers missing!');
       } else if (typeof validateChartPayload === 'function') {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {

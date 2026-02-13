@@ -7,13 +7,13 @@ const { promisify } = require("util");
 const compression = require("compression");
 const { setGlobalDispatcher, Agent } = require("undici");
 
-setGlobalDispatcher(new Agent({
-  keepAliveTimeout: 15000,
-  keepAliveMaxTimeout: 30000,
-  connect: {
-    timeout: 15000
-  }
-}));
+// setGlobalDispatcher(new Agent({
+//   keepAliveTimeout: 15000,
+//   keepAliveMaxTimeout: 30000,
+//   connect: {
+//     timeout: 15000
+//   }
+// }));
 
 const { registerChartRoutes } = require("./server/routes/chartRoutes");
 const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
