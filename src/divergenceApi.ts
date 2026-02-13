@@ -174,7 +174,10 @@ export async function startDivergenceTableBuild(): Promise<{ status: string }> {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+            force: true
+        })
     });
     const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
     if (!response.ok) {

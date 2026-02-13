@@ -1,7 +1,7 @@
 import { getAlerts } from './state';
 import { getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import { renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
+import { hydrateAlertCardDivergenceTables, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { SortMode, Alert } from './types';
 import { createAlertSortFn } from './utils';
 import { renderCustomChart } from './chart';
@@ -67,6 +67,7 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
         } else {
             dailyContainer.innerHTML = daily.map(createAlertCard).join('');
             renderAlertCardDivergenceTablesFromCache(dailyContainer);
+            void hydrateAlertCardDivergenceTables(dailyContainer);
         }
     }
 
@@ -77,6 +78,7 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
         } else {
             weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
             renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+            void hydrateAlertCardDivergenceTables(weeklyContainer);
         }
     }
 

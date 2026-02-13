@@ -169,8 +169,13 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(501).json({ error: 'Table run endpoint is not enabled' });
     }
 
+    const force = typeof parseBooleanInput === 'function'
+      ? parseBooleanInput(req.body?.force, true)
+      : true;
+
     runDivergenceTableBuild({
-      trigger: 'manual-api'
+      trigger: 'manual-api',
+      force
     })
       .then((summary) => {
         console.log('Manual divergence table run completed:', summary);

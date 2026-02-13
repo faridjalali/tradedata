@@ -29,6 +29,7 @@ let divergenceTableLastUiRefreshAtMs = 0;
 const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
 let divergenceScanRunningState = false;
 let divergenceTableRunningState = false;
+let divergenceHydrationInFlight = false;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -591,6 +592,15 @@ export function renderDivergenceOverview(): void {
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+    if (!divergenceHydrationInFlight) {
+        divergenceHydrationInFlight = true;
+        void Promise.allSettled([
+            hydrateAlertCardDivergenceTables(dailyContainer),
+            hydrateAlertCardDivergenceTables(weeklyContainer)
+        ]).finally(() => {
+            divergenceHydrationInFlight = false;
+        });
+    }
 }
 
 export function setupDivergenceFeedDelegation(): void {

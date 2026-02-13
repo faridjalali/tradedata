@@ -24,11 +24,9 @@ type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summari
 
 const divergenceSummaryCache = new Map<string, DivergenceSummaryEntry>();
 const divergenceSummaryBatchInFlight = new Map<string, Promise<Map<string, DivergenceSummaryEntry>>>();
-const divergenceSummaryLiveRefreshAt = new Map<string, number>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
 const VALID_DIVERGENCE_SOURCE_INTERVALS = new Set(['1min', '5min', '15min', '30min', '1hour', '4hour']);
-const DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS = 15 * 1000;
 
 interface PersistedDivergenceSourceSettings {
   volumeDelta?: {
@@ -143,10 +141,9 @@ async function fetchDivergenceSummariesBatch(
     }
     if (noCache) {
       params.set('nocache', '1');
-      params.set('_t', String(Date.now()));
     }
     const response = await fetch(`/api/chart/divergence-summary?${params.toString()}`, {
-      cache: noCache ? 'no-store' : 'default'
+      cache: 'no-store'
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch divergence summary (HTTP ${response.status})`);
@@ -157,9 +154,7 @@ async function fetchDivergenceSummariesBatch(
       const normalized = normalizeApiSummary(row);
       if (!normalized) continue;
       resolved.set(normalized.ticker, normalized);
-      if (!noCache) {
-        setCachedSummary(normalizedSourceInterval, normalized);
-      }
+      setCachedSummary(normalizedSourceInterval, normalized);
     }
     return resolved;
   })()
@@ -185,34 +180,14 @@ export async function getTickerDivergenceSummary(
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
   const forceRefresh = options?.forceRefresh === true;
-  const noCache = options?.noCache === true;
   if (!normalizedTicker) return null;
-
-  const key = cacheKeyFor(normalizedTicker, normalizedSource);
-  const cached = noCache ? null : getCachedSummary(normalizedTicker, normalizedSource);
-  if (!noCache && !forceRefresh && cached) return cached;
-
-  if (forceRefresh && !noCache) {
-    const nowMs = Date.now();
-    const lastRefreshAt = Number(divergenceSummaryLiveRefreshAt.get(key) || 0);
-    const shouldRefresh = !cached || (nowMs - lastRefreshAt) >= DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS;
-    if (shouldRefresh) {
-      divergenceSummaryLiveRefreshAt.set(key, nowMs);
-      await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource, { forceRefresh: true, noCache: false });
-      return getCachedSummary(normalizedTicker, normalizedSource);
-    }
-    return cached;
-  }
 
   const resultMap = await fetchDivergenceSummariesBatch(
     [normalizedTicker],
     normalizedSource,
-    noCache ? { forceRefresh: true, noCache: true } : undefined
+    { forceRefresh, noCache: true }
   );
-  if (noCache) {
-    return resultMap.get(normalizedTicker) || null;
-  }
-  return getCachedSummary(normalizedTicker, normalizedSource);
+  return resultMap.get(normalizedTicker) || null;
 }
 
 export function renderMiniDivergenceRow(
@@ -309,27 +284,17 @@ export function syncTickerDivergenceSummaryToVisibleCards(
     });
   }
 
-  const fallbackSummary = summary || getCachedSummary(normalizedTicker, normalizedSource);
   const cells = Array.from(document.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
   for (const cell of cells) {
     if (normalizeTicker(cell.dataset.ticker) !== normalizedTicker) continue;
-    renderMiniDivergenceRow(cell, fallbackSummary);
+    renderMiniDivergenceRow(cell, summary || null);
   }
 }
 
 export function renderAlertCardDivergenceTablesFromCache(
-  container: ParentNode,
-  sourceInterval?: string
+  container: ParentNode
 ): void {
-  const normalizedSource = sourceInterval
-    ? normalizeSourceInterval(sourceInterval)
-    : getPreferredDivergenceSourceInterval();
-  const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
-  for (const cell of cells) {
-    const ticker = normalizeTicker(cell.dataset.ticker);
-    if (!ticker) continue;
-    renderMiniDivergenceRow(cell, getCachedSummary(ticker, normalizedSource));
-  }
+  renderMiniDivergencePlaceholders(container);
 }
 
 export async function hydrateAlertCardDivergenceTables(
@@ -374,7 +339,7 @@ export async function hydrateAlertCardDivergenceTables(
   for (const cell of cells) {
     const ticker = normalizeTicker(cell.dataset.ticker);
     if (!ticker) continue;
-    const summary = fetchedByTicker.get(ticker) || getCachedSummary(ticker, normalizedSource);
+    const summary = fetchedByTicker.get(ticker) || null;
     renderMiniDivergenceRow(cell, summary);
   }
 }

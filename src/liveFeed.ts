@@ -4,12 +4,13 @@ import { toggleDivergenceFavorite } from './divergenceApi';
 import { setAlerts, getAlerts } from './state';
 import { getDivergenceSignals, setDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import { renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
+import { hydrateAlertCardDivergenceTables, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let liveFeedMode: LiveFeedMode = '1'; 
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
+let liveHydrationInFlight = false;
 
 // We need to declare the window Interface extension to avoid TS errors
 declare global {
@@ -82,6 +83,15 @@ export function renderOverview(): void {
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+    if (!liveHydrationInFlight) {
+        liveHydrationInFlight = true;
+        void Promise.allSettled([
+            hydrateAlertCardDivergenceTables(dailyContainer),
+            hydrateAlertCardDivergenceTables(weeklyContainer)
+        ]).finally(() => {
+            liveHydrationInFlight = false;
+        });
+    }
 }
 
 export function setupLiveFeedDelegation(): void {

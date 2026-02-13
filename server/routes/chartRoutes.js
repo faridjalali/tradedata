@@ -140,11 +140,7 @@ function registerChartRoutes(options = {}) {
         forceRefresh: refresh,
         noCache
       });
-      if (noCache) {
-        res.setHeader('Cache-Control', 'no-store');
-      } else {
-        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-      }
+      res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(payload);
     } catch (err) {
       const message = err && err.message ? err.message : 'Failed to fetch divergence summary';
