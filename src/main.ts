@@ -324,9 +324,45 @@ function initGlobalSettingsPanel() {
     const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
     const panel = document.getElementById('global-settings-panel');
     const status = document.getElementById('global-settings-message');
-    const timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
+    let timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
 
     if (!container || !toggleBtn || !panel || !status) return;
+
+    const removeLegacyV3Row = () => {
+        panel.querySelectorAll<HTMLElement>('.global-settings-toggle-row').forEach((node) => node.remove());
+        const legacyById = panel.querySelector('#global-enable-v3-fetch, #enable-v3-fetch');
+        if (legacyById) {
+            (legacyById.closest('.global-settings-row') || legacyById).remove();
+        }
+        const allTextNodes = panel.querySelectorAll<HTMLElement>('label, span, div');
+        allTextNodes.forEach((node) => {
+            const text = String(node.textContent || '').trim().toLowerCase();
+            if (text !== 'enable v3 fetch') return;
+            (node.closest('.global-settings-row') || node).remove();
+        });
+    };
+
+    const ensureTimezoneSelect = (): HTMLSelectElement => {
+        if (timezoneSelect) return timezoneSelect;
+        const row = document.createElement('div');
+        row.className = 'global-settings-row global-settings-timezone-row';
+        const label = document.createElement('label');
+        label.className = 'global-settings-label';
+        label.htmlFor = 'global-timezone-select';
+        label.textContent = 'Timezone';
+        const select = document.createElement('select');
+        select.id = 'global-timezone-select';
+        select.className = 'glass-input global-settings-select';
+        select.setAttribute('aria-label', 'Timezone');
+        row.append(label, select);
+        panel.insertBefore(row, status);
+        timezoneSelect = select;
+        return select;
+    };
+
+    removeLegacyV3Row();
+    timezoneSelect = ensureTimezoneSelect();
+    const timezoneSelectEl = timezoneSelect;
 
     const setStatus = (text: string) => {
         status.textContent = text;
@@ -340,28 +376,22 @@ function initGlobalSettingsPanel() {
     const openPanel = () => {
         panel.classList.remove('hidden');
         toggleBtn.classList.add('active');
-        if (timezoneSelect) {
-            timezoneSelect.value = getAppTimeZone();
-        }
+        timezoneSelectEl.value = getAppTimeZone();
         setStatus(`Timezone: ${getAppTimeZoneLabel()}`);
     };
 
-    if (timezoneSelect) {
-        const options = getAppTimeZoneOptions();
-        timezoneSelect.innerHTML = options
-            .map((option) => `<option value="${option.value}">${option.label}</option>`)
-            .join('');
-        timezoneSelect.value = getAppTimeZone();
-        timezoneSelect.addEventListener('change', () => {
-            setAppTimeZone(timezoneSelect.value);
-        });
-    }
+    const options = getAppTimeZoneOptions();
+    timezoneSelectEl.innerHTML = options
+        .map((option) => `<option value="${option.value}">${option.label}</option>`)
+        .join('');
+    timezoneSelectEl.value = getAppTimeZone();
+    timezoneSelectEl.addEventListener('change', () => {
+        setAppTimeZone(timezoneSelectEl.value);
+    });
 
     onAppTimeZoneChange((nextTimeZone, previousTimeZone) => {
         syncCurrentDateInputsForTimeZoneChange(nextTimeZone, previousTimeZone);
-        if (timezoneSelect) {
-            timezoneSelect.value = nextTimeZone;
-        }
+        timezoneSelectEl.value = nextTimeZone;
         setStatus(`Timezone: ${getAppTimeZoneLabel(nextTimeZone)}`);
         refreshViewAfterTimeZoneChange().catch((error) => {
             console.error('Failed to refresh UI after timezone change:', error);
