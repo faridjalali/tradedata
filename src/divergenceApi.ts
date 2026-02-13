@@ -76,6 +76,7 @@ export interface DivergenceScanStatus {
     fetchAllData?: {
         running?: boolean;
         stop_requested?: boolean;
+        can_resume?: boolean;
         status?: string;
         total_tickers?: number;
         processed_tickers?: number;

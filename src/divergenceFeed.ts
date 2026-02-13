@@ -124,12 +124,18 @@ function setTableRunStatusText(text: string): void {
     status.textContent = text;
 }
 
-function setFetchAllButtonState(running: boolean): void {
+function setFetchAllButtonState(running: boolean, canResume = false): void {
     const { button } = getFetchAllButtonElements();
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    button.textContent = running ? 'Running' : 'Fetch All Data';
+    if (running) {
+        button.textContent = 'Running';
+    } else if (canResume) {
+        button.textContent = 'Resume Fetch';
+    } else {
+        button.textContent = 'Fetch All Data';
+    }
 }
 
 function setFetchAllStatusText(text: string): void {
@@ -345,6 +351,11 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
         return 'Stopping';
     }
     if (fetchAllState === 'stopped') {
+        if (fetchAll.can_resume) {
+            const processed = Number(fetchAll.processed_tickers || 0);
+            const total = Number(fetchAll.total_tickers || 0);
+            return total > 0 ? `Stopped ${processed}/${total} (resumable)` : 'Stopped (resumable)';
+        }
         return 'Stopped';
     }
     if (fetchAll.running) {
@@ -424,7 +435,8 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setTableRunStatusText(summarizeTableStatus(status));
         setTableControlButtonState(status);
         const fetchAllRunning = divergenceFetchAllRunningState;
-        setFetchAllButtonState(fetchAllRunning);
+        const fetchAllCanResume = Boolean(status.fetchAllData?.can_resume);
+        setFetchAllButtonState(fetchAllRunning, fetchAllCanResume);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
@@ -458,7 +470,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setRunControlButtonState(null);
         setTableRunButtonState(false, false);
         setTableControlButtonState(null);
-        setFetchAllButtonState(false);
+        setFetchAllButtonState(false, false);
         setFetchAllControlButtonState(null);
     } finally {
         divergenceScanPollInFlight = false;
@@ -485,7 +497,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setTableRunStatusText(summarizeTableStatus(status));
         setTableControlButtonState(status);
         const fetchAllRunning = divergenceFetchAllRunningState;
-        setFetchAllButtonState(fetchAllRunning);
+        const fetchAllCanResume = Boolean(status.fetchAllData?.can_resume);
+        setFetchAllButtonState(fetchAllRunning, fetchAllCanResume);
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
@@ -515,7 +528,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setTableRunButtonState(false, false);
         setTableRunStatusText(toStatusTextFromError(error));
         setTableControlButtonState(null);
-        setFetchAllButtonState(false);
+        setFetchAllButtonState(false, false);
         setFetchAllStatusText(toStatusTextFromError(error));
         setFetchAllControlButtonState(null);
     }
@@ -566,11 +579,12 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
 
 export async function runManualDivergenceFetchAllData(): Promise<void> {
     setFetchAllButtonState(true);
-    setFetchAllStatusText('0 / 0');
+    setFetchAllStatusText('Starting...');
     allowAutoCardRefreshFromFetchAll = true;
     try {
         const started = await startDivergenceFetchAllData();
-        if (started.status === 'running') setFetchAllStatusText('0 / 0');
+        if (started.status === 'running') setFetchAllStatusText('Already running');
+        else if (started.status === 'resumed') setFetchAllStatusText('Resuming...');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {

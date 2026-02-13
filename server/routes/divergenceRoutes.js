@@ -29,7 +29,8 @@ function registerDivergenceRoutes(options = {}) {
     requestStopTableBuild,
     canResumeTableBuild,
     getFetchAllDataStatus,
-    requestStopFetchAllData
+    requestStopFetchAllData,
+    canResumeFetchAllData
   } = options;
 
   if (!app) {
@@ -308,18 +309,21 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(501).json({ error: 'Fetch-all endpoint is not enabled' });
     }
 
+    const shouldResume = typeof canResumeFetchAllData === 'function' && canResumeFetchAllData();
+
     runDivergenceFetchAllData({
-      trigger: 'manual-api'
+      trigger: 'manual-api',
+      resume: shouldResume
     })
       .then((summary) => {
-        console.log('Manual divergence fetch-all completed:', summary);
+        console.log(`Manual divergence fetch-all ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
         console.error(`Manual divergence fetch-all failed: ${message}`);
       });
 
-    return res.status(202).json({ status: 'started' });
+    return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
   app.post('/api/divergence/fetch-all/stop', async (req, res) => {
