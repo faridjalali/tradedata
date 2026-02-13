@@ -71,6 +71,18 @@ header {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.global-settings-panel * {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: normal;
+  letter-spacing: normal;
 }
 
 .global-settings-section-title {
@@ -85,6 +97,7 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 26px;
 }
 
 .global-settings-table-controls-row {
@@ -97,15 +110,13 @@ header {
 
 .global-settings-label {
   color: var(--text-secondary);
-  font-size: 0.78rem;
   white-space: nowrap;
 }
 
 .global-settings-select {
   min-width: 182px;
-  height: 28px;
+  height: 24px;
   padding: 0 8px;
-  font-size: 0.75rem;
 }
 
 .global-settings-toggle-row {
@@ -124,8 +135,6 @@ header {
 .global-settings-message {
   min-height: 14px;
   color: var(--text-secondary);
-  font-size: 0.7rem;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
 #search-container {
@@ -240,10 +249,15 @@ h2 {
 }
 .divergence-run-status {
   color: var(--text-secondary);
-  font-size: 0.78rem;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   margin-left: 4px;
   white-space: nowrap;
+}
+
+.global-settings-panel input,
+.global-settings-panel select,
+.global-settings-panel button {
+  box-sizing: border-box;
+  line-height: 1.2;
 }
 #reset-filter {
   font-size: 0.85rem;
