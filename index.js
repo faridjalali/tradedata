@@ -934,18 +934,49 @@ app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
   }
 });
 
+app.get('/api/fmp/settings', (_req, res) => {
+  return res.json({
+    enableV3Fetch: isFmpLegacyFallbackEnabled(),
+    requestsPaused: isFmpRequestsPaused()
+  });
+});
+
+app.post('/api/fmp/settings', (req, res) => {
+  const body = req.body || {};
+  if (!Object.prototype.hasOwnProperty.call(body, 'enableV3Fetch')) {
+    return res.status(400).json({ error: 'enableV3Fetch is required' });
+  }
+
+  const raw = body.enableV3Fetch;
+  const valid = typeof raw === 'boolean'
+    || typeof raw === 'number'
+    || (typeof raw === 'string' && /^(true|false|1|0|yes|no)$/i.test(raw.trim()));
+  if (!valid) {
+    return res.status(400).json({ error: 'enableV3Fetch must be a boolean-like value' });
+  }
+
+  const next = parseBooleanInput(raw, isFmpLegacyFallbackEnabled());
+  setFmpLegacyFallbackEnabled(next);
+  return res.json({
+    enableV3Fetch: isFmpLegacyFallbackEnabled(),
+    requestsPaused: isFmpRequestsPaused()
+  });
+});
+
 // --- FMP (Financial Modeling Prep) helpers ---
 const FMP_KEY = process.env.FMP_API_KEY || '';
 const FMP_STABLE_BASE = 'https://financialmodelingprep.com/stable';
 const FMP_LEGACY_BASE = 'https://financialmodelingprep.com/api/v3';
 const FMP_TIMEOUT_MS = 15000;
 const FMP_REQUESTS_PAUSED = String(process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
+const FMP_USE_LEGACY_FALLBACK_DEFAULT = parseBooleanInput(process.env.FMP_USE_LEGACY_FALLBACK, true);
 const FMP_RATE_LIMIT_PER_MINUTE = Math.max(1, Number(process.env.FMP_RATE_LIMIT_PER_MINUTE) || 240);
 const FMP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const FMP_RATE_LIMIT_COOLDOWN_MS = Math.max(30_000, Number(process.env.FMP_RATE_LIMIT_COOLDOWN_MS) || 300_000);
 let fmpRateLimitCooldownUntilMs = 0;
 const fmpRecentRequestTimesMs = [];
 let fmpRateLimiterTail = Promise.resolve();
+let fmpUseLegacyFallback = FMP_USE_LEGACY_FALLBACK_DEFAULT;
 
 function buildFmpUrl(base, path, params = {}) {
   const normalizedBase = base.replace(/\/+$/, '');
@@ -1036,6 +1067,15 @@ function assertFmpKey() {
 
 function isFmpRequestsPaused() {
   return FMP_REQUESTS_PAUSED;
+}
+
+function isFmpLegacyFallbackEnabled() {
+  return Boolean(fmpUseLegacyFallback);
+}
+
+function setFmpLegacyFallbackEnabled(value) {
+  fmpUseLegacyFallback = Boolean(value);
+  return fmpUseLegacyFallback;
 }
 
 function buildFmpPausedError(message) {
@@ -1184,13 +1224,19 @@ async function fmpDailySingle(symbol) {
   const urls = [
     // Prefer non-split-adjusted/full endpoints so daily candlesticks match raw OHLC.
     buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/non-split-adjusted', { symbol, apikey: FMP_KEY, timeseries: 250 }),
-    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 }),
-    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-full', { symbol, apikey: FMP_KEY, timeseries: 250 }),
-    // Fall back to light only if full is unavailable for the account/endpoint.
-    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY })
+    buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/full', { symbol, apikey: FMP_KEY, timeseries: 250 })
   ];
+  if (isFmpLegacyFallbackEnabled()) {
+    urls.push(
+      buildFmpUrl(FMP_LEGACY_BASE, `/historical-price-full/${symbolEncoded}`, { apikey: FMP_KEY, timeseries: 250 }),
+      buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-full', { symbol, apikey: FMP_KEY, timeseries: 250 })
+    );
+  }
+  // Fall back to light only if full is unavailable for the account/endpoint.
+  urls.push(buildFmpUrl(FMP_STABLE_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }));
+  if (isFmpLegacyFallbackEnabled()) {
+    urls.push(buildFmpUrl(FMP_LEGACY_BASE, '/historical-price-eod/light', { symbol, apikey: FMP_KEY }));
+  }
 
   const rows = await fetchFmpArrayWithFallback('FMP daily', urls);
   let hasExplicitOHLC = false;
@@ -1279,11 +1325,13 @@ function toQuoteRow(payload) {
 async function fmpQuoteSingle(symbol) {
   assertFmpKey();
   const symbolEncoded = encodeURIComponent(symbol);
-  const urls = [
-    buildFmpUrl(FMP_STABLE_BASE, '/quote', { symbol, apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/quote/${symbolEncoded}`, { apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, '/quote', { symbol, apikey: FMP_KEY })
-  ];
+  const urls = [buildFmpUrl(FMP_STABLE_BASE, '/quote', { symbol, apikey: FMP_KEY })];
+  if (isFmpLegacyFallbackEnabled()) {
+    urls.push(
+      buildFmpUrl(FMP_LEGACY_BASE, `/quote/${symbolEncoded}`, { apikey: FMP_KEY }),
+      buildFmpUrl(FMP_LEGACY_BASE, '/quote', { symbol, apikey: FMP_KEY })
+    );
+  }
   let lastError = null;
 
   for (const url of urls) {
@@ -1682,11 +1730,13 @@ async function fmpIntraday(symbol, interval, options = {}) {
   if (from) params.from = from;
   if (to) params.to = to;
 
-  const urls = [
-    buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, params),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY, from, to }),
-    buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, params)
-  ];
+  const urls = [buildFmpUrl(FMP_STABLE_BASE, `/historical-chart/${interval}`, params)];
+  if (isFmpLegacyFallbackEnabled()) {
+    urls.push(
+      buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}/${symbolEncoded}`, { apikey: FMP_KEY, from, to }),
+      buildFmpUrl(FMP_LEGACY_BASE, `/historical-chart/${interval}`, params)
+    );
+  }
 
   const rows = await fetchFmpArrayWithFallback(`FMP ${interval}`, urls);
   const normalized = rows.map((row) => {
@@ -3589,10 +3639,10 @@ async function getPublishedTradeDateForSourceInterval(sourceInterval) {
 
 async function fetchUsStockUniverseFromFmp() {
   assertFmpKey();
-  const urls = [
-    buildFmpUrl(FMP_STABLE_BASE, '/stock/list', { apikey: FMP_KEY }),
-    buildFmpUrl(FMP_LEGACY_BASE, '/stock/list', { apikey: FMP_KEY })
-  ];
+  const urls = [buildFmpUrl(FMP_STABLE_BASE, '/stock/list', { apikey: FMP_KEY })];
+  if (isFmpLegacyFallbackEnabled()) {
+    urls.push(buildFmpUrl(FMP_LEGACY_BASE, '/stock/list', { apikey: FMP_KEY }));
+  }
 
   let rows = null;
   let lastError = null;

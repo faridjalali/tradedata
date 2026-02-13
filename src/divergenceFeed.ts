@@ -45,7 +45,7 @@ function setRunButtonState(running: boolean): void {
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    button.textContent = running ? 'Running' : 'Run';
+    button.textContent = running ? 'Running' : 'Run Fetch';
 }
 
 function setRunStatusText(text: string): void {

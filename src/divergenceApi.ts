@@ -74,6 +74,11 @@ export interface DivergenceScanStatus {
     } | null;
 }
 
+export interface FmpSettingsPayload {
+    enableV3Fetch: boolean;
+    requestsPaused?: boolean;
+}
+
 export async function startDivergenceScan(options?: { force?: boolean; refreshUniverse?: boolean; runDateEt?: string }): Promise<{ status: string }> {
     const response = await fetch('/api/divergence/scan', {
         method: 'POST',
@@ -133,5 +138,43 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
         lastScanDateEt: (payload as any).lastScanDateEt ?? null,
         tableBuild: (payload as any).tableBuild ?? null,
         latestJob: (payload as any).latestJob ?? null
+    };
+}
+
+export async function fetchFmpSettings(): Promise<FmpSettingsPayload> {
+    const response = await fetch('/api/fmp/settings');
+    const payload = await response.json().catch(() => null as any);
+    if (!response.ok || !payload) {
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : 'Failed to fetch FMP settings';
+        throw new Error(reason);
+    }
+    return {
+        enableV3Fetch: Boolean((payload as any).enableV3Fetch),
+        requestsPaused: Boolean((payload as any).requestsPaused)
+    };
+}
+
+export async function updateFmpSettings(settings: { enableV3Fetch: boolean }): Promise<FmpSettingsPayload> {
+    const response = await fetch('/api/fmp/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            enableV3Fetch: Boolean(settings.enableV3Fetch)
+        })
+    });
+    const payload = await response.json().catch(() => null as any);
+    if (!response.ok || !payload) {
+        const reason = typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : `Failed to update FMP settings (HTTP ${response.status})`;
+        throw new Error(reason);
+    }
+    return {
+        enableV3Fetch: Boolean((payload as any).enableV3Fetch),
+        requestsPaused: Boolean((payload as any).requestsPaused)
     };
 }

@@ -24,6 +24,7 @@ import {
     runManualDivergenceTableBuild,
     syncDivergenceScanUiState
 } from './divergenceFeed';
+import { fetchFmpSettings, updateFmpSettings } from './divergenceApi';
 import { SortMode, LiveFeedMode } from './types';
 
 let currentView: 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'live'; 
@@ -254,6 +255,86 @@ function initSearch() {
             }
             input.focus();
             // Note: Focusing during keydown usually allows the keypress to naturally enter the input.
+        }
+    });
+}
+
+function initGlobalSettingsPanel() {
+    const container = document.getElementById('global-settings-container');
+    const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
+    const panel = document.getElementById('global-settings-panel');
+    const v3Toggle = document.getElementById('global-enable-v3-fetch') as HTMLInputElement | null;
+    const status = document.getElementById('global-settings-message');
+
+    if (!container || !toggleBtn || !panel || !v3Toggle || !status) return;
+
+    const setStatus = (text: string) => {
+        status.textContent = text;
+    };
+
+    const closePanel = () => {
+        panel.classList.add('hidden');
+        toggleBtn.classList.remove('active');
+    };
+
+    const openPanel = () => {
+        panel.classList.remove('hidden');
+        toggleBtn.classList.add('active');
+    };
+
+    const syncV3Toggle = async () => {
+        try {
+            v3Toggle.disabled = true;
+            const payload = await fetchFmpSettings();
+            v3Toggle.checked = payload.enableV3Fetch;
+            setStatus('');
+        } catch (error) {
+            const message = String((error as any)?.message || 'Failed to load settings');
+            setStatus(message.length > 48 ? `${message.slice(0, 48)}...` : message);
+        } finally {
+            v3Toggle.disabled = false;
+        }
+    };
+
+    toggleBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (panel.classList.contains('hidden')) {
+            openPanel();
+            syncDivergenceScanUiState().catch(() => {});
+            syncV3Toggle().catch(() => {});
+        } else {
+            closePanel();
+        }
+    });
+
+    panel.addEventListener('click', (event) => {
+        event.stopPropagation();
+    });
+
+    document.addEventListener('click', (event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
+        if (target.closest('#global-settings-container')) return;
+        closePanel();
+    });
+
+    v3Toggle.addEventListener('change', async () => {
+        const previous = !v3Toggle.checked;
+        v3Toggle.disabled = true;
+        setStatus('Saving...');
+        try {
+            const payload = await updateFmpSettings({ enableV3Fetch: v3Toggle.checked });
+            v3Toggle.checked = payload.enableV3Fetch;
+            setStatus(payload.enableV3Fetch ? 'V3 fetch enabled' : 'V3 fetch disabled');
+            window.setTimeout(() => {
+                if (!panel.classList.contains('hidden')) setStatus('');
+            }, 1200);
+        } catch (error) {
+            v3Toggle.checked = previous;
+            const message = String((error as any)?.message || 'Failed to save');
+            setStatus(message.length > 48 ? `${message.slice(0, 48)}...` : message);
+        } finally {
+            v3Toggle.disabled = false;
         }
     });
 }
@@ -522,6 +603,7 @@ function bootstrapApplication(): void {
     // Initial Load
     setLiveFeedMode('1'); 
     setDivergenceFeedMode('1', false);
+    syncDivergenceScanUiState().catch(() => {});
     
     setInterval(() => {
         // Poll if current
@@ -541,6 +623,7 @@ function bootstrapApplication(): void {
     }, 10000); 
 
     // Setup Search
+    initGlobalSettingsPanel();
     initSearch();
     
     // Setup Event Delegation

@@ -52,6 +52,61 @@ header {
   gap: 15px;
 }
 
+#global-settings-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.global-settings-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 240px;
+  background: rgba(22, 27, 34, 0.98);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.global-settings-section-title {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.global-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.global-settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.global-settings-toggle-row input[type="checkbox"] {
+  accent-color: var(--highlight);
+}
+
+.global-settings-message {
+  min-height: 14px;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+}
+
 #search-container {
   display: flex;
   align-items: center;
