@@ -3778,7 +3778,9 @@ function renderVolumeDeltaDivergenceSummary(
   }
   const summaryEl = ensureVolumeDeltaDivergenceSummaryEl(container);
   summaryEl.innerHTML = '';
-  summaryEl.style.display = 'block';
+  summaryEl.style.display = 'flex';
+  summaryEl.style.flexDirection = 'row';
+  summaryEl.style.alignItems = 'center';
   const ticker = String(currentChartTicker || '').trim().toUpperCase();
   const sourceInterval = volumeDeltaSettings.sourceInterval;
   const noCache = options?.noCache === true;
@@ -3858,12 +3860,23 @@ function renderVolumeDeltaDivergenceSummary(
     refreshButton.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
     refreshButton.style.color = '#8b949e';
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
-    refreshButton.style.pointerEvents = 'auto';
+    refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
     refreshButton.style.userSelect = 'none';
-    refreshButton.disabled = loading;
+    refreshButton.style.flex = '0 0 auto';
+    refreshButton.style.verticalAlign = 'middle';
+    refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
+    refreshButton.disabled = false;
+    const iconHost = document.createElement('span');
+    iconHost.style.display = 'inline-flex';
+    iconHost.style.alignItems = 'center';
+    iconHost.style.justifyContent = 'center';
+    iconHost.style.width = '12px';
+    iconHost.style.height = '12px';
+    iconHost.style.lineHeight = '1';
+    iconHost.style.flex = '0 0 auto';
     if (loading) {
       const spinner = document.createElement('span');
-      spinner.style.display = 'inline-block';
+      spinner.style.display = 'block';
       spinner.style.width = '12px';
       spinner.style.height = '12px';
       spinner.style.border = '2px solid #30363d';
@@ -3881,10 +3894,16 @@ function renderVolumeDeltaDivergenceSummary(
           easing: 'linear'
         }
       );
-      refreshButton.appendChild(spinner);
+      iconHost.appendChild(spinner);
     } else {
-      refreshButton.textContent = '↻';
+      const glyph = document.createElement('span');
+      glyph.textContent = '↻';
+      glyph.style.display = 'block';
+      glyph.style.lineHeight = '1';
+      glyph.style.fontSize = '12px';
+      iconHost.appendChild(glyph);
     }
+    refreshButton.appendChild(iconHost);
     refreshButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
