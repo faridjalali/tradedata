@@ -27,7 +27,6 @@ import {
 import { SortMode, LiveFeedMode } from './types';
 import {
     getAppTimeZone,
-    getAppTimeZoneLabel,
     getAppTimeZoneOptions,
     onAppTimeZoneChange,
     setAppTimeZone
@@ -323,10 +322,9 @@ function initGlobalSettingsPanel() {
     const container = document.getElementById('global-settings-container');
     const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
     const panel = document.getElementById('global-settings-panel');
-    const status = document.getElementById('global-settings-message');
     let timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
 
-    if (!container || !toggleBtn || !panel || !status) return;
+    if (!container || !toggleBtn || !panel) return;
 
     const removeLegacyV3Row = () => {
         panel.querySelectorAll<HTMLElement>('.global-settings-toggle-row').forEach((node) => node.remove());
@@ -355,7 +353,7 @@ function initGlobalSettingsPanel() {
         select.className = 'glass-input global-settings-select';
         select.setAttribute('aria-label', 'Timezone');
         row.append(label, select);
-        panel.insertBefore(row, status);
+        panel.append(row);
         timezoneSelect = select;
         return select;
     };
@@ -363,10 +361,6 @@ function initGlobalSettingsPanel() {
     removeLegacyV3Row();
     timezoneSelect = ensureTimezoneSelect();
     const timezoneSelectEl = timezoneSelect;
-
-    const setStatus = (text: string) => {
-        status.textContent = text;
-    };
 
     const closePanel = () => {
         panel.classList.add('hidden');
@@ -377,7 +371,6 @@ function initGlobalSettingsPanel() {
         panel.classList.remove('hidden');
         toggleBtn.classList.add('active');
         timezoneSelectEl.value = getAppTimeZone();
-        setStatus(`Timezone: ${getAppTimeZoneLabel()}`);
     };
 
     const options = getAppTimeZoneOptions();
@@ -392,10 +385,8 @@ function initGlobalSettingsPanel() {
     onAppTimeZoneChange((nextTimeZone, previousTimeZone) => {
         syncCurrentDateInputsForTimeZoneChange(nextTimeZone, previousTimeZone);
         timezoneSelectEl.value = nextTimeZone;
-        setStatus(`Timezone: ${getAppTimeZoneLabel(nextTimeZone)}`);
         refreshViewAfterTimeZoneChange().catch((error) => {
             console.error('Failed to refresh UI after timezone change:', error);
-            setStatus('Timezone set (refresh failed)');
         });
     });
 

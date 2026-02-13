@@ -467,6 +467,13 @@ const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(29, Number(process.env.DIVER
 const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
 const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 const DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE = Math.max(100, Number(process.env.DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) || 2000);
+const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
+  1,
+  Math.min(
+    DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
+    Number(process.env.DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE) || 100
+  )
+);
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -3461,10 +3468,12 @@ async function getDivergenceSummaryForTickers(options = {}) {
   }
 
   const summariesByTicker = new Map();
-  for (const ticker of uniqueTickers) {
-    const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
-    if (cached) {
-      summariesByTicker.set(ticker, cached);
+  if (!forceRefresh) {
+    for (const ticker of uniqueTickers) {
+      const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
+      if (cached) {
+        summariesByTicker.set(ticker, cached);
+      }
     }
   }
 
@@ -4528,6 +4537,27 @@ async function runDivergenceTableBuild(options = {}) {
 
     const summaryRows = [];
     const neutralStates = buildNeutralDivergenceStateMap();
+    const flushSummaryRows = async () => {
+      if (summaryRows.length === 0) return;
+      const batch = summaryRows.splice(0, summaryRows.length);
+      await upsertDivergenceSummaryBatch(batch, null);
+      const nowMs = Date.now();
+      const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
+      for (const row of batch) {
+        const ticker = String(row?.ticker || '').toUpperCase();
+        const tradeDate = String(row?.trade_date || '').trim() || null;
+        if (!ticker || !tradeDate) continue;
+        setDivergenceSummaryCacheEntry({
+          ticker,
+          sourceInterval,
+          tradeDate,
+          states: row?.states || buildNeutralDivergenceStateMap(),
+          computedAtMs: nowMs,
+          expiresAtMs
+        });
+      }
+    };
+
     for (const ticker of tickers) {
       const rows = rowsByTicker.get(ticker) || [];
       const filtered = rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
@@ -4546,20 +4576,12 @@ async function runDivergenceTableBuild(options = {}) {
       if (latestRowDate) {
         lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRowDate);
       }
+      if (summaryRows.length >= DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE) {
+        await flushSummaryRows();
+      }
     }
 
-    const summaryBatches = [];
-    for (let i = 0; i < summaryRows.length; i += DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) {
-      summaryBatches.push(summaryRows.slice(i, i + DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE));
-    }
-    await mapWithConcurrency(
-      summaryBatches,
-      DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
-      async (batch) => {
-        await upsertDivergenceSummaryBatch(batch, null);
-        return null;
-      }
-    );
+    await flushSummaryRows();
 
     if (lastPublishedTradeDate) {
       await publishDivergenceTradeDate({

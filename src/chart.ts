@@ -4801,3 +4801,9 @@ export function initChartControls() {
     });
   });
 }
+
+export function refreshActiveTickerDivergenceSummary(): void {
+  if (!volumeDeltaPaneContainerEl) return;
+  if (!Array.isArray(currentBars) || currentBars.length < 2) return;
+  renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
+}

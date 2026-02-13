@@ -28,7 +28,7 @@ const divergenceSummaryLiveRefreshAt = new Map<string, number>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
 const VALID_DIVERGENCE_SOURCE_INTERVALS = new Set(['1min', '5min', '15min', '30min', '1hour', '4hour']);
-const DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+const DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS = 15 * 1000;
 
 interface PersistedDivergenceSourceSettings {
   volumeDelta?: {
@@ -236,8 +236,10 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
 
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
-  sourceInterval?: string
+  sourceInterval?: string,
+  options?: { forceRefresh?: boolean }
 ): Promise<void> {
+  const forceRefresh = options?.forceRefresh === true;
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
@@ -255,7 +257,11 @@ export async function hydrateAlertCardDivergenceTables(
   const batchSize = 60;
   for (let i = 0; i < tickers.length; i += batchSize) {
     const chunk = tickers.slice(i, i + batchSize);
-    await fetchDivergenceSummariesBatch(chunk, normalizedSource);
+    await fetchDivergenceSummariesBatch(
+      chunk,
+      normalizedSource,
+      forceRefresh ? { forceRefresh: true } : undefined
+    );
   }
 
   for (const cell of cells) {

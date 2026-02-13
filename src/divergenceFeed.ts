@@ -10,6 +10,7 @@ import {
 import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { hydrateAlertCardDivergenceTables } from './divergenceTable';
+import { refreshActiveTickerDivergenceSummary } from './chart';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let divergenceFeedMode: LiveFeedMode = '1';
@@ -17,6 +18,9 @@ let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
+let divergenceTableLastProcessedTickers = -1;
+let divergenceTableLastUiRefreshAtMs = 0;
+const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -149,10 +153,31 @@ function summarizeTableStatus(status: DivergenceScanStatus): string {
 }
 
 function clearDivergenceScanPolling(): void {
-    if (divergenceScanPollTimer !== null) {
-        window.clearInterval(divergenceScanPollTimer);
-        divergenceScanPollTimer = null;
+  if (divergenceScanPollTimer !== null) {
+    window.clearInterval(divergenceScanPollTimer);
+    divergenceScanPollTimer = null;
+  }
+}
+
+function refreshDivergenceTablesWhileRunning(force = false): void {
+    const nowMs = Date.now();
+    if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
+        return;
     }
+    divergenceTableLastUiRefreshAtMs = nowMs;
+    const containers: HTMLElement[] = [];
+    const ids = ['daily-container', 'weekly-container', 'divergence-daily-container', 'divergence-weekly-container'];
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el || el.childElementCount === 0) continue;
+        containers.push(el);
+    }
+    if (containers.length > 0) {
+        void Promise.allSettled(
+            containers.map((container) => hydrateAlertCardDivergenceTables(container, undefined, { forceRefresh: true }))
+        );
+    }
+    refreshActiveTickerDivergenceSummary();
 }
 
 async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<void> {
@@ -165,6 +190,15 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         const tableRunning = Boolean(status.tableBuild?.running);
         setTableRunButtonState(tableRunning);
         setTableRunStatusText(summarizeTableStatus(status));
+        if (tableRunning) {
+            const processed = Number(status.tableBuild?.processed_tickers || 0);
+            const progressed = processed !== divergenceTableLastProcessedTickers;
+            divergenceTableLastProcessedTickers = processed;
+            refreshDivergenceTablesWhileRunning(progressed);
+        } else {
+            divergenceTableLastProcessedTickers = -1;
+            divergenceTableLastUiRefreshAtMs = 0;
+        }
         if (!status.running && !tableRunning) {
             clearDivergenceScanPolling();
             if (refreshOnComplete) {
@@ -199,6 +233,15 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         const tableRunning = Boolean(status.tableBuild?.running);
         setTableRunButtonState(tableRunning);
         setTableRunStatusText(summarizeTableStatus(status));
+        if (tableRunning) {
+            const processed = Number(status.tableBuild?.processed_tickers || 0);
+            const progressed = processed !== divergenceTableLastProcessedTickers;
+            divergenceTableLastProcessedTickers = processed;
+            refreshDivergenceTablesWhileRunning(progressed);
+        } else {
+            divergenceTableLastProcessedTickers = -1;
+            divergenceTableLastUiRefreshAtMs = 0;
+        }
         if (status.running || tableRunning) {
             ensureDivergenceScanPolling(true);
         } else {
