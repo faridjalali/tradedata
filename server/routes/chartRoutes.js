@@ -15,6 +15,11 @@ function parseTickerListFromQuery(req) {
   return Array.from(new Set(tickers));
 }
 
+function parseBooleanQueryFlag(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
 function registerChartRoutes(options = {}) {
   const {
     app,
@@ -127,9 +132,11 @@ function registerChartRoutes(options = {}) {
       }
 
       const vdSourceInterval = String(req.query.vdSourceInterval || '1min').trim();
+      const refresh = parseBooleanQueryFlag(req.query.refresh);
       const payload = await getDivergenceSummaryForTickers({
         tickers,
-        vdSourceInterval
+        vdSourceInterval,
+        forceRefresh: refresh
       });
       res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
       return res.status(200).json(payload);

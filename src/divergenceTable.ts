@@ -24,9 +24,11 @@ type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summari
 
 const divergenceSummaryCache = new Map<string, DivergenceSummaryEntry>();
 const divergenceSummaryBatchInFlight = new Map<string, Promise<void>>();
+const divergenceSummaryLiveRefreshAt = new Map<string, number>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
 const VALID_DIVERGENCE_SOURCE_INTERVALS = new Set(['1min', '5min', '15min', '30min', '1hour', '4hour']);
+const DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
 interface PersistedDivergenceSourceSettings {
   volumeDelta?: {
@@ -111,8 +113,13 @@ function normalizeApiSummary(item: DivergenceSummaryApiItem): DivergenceSummaryE
   };
 }
 
-async function fetchDivergenceSummariesBatch(tickers: string[], sourceInterval: string): Promise<void> {
+async function fetchDivergenceSummariesBatch(
+  tickers: string[],
+  sourceInterval: string,
+  options?: { forceRefresh?: boolean }
+): Promise<void> {
   const normalizedSourceInterval = normalizeSourceInterval(sourceInterval);
+  const forceRefresh = options?.forceRefresh === true;
   const uniqueTickers = Array.from(new Set(
     tickers
       .map((ticker) => normalizeTicker(ticker))
@@ -120,7 +127,7 @@ async function fetchDivergenceSummariesBatch(tickers: string[], sourceInterval: 
   ));
   if (uniqueTickers.length === 0) return;
 
-  const requestKey = `${normalizedSourceInterval}|${uniqueTickers.join(',')}`;
+  const requestKey = `${normalizedSourceInterval}|${forceRefresh ? 'refresh' : 'cached'}|${uniqueTickers.join(',')}`;
   if (divergenceSummaryBatchInFlight.has(requestKey)) {
     await divergenceSummaryBatchInFlight.get(requestKey);
     return;
@@ -130,6 +137,9 @@ async function fetchDivergenceSummariesBatch(tickers: string[], sourceInterval: 
     const params = new URLSearchParams();
     params.set('tickers', uniqueTickers.join(','));
     params.set('vdSourceInterval', normalizedSourceInterval);
+    if (forceRefresh) {
+      params.set('refresh', '1');
+    }
     const response = await fetch(`/api/chart/divergence-summary?${params.toString()}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch divergence summary (HTTP ${response.status})`);
@@ -155,16 +165,32 @@ async function fetchDivergenceSummariesBatch(tickers: string[], sourceInterval: 
 
 export async function getTickerDivergenceSummary(
   ticker: string,
-  sourceInterval?: string
+  sourceInterval?: string,
+  options?: { forceRefresh?: boolean }
 ): Promise<DivergenceSummaryEntry | null> {
   const normalizedTicker = normalizeTicker(ticker);
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
+  const forceRefresh = options?.forceRefresh === true;
   if (!normalizedTicker) return null;
 
+  const key = cacheKeyFor(normalizedTicker, normalizedSource);
   const cached = getCachedSummary(normalizedTicker, normalizedSource);
-  if (cached) return cached;
+  if (!forceRefresh && cached) return cached;
+
+  if (forceRefresh) {
+    const nowMs = Date.now();
+    const lastRefreshAt = Number(divergenceSummaryLiveRefreshAt.get(key) || 0);
+    const shouldRefresh = !cached || (nowMs - lastRefreshAt) >= DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS;
+    if (shouldRefresh) {
+      divergenceSummaryLiveRefreshAt.set(key, nowMs);
+      await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource, { forceRefresh: true });
+      return getCachedSummary(normalizedTicker, normalizedSource);
+    }
+    return cached;
+  }
+
   await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource);
   return getCachedSummary(normalizedTicker, normalizedSource);
 }

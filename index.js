@@ -1347,6 +1347,7 @@ const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day
 const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
 const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
 const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 64);
+const DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS = Math.max(0, Number(process.env.DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS) || (5 * 60 * 1000));
 const DIVERGENCE_SUMMARY_CACHE = new Map();
 
 function easternLocalToUtcMs(year, month, day, hour, minute) {
@@ -3196,15 +3197,33 @@ function normalizeDivergenceState(value) {
   return 'neutral';
 }
 
-async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval) {
+function buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresAtMs) {
+  const ticker = String(row?.ticker || '').toUpperCase();
+  if (!ticker) return null;
+  const entry = {
+    ticker,
+    sourceInterval,
+    tradeDate: String(row?.trade_date || '').trim() || null,
+    states: {
+      '1': normalizeDivergenceState(row?.state_1d),
+      '3': normalizeDivergenceState(row?.state_3d),
+      '7': normalizeDivergenceState(row?.state_7d),
+      '14': normalizeDivergenceState(row?.state_14d),
+      '28': normalizeDivergenceState(row?.state_28d)
+    },
+    computedAtMs: nowMs,
+    expiresAtMs
+  };
+  setDivergenceSummaryCacheEntry(entry);
+  return entry;
+}
+
+async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval, options = {}) {
   const map = new Map();
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) {
     return map;
   }
-  const publishedTradeDate = await getPublishedTradeDateForSourceInterval(sourceInterval);
-  if (!publishedTradeDate) {
-    return map;
-  }
+  const includeLatestFallbackForMissing = options.includeLatestFallbackForMissing !== false;
 
   const normalizedTickers = Array.from(new Set(
     tickers
@@ -3215,8 +3234,10 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval) {
     return map;
   }
 
+  const nowMs = Date.now();
+  const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
   const result = await divergencePool.query(`
-    SELECT
+    SELECT DISTINCT ON (ticker)
       ticker,
       trade_date::text AS trade_date,
       state_1d,
@@ -3227,31 +3248,20 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval) {
     FROM divergence_summaries
     WHERE source_interval = $1
       AND ticker = ANY($2::VARCHAR[])
-      AND trade_date <= $3::DATE
-  `, [sourceInterval, normalizedTickers, publishedTradeDate]);
+    ORDER BY ticker ASC, trade_date DESC
+  `, [sourceInterval, normalizedTickers]);
 
-  const nowMs = Date.now();
-  const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
   for (const row of result.rows) {
-    const ticker = String(row?.ticker || '').toUpperCase();
-    if (!ticker) continue;
-    const entry = {
-      ticker,
-      sourceInterval,
-      tradeDate: String(row?.trade_date || '').trim() || null,
-      states: {
-        '1': normalizeDivergenceState(row?.state_1d),
-        '3': normalizeDivergenceState(row?.state_3d),
-        '7': normalizeDivergenceState(row?.state_7d),
-        '14': normalizeDivergenceState(row?.state_14d),
-        '28': normalizeDivergenceState(row?.state_28d)
-      },
-      computedAtMs: nowMs,
-      expiresAtMs
-    };
-    setDivergenceSummaryCacheEntry(entry);
-    map.set(ticker, entry);
+    const entry = buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresAtMs);
+    if (!entry) continue;
+    map.set(entry.ticker, entry);
   }
+
+  if (!includeLatestFallbackForMissing) {
+    return map;
+  }
+
+  // Historical compatibility: option retained to preserve callsite semantics.
   return map;
 }
 
@@ -3332,19 +3342,47 @@ async function buildDailyDivergenceSummaryInput(options = {}) {
   };
 }
 
+async function persistOnDemandTickerDivergenceSummary(options = {}) {
+  if (!divergencePool) return;
+  const entry = options.entry || null;
+  const latestDailyBar = options.latestDailyBar || null;
+  if (!entry || !entry.ticker || !entry.sourceInterval) return;
+
+  if (latestDailyBar && latestDailyBar.trade_date) {
+    await upsertDivergenceDailyBarsBatch([latestDailyBar], null);
+  }
+  if (entry.tradeDate) {
+    await upsertDivergenceSummaryBatch([{
+      ticker: entry.ticker,
+      source_interval: entry.sourceInterval,
+      trade_date: entry.tradeDate,
+      states: entry.states
+    }], null);
+  }
+}
+
 async function getOrBuildTickerDivergenceSummary(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const forceRefresh = Boolean(options.forceRefresh);
+  const persistToDatabase = options.persistToDatabase !== false;
   if (!ticker || !isValidTickerSymbol(ticker)) return null;
 
-  const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
-  if (cached) return cached;
-
-  const storedMap = await getStoredDivergenceSummariesForTickers([ticker], vdSourceInterval);
-  const stored = storedMap.get(ticker);
-  if (stored) return stored;
-
   const nowMs = Date.now();
+  const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
+  if (cached) {
+    if (!forceRefresh) return cached;
+    if ((nowMs - Number(cached.computedAtMs || 0)) < DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS) {
+      return cached;
+    }
+  }
+
+  if (!forceRefresh) {
+    const storedMap = await getStoredDivergenceSummariesForTickers([ticker], vdSourceInterval);
+    const stored = storedMap.get(ticker);
+    if (stored) return stored;
+  }
+
   const lookbackDays = getIntradayLookbackDays('1day');
   const dailyInput = await buildDailyDivergenceSummaryInput({
     ticker,
@@ -3355,14 +3393,32 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
   const summary = computeDivergenceSummaryStatesFromDailyResult(dailyInput, {
     maxTradeDateKey
   });
+  const latestDailyBar = buildLatestDailyBarSnapshotForTicker({
+    ticker,
+    sourceInterval: vdSourceInterval,
+    maxTradeDateKey,
+    dailyInput
+  });
+  const tradeDate = String(latestDailyBar?.trade_date || summary.tradeDate || '').trim() || null;
   const entry = {
     ticker,
     sourceInterval: vdSourceInterval,
-    tradeDate: summary.tradeDate || null,
+    tradeDate,
     states: summary.states,
     computedAtMs: nowMs,
     expiresAtMs: nextPacificDivergenceRefreshUtcMs(new Date(nowMs))
   };
+  if (persistToDatabase) {
+    try {
+      await persistOnDemandTickerDivergenceSummary({
+        entry,
+        latestDailyBar
+      });
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.error(`Failed to persist on-demand divergence summary for ${ticker}: ${message}`);
+    }
+  }
   setDivergenceSummaryCacheEntry(entry);
   return entry;
 }
@@ -3381,16 +3437,49 @@ async function getDivergenceSummaryForTickers(options = {}) {
   }
 
   const uniqueTickers = Array.from(new Set(tickers));
-  const storedSummariesByTicker = await getStoredDivergenceSummariesForTickers(uniqueTickers, vdSourceInterval);
-  const missingTickers = uniqueTickers.filter((ticker) => !storedSummariesByTicker.has(ticker));
+  const forceRefresh = Boolean(options.forceRefresh);
 
-  const summaries = [];
-  for (const ticker of uniqueTickers) {
-    const stored = storedSummariesByTicker.get(ticker);
-    if (stored) {
-      summaries.push(stored);
+  if (forceRefresh && uniqueTickers.length === 1) {
+    const rebuilt = await getOrBuildTickerDivergenceSummary({
+      ticker: uniqueTickers[0],
+      vdSourceInterval,
+      forceRefresh: true,
+      persistToDatabase: true
+    });
+    if (rebuilt) {
+      return {
+        sourceInterval: vdSourceInterval,
+        refreshedAt: new Date().toISOString(),
+        summaries: [{
+          ticker: rebuilt.ticker,
+          tradeDate: rebuilt.tradeDate,
+          states: rebuilt.states,
+          expiresAtMs: rebuilt.expiresAtMs
+        }]
+      };
     }
   }
+
+  const summariesByTicker = new Map();
+  for (const ticker of uniqueTickers) {
+    const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
+    if (cached) {
+      summariesByTicker.set(ticker, cached);
+    }
+  }
+
+  const unresolvedTickers = uniqueTickers.filter((ticker) => !summariesByTicker.has(ticker));
+  if (unresolvedTickers.length > 0) {
+    const storedSummariesByTicker = await getStoredDivergenceSummariesForTickers(unresolvedTickers, vdSourceInterval);
+    for (const ticker of unresolvedTickers) {
+      const stored = storedSummariesByTicker.get(ticker);
+      if (stored) {
+        summariesByTicker.set(ticker, stored);
+      }
+    }
+  }
+
+  const missingTickers = uniqueTickers.filter((ticker) => !summariesByTicker.has(ticker));
 
   if (missingTickers.length > 0) {
     const nowMs = Date.now();
@@ -3410,8 +3499,14 @@ async function getDivergenceSummaryForTickers(options = {}) {
         expiresAtMs
       };
       setDivergenceSummaryCacheEntry(entry);
-      summaries.push(entry);
+      summariesByTicker.set(ticker, entry);
     }
+  }
+
+  const summaries = [];
+  for (const ticker of uniqueTickers) {
+    const entry = summariesByTicker.get(ticker);
+    if (entry) summaries.push(entry);
   }
 
   return {

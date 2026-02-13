@@ -3812,7 +3812,7 @@ function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[])
     return;
   }
 
-  getTickerDivergenceSummary(ticker, sourceInterval)
+  getTickerDivergenceSummary(ticker, sourceInterval, { forceRefresh: true })
     .then((summary) => {
       renderSummary(summary);
     })
