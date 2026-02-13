@@ -279,7 +279,7 @@ function clearDivergenceScanPolling(): void {
   }
 }
 
-async function hydrateVisibleDivergenceTables(force = false): Promise<void> {
+async function hydrateVisibleDivergenceTables(force = false, noCache = false): Promise<void> {
     const nowMs = Date.now();
     if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
         return;
@@ -294,10 +294,10 @@ async function hydrateVisibleDivergenceTables(force = false): Promise<void> {
     }
     if (containers.length > 0) {
         await Promise.allSettled(
-            containers.map((container) => hydrateAlertCardDivergenceTables(container, undefined, { forceRefresh: true }))
+            containers.map((container) => hydrateAlertCardDivergenceTables(container, undefined, { forceRefresh: true, noCache }))
         );
     }
-    refreshActiveTickerDivergenceSummary();
+    refreshActiveTickerDivergenceSummary({ noCache });
 }
 
 function refreshDivergenceTablesWhileRunning(force = false): void {
@@ -526,7 +526,7 @@ export async function stopManualDivergenceTableBuild(): Promise<void> {
 export async function hydrateDivergenceTablesNow(): Promise<void> {
     try {
         setTableRunStatusText('Updating...');
-        await hydrateVisibleDivergenceTables(true);
+        await hydrateVisibleDivergenceTables(true, true);
         await syncDivergenceScanUiState();
     } catch (error) {
         console.error('Failed to hydrate divergence tables:', error);

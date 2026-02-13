@@ -2509,27 +2509,36 @@ function buildChartResultFromRows(options = {}) {
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const timer = options.timer || null;
 
-  const parentFetchInterval = (interval === '1day' || interval === '1week') ? '4hour' : interval;
-  const parentRows = rowsByInterval.get(parentFetchInterval) || [];
-  if (!parentRows || parentRows.length === 0) {
-    const err = new Error(`No ${parentFetchInterval} data available for this ticker`);
-    err.httpStatus = 404;
-    throw err;
-  }
+  const convertBarsForInterval = (rows, tf) => convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time));
+  const directIntervalRows = rowsByInterval.get(interval) || [];
+  const directIntervalBars = convertBarsForInterval(directIntervalRows, interval);
+  const fallback4HourRows = rowsByInterval.get('4hour') || [];
+  const fallback4HourBars = convertBarsForInterval(fallback4HourRows, '4hour');
+  const fallbackDailyRows = rowsByInterval.get('1day') || [];
+  const fallbackDailyBars = convertBarsForInterval(fallbackDailyRows, '1day');
 
-  // Convert parent stream to LA timezone and sort chronologically.
-  const convertedParentBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
-  let convertedBars = convertedParentBars;
-  if (interval === '1day' || interval === '1week') {
-    const dailyBars = aggregate4HourBarsToDaily(convertedParentBars);
-    convertedBars = interval === '1day'
-      ? dailyBars
-      : aggregateDailyBarsToWeekly(dailyBars);
+  let convertedBars = [];
+  if (interval === '1day') {
+    if (directIntervalBars.length > 0) {
+      convertedBars = directIntervalBars;
+    } else if (fallback4HourBars.length > 0) {
+      convertedBars = aggregate4HourBarsToDaily(fallback4HourBars);
+    }
+  } else if (interval === '1week') {
+    if (directIntervalBars.length > 0) {
+      convertedBars = directIntervalBars;
+    } else if (fallbackDailyBars.length > 0) {
+      convertedBars = aggregateDailyBarsToWeekly(fallbackDailyBars);
+    } else if (fallback4HourBars.length > 0) {
+      convertedBars = aggregateDailyBarsToWeekly(aggregate4HourBarsToDaily(fallback4HourBars));
+    }
+  } else {
+    convertedBars = directIntervalBars;
   }
   if (timer) timer.step('parent_bars');
 
   if (convertedBars.length === 0) {
-    const err = new Error('No valid chart bars available for this ticker');
+    const err = new Error(`No valid ${interval} chart bars available for this ticker`);
     err.httpStatus = 404;
     throw err;
   }
@@ -2842,12 +2851,91 @@ function prewarmWeeklyChartResultFromRequest(options = {}) {
     vdSourceInterval,
     vdRsiSourceInterval,
     lookbackDays,
-    requestKey
+    requestKey,
+    skipFollowUpPrewarm: true
   }).catch((err) => {
     if (!CHART_TIMING_LOG_ENABLED) return;
     const message = err && err.message ? err.message : String(err);
     console.warn(`[chart-prewarm] ${ticker} 1week request failed: ${message}`);
   });
+}
+
+async function prewarmChartResultFromRequest(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const interval = String(options.interval || '').trim();
+  if (!ticker || !VALID_CHART_INTERVALS.includes(interval)) return;
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays(interval)));
+  const requestKey = buildChartRequestKey({
+    ticker,
+    interval,
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays
+  });
+
+  if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey)) return;
+  const inFlight = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
+  if (inFlight) {
+    try {
+      await inFlight;
+    } catch {
+      // Keep prewarm best-effort.
+    }
+    return;
+  }
+
+  try {
+    await getOrBuildChartResult({
+      ticker,
+      interval,
+      vdRsiLength,
+      vdSourceInterval,
+      vdRsiSourceInterval,
+      lookbackDays,
+      requestKey,
+      skipFollowUpPrewarm: true
+    });
+  } catch (err) {
+    if (!CHART_TIMING_LOG_ENABLED) return;
+    const message = err && err.message ? err.message : String(err);
+    console.warn(`[chart-prewarm] ${ticker} ${interval} request failed: ${message}`);
+  }
+}
+
+function getPostLoadPrewarmSequence(interval) {
+  if (interval === '4hour') return ['1day', '1week'];
+  if (interval === '1day') return ['4hour', '1week'];
+  if (interval === '1week') return ['1day', '4hour'];
+  return [];
+}
+
+function schedulePostLoadPrewarmSequence(options = {}) {
+  const ticker = String(options.ticker || '').toUpperCase();
+  const interval = String(options.interval || '').trim();
+  if (!ticker || !interval) return;
+  const sequence = getPostLoadPrewarmSequence(interval);
+  if (!sequence.length) return;
+  const vdRsiLength = Math.max(1, Math.min(200, Math.floor(Number(options.vdRsiLength) || 14)));
+  const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
+  const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
+  const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays(interval)));
+
+  void (async () => {
+    for (const targetInterval of sequence) {
+      await prewarmChartResultFromRequest({
+        ticker,
+        interval: targetInterval,
+        vdRsiLength,
+        vdSourceInterval,
+        vdRsiSourceInterval,
+        lookbackDays
+      });
+    }
+  })();
 }
 
 function prewarmFourHourChartResultFromRequest(options = {}) {
@@ -2876,7 +2964,8 @@ function prewarmFourHourChartResultFromRequest(options = {}) {
     vdSourceInterval,
     vdRsiSourceInterval,
     lookbackDays,
-    requestKey
+    requestKey,
+    skipFollowUpPrewarm: true
   }).catch((err) => {
     if (!CHART_TIMING_LOG_ENABLED) return;
     const message = err && err.message ? err.message : String(err);
@@ -2923,24 +3012,23 @@ async function getOrBuildChartResult(params) {
     vdSourceInterval,
     vdRsiSourceInterval,
     lookbackDays,
-    requestKey
+    requestKey,
+    skipFollowUpPrewarm = false
   } = params;
 
   const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
   if (cachedFinalResult) {
     chartDebugMetrics.cacheHit += 1;
-    if (interval === '1day') {
-      chartDebugMetrics.prewarmRequested.fourHourFrom1dayCacheHit += 1;
-      prewarmFourHourChartResultFromRequest({
+    if (!skipFollowUpPrewarm) {
+      if (interval === '1day') {
+        chartDebugMetrics.prewarmRequested.fourHourFrom1dayCacheHit += 1;
+        chartDebugMetrics.prewarmRequested.weeklyFrom1dayCacheHit += 1;
+      } else if (interval === '4hour') {
+        chartDebugMetrics.prewarmRequested.dailyFrom4hour += 1;
+      }
+      schedulePostLoadPrewarmSequence({
         ticker,
-        vdRsiLength,
-        vdSourceInterval,
-        vdRsiSourceInterval,
-        lookbackDays
-      });
-      chartDebugMetrics.prewarmRequested.weeklyFrom1dayCacheHit += 1;
-      prewarmWeeklyChartResultFromRequest({
-        ticker,
+        interval,
         vdRsiLength,
         vdSourceInterval,
         vdRsiSourceInterval,
@@ -2968,9 +3056,8 @@ async function getOrBuildChartResult(params) {
   if (!buildPromise) {
     buildPromise = (async () => {
       const timer = createChartStageTimer();
-      const parentFetchInterval = (interval === '1day' || interval === '1week') ? '4hour' : interval;
       const requiredIntervals = Array.from(new Set([
-        parentFetchInterval,
+        interval,
         vdSourceInterval,
         vdRsiSourceInterval
       ]));
@@ -3008,34 +3095,20 @@ async function getOrBuildChartResult(params) {
         result,
         getChartResultCacheExpiryMs(new Date())
       );
-      if (interval === '4hour') {
-        chartDebugMetrics.prewarmRequested.dailyFrom4hour += 1;
-        prewarmDailyChartResultFromRows({
+      if (!skipFollowUpPrewarm) {
+        if (interval === '4hour') {
+          chartDebugMetrics.prewarmRequested.dailyFrom4hour += 1;
+        } else if (interval === '1day') {
+          chartDebugMetrics.prewarmRequested.fourHourFrom1day += 1;
+          chartDebugMetrics.prewarmRequested.weeklyFrom1day += 1;
+        }
+        schedulePostLoadPrewarmSequence({
           ticker,
+          interval,
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays,
-          rowsByInterval
-        });
-      } else if (interval === '1day') {
-        chartDebugMetrics.prewarmRequested.fourHourFrom1day += 1;
-        prewarmFourHourChartResultFromRows({
-          ticker,
-          vdRsiLength,
-          vdSourceInterval,
-          vdRsiSourceInterval,
-          lookbackDays,
-          rowsByInterval
-        });
-        chartDebugMetrics.prewarmRequested.weeklyFrom1day += 1;
-        prewarmWeeklyChartResultFromRows({
-          ticker,
-          vdRsiLength,
-          vdSourceInterval,
-          vdRsiSourceInterval,
-          lookbackDays,
-          rowsByInterval
+          lookbackDays
         });
       }
       const serverTiming = timer.serverTiming();
@@ -3381,19 +3454,20 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const forceRefresh = Boolean(options.forceRefresh);
+  const noCache = options.noCache === true;
   const persistToDatabase = options.persistToDatabase !== false;
   if (!ticker || !isValidTickerSymbol(ticker)) return null;
 
   const nowMs = Date.now();
-  const cached = getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
-  if (cached) {
+  const cached = noCache ? null : getCachedDivergenceSummaryEntry(ticker, vdSourceInterval);
+  if (!noCache && cached) {
     if (!forceRefresh) return cached;
     if ((nowMs - Number(cached.computedAtMs || 0)) < DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS) {
       return cached;
     }
   }
 
-  if (!forceRefresh) {
+  if (!noCache && !forceRefresh) {
     const storedMap = await getStoredDivergenceSummariesForTickers([ticker], vdSourceInterval);
     const stored = storedMap.get(ticker);
     if (stored) return stored;
@@ -3435,7 +3509,9 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
       console.error(`Failed to persist on-demand divergence summary for ${ticker}: ${message}`);
     }
   }
-  setDivergenceSummaryCacheEntry(entry);
+  if (!noCache) {
+    setDivergenceSummaryCacheEntry(entry);
+  }
   return entry;
 }
 
@@ -3454,6 +3530,58 @@ async function getDivergenceSummaryForTickers(options = {}) {
 
   const uniqueTickers = Array.from(new Set(tickers));
   const forceRefresh = Boolean(options.forceRefresh);
+  const noCache = options.noCache === true;
+
+  if (noCache) {
+    const nowMs = Date.now();
+    const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
+    const fallbackTradeDate = await getPublishedTradeDateForSourceInterval(vdSourceInterval)
+      || latestCompletedPacificTradeDateKey(new Date(nowMs))
+      || currentEtDateString();
+    const neutralStates = buildNeutralDivergenceStateMap();
+
+    const rebuiltRows = await mapWithConcurrency(
+      uniqueTickers,
+      8,
+      async (ticker) => {
+        const entry = await getOrBuildTickerDivergenceSummary({
+          ticker,
+          vdSourceInterval,
+          forceRefresh: true,
+          persistToDatabase: true,
+          noCache: true
+        });
+        return { ticker, entry };
+      }
+    );
+
+    const summaries = [];
+    for (let i = 0; i < uniqueTickers.length; i++) {
+      const ticker = uniqueTickers[i];
+      const row = rebuiltRows[i];
+      const entry = row && !row.error ? row.entry : null;
+      if (entry) {
+        summaries.push({
+          ticker: entry.ticker,
+          tradeDate: entry.tradeDate,
+          states: entry.states,
+          expiresAtMs: entry.expiresAtMs
+        });
+      } else {
+        summaries.push({
+          ticker,
+          tradeDate: fallbackTradeDate,
+          states: neutralStates,
+          expiresAtMs
+        });
+      }
+    }
+    return {
+      sourceInterval: vdSourceInterval,
+      refreshedAt: new Date().toISOString(),
+      summaries
+    };
+  }
 
   if (forceRefresh && uniqueTickers.length === 1) {
     const rebuilt = await getOrBuildTickerDivergenceSummary({

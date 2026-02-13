@@ -3762,7 +3762,11 @@ function clearVolumeDeltaDivergenceSummary(): void {
   volumeDeltaDivergenceSummaryEl.innerHTML = '';
 }
 
-function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[]): void {
+function renderVolumeDeltaDivergenceSummary(
+  container: HTMLElement,
+  bars: any[],
+  options?: { noCache?: boolean }
+): void {
   if (!volumeDeltaSettings.divergenceTable) {
     clearVolumeDeltaDivergenceSummary();
     return;
@@ -3772,52 +3776,71 @@ function renderVolumeDeltaDivergenceSummary(container: HTMLElement, bars: any[])
   summaryEl.style.display = 'block';
   const ticker = String(currentChartTicker || '').trim().toUpperCase();
   const sourceInterval = volumeDeltaSettings.sourceInterval;
+  const noCache = options?.noCache === true;
   const requestToken = `${ticker}|${sourceInterval}|${Date.now()}`;
   summaryEl.dataset.requestToken = requestToken;
 
-  const renderSummary = (summary: DivergenceSummaryEntry | null) => {
+  const buildBadge = (text: string, color: string, title: string): HTMLDivElement => {
+    const badge = document.createElement('div');
+    badge.textContent = text;
+    badge.title = title;
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    badge.style.padding = '0';
+    badge.style.borderRadius = '4px';
+    badge.style.border = '1px solid #30363d';
+    badge.style.background = '#161b22';
+    badge.style.fontSize = '12px';
+    badge.style.fontWeight = '600';
+    badge.style.lineHeight = '1';
+    badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    badge.style.color = color;
+    return badge;
+  };
+
+  const renderSummary = (summary: DivergenceSummaryEntry | null, loading = false) => {
     if (summaryEl.dataset.requestToken !== requestToken) return;
     if (String(currentChartTicker || '').trim().toUpperCase() !== ticker) return;
     summaryEl.innerHTML = '';
+    if (loading) {
+      summaryEl.appendChild(buildBadge('...', '#8b949e', 'Processing divergence table'));
+    }
     for (let i = 0; i < DIVERGENCE_LOOKBACK_DAYS.length; i++) {
       const days = DIVERGENCE_LOOKBACK_DAYS[i];
       const state = summary?.states?.[String(days)] || 'neutral';
-      const badge = document.createElement('div');
-      badge.textContent = String(days);
-      badge.title = `Last ${days} day${days === 1 ? '' : 's'}${summary?.tradeDate ? ` (as of ${summary.tradeDate})` : ''}`;
-      badge.style.display = 'inline-flex';
-      badge.style.alignItems = 'center';
-      badge.style.justifyContent = 'center';
-      badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-      badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-      badge.style.padding = '0';
-      badge.style.borderRadius = '4px';
-      badge.style.border = '1px solid #30363d';
-      badge.style.background = '#161b22';
-      badge.style.fontSize = '12px';
-      badge.style.fontWeight = '600';
-      badge.style.lineHeight = '1';
-      badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-      badge.style.color = state === 'bullish'
+      const badgeColor = state === 'bullish'
         ? '#26a69a'
         : state === 'bearish'
           ? '#ef5350'
           : '#ffffff';
+      const badge = buildBadge(
+        String(days),
+        badgeColor,
+        `Last ${days} day${days === 1 ? '' : 's'}${summary?.tradeDate ? ` (as of ${summary.tradeDate})` : ''}`
+      );
       summaryEl.appendChild(badge);
     }
   };
 
-  renderSummary(null);
+  renderSummary(null, false);
   if (!ticker || (!Array.isArray(bars) || bars.length < 2)) {
     return;
   }
 
-  getTickerDivergenceSummary(ticker, sourceInterval, { forceRefresh: true })
+  renderSummary(null, true);
+  getTickerDivergenceSummary(
+    ticker,
+    sourceInterval,
+    noCache ? { forceRefresh: true, noCache: true } : { forceRefresh: true }
+  )
     .then((summary) => {
-      renderSummary(summary);
+      renderSummary(summary, false);
     })
     .catch(() => {
-      renderSummary(null);
+      renderSummary(null, false);
     });
 }
 
@@ -4802,8 +4825,8 @@ export function initChartControls() {
   });
 }
 
-export function refreshActiveTickerDivergenceSummary(): void {
+export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {
   if (!volumeDeltaPaneContainerEl) return;
   if (!Array.isArray(currentBars) || currentBars.length < 2) return;
-  renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
+  renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars, options);
 }

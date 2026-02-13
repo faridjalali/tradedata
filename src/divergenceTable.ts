@@ -23,7 +23,7 @@ interface DivergenceSummaryApiPayload {
 type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summaries']>[number];
 
 const divergenceSummaryCache = new Map<string, DivergenceSummaryEntry>();
-const divergenceSummaryBatchInFlight = new Map<string, Promise<void>>();
+const divergenceSummaryBatchInFlight = new Map<string, Promise<Map<string, DivergenceSummaryEntry>>>();
 const divergenceSummaryLiveRefreshAt = new Map<string, number>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
@@ -116,31 +116,38 @@ function normalizeApiSummary(item: DivergenceSummaryApiItem): DivergenceSummaryE
 async function fetchDivergenceSummariesBatch(
   tickers: string[],
   sourceInterval: string,
-  options?: { forceRefresh?: boolean }
-): Promise<void> {
+  options?: { forceRefresh?: boolean; noCache?: boolean }
+): Promise<Map<string, DivergenceSummaryEntry>> {
   const normalizedSourceInterval = normalizeSourceInterval(sourceInterval);
   const forceRefresh = options?.forceRefresh === true;
+  const noCache = options?.noCache === true;
   const uniqueTickers = Array.from(new Set(
     tickers
       .map((ticker) => normalizeTicker(ticker))
       .filter(Boolean)
   ));
-  if (uniqueTickers.length === 0) return;
+  if (uniqueTickers.length === 0) return new Map();
 
-  const requestKey = `${normalizedSourceInterval}|${forceRefresh ? 'refresh' : 'cached'}|${uniqueTickers.join(',')}`;
+  const requestKey = `${normalizedSourceInterval}|${forceRefresh ? 'refresh' : 'cached'}|${noCache ? 'nocache' : 'cache'}|${uniqueTickers.join(',')}`;
   if (divergenceSummaryBatchInFlight.has(requestKey)) {
-    await divergenceSummaryBatchInFlight.get(requestKey);
-    return;
+    return await divergenceSummaryBatchInFlight.get(requestKey)!;
   }
 
-  const batchPromise = (async () => {
+  const batchPromise = (async (): Promise<Map<string, DivergenceSummaryEntry>> => {
+    const resolved = new Map<string, DivergenceSummaryEntry>();
     const params = new URLSearchParams();
     params.set('tickers', uniqueTickers.join(','));
     params.set('vdSourceInterval', normalizedSourceInterval);
     if (forceRefresh) {
       params.set('refresh', '1');
     }
-    const response = await fetch(`/api/chart/divergence-summary?${params.toString()}`);
+    if (noCache) {
+      params.set('nocache', '1');
+      params.set('_t', String(Date.now()));
+    }
+    const response = await fetch(`/api/chart/divergence-summary?${params.toString()}`, {
+      cache: noCache ? 'no-store' : 'default'
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch divergence summary (HTTP ${response.status})`);
     }
@@ -149,49 +156,62 @@ async function fetchDivergenceSummariesBatch(
     for (const row of rows) {
       const normalized = normalizeApiSummary(row);
       if (!normalized) continue;
-      setCachedSummary(normalizedSourceInterval, normalized);
+      resolved.set(normalized.ticker, normalized);
+      if (!noCache) {
+        setCachedSummary(normalizedSourceInterval, normalized);
+      }
     }
+    return resolved;
   })()
     .catch(() => {
       // Keep summary fetching best-effort.
+      return new Map<string, DivergenceSummaryEntry>();
     })
     .finally(() => {
       divergenceSummaryBatchInFlight.delete(requestKey);
     });
 
   divergenceSummaryBatchInFlight.set(requestKey, batchPromise);
-  await batchPromise;
+  return await batchPromise;
 }
 
 export async function getTickerDivergenceSummary(
   ticker: string,
   sourceInterval?: string,
-  options?: { forceRefresh?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean }
 ): Promise<DivergenceSummaryEntry | null> {
   const normalizedTicker = normalizeTicker(ticker);
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
   const forceRefresh = options?.forceRefresh === true;
+  const noCache = options?.noCache === true;
   if (!normalizedTicker) return null;
 
   const key = cacheKeyFor(normalizedTicker, normalizedSource);
-  const cached = getCachedSummary(normalizedTicker, normalizedSource);
-  if (!forceRefresh && cached) return cached;
+  const cached = noCache ? null : getCachedSummary(normalizedTicker, normalizedSource);
+  if (!noCache && !forceRefresh && cached) return cached;
 
-  if (forceRefresh) {
+  if (forceRefresh && !noCache) {
     const nowMs = Date.now();
     const lastRefreshAt = Number(divergenceSummaryLiveRefreshAt.get(key) || 0);
     const shouldRefresh = !cached || (nowMs - lastRefreshAt) >= DIVERGENCE_LIVE_REFRESH_COOLDOWN_MS;
     if (shouldRefresh) {
       divergenceSummaryLiveRefreshAt.set(key, nowMs);
-      await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource, { forceRefresh: true });
+      await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource, { forceRefresh: true, noCache: false });
       return getCachedSummary(normalizedTicker, normalizedSource);
     }
     return cached;
   }
 
-  await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource);
+  const resultMap = await fetchDivergenceSummariesBatch(
+    [normalizedTicker],
+    normalizedSource,
+    noCache ? { forceRefresh: true, noCache: true } : undefined
+  );
+  if (noCache) {
+    return resultMap.get(normalizedTicker) || null;
+  }
   return getCachedSummary(normalizedTicker, normalizedSource);
 }
 
@@ -237,9 +257,10 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
   sourceInterval?: string,
-  options?: { forceRefresh?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean }
 ): Promise<void> {
   const forceRefresh = options?.forceRefresh === true;
+  const noCache = options?.noCache === true;
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
@@ -255,19 +276,23 @@ export async function hydrateAlertCardDivergenceTables(
   if (!tickers.length) return;
 
   const batchSize = 60;
+  const fetchedByTicker = new Map<string, DivergenceSummaryEntry>();
   for (let i = 0; i < tickers.length; i += batchSize) {
     const chunk = tickers.slice(i, i + batchSize);
-    await fetchDivergenceSummariesBatch(
+    const fetched = await fetchDivergenceSummariesBatch(
       chunk,
       normalizedSource,
-      forceRefresh ? { forceRefresh: true } : undefined
+      (forceRefresh || noCache) ? { forceRefresh: true, noCache } : undefined
     );
+    for (const [ticker, summary] of fetched.entries()) {
+      fetchedByTicker.set(ticker, summary);
+    }
   }
 
   for (const cell of cells) {
     const ticker = normalizeTicker(cell.dataset.ticker);
     if (!ticker) continue;
-    const summary = getCachedSummary(ticker, normalizedSource);
+    const summary = fetchedByTicker.get(ticker) || getCachedSummary(ticker, normalizedSource);
     renderMiniDivergenceRow(cell, summary);
   }
 }

@@ -133,12 +133,18 @@ function registerChartRoutes(options = {}) {
 
       const vdSourceInterval = String(req.query.vdSourceInterval || '1min').trim();
       const refresh = parseBooleanQueryFlag(req.query.refresh);
+      const noCache = parseBooleanQueryFlag(req.query.nocache) || parseBooleanQueryFlag(req.query.noCache);
       const payload = await getDivergenceSummaryForTickers({
         tickers,
         vdSourceInterval,
-        forceRefresh: refresh
+        forceRefresh: refresh,
+        noCache
       });
-      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      if (noCache) {
+        res.setHeader('Cache-Control', 'no-store');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      }
       return res.status(200).json(payload);
     } catch (err) {
       const message = err && err.message ? err.message : 'Failed to fetch divergence summary';
