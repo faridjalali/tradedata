@@ -453,11 +453,12 @@ h2 {
   color: var(--text-secondary);
   cursor: pointer;
   transition: transform 0.1s; /* Reduced transition */
-  width: 17px;
-  height: 17px;
-  min-width: 17px;
-  min-height: 17px;
-  flex: 0 0 17px;
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  min-height: 15px;
+  flex: 0 0 15px;
+  margin-right: 2px;
   padding-right: 0;
 }
 
