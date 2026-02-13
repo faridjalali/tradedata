@@ -2032,12 +2032,12 @@ async function dataApiIntraday(symbol, interval, options = {}) {
 }
 
 function getIntradayLookbackDays(interval) {
-  // Fetch one full year so all panes share the same 1-year parent history.
+  // Fetch 1.5 years so all panes share the same parent history window.
   // RSI / VD-RSI warm-up is naturally covered by this window.
-  return 365;
+  return 548;
 }
 
-const CHART_INTRADAY_LOOKBACK_DAYS = 365; // Legacy fallback
+const CHART_INTRADAY_LOOKBACK_DAYS = 548; // Legacy fallback
 const CHART_INTRADAY_SLICE_DAYS = {
   '1min': 30,
   '5min': 45,

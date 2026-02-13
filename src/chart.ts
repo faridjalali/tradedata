@@ -4741,8 +4741,8 @@ function applyWeeklyInitialVisibleRange(): void {
   if (!Array.isArray(currentBars) || currentBars.length === 0) return;
 
   const lastIndex = currentBars.length - 1;
-  // One-year weekly window (approx 52-53 bars). Use 53 for full-year coverage.
-  const weeklyBarsToShow = Math.min(currentBars.length, 53);
+  // One-and-a-half-year weekly window (approx 78 bars).
+  const weeklyBarsToShow = Math.min(currentBars.length, 78);
   const from = Math.max(0, lastIndex - weeklyBarsToShow + 1);
   const to = lastIndex + RIGHT_MARGIN_BARS;
 

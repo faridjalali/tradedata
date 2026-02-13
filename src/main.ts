@@ -61,6 +61,9 @@ window.showTickerView = function(ticker: string, sourceView: 'live' | 'divergenc
     if (currentView !== 'live') {
         switchView('live');
     }
+    // Ticker detail renders inside view-live, but keep header context aligned
+    // with where the user came from.
+    setActiveNavTab(sourceView === 'divergence' ? 'divergence' : 'live');
 
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
@@ -91,9 +94,7 @@ window.showOverview = function() {
 
 function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
     currentView = view;
-    // Update Tabs
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(`nav-${view}`)?.classList.add('active');
+    setActiveNavTab(view);
 
     // Hide all views and controls
     document.getElementById('view-live')?.classList.add('hidden');
@@ -123,6 +124,11 @@ function switchView(view: 'live' | 'divergence' | 'leaderboard' | 'breadth') {
         document.getElementById('breadth-controls')?.classList.remove('hidden');
         initBreadth();
     }
+}
+
+function setActiveNavTab(view: 'live' | 'divergence' | 'leaderboard' | 'breadth'): void {
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
+    document.getElementById(`nav-${view}`)?.classList.add('active');
 }
 
 function setLiveFeedMode(mode: LiveFeedMode) {
