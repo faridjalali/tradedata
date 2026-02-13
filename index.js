@@ -974,6 +974,13 @@ const MASSIVE_KEY = process.env.MASSIVE_API_KEY || process.env.FMP_API_KEY || ''
 const MASSIVE_BASE = 'https://api.massive.com';
 const MASSIVE_TIMEOUT_MS = 15000;
 const MASSIVE_REQUESTS_PAUSED = String(process.env.MASSIVE_REQUESTS_PAUSED || process.env.FMP_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
+const MASSIVE_MAX_REQUESTS_PER_SECOND = Math.max(1, Number(process.env.MASSIVE_MAX_REQUESTS_PER_SECOND) || 95);
+const MASSIVE_RATE_BUCKET_CAPACITY = Math.max(
+  1,
+  Number(process.env.MASSIVE_RATE_BUCKET_CAPACITY) || MASSIVE_MAX_REQUESTS_PER_SECOND
+);
+let massiveRateTokens = MASSIVE_RATE_BUCKET_CAPACITY;
+let massiveRateLastRefillMs = Date.now();
 
 function buildMassiveUrl(path, params = {}) {
   const normalizedBase = MASSIVE_BASE.replace(/\/+$/, '');
@@ -1091,6 +1098,67 @@ function isAbortError(err) {
     || /aborted|aborterror/i.test(message);
 }
 
+function buildRequestAbortError(message) {
+  const err = new Error(message || 'Request aborted');
+  err.name = 'AbortError';
+  err.httpStatus = 499;
+  return err;
+}
+
+function refillMassiveRateTokens(nowMs) {
+  const now = Number(nowMs) || Date.now();
+  const elapsedMs = Math.max(0, now - massiveRateLastRefillMs);
+  if (elapsedMs <= 0) return;
+  const refillPerMs = MASSIVE_MAX_REQUESTS_PER_SECOND / 1000;
+  massiveRateTokens = Math.min(
+    MASSIVE_RATE_BUCKET_CAPACITY,
+    massiveRateTokens + (elapsedMs * refillPerMs)
+  );
+  massiveRateLastRefillMs = now;
+}
+
+function sleepWithAbort(ms, signal) {
+  const waitMs = Math.max(1, Math.ceil(Number(ms) || 0));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      fn();
+    };
+    const onAbort = () => done(() => reject(buildRequestAbortError('Request aborted while waiting for Massive rate-limit slot')));
+    const timer = setTimeout(() => done(resolve), waitMs);
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+async function acquireMassiveRateLimitSlot(signal) {
+  while (true) {
+    if (signal && signal.aborted) {
+      throw buildRequestAbortError('Request aborted while waiting for Massive rate-limit slot');
+    }
+    const now = Date.now();
+    refillMassiveRateTokens(now);
+    if (massiveRateTokens >= 1) {
+      massiveRateTokens -= 1;
+      return;
+    }
+    const missingTokens = Math.max(0, 1 - massiveRateTokens);
+    const waitMs = Math.ceil((missingTokens * 1000) / MASSIVE_MAX_REQUESTS_PER_SECOND);
+    await sleepWithAbort(Math.max(1, waitMs), signal);
+  }
+}
+
 function isFmpRateLimitedError(err) {
   const message = String(err && err.message ? err.message : err || '');
   return /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message)
@@ -1119,6 +1187,7 @@ async function fetchFmpJson(url, label, options = {}) {
   }
 
   const externalSignal = options && options.signal ? options.signal : null;
+  await acquireMassiveRateLimitSlot(externalSignal);
   const controller = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
