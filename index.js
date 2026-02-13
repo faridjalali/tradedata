@@ -3926,27 +3926,28 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
 
   const nowMs = Date.now();
   const lookbackDays = getIntradayLookbackDays('1day');
-  const dailyInput = await buildDailyDivergenceSummaryInput({
-    ticker,
-    vdSourceInterval,
-    lookbackDays
-  });
-  const maxTradeDateKey = latestCompletedPacificTradeDateKey(new Date(nowMs));
-  const summary = computeDivergenceSummaryStatesFromDailyResult(dailyInput, {
-    maxTradeDateKey
-  });
-  const latestDailyBar = buildLatestDailyBarSnapshotForTicker({
+  const asOfTradeDate = resolveLastClosedDailyCandleDate(new Date(nowMs));
+  const dailyRows = await buildDivergenceDailyRowsForTicker({
     ticker,
     sourceInterval: vdSourceInterval,
-    maxTradeDateKey,
-    dailyInput
+    lookbackDays,
+    asOfTradeDate,
+    parentInterval: '1day',
+    noCache: true
   });
-  const tradeDate = String(latestDailyBar?.trade_date || summary.tradeDate || '').trim() || null;
+  const filteredRows = Array.isArray(dailyRows)
+    ? dailyRows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
+    : [];
+  const latestDailyBar = filteredRows.length > 0 ? filteredRows[filteredRows.length - 1] : null;
+  const states = filteredRows.length >= 2
+    ? classifyDivergenceStateMapFromDailyRows(filteredRows)
+    : buildNeutralDivergenceStateMap();
+  const tradeDate = String(latestDailyBar?.trade_date || asOfTradeDate || '').trim() || null;
   const entry = {
     ticker,
     sourceInterval: vdSourceInterval,
     tradeDate,
-    states: summary.states,
+    states,
     computedAtMs: nowMs,
     expiresAtMs: nextPacificDivergenceRefreshUtcMs(new Date(nowMs))
   };
@@ -5359,7 +5360,7 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   const noCache = options && options.noCache === true;
   if (!ticker) return [];
 
-  const parentFetchInterval = options.parentInterval || '4hour';
+  const parentFetchInterval = options.parentInterval || '1day';
   const [parentRows, sourceRows] = await Promise.all([
     dataApiIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal, noCache }),
     dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal, noCache })
