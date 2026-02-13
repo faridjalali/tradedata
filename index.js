@@ -474,7 +474,7 @@ const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
     Number(process.env.DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE) || 100
   )
 );
-const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 100);
+const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -1744,13 +1744,15 @@ if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
 }
 
 async function fmpIntraday(symbol, interval, options = {}) {
-  const { from, to, signal } = options;
+  const { from, to, signal, noCache = false } = options;
 
   // Check cache first to avoid redundant API calls
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
-  const cached = getTimedCacheValue(CHART_DATA_CACHE, cacheKey);
-  if (cached) {
-    return cached;
+  if (!noCache) {
+    const cached = getTimedCacheValue(CHART_DATA_CACHE, cacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
   const urls = [buildMassiveAggregateRangeUrl(symbol, interval, { from, to })];
@@ -1773,7 +1775,7 @@ async function fmpIntraday(symbol, interval, options = {}) {
   const result = normalized.length ? normalized : null;
 
   // Cache the result with smart expiry
-  if (result) {
+  if (result && !noCache) {
     const expiryMs = getVdRsiCacheExpiryMs(new Date());
     setTimedCacheValue(CHART_DATA_CACHE, cacheKey, result, expiryMs);
   }
@@ -1799,6 +1801,7 @@ const CHART_INTRADAY_SLICE_DAYS = {
 
 async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
   const signal = options && options.signal ? options.signal : null;
+  const noCache = options && options.noCache === true;
   const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
@@ -1817,7 +1820,8 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       const rows = await fmpIntraday(symbol, interval, {
         from: formatDateUTC(sliceStart),
         to: formatDateUTC(sliceEnd),
-        signal
+        signal,
+        noCache
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
@@ -1846,7 +1850,7 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
   if (byDateTime.size === 0) {
     // Fallback to a single request without date filters if slicing returned nothing.
     try {
-      return await fmpIntraday(symbol, interval, { signal });
+      return await fmpIntraday(symbol, interval, { signal, noCache });
     } catch (fallbackErr) {
       if (lastSliceError) throw lastSliceError;
       throw fallbackErr;
@@ -4956,12 +4960,13 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
   const asOfTradeDate = String(options.asOfTradeDate || '').trim();
   const signal = options && options.signal ? options.signal : null;
+  const noCache = options && options.noCache === true;
   if (!ticker) return [];
 
   const parentFetchInterval = '4hour';
   const [parentRows, sourceRows] = await Promise.all([
-    fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal }),
-    fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal })
+    fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal, noCache }),
+    fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal, noCache })
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
@@ -5180,6 +5185,8 @@ async function runDivergenceTableBuild(options = {}) {
         }
 
         const chunk = backfillTickers.slice(backfillOffset, backfillOffset + DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE);
+        const chunkStartOffset = backfillOffset;
+        let chunkProcessed = 0;
         await mapWithConcurrency(
           chunk,
           DIVERGENCE_TABLE_BUILD_CONCURRENCY,
@@ -5189,7 +5196,8 @@ async function runDivergenceTableBuild(options = {}) {
               sourceInterval,
               lookbackDays: requestedLookbackDays,
               asOfTradeDate,
-              signal: tableAbortController.signal
+              signal: tableAbortController.signal,
+              noCache: true
             });
             if (rows.length > 0) {
               await upsertDivergenceDailyBarsBatch(rows, null);
@@ -5197,8 +5205,13 @@ async function runDivergenceTableBuild(options = {}) {
             return { ticker, rowCount: rows.length };
           },
           (result, _index, ticker) => {
+            chunkProcessed += 1;
+            backfillOffset = Math.min(backfillTickers.length, chunkStartOffset + chunkProcessed);
+            processedTickers = backfillOffset;
+            divergenceTableBuildStatus.processedTickers = processedTickers;
             if (result && result.error) {
               if (isAbortError(result.error) && divergenceTableBuildStopRequested) {
+                persistResumeState();
                 return;
               }
               errorTickers += 1;
@@ -5206,13 +5219,9 @@ async function runDivergenceTableBuild(options = {}) {
               const message = result.error && result.error.message ? result.error.message : String(result.error);
               console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
             }
+            persistResumeState();
           }
         );
-
-        backfillOffset += chunk.length;
-        processedTickers = backfillOffset;
-        divergenceTableBuildStatus.processedTickers = processedTickers;
-        persistResumeState();
       }
 
       rowsByTicker = await loadDivergenceDailyHistoryByTicker({
@@ -5525,6 +5534,8 @@ async function runDivergenceFetchAllData(options = {}) {
       }
 
       const chunk = tickers.slice(i, i + chunkSize);
+      const chunkStartProcessed = processedTickers;
+      let chunkSettledCount = 0;
       const batchResults = await mapWithConcurrency(
         chunk,
         DIVERGENCE_TABLE_BUILD_CONCURRENCY,
@@ -5534,9 +5545,18 @@ async function runDivergenceFetchAllData(options = {}) {
             sourceInterval,
             lookbackDays: requestedLookbackDays,
             asOfTradeDate,
-            signal: fetchAllAbortController.signal
+            signal: fetchAllAbortController.signal,
+            noCache: true
           });
           return { ticker, rows };
+        },
+        () => {
+          chunkSettledCount += 1;
+          processedTickers = Math.min(totalTickers, chunkStartProcessed + chunkSettledCount);
+          divergenceFetchAllDataStatus.processedTickers = processedTickers;
+          divergenceFetchAllDataStatus.errorTickers = errorTickers;
+          divergenceFetchAllDataStatus.status = 'running';
+          persistResumeState(processedTickers);
         }
       );
 
@@ -5547,7 +5567,6 @@ async function runDivergenceFetchAllData(options = {}) {
       for (let j = 0; j < chunk.length; j++) {
         const result = batchResults[j];
         const ticker = chunk[j];
-        processedTickers += 1;
 
         if (result && result.error) {
           if (isAbortError(result.error) && divergenceFetchAllDataStopRequested) {
@@ -5593,6 +5612,7 @@ async function runDivergenceFetchAllData(options = {}) {
       await upsertDivergenceSummaryBatch(summaryRows, null);
       await syncOneDaySignalsFromSummaryRows(summaryRows, sourceInterval, null);
 
+      processedTickers = Math.min(totalTickers, chunkStartProcessed + chunk.length);
       divergenceFetchAllDataStatus.processedTickers = processedTickers;
       divergenceFetchAllDataStatus.errorTickers = errorTickers;
       divergenceFetchAllDataStatus.status = 'running';
