@@ -458,13 +458,15 @@ const divergencePool = divergenceDatabaseUrl
 const DIVERGENCE_SOURCE_INTERVAL = '1min';
 const DIVERGENCE_SCAN_PARENT_INTERVAL = '1day';
 const DIVERGENCE_SCAN_LOOKBACK_DAYS = 45;
-const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(1, Number(process.env.DIVERGENCE_SCAN_SPREAD_MINUTES) || 15);
-const DIVERGENCE_SCAN_CONCURRENCY = 1; // keep sequential to respect API limits
+const DIVERGENCE_SCAN_SPREAD_MINUTES = Math.max(0, Number(process.env.DIVERGENCE_SCAN_SPREAD_MINUTES) || 0);
+const DIVERGENCE_SCAN_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SCAN_CONCURRENCY) || 128);
+const DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY = Math.max(25, Number(process.env.DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY) || 500);
 const DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS = Math.max(45, Number(process.env.DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS) || 60);
-const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 2);
+const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 64);
 const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(29, Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29);
 const DIVERGENCE_SCANNER_ENABLED = String(process.env.DIVERGENCE_SCANNER_ENABLED || 'true').toLowerCase() !== 'false';
 const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
+const DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE = Math.max(100, Number(process.env.DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) || 2000);
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -1344,7 +1346,7 @@ const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHAR
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
 const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
-const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 6);
+const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 64);
 const DIVERGENCE_SUMMARY_CACHE = new Map();
 
 function easternLocalToUtcMs(year, month, day, hour, minute) {
@@ -4085,11 +4087,18 @@ async function rebuildDivergenceSummariesForTradeDate(options = {}) {
     });
   }
 
-  const batchSize = 500;
-  for (let i = 0; i < summaryRows.length; i += batchSize) {
-    const chunk = summaryRows.slice(i, i + batchSize);
-    await upsertDivergenceSummaryBatch(chunk, scanJobId);
+  const summaryBatches = [];
+  for (let i = 0; i < summaryRows.length; i += DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) {
+    summaryBatches.push(summaryRows.slice(i, i + DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE));
   }
+  await mapWithConcurrency(
+    summaryBatches,
+    DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
+    async (batch) => {
+      await upsertDivergenceSummaryBatch(batch, scanJobId);
+      return null;
+    }
+  );
   return { asOfTradeDate, processedTickers: summaryRows.length };
 }
 
@@ -4444,10 +4453,18 @@ async function runDivergenceTableBuild(options = {}) {
       }
     }
 
-    const batchSize = 500;
-    for (let i = 0; i < summaryRows.length; i += batchSize) {
-      await upsertDivergenceSummaryBatch(summaryRows.slice(i, i + batchSize), null);
+    const summaryBatches = [];
+    for (let i = 0; i < summaryRows.length; i += DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) {
+      summaryBatches.push(summaryRows.slice(i, i + DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE));
     }
+    await mapWithConcurrency(
+      summaryBatches,
+      DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
+      async (batch) => {
+        await upsertDivergenceSummaryBatch(batch, null);
+        return null;
+      }
+    );
 
     if (lastPublishedTradeDate) {
       await publishDivergenceTradeDate({
@@ -4544,11 +4561,12 @@ async function runDailyDivergenceScan(options = {}) {
       return { status: 'completed', runDate, processed: 0 };
     }
 
-    const targetSpacingMs = Math.max(0, Math.floor((DIVERGENCE_SCAN_SPREAD_MINUTES * 60 * 1000) / totalSymbols));
+    const targetSpacingMs = DIVERGENCE_SCAN_SPREAD_MINUTES > 0
+      ? Math.max(0, Math.floor((DIVERGENCE_SCAN_SPREAD_MINUTES * 60 * 1000) / totalSymbols))
+      : 0;
 
     for (let i = 0; i < symbols.length; i += DIVERGENCE_SCAN_CONCURRENCY) {
       const batch = symbols.slice(i, i + DIVERGENCE_SCAN_CONCURRENCY);
-      const startedAt = Date.now();
       const batchResults = await Promise.all(batch.map(async (ticker) => {
         try {
           const outcome = await computeSymbolDivergenceSignals(ticker);
@@ -4580,10 +4598,12 @@ async function runDailyDivergenceScan(options = {}) {
           if (signal.signal_type === 'bearish') bearishCount += 1;
         }
       }
-      await upsertDivergenceDailyBarsBatch(batchDailyBars, scanJobId);
-      await upsertDivergenceSignalsBatch(batchSignals, scanJobId);
+      await Promise.all([
+        upsertDivergenceDailyBarsBatch(batchDailyBars, scanJobId),
+        upsertDivergenceSignalsBatch(batchSignals, scanJobId)
+      ]);
 
-      if (scanJobId && (processed % 50 === 0 || processed === totalSymbols)) {
+      if (scanJobId && (processed % DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY === 0 || processed === totalSymbols)) {
         await updateDivergenceScanJob(scanJobId, {
           processed_symbols: processed,
           bullish_count: bullishCount,
@@ -4593,9 +4613,8 @@ async function runDailyDivergenceScan(options = {}) {
         });
       }
 
-      const elapsed = Date.now() - startedAt;
-      if (targetSpacingMs > elapsed) {
-        await sleep(targetSpacingMs - elapsed);
+      if (targetSpacingMs > 0) {
+        await sleep(targetSpacingMs);
       }
     }
 
