@@ -351,6 +351,15 @@ function summarizeFetchAllStatus(status: DivergenceScanStatus): string {
     const batchText = batchTotal > 0
         ? ` B${Math.min(batchNow || (batchDone + 1), batchTotal)}/${batchTotal}`
         : '';
+    if (fetchAllState === 'queued-restart') {
+        return batchTotal > 0 ? `Restart queued${batchText}` : 'Restart queued';
+    }
+    if (fetchAllState === 'stopping') {
+        const processed = Number(fetchAll.processed_tickers || 0);
+        const total = Number(fetchAll.total_tickers || 0);
+        if (total > 0) return `Stopping ${processed}/${total}${batchText}`;
+        return 'Stopping';
+    }
     if (fetchAllState === 'stopped') {
         return 'All data stopped';
     }

@@ -173,8 +173,7 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())) {
+      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -313,7 +312,8 @@ function registerDivergenceRoutes(options = {}) {
 
     runDivergenceFetchAllData({
       trigger: 'manual-api',
-      continueFromFailedBatch: true
+      continueFromFailedBatch: true,
+      queueIfRunning: true
     })
       .then((summary) => {
         console.log('Manual divergence fetch-all completed:', summary);

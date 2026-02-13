@@ -513,6 +513,7 @@ let divergenceFetchAllDataPauseRequested = false;
 let divergenceFetchAllDataStopRequested = false;
 let divergenceFetchAllDataResumeState = null;
 let divergenceFetchAllDataAbortController = null;
+let divergenceFetchAllDataQueuedStartOptions = null;
 let divergenceFetchAllDataStatus = {
   running: false,
   status: 'idle',
@@ -3634,7 +3635,7 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval, o
   return map;
 }
 
-async function mapWithConcurrency(items, concurrency, worker, onSettled) {
+async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldStop) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) return [];
   const maxConcurrency = Math.max(1, Math.min(list.length, Number(concurrency) || 1));
@@ -3643,6 +3644,13 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled) {
 
   async function runOneWorker() {
     while (cursor < list.length) {
+      if (typeof shouldStop === 'function') {
+        try {
+          if (shouldStop()) break;
+        } catch {
+          // Ignore stop-check callback errors and continue processing.
+        }
+      }
       const currentIndex = cursor;
       cursor += 1;
       try {
@@ -4732,8 +4740,7 @@ function canResumeDivergenceTableBuild() {
 }
 
 function getDivergenceFetchAllDataStatus() {
-  const statusValue = String(divergenceFetchAllDataStatus.status || 'idle').toLowerCase();
-  const displayRunning = Boolean(divergenceFetchAllDataRunning) && statusValue !== 'stopped';
+  const displayRunning = Boolean(divergenceFetchAllDataRunning);
   return {
     running: displayRunning,
     pause_requested: Boolean(divergenceFetchAllDataPauseRequested),
@@ -4786,10 +4793,11 @@ function requestStopDivergenceFetchAllData() {
   divergenceFetchAllDataStopRequested = true;
   divergenceFetchAllDataPauseRequested = false;
   divergenceFetchAllDataResumeState = null;
+  divergenceFetchAllDataQueuedStartOptions = null;
   divergenceFetchAllDataStatus = {
     ...divergenceFetchAllDataStatus,
-    status: 'stopped',
-    finishedAt: new Date().toISOString()
+    status: 'stopping',
+    finishedAt: null
   };
   if (divergenceFetchAllDataAbortController && !divergenceFetchAllDataAbortController.signal.aborted) {
     try {
@@ -5584,7 +5592,24 @@ async function runDivergenceFetchAllData(options = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (divergenceScanRunning || divergenceTableBuildRunning || divergenceFetchAllDataRunning) {
+  if (divergenceScanRunning || divergenceTableBuildRunning) {
+    return { status: 'running' };
+  }
+  if (divergenceFetchAllDataRunning) {
+    if (options && options.queueIfRunning === true) {
+      divergenceFetchAllDataQueuedStartOptions = {
+        trigger: String(options.trigger || 'manual-api-queued'),
+        sourceInterval: String(options.sourceInterval || ''),
+        lookbackDays: Number(options.lookbackDays) || undefined,
+        asOfTradeDate: String(options.asOfTradeDate || ''),
+        continueFromFailedBatch: options.continueFromFailedBatch !== false
+      };
+      divergenceFetchAllDataStatus = {
+        ...divergenceFetchAllDataStatus,
+        status: divergenceFetchAllDataStopRequested ? 'stopping' : 'queued-restart'
+      };
+      return { status: 'queued' };
+    }
     return { status: 'running' };
   }
 
@@ -5840,7 +5865,8 @@ async function runDivergenceFetchAllData(options = {}) {
                   return;
                 }
               }
-            }
+            },
+            () => divergenceFetchAllDataStopRequested || divergenceFetchAllDataPauseRequested || attemptController.signal.aborted
           );
         } finally {
           stallWatchdog.stop();
@@ -5895,6 +5921,18 @@ async function runDivergenceFetchAllData(options = {}) {
       const neutralStates = buildNeutralDivergenceStateMap();
 
       for (let j = 0; j < chunk.length; j++) {
+        if (divergenceFetchAllDataStopRequested) {
+          processedTickers = chunkStartProcessed;
+          divergenceFetchAllDataStatus.processedTickers = processedTickers;
+          persistResumeState(processedTickers);
+          return markStopped(processedTickers);
+        }
+        if (divergenceFetchAllDataPauseRequested) {
+          processedTickers = chunkStartProcessed;
+          divergenceFetchAllDataStatus.processedTickers = processedTickers;
+          persistResumeState(processedTickers);
+          return markPaused(processedTickers);
+        }
         const result = batchResults[j];
         const ticker = chunk[j];
 
@@ -5936,6 +5974,19 @@ async function runDivergenceFetchAllData(options = {}) {
           latest_volume_delta: Number(latestRow.volume_delta)
         });
         lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRow.trade_date);
+      }
+
+      if (divergenceFetchAllDataStopRequested) {
+        processedTickers = chunkStartProcessed;
+        divergenceFetchAllDataStatus.processedTickers = processedTickers;
+        persistResumeState(processedTickers);
+        return markStopped(processedTickers);
+      }
+      if (divergenceFetchAllDataPauseRequested) {
+        processedTickers = chunkStartProcessed;
+        divergenceFetchAllDataStatus.processedTickers = processedTickers;
+        persistResumeState(processedTickers);
+        return markPaused(processedTickers);
       }
 
       await upsertDivergenceDailyBarsBatch(batchDailyRows, null);
@@ -6098,6 +6149,21 @@ async function runDivergenceFetchAllData(options = {}) {
       divergenceFetchAllDataAbortController = null;
     }
     divergenceFetchAllDataRunning = false;
+    const queuedOptions = divergenceFetchAllDataQueuedStartOptions;
+    if (queuedOptions) {
+      divergenceFetchAllDataQueuedStartOptions = null;
+      if (!divergenceScanRunning && !divergenceTableBuildRunning && !divergenceFetchAllDataRunning) {
+        setTimeout(() => {
+          runDivergenceFetchAllData({
+            ...queuedOptions,
+            queueIfRunning: false
+          }).catch((queuedErr) => {
+            const message = queuedErr && queuedErr.message ? queuedErr.message : String(queuedErr);
+            console.error(`Queued fetch-all restart failed: ${message}`);
+          });
+        }, 0);
+      }
+    }
   }
 }
 
