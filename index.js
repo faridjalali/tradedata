@@ -487,6 +487,7 @@ let divergenceTableBuildRunning = false;
 let divergenceTableBuildPauseRequested = false;
 let divergenceTableBuildStopRequested = false;
 let divergenceTableBuildResumeState = null;
+let divergenceTableBuildAbortController = null;
 let divergenceTableBuildStatus = {
   running: false,
   status: 'idle',
@@ -1065,6 +1066,15 @@ function isFmpPausedError(err) {
   return Boolean(err && err.isFmpPaused);
 }
 
+function isAbortError(err) {
+  if (!err) return false;
+  const name = String(err.name || '');
+  const message = String(err.message || err || '');
+  return name === 'AbortError'
+    || Number(err.httpStatus) === 499
+    || /aborted|aborterror/i.test(message);
+}
+
 function isFmpRateLimitedError(err) {
   const message = String(err && err.message ? err.message : err || '');
   return /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message)
@@ -1086,14 +1096,33 @@ function withMassiveApiKey(url) {
   return parsed.toString();
 }
 
-async function fetchFmpJson(url, label) {
+async function fetchFmpJson(url, label, options = {}) {
   assertFmpKey();
   if (isFmpRequestsPaused()) {
     throw buildFmpPausedError(`${label} requests are paused by server configuration`);
   }
 
+  const externalSignal = options && options.signal ? options.signal : null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MASSIVE_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, MASSIVE_TIMEOUT_MS);
+  const forwardAbort = () => {
+    try {
+      controller.abort();
+    } catch {
+      // Ignore duplicate abort errors.
+    }
+  };
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      forwardAbort();
+    } else {
+      externalSignal.addEventListener('abort', forwardAbort, { once: true });
+    }
+  }
   try {
     const requestUrl = withMassiveApiKey(url);
     const resp = await fetch(requestUrl, { signal: controller.signal });
@@ -1107,30 +1136,57 @@ async function fetchFmpJson(url, label) {
         throw buildFmpRateLimitedError(`${label} request failed (429): ${bodyText || 'Too Many Requests'}`);
       }
       const details = bodyText || `HTTP ${resp.status}`;
-      throw new Error(`${label} request failed (${resp.status}): ${details}`);
+      const error = new Error(`${label} request failed (${resp.status}): ${details}`);
+      error.httpStatus = resp.status;
+      if (resp.status === 403 && /plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(details)) {
+        error.isFmpSubscriptionRestricted = true;
+      }
+      throw error;
     }
 
     if (apiError) {
       if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
         throw buildFmpRateLimitedError(`${label} request failed (429): ${apiError}`);
       }
-      throw new Error(`${label} API error: ${apiError}`);
+      const error = new Error(`${label} API error: ${apiError}`);
+      if (/plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(apiError)) {
+        error.isFmpSubscriptionRestricted = true;
+      }
+      throw error;
     }
 
     return payload;
+  } catch (err) {
+    if (isAbortError(err)) {
+      if (externalSignal && externalSignal.aborted) {
+        const abortError = new Error(`${label} request aborted`);
+        abortError.name = 'AbortError';
+        abortError.httpStatus = 499;
+        throw abortError;
+      }
+      if (timedOut) {
+        const timeoutError = new Error(`${label} request timed out after ${MASSIVE_TIMEOUT_MS}ms`);
+        timeoutError.httpStatus = 504;
+        throw timeoutError;
+      }
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', forwardAbort);
+    }
   }
 }
 
-async function fetchFmpArrayWithFallback(label, urls) {
+async function fetchFmpArrayWithFallback(label, urls, options = {}) {
   assertFmpKey();
   let lastError = null;
   let sawEmptyResult = false;
 
   for (const url of urls) {
     try {
-      const payload = await fetchFmpJson(url, label);
+      const payload = await fetchFmpJson(url, label, options);
       const rows = toArrayPayload(payload);
       if (!rows) {
         throw new Error(`${label} returned unexpected payload shape`);
@@ -1336,7 +1392,8 @@ function addUtcDays(date, days) {
 
 function isFmpSubscriptionRestrictedError(err) {
   const message = String(err && err.message ? err.message : err || '');
-  return /Restricted Endpoint|Legacy Endpoint|current subscription/i.test(message);
+  return Boolean(err && err.isFmpSubscriptionRestricted)
+    || /Restricted Endpoint|Legacy Endpoint|current subscription|plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|data timeframe/i.test(message);
 }
 
 const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
@@ -1603,7 +1660,7 @@ if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
 }
 
 async function fmpIntraday(symbol, interval, options = {}) {
-  const { from, to } = options;
+  const { from, to, signal } = options;
 
   // Check cache first to avoid redundant API calls
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
@@ -1613,7 +1670,7 @@ async function fmpIntraday(symbol, interval, options = {}) {
   }
 
   const urls = [buildMassiveAggregateRangeUrl(symbol, interval, { from, to })];
-  const rows = await fetchFmpArrayWithFallback(`Massive ${interval}`, urls);
+  const rows = await fetchFmpArrayWithFallback(`Massive ${interval}`, urls, { signal });
   const normalized = rows.map((row) => {
     const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
     const close = toNumberOrNull(row.c ?? row.close ?? row.price);
@@ -1656,7 +1713,8 @@ const CHART_INTRADAY_SLICE_DAYS = {
   '4hour': 45
 };
 
-async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
+async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
+  const signal = options && options.signal ? options.signal : null;
   const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
@@ -1674,7 +1732,8 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
     try {
       const rows = await fmpIntraday(symbol, interval, {
         from: formatDateUTC(sliceStart),
-        to: formatDateUTC(sliceEnd)
+        to: formatDateUTC(sliceEnd),
+        signal
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
@@ -1687,6 +1746,9 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
       }
     } catch (err) {
       lastSliceError = err;
+      if (isAbortError(err)) {
+        throw err;
+      }
       const message = err && err.message ? err.message : String(err);
       console.error(`Massive ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
       if (isFmpSubscriptionRestrictedError(err) || isFmpRateLimitedError(err) || isFmpPausedError(err)) {
@@ -1700,7 +1762,7 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
   if (byDateTime.size === 0) {
     // Fallback to a single request without date filters if slicing returned nothing.
     try {
-      return await fmpIntraday(symbol, interval);
+      return await fmpIntraday(symbol, interval, { signal });
     } catch (fallbackErr) {
       if (lastSliceError) throw lastSliceError;
       throw fallbackErr;
@@ -1710,30 +1772,39 @@ async function fmpIntradayChartHistorySingle(symbol, interval, lookbackDays = CH
   return Array.from(byDateTime.values()).sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
 }
 
-async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS) {
-  const candidates = getFmpSymbolCandidates(symbol);
+async function fmpIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
+  const requestedInterval = String(interval || '').trim();
+  const intervalCandidates = [requestedInterval];
   let lastError = null;
 
-  for (const candidate of candidates) {
-    try {
-      const rows = await fmpIntradayChartHistorySingle(candidate, interval, lookbackDays);
-      if (rows && rows.length > 0) {
-        if (candidate !== normalizeTickerSymbol(symbol)) {
-          console.log(`Massive symbol fallback (${interval}): ${symbol} -> ${candidate}`);
+  for (const intervalCandidate of intervalCandidates) {
+    const symbolCandidates = getFmpSymbolCandidates(symbol);
+    for (const candidate of symbolCandidates) {
+      try {
+        const rows = await fmpIntradayChartHistorySingle(candidate, intervalCandidate, lookbackDays, options);
+        if (rows && rows.length > 0) {
+          if (candidate !== normalizeTickerSymbol(symbol)) {
+            console.log(`Massive symbol fallback (${intervalCandidate}): ${symbol} -> ${candidate}`);
+          }
+          return rows;
         }
-        return rows;
-      }
-    } catch (err) {
-      lastError = err;
-      const message = err && err.message ? err.message : String(err);
-      console.error(`Massive ${interval} history failed for ${candidate} (requested ${symbol}): ${message}`);
-      if (isFmpRateLimitedError(err) || isFmpPausedError(err)) {
-        throw err;
+      } catch (err) {
+        lastError = err;
+        if (isAbortError(err)) {
+          throw err;
+        }
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Massive ${intervalCandidate} history failed for ${candidate} (requested ${symbol}): ${message}`);
+        if (isFmpRateLimitedError(err) || isFmpPausedError(err)) {
+          throw err;
+        }
       }
     }
   }
 
-  if (lastError) throw lastError;
+  if (lastError) {
+    throw lastError;
+  }
   return [];
 }
 
@@ -4433,8 +4504,31 @@ function requestPauseDivergenceTableBuild() {
 }
 
 function requestStopDivergenceTableBuild() {
-  if (!divergenceTableBuildRunning) return false;
+  if (!divergenceTableBuildRunning) {
+    if (!divergenceTableBuildResumeState) {
+      return false;
+    }
+    divergenceTableBuildPauseRequested = false;
+    divergenceTableBuildStopRequested = false;
+    divergenceTableBuildResumeState = null;
+    divergenceTableBuildStatus = {
+      ...divergenceTableBuildStatus,
+      running: false,
+      status: 'stopped',
+      finishedAt: new Date().toISOString()
+    };
+    return true;
+  }
   divergenceTableBuildStopRequested = true;
+  divergenceTableBuildPauseRequested = false;
+  divergenceTableBuildStatus.status = 'stopping';
+  if (divergenceTableBuildAbortController && !divergenceTableBuildAbortController.signal.aborted) {
+    try {
+      divergenceTableBuildAbortController.abort();
+    } catch {
+      // Ignore duplicate aborts.
+    }
+  }
   return true;
 }
 
@@ -4720,12 +4814,13 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
   const asOfTradeDate = String(options.asOfTradeDate || '').trim();
+  const signal = options && options.signal ? options.signal : null;
   if (!ticker) return [];
 
   const parentFetchInterval = '4hour';
   const [parentRows, sourceRows] = await Promise.all([
-    fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays),
-    fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays)
+    fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal }),
+    fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal })
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
@@ -4787,6 +4882,8 @@ async function runDivergenceTableBuild(options = {}) {
   let totalTickers = 0;
   let lastPublishedTradeDate = resumeState?.lastPublishedTradeDate || '';
   const startedAtIso = new Date().toISOString();
+  const tableAbortController = new AbortController();
+  divergenceTableBuildAbortController = tableAbortController;
   divergenceTableBuildStatus = {
     running: true,
     status: resumeState?.phase || 'running',
@@ -4938,7 +5035,8 @@ async function runDivergenceTableBuild(options = {}) {
               ticker,
               sourceInterval,
               lookbackDays: requestedLookbackDays,
-              asOfTradeDate
+              asOfTradeDate,
+              signal: tableAbortController.signal
             });
             if (rows.length > 0) {
               await upsertDivergenceDailyBarsBatch(rows, null);
@@ -4947,6 +5045,9 @@ async function runDivergenceTableBuild(options = {}) {
           },
           (result, _index, ticker) => {
             if (result && result.error) {
+              if (isAbortError(result.error) && divergenceTableBuildStopRequested) {
+                return;
+              }
               const message = result.error && result.error.message ? result.error.message : String(result.error);
               console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
             }
@@ -5091,6 +5192,9 @@ async function runDivergenceTableBuild(options = {}) {
     }
     throw err;
   } finally {
+    if (divergenceTableBuildAbortController === tableAbortController) {
+      divergenceTableBuildAbortController = null;
+    }
     divergenceTableBuildRunning = false;
   }
 }
