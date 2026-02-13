@@ -1105,6 +1105,15 @@ button:hover {
   overflow: hidden;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  #ticker-view,
+  #ticker-view * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 #price-chart-container,
 #vd-rsi-chart-container,
 #rsi-chart-container,

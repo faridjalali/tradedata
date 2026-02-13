@@ -1924,6 +1924,60 @@ function setPaneTrendlineToolActive(pane: TrendToolPane, active: boolean): void 
   setPaneToolButtonActive(pane, 'trend', active);
 }
 
+function getTrendlineCrosshairCueTime(): string | number | null {
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
+  const fallbackTime = currentBars[currentBars.length - 1]?.time;
+  if (typeof fallbackTime !== 'string' && typeof fallbackTime !== 'number') return null;
+  if (!priceChart) return fallbackTime;
+
+  try {
+    const visibleRange = priceChart.timeScale().getVisibleLogicalRange?.();
+    const from = Number(visibleRange?.from);
+    const to = Number(visibleRange?.to);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) {
+      return fallbackTime;
+    }
+    const centerIndex = Math.round((from + to) / 2);
+    const clampedIndex = Math.max(0, Math.min(currentBars.length - 1, centerIndex));
+    const candidateTime = currentBars[clampedIndex]?.time;
+    if (typeof candidateTime === 'string' || typeof candidateTime === 'number') {
+      return candidateTime;
+    }
+  } catch {
+    // Fall through to last bar cue.
+  }
+
+  return fallbackTime;
+}
+
+function primeRsiTrendlineCrosshairCue(): void {
+  if (!rsiChart) return;
+  const cueTime = getTrendlineCrosshairCueTime();
+  if (cueTime === null) return;
+  const cueValue = getNearestMappedValueAtOrBefore(cueTime, rsiByTime);
+  const chart = rsiChart.getChart?.();
+  const series = rsiChart.getSeries?.();
+  if (!chart || !series || !Number.isFinite(cueValue)) return;
+  try {
+    chart.setCrosshairPosition(Number(cueValue), cueTime, series);
+  } catch {
+    // Ignore transient cue placement errors.
+  }
+}
+
+function primeVolumeDeltaRsiTrendlineCrosshairCue(): void {
+  if (!volumeDeltaRsiChart || !volumeDeltaRsiSeries) return;
+  const cueTime = getTrendlineCrosshairCueTime();
+  if (cueTime === null) return;
+  const cueValue = getNearestMappedValueAtOrBefore(cueTime, volumeDeltaRsiByTime);
+  if (!Number.isFinite(cueValue)) return;
+  try {
+    volumeDeltaRsiChart.setCrosshairPosition(Number(cueValue), cueTime, volumeDeltaRsiSeries);
+  } catch {
+    // Ignore transient cue placement errors.
+  }
+}
+
 function toggleRSITrendlineTool(): void {
   if (!rsiChart) return;
   if (rsiDivergenceToolActive) {
@@ -1938,6 +1992,7 @@ function toggleRSITrendlineTool(): void {
   rsiChart.activateDivergenceTool();
   rsiDivergenceToolActive = true;
   setPaneTrendlineToolActive('rsi', true);
+  primeRsiTrendlineCrosshairCue();
 }
 
 function clearRSITrendlines(): void {
@@ -1960,6 +2015,7 @@ function toggleVolumeDeltaRSITrendlineTool(): void {
   }
   activateVolumeDeltaDivergenceTool();
   setPaneTrendlineToolActive('volumeDeltaRsi', true);
+  primeVolumeDeltaRsiTrendlineCrosshairCue();
 }
 
 function clearVolumeDeltaRSITrendlines(): void {
