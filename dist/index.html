@@ -32,7 +32,7 @@
     ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-DKcT96aQ.js"></script>
+    <script type="module" crossorigin src="./assets/index-CeqOma7q.js"></script>
   </head>
   <body>
     <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
@@ -170,37 +170,44 @@
         <div id="live-controls">
           <div class="feed-controls-group">
             <button
+              class="tf-btn active"
+              id="btn-t"
+              data-tooltip="Alerts where signal trade date is today"
+            >
+              T
+            </button>
+            <button
+              class="tf-btn"
+              id="btn-y"
+              data-tooltip="Alerts where signal trade date is yesterday"
+            >
+              Y
+            </button>
+            <button
+              class="tf-btn"
+              id="btn-7"
+              data-tooltip="Alerts from the last 7 signal trade dates (including today)"
+            >
+              7
+            </button>
+            <button
               class="tf-btn"
               id="btn-30"
-              data-tooltip="Alerts from last 30 days"
+              data-tooltip="Alerts from the last 30 signal trade dates (including today)"
             >
               30
             </button>
             <button
               class="tf-btn"
-              id="btn-7"
-              data-tooltip="Alerts from last 7 days"
-            >
-              7
-            </button>
-            <button
-              class="tf-btn active"
-              id="btn-1"
-              data-tooltip="Alerts from today"
-            >
-              1
-            </button>
-            <button
-              class="tf-btn"
               id="btn-week"
-              data-tooltip="Alerts from this week"
+              data-tooltip="Alerts from selected week by signal trade date"
             >
               W
             </button>
             <button
               class="tf-btn"
               id="btn-month"
-              data-tooltip="Alerts from this month"
+              data-tooltip="Alerts from selected month by signal trade date"
             >
               M
             </button>
@@ -213,37 +220,44 @@
         <div id="divergence-controls" class="hidden">
           <div class="feed-controls-group">
             <button
+              class="tf-btn active"
+              id="divergence-btn-t"
+              data-tooltip="Divergence signals where signal trade date is today"
+            >
+              T
+            </button>
+            <button
+              class="tf-btn"
+              id="divergence-btn-y"
+              data-tooltip="Divergence signals where signal trade date is yesterday"
+            >
+              Y
+            </button>
+            <button
+              class="tf-btn"
+              id="divergence-btn-7"
+              data-tooltip="Divergence signals from the last 7 signal trade dates (including today)"
+            >
+              7
+            </button>
+            <button
               class="tf-btn"
               id="divergence-btn-30"
-              data-tooltip="Divergence signals from last 30 days"
+              data-tooltip="Divergence signals from the last 30 signal trade dates (including today)"
             >
               30
             </button>
             <button
               class="tf-btn"
-              id="divergence-btn-7"
-              data-tooltip="Divergence signals from last 7 days"
-            >
-              7
-            </button>
-            <button
-              class="tf-btn active"
-              id="divergence-btn-1"
-              data-tooltip="Divergence signals from today"
-            >
-              1
-            </button>
-            <button
-              class="tf-btn"
               id="divergence-btn-week"
-              data-tooltip="Divergence signals from this week"
+              data-tooltip="Divergence signals from selected week by signal trade date"
             >
               W
             </button>
             <button
               class="tf-btn"
               id="divergence-btn-month"
-              data-tooltip="Divergence signals from this month"
+              data-tooltip="Divergence signals from selected month by signal trade date"
             >
               M
             </button>

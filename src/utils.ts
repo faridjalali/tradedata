@@ -8,14 +8,7 @@ interface DateParts {
     day: number;
 }
 
-interface DateTimeParts extends DateParts {
-    hour: number;
-    minute: number;
-    second: number;
-}
-
 const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
-const dateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function getDateFormatterForTimeZone(timeZone: string): Intl.DateTimeFormat {
@@ -29,24 +22,6 @@ function getDateFormatterForTimeZone(timeZone: string): Intl.DateTimeFormat {
         day: '2-digit'
     });
     dateFormatterCache.set(key, formatter);
-    return formatter;
-}
-
-function getDateTimeFormatterForTimeZone(timeZone: string): Intl.DateTimeFormat {
-    const key = `${timeZone}|datetime`;
-    const cached = dateTimeFormatterCache.get(key);
-    if (cached) return cached;
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    });
-    dateTimeFormatterCache.set(key, formatter);
     return formatter;
 }
 
@@ -64,53 +39,19 @@ function getDatePartsForTimeZone(date: Date, timeZone: string): DateParts {
     };
 }
 
-function getDateTimePartsForTimeZone(date: Date, timeZone: string): DateTimeParts {
-    const parts = getDateTimeFormatterForTimeZone(timeZone).formatToParts(date);
-    return {
-        year: toNumberPart(parts, 'year'),
-        month: toNumberPart(parts, 'month'),
-        day: toNumberPart(parts, 'day'),
-        hour: toNumberPart(parts, 'hour'),
-        minute: toNumberPart(parts, 'minute'),
-        second: toNumberPart(parts, 'second')
-    };
+function formatDateKey(year: number, month: number, day: number): string {
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
-    const parts = getDateTimePartsForTimeZone(date, timeZone);
-    const asUtcMs = Date.UTC(
-        parts.year,
-        parts.month - 1,
-        parts.day,
-        parts.hour,
-        parts.minute,
-        parts.second,
-        0
+function shiftDateKey(dateKey: string, dayDelta: number): string {
+    const baseMs = dayKeyToUtcMs(dateKey);
+    if (!Number.isFinite(baseMs)) return '';
+    const shifted = new Date((baseMs as number) + (dayDelta * DAY_MS));
+    return formatDateKey(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth() + 1,
+        shifted.getUTCDate()
     );
-    return asUtcMs - date.getTime();
-}
-
-function zonedDateTimeToUtc(
-    year: number,
-    month: number,
-    day: number,
-    hour: number,
-    minute: number,
-    second: number,
-    millisecond: number,
-    timeZone: string
-): Date {
-    const baseUtcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
-    let utcMs = baseUtcMs;
-
-    for (let i = 0; i < 3; i++) {
-        const offsetMs = getTimeZoneOffsetMs(new Date(utcMs), timeZone);
-        const candidate = baseUtcMs - offsetMs;
-        if (candidate === utcMs) break;
-        utcMs = candidate;
-    }
-
-    return new Date(utcMs);
 }
 
 function dayKeyToUtcMs(dayKey: string): number | null {
@@ -145,6 +86,12 @@ export function getCurrentWeekISO(timeZone: string = getAppTimeZone()): string {
     const yearStart = new Date(Date.UTC(dateUtc.getUTCFullYear(), 0, 1));
     const weekNo = Math.ceil((((dateUtc.getTime() - yearStart.getTime()) / DAY_MS) + 1) / 7);
     return `${dateUtc.getUTCFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+}
+
+export function getCurrentDateISO(timeZone: string = getAppTimeZone()): string {
+    const now = new Date();
+    const parts = getDatePartsForTimeZone(now, timeZone);
+    return formatDateKey(parts.year, parts.month, parts.day);
 }
 
 export function getCurrentMonthISO(timeZone: string = getAppTimeZone()): string {
@@ -186,16 +133,27 @@ export function getDateRangeForMode(
     monthVal: string,
     timeZone: string = getAppTimeZone()
 ): { startDate: string, endDate: string } {
-    let startDate = '';
-    let endDate = '';
+    const today = getCurrentDateISO(timeZone);
+    if (!today) return { startDate: '', endDate: '' };
 
-    if (mode === '30' || mode === '7' || mode === '1') {
+    if (mode === 'today') {
+        return { startDate: today, endDate: today };
+    }
+
+    if (mode === 'yesterday') {
+        const yesterday = shiftDateKey(today, -1);
+        if (!yesterday) return { startDate: '', endDate: '' };
+        return { startDate: yesterday, endDate: yesterday };
+    }
+
+    if (mode === '30' || mode === '7') {
         const days = Math.max(1, Math.floor(Number(mode)));
-        const end = new Date();
-        const start = new Date(end.getTime() - (days * DAY_MS));
-        endDate = end.toISOString();
-        startDate = start.toISOString();
-    } else if (mode === 'week') {
+        const startDate = shiftDateKey(today, -(days - 1));
+        if (!startDate) return { startDate: '', endDate: '' };
+        return { startDate, endDate: today };
+    }
+
+    if (mode === 'week') {
         const match = String(weekVal || '').trim().match(/^(\d{4})-W(\d{2})$/);
         if (!match) return { startDate: '', endDate: '' };
         const year = Number(match[1]);
@@ -205,38 +163,22 @@ export function getDateRangeForMode(
         }
 
         const mondayUtc = getIsoWeekStartUtc(year, week);
-        const mondayYear = mondayUtc.getUTCFullYear();
-        const mondayMonth = mondayUtc.getUTCMonth() + 1;
-        const mondayDay = mondayUtc.getUTCDate();
-
         const sundayUtc = new Date(mondayUtc);
         sundayUtc.setUTCDate(mondayUtc.getUTCDate() + 6);
-        const sundayYear = sundayUtc.getUTCFullYear();
-        const sundayMonth = sundayUtc.getUTCMonth() + 1;
-        const sundayDay = sundayUtc.getUTCDate();
+        const startDate = formatDateKey(
+            mondayUtc.getUTCFullYear(),
+            mondayUtc.getUTCMonth() + 1,
+            mondayUtc.getUTCDate()
+        );
+        const endDate = formatDateKey(
+            sundayUtc.getUTCFullYear(),
+            sundayUtc.getUTCMonth() + 1,
+            sundayUtc.getUTCDate()
+        );
+        return { startDate, endDate };
+    }
 
-        startDate = zonedDateTimeToUtc(
-            mondayYear,
-            mondayMonth,
-            mondayDay,
-            0,
-            0,
-            0,
-            0,
-            timeZone
-        ).toISOString();
-
-        endDate = zonedDateTimeToUtc(
-            sundayYear,
-            sundayMonth,
-            sundayDay,
-            23,
-            59,
-            59,
-            999,
-            timeZone
-        ).toISOString();
-    } else {
+    if (mode === 'month') {
         const match = String(monthVal || '').trim().match(/^(\d{4})-(\d{2})$/);
         if (!match) return { startDate: '', endDate: '' };
         const year = Number(match[1]);
@@ -246,11 +188,13 @@ export function getDateRangeForMode(
         }
 
         const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-        startDate = zonedDateTimeToUtc(year, month, 1, 0, 0, 0, 0, timeZone).toISOString();
-        endDate = zonedDateTimeToUtc(year, month, lastDay, 23, 59, 59, 999, timeZone).toISOString();
+        return {
+            startDate: formatDateKey(year, month, 1),
+            endDate: formatDateKey(year, month, lastDay)
+        };
     }
 
-    return { startDate, endDate };
+    return { startDate: '', endDate: '' };
 }
 
 export function escapeHtml(s: string): string {

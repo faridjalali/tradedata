@@ -23,7 +23,7 @@ import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts
 import { refreshActiveTickerDivergenceSummary } from './chart';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
-let divergenceFeedMode: LiveFeedMode = '1';
+let divergenceFeedMode: LiveFeedMode = 'today';
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 let divergenceScanPollTimer: number | null = null;
@@ -921,7 +921,8 @@ export async function hydrateDivergenceTablesNow(): Promise<void> {
 }
 
 export function isCurrentDivergenceTimeframe(): boolean {
-    if (divergenceFeedMode === '30' || divergenceFeedMode === '7' || divergenceFeedMode === '1') return true;
+    if (divergenceFeedMode === 'today' || divergenceFeedMode === '30' || divergenceFeedMode === '7') return true;
+    if (divergenceFeedMode === 'yesterday') return false;
     if (divergenceFeedMode === 'week') {
         const val = (document.getElementById('divergence-history-week') as HTMLInputElement | null)?.value || '';
         return val === getCurrentWeekISO();

@@ -7,7 +7,7 @@ import { createAlertCard } from './components';
 import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
-let liveFeedMode: LiveFeedMode = '1'; 
+let liveFeedMode: LiveFeedMode = 'today';
 let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 
@@ -32,7 +32,8 @@ export function setLiveFeedModeState(mode: LiveFeedMode): void {
 }
 
 export function isCurrentTimeframe(): boolean {
-    if (liveFeedMode === '30' || liveFeedMode === '7' || liveFeedMode === '1') return true; 
+    if (liveFeedMode === 'today' || liveFeedMode === '30' || liveFeedMode === '7') return true;
+    if (liveFeedMode === 'yesterday') return false;
     if (liveFeedMode === 'week') {
         const val = (document.getElementById('history-week') as HTMLInputElement).value;
         return val === getCurrentWeekISO();

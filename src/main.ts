@@ -148,9 +148,10 @@ function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 
 function setLiveFeedMode(mode: LiveFeedMode) {
     setLiveFeedModeState(mode);
     
+    const btnToday = document.getElementById('btn-t');
+    const btnYesterday = document.getElementById('btn-y');
     const btn30 = document.getElementById('btn-30');
     const btn7 = document.getElementById('btn-7');
-    const btn1 = document.getElementById('btn-1');
     const btnWeek = document.getElementById('btn-week');
     const btnMonth = document.getElementById('btn-month');
     
@@ -158,16 +159,18 @@ function setLiveFeedMode(mode: LiveFeedMode) {
     const inputMonth = document.getElementById('history-month');
 
     // Reset all
-    [btn30, btn7, btn1, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    [btnToday, btnYesterday, btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
     inputWeek?.classList.add('hidden');
     inputMonth?.classList.add('hidden');
 
-    if (mode === '30') {
+    if (mode === 'today') {
+        btnToday?.classList.add('active');
+    } else if (mode === 'yesterday') {
+        btnYesterday?.classList.add('active');
+    } else if (mode === '30') {
         btn30?.classList.add('active');
     } else if (mode === '7') {
         btn7?.classList.add('active');
-    } else if (mode === '1') {
-        btn1?.classList.add('active');
     } else if (mode === 'week') {
         btnWeek?.classList.add('active');
         inputWeek?.classList.remove('hidden');
@@ -190,25 +193,28 @@ function setLiveFeedMode(mode: LiveFeedMode) {
 function setDivergenceFeedMode(mode: LiveFeedMode, fetchData = true) {
     setDivergenceFeedModeState(mode);
 
+    const btnToday = document.getElementById('divergence-btn-t');
+    const btnYesterday = document.getElementById('divergence-btn-y');
     const btn30 = document.getElementById('divergence-btn-30');
     const btn7 = document.getElementById('divergence-btn-7');
-    const btn1 = document.getElementById('divergence-btn-1');
     const btnWeek = document.getElementById('divergence-btn-week');
     const btnMonth = document.getElementById('divergence-btn-month');
 
     const inputWeek = document.getElementById('divergence-history-week');
     const inputMonth = document.getElementById('divergence-history-month');
 
-    [btn30, btn7, btn1, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    [btnToday, btnYesterday, btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
     inputWeek?.classList.add('hidden');
     inputMonth?.classList.add('hidden');
 
-    if (mode === '30') {
+    if (mode === 'today') {
+        btnToday?.classList.add('active');
+    } else if (mode === 'yesterday') {
+        btnYesterday?.classList.add('active');
+    } else if (mode === '30') {
         btn30?.classList.add('active');
     } else if (mode === '7') {
         btn7?.classList.add('active');
-    } else if (mode === '1') {
-        btn1?.classList.add('active');
     } else if (mode === 'week') {
         btnWeek?.classList.add('active');
         inputWeek?.classList.remove('hidden');
@@ -610,14 +616,16 @@ function bootstrapApplication(): void {
     document.getElementById('reset-filter')?.addEventListener('click', window.showOverview);
     
     // Live Feed Controls
+    document.getElementById('btn-t')?.addEventListener('click', () => setLiveFeedMode('today'));
+    document.getElementById('btn-y')?.addEventListener('click', () => setLiveFeedMode('yesterday'));
     document.getElementById('btn-30')?.addEventListener('click', () => setLiveFeedMode('30'));
     document.getElementById('btn-7')?.addEventListener('click', () => setLiveFeedMode('7'));
-    document.getElementById('btn-1')?.addEventListener('click', () => setLiveFeedMode('1'));
     document.getElementById('btn-week')?.addEventListener('click', () => setLiveFeedMode('week'));
     document.getElementById('btn-month')?.addEventListener('click', () => setLiveFeedMode('month'));
+    document.getElementById('divergence-btn-t')?.addEventListener('click', () => setDivergenceFeedMode('today'));
+    document.getElementById('divergence-btn-y')?.addEventListener('click', () => setDivergenceFeedMode('yesterday'));
     document.getElementById('divergence-btn-30')?.addEventListener('click', () => setDivergenceFeedMode('30'));
     document.getElementById('divergence-btn-7')?.addEventListener('click', () => setDivergenceFeedMode('7'));
-    document.getElementById('divergence-btn-1')?.addEventListener('click', () => setDivergenceFeedMode('1'));
     document.getElementById('divergence-btn-week')?.addEventListener('click', () => setDivergenceFeedMode('week'));
     document.getElementById('divergence-btn-month')?.addEventListener('click', () => setDivergenceFeedMode('month'));
     document.getElementById('divergence-fetch-all-btn')?.addEventListener('click', () => {
@@ -706,8 +714,8 @@ function bootstrapApplication(): void {
     });
 
     // Initial Load
-    setLiveFeedMode('1'); 
-    setDivergenceFeedMode('1', false);
+    setLiveFeedMode('today');
+    setDivergenceFeedMode('today', false);
     syncDivergenceScanUiState().catch(() => {});
     switchView('divergence');
     
