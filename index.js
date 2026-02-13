@@ -481,6 +481,7 @@ const DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE = Math.max(
 );
 const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
 const DIVERGENCE_FETCH_ALL_BATCH_SIZE = Math.max(1, Number(process.env.DIVERGENCE_FETCH_ALL_BATCH_SIZE) || 200);
+const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(28, Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 35);
 const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
 const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000);
 const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
@@ -4866,8 +4867,8 @@ function normalizeDivergenceFetchAllResumeState(state = {}) {
   const sourceInterval = String(state.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const requestedLookbackDays = Math.max(
-    45,
-    Math.floor(Number(state.requestedLookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS)
+    28,
+    Math.floor(Number(state.requestedLookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS)
   );
   const tickers = Array.isArray(state.tickers)
     ? state.tickers
@@ -5177,16 +5178,17 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   const noCache = options && options.noCache === true;
   if (!ticker) return [];
 
-  const parentFetchInterval = '4hour';
+  const parentFetchInterval = options.parentInterval || '4hour';
   const [parentRows, sourceRows] = await Promise.all([
     fmpIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, { signal, noCache }),
     fmpIntradayChartHistory(ticker, sourceInterval, lookbackDays, { signal, noCache })
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
-  const dailyBars = aggregate4HourBarsToDaily(
-    convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
-  );
+  const sortedParent = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
+  const dailyBars = parentFetchInterval === '1day'
+    ? sortedParent
+    : aggregate4HourBarsToDaily(sortedParent);
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
 
   const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
@@ -5663,7 +5665,7 @@ async function runDivergenceFetchAllData(options = {}) {
   }
 
   const requestedSourceInterval = String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
-  const requestedLookbackDays = Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
+  const requestedLookbackDays = Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
   const explicitAsOfTradeDate = String(options.asOfTradeDate || '').trim();
   const continueFromFailedBatch = options.continueFromFailedBatch !== false;
   let resumeRequested = options.resume === true;
@@ -5895,6 +5897,7 @@ async function runDivergenceFetchAllData(options = {}) {
                 sourceInterval,
                 lookbackDays: runLookbackDays,
                 asOfTradeDate,
+                parentInterval: '1day',
                 signal: attemptController.signal,
                 noCache: true
               });
@@ -6139,7 +6142,7 @@ async function runDivergenceFetchAllData(options = {}) {
         asOfTradeDate: await resolveDivergenceAsOfTradeDate(
           String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL
         ),
-        requestedLookbackDays: Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS)),
+        requestedLookbackDays: Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS)),
         tickers: await getStoredDivergenceSymbolTickers(),
         totalTickers,
         nextIndex: safeNextIndex,
@@ -6195,7 +6198,7 @@ async function runDivergenceFetchAllData(options = {}) {
         asOfTradeDate: await resolveDivergenceAsOfTradeDate(
           String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL
         ),
-        requestedLookbackDays: Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS)),
+        requestedLookbackDays: Math.max(28, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS)),
         tickers: await getStoredDivergenceSymbolTickers(),
         totalTickers,
         nextIndex: lastCompletedBatchEndIndex,
