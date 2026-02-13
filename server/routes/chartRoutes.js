@@ -32,7 +32,9 @@ function registerChartRoutes(options = {}) {
     validateChartLatestPayload,
     onChartRequestMeasured,
     isValidTickerSymbol,
-    getDivergenceSummaryForTickers
+    getDivergenceSummaryForTickers,
+    barsToTuples,
+    pointsToTuples
   } = options;
 
   if (!app) {
@@ -49,13 +51,30 @@ function registerChartRoutes(options = {}) {
       }
 
       const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
-      if (typeof validateChartPayload === 'function') {
+      
+      // Validation skipped for tuple format as shape differs
+      const useTupleFormat = req.query.format === 'tuple';
+      let payload = result;
+
+      if (useTupleFormat && typeof barsToTuples === 'function') {
+        payload = {
+          ...result,
+          bars: barsToTuples(result.bars),
+          rsi: pointsToTuples(result.rsi),
+          volumeDelta: pointsToTuples(result.volumeDelta, 'delta'),
+          volumeDeltaRsi: {
+            ...result.volumeDeltaRsi,
+            rsi: pointsToTuples(result.volumeDeltaRsi?.rsi)
+          }
+        };
+      } else if (typeof validateChartPayload === 'function') {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {
           const reason = validation && validation.error ? validation.error : 'Invalid chart payload shape';
           return res.status(500).json({ error: reason });
         }
       }
+
       res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
       if (typeof onChartRequestMeasured === 'function') {
         onChartRequestMeasured({
@@ -65,7 +84,7 @@ function registerChartRoutes(options = {}) {
           durationMs: Date.now() - startedAtMs
         });
       }
-      await sendChartJsonResponse(req, res, result, serverTiming);
+      await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
       const message = err && err.message ? err.message : 'Failed to fetch chart data';
       console.error('Chart API Error:', message);
@@ -85,13 +104,33 @@ function registerChartRoutes(options = {}) {
 
       const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
       const latestPayload = extractLatestChartPayload(result);
-      if (typeof validateChartLatestPayload === 'function') {
+
+      const useTupleFormat = req.query.format === 'tuple';
+      let payload = latestPayload;
+
+      if (useTupleFormat && typeof barsToTuples === 'function') {
+        // For latest, we convert single objects to single tuples (1-element arrays or just the tuple)
+        // Since barsToTuples expects array, we wrap and unwrap
+        const barTuple = latestPayload.latestBar ? barsToTuples([latestPayload.latestBar])[0] : null;
+        const rsiTuple = latestPayload.latestRsi ? pointsToTuples([latestPayload.latestRsi])[0] : null;
+        const vdTuple = latestPayload.latestVolumeDelta ? pointsToTuples([latestPayload.latestVolumeDelta], 'delta')[0] : null;
+        const vdRsiTuple = latestPayload.latestVolumeDeltaRsi ? pointsToTuples([latestPayload.latestVolumeDeltaRsi])[0] : null;
+
+        payload = {
+          ...latestPayload,
+          latestBar: barTuple,
+          latestRsi: rsiTuple,
+          latestVolumeDelta: vdTuple,
+          latestVolumeDeltaRsi: vdRsiTuple
+        };
+      } else if (typeof validateChartLatestPayload === 'function') {
         const validation = validateChartLatestPayload(latestPayload);
         if (!validation || validation.ok !== true) {
           const reason = validation && validation.error ? validation.error : 'Invalid latest payload shape';
           return res.status(500).json({ error: reason });
         }
       }
+
       res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
       if (typeof onChartRequestMeasured === 'function') {
         onChartRequestMeasured({
@@ -101,7 +140,7 @@ function registerChartRoutes(options = {}) {
           durationMs: Date.now() - startedAtMs
         });
       }
-      await sendChartJsonResponse(req, res, latestPayload, serverTiming);
+      await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
       const message = err && err.message ? err.message : 'Failed to fetch latest chart data';
       console.error('Chart Latest API Error:', message);

@@ -26,7 +26,9 @@ const {
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
-  classifyDivergenceSignal
+  classifyDivergenceSignal,
+  barsToTuples,
+  pointsToTuples
 } = require("./server/chartMath");
 require("dotenv").config();
 
@@ -468,11 +470,21 @@ app.use((req, res, next) => {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000
 });
 
 const divergenceDatabaseUrl = process.env.DIVERGENCE_DATABASE_URL || '';
 const divergencePool = divergenceDatabaseUrl
-  ? new Pool({ connectionString: divergenceDatabaseUrl })
+  ? new Pool({
+      connectionString: divergenceDatabaseUrl,
+      ssl: { rejectUnauthorized: false },
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000
+    })
   : null;
 
 const DIVERGENCE_SOURCE_INTERVAL = '1min';
@@ -4600,7 +4612,9 @@ registerChartRoutes({
   validateChartLatestPayload: validateChartLatestPayloadShape,
   onChartRequestMeasured: recordChartRequestTiming,
   isValidTickerSymbol,
-  getDivergenceSummaryForTickers
+  getDivergenceSummaryForTickers,
+  barsToTuples,
+  pointsToTuples
 });
 
 function sleep(ms) {
@@ -8309,9 +8323,29 @@ registerHealthRoutes({
   getReadyPayload
 });
 
+const ALERT_RETENTION_DAYS = 30;
+const PRUNE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function pruneOldAlerts() {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - ALERT_RETENTION_DAYS);
+    const result = await pool.query('DELETE FROM alerts WHERE created_at < $1', [cutoffDate]);
+    if (result.rowCount > 0) {
+      console.log(`Pruned ${result.rowCount} old alerts created before ${cutoffDate.toISOString()}`);
+    }
+  } catch (err) {
+    console.error('Failed to prune old alerts:', err.message);
+  }
+}
+
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
   scheduleNextDivergenceScan();
+  
+  // Schedule initial prune and recurring interval
+  setTimeout(pruneOldAlerts, 60 * 1000); // Run 1 minute after startup
+  setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
 });
 
 async function shutdownServer(signal) {

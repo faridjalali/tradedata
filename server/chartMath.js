@@ -225,10 +225,32 @@ function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
   return weekly.sort((a, b) => Number(a.time) - Number(b.time));
 }
 
+function barsToTuples(bars) {
+  if (!Array.isArray(bars)) return [];
+  return bars.map((b) => [
+    Number(b.time),
+    Number(b.open),
+    Number(b.high),
+    Number(b.low),
+    Number(b.close),
+    Number(b.volume)
+  ]);
+}
+
+function pointsToTuples(points, valueKey = 'value') {
+  if (!Array.isArray(points)) return [];
+  return points.map((p) => [
+    Number(p.time),
+    Number(p[valueKey])
+  ]);
+}
+
 module.exports = {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,
   aggregateDailyDivergenceToWeekly,
-  isoWeekKeyFromEtUnixSeconds
+  isoWeekKeyFromEtUnixSeconds,
+  barsToTuples,
+  pointsToTuples
 };
