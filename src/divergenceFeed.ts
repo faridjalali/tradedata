@@ -15,7 +15,7 @@ import {
 } from './divergenceApi';
 import { setDivergenceSignals, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import { hydrateAlertCardDivergenceTables } from './divergenceTable';
+import { hydrateAlertCardDivergenceTables, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { refreshActiveTickerDivergenceSummary } from './chart';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
@@ -576,8 +576,8 @@ export function renderDivergenceOverview(): void {
 
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
-    hydrateAlertCardDivergenceTables(dailyContainer).catch(() => {});
-    hydrateAlertCardDivergenceTables(weeklyContainer).catch(() => {});
+    renderAlertCardDivergenceTablesFromCache(dailyContainer);
+    renderAlertCardDivergenceTablesFromCache(weeklyContainer);
 }
 
 export function setupDivergenceFeedDelegation(): void {

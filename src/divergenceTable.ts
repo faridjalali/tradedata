@@ -317,20 +317,38 @@ export function syncTickerDivergenceSummaryToVisibleCards(
   }
 }
 
+export function renderAlertCardDivergenceTablesFromCache(
+  container: ParentNode,
+  sourceInterval?: string
+): void {
+  const normalizedSource = sourceInterval
+    ? normalizeSourceInterval(sourceInterval)
+    : getPreferredDivergenceSourceInterval();
+  const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
+  for (const cell of cells) {
+    const ticker = normalizeTicker(cell.dataset.ticker);
+    if (!ticker) continue;
+    renderMiniDivergenceRow(cell, getCachedSummary(ticker, normalizedSource));
+  }
+}
+
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
   sourceInterval?: string,
-  options?: { forceRefresh?: boolean; noCache?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean; resetPlaceholders?: boolean }
 ): Promise<void> {
   const forceRefresh = options?.forceRefresh === true;
   const noCache = options?.noCache === true;
+  const resetPlaceholders = options?.resetPlaceholders === true;
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
   const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
   if (!cells.length) return;
 
-  renderMiniDivergencePlaceholders(container);
+  if (resetPlaceholders) {
+    renderMiniDivergencePlaceholders(container);
+  }
   const tickers = Array.from(new Set(
     cells
       .map((cell) => normalizeTicker(cell.dataset.ticker))
