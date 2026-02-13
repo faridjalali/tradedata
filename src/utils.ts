@@ -278,10 +278,10 @@ export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => numbe
         }
         if (mode === 'combo') {
             const bScore = b.divergence_states
-                ? computeDivergenceScoreFromStates(b.divergence_states)
+                ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states)
                 : getTickerDivergenceScoreFromCache(b.ticker);
             const aScore = a.divergence_states
-                ? computeDivergenceScoreFromStates(a.divergence_states)
+                ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
                 : getTickerDivergenceScoreFromCache(a.ticker);
             if (bScore !== aScore) {
                 return bScore - aScore;

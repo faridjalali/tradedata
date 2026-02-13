@@ -237,7 +237,10 @@ const DIVERGENCE_SCORE_WEIGHTS: Record<string, number> = {
   '28': 1
 };
 
-export function computeDivergenceScoreFromStates(states?: Record<string, string | DivergenceState | null | undefined>): number {
+export function computeDivergenceScoreFromStates(
+  states?: Record<string, string | DivergenceState | null | undefined>,
+  maStates?: { ema8?: boolean; ema21?: boolean; sma50?: boolean; sma200?: boolean } | null
+): number {
   let total = 0;
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
     const key = String(days);
@@ -248,6 +251,12 @@ export function computeDivergenceScoreFromStates(states?: Record<string, string 
     } else if (raw === 'bearish') {
       total -= weight;
     }
+  }
+  if (maStates) {
+    total += maStates.ema8 === true ? 1 : maStates.ema8 === false ? -1 : 0;
+    total += maStates.ema21 === true ? 1 : maStates.ema21 === false ? -1 : 0;
+    total += maStates.sma50 === true ? 1 : maStates.sma50 === false ? -1 : 0;
+    total += maStates.sma200 === true ? 1 : maStates.sma200 === false ? -1 : 0;
   }
   return total;
 }
