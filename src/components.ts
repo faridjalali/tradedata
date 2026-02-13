@@ -31,9 +31,9 @@ export function createAlertCard(alert: Alert): string {
 
     // Checkbox Icon
     const starIcon = `
-        <svg class="fav-icon ${starClass}" data-id="${alert.id}" data-source="${source}" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="fav-icon ${starClass}" data-id="${alert.id}" data-source="${source}" viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.25" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <polyline class="check-mark" points="9 12 11 14 15 10" style="visibility: ${checkmarkVisibility}; opacity: ${checkmarkOpacity};"></polyline>
+            <polyline class="check-mark" points="7.5 12.5 10.5 15.5 16.5 9.5" style="visibility: ${checkmarkVisibility}; opacity: ${checkmarkOpacity};"></polyline>
         </svg>
     `;
 
