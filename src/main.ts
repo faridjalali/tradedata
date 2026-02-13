@@ -16,7 +16,6 @@ import {
     fetchDivergenceSignals,
     renderDivergenceOverview,
     setDivergenceFeedModeState,
-    isCurrentDivergenceTimeframe,
     setDivergenceDailySort,
     setDivergenceWeeklySort,
     setupDivergenceFeedDelegation,
@@ -30,7 +29,6 @@ import {
     togglePauseResumeManualDivergenceFetchAllData,
     stopManualDivergenceFetchAllData,
     hydrateDivergenceTablesNow,
-    shouldAutoRefreshDivergenceFeed,
     syncDivergenceScanUiState
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode } from './types';
@@ -724,8 +722,6 @@ function bootstrapApplication(): void {
                     renderOverview();
                 }
              });
-        } else if (currentView === 'divergence' && isCurrentDivergenceTimeframe() && shouldAutoRefreshDivergenceFeed()) {
-            fetchDivergenceSignals().then(renderDivergenceOverview);
         }
     }, 10000); 
 

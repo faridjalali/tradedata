@@ -28,14 +28,13 @@ let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
-let divergenceTableLastProcessedTickers = -1;
 let divergenceFetchAllLastProcessedTickers = -1;
 let divergenceTableLastUiRefreshAtMs = 0;
 const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
-let divergenceScanRunningState = false;
 let divergenceTableRunningState = false;
 let divergenceFetchAllRunningState = false;
 let divergenceHydrationInFlight = false;
+let allowAutoCardRefreshFromFetchAll = false;
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -46,7 +45,7 @@ export function setDivergenceFeedModeState(mode: LiveFeedMode): void {
 }
 
 export function shouldAutoRefreshDivergenceFeed(): boolean {
-    return divergenceScanRunningState || divergenceTableRunningState || divergenceFetchAllRunningState;
+    return divergenceFetchAllRunningState && allowAutoCardRefreshFromFetchAll;
 }
 
 function getRunButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
@@ -421,10 +420,6 @@ async function hydrateVisibleDivergenceTables(force = false, noCache = false): P
     refreshActiveTickerDivergenceSummary({ noCache });
 }
 
-function refreshDivergenceTablesWhileRunning(force = false): void {
-    void hydrateVisibleDivergenceTables(force);
-}
-
 function refreshDivergenceCardsWhileRunning(force = false): void {
     const nowMs = Date.now();
     if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
@@ -439,7 +434,6 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
     divergenceScanPollInFlight = true;
     try {
         const status = await fetchDivergenceScanStatus();
-        divergenceScanRunningState = Boolean(status.running);
         divergenceTableRunningState = Boolean(status.tableBuild?.running);
         divergenceFetchAllRunningState = Boolean(status.fetchAllData?.running);
         setRunButtonState(status.running, Boolean(status.scanControl?.can_resume));
@@ -453,15 +447,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setFetchAllButtonState(fetchAllRunning, Boolean(status.fetchAllData?.can_resume));
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
-        if (tableRunning) {
-            const processed = Number(status.tableBuild?.processed_tickers || 0);
-            const progressed = processed !== divergenceTableLastProcessedTickers;
-            divergenceTableLastProcessedTickers = processed;
-            refreshDivergenceTablesWhileRunning(progressed);
-        } else {
-            divergenceTableLastProcessedTickers = -1;
-        }
-        if (fetchAllRunning) {
+        if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
             divergenceFetchAllLastProcessedTickers = processed;
@@ -469,19 +455,19 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
-        if (!tableRunning && !fetchAllRunning) {
+        if (!fetchAllRunning) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
         if (!status.running && !tableRunning && !fetchAllRunning) {
             clearDivergenceScanPolling();
-            if (refreshOnComplete) {
+            if (refreshOnComplete && allowAutoCardRefreshFromFetchAll) {
                 await fetchDivergenceSignals(true);
                 renderDivergenceOverview();
             }
+            allowAutoCardRefreshFromFetchAll = false;
         }
     } catch (error) {
         console.error('Failed to poll divergence scan status:', error);
-        divergenceScanRunningState = false;
         divergenceTableRunningState = false;
         divergenceFetchAllRunningState = false;
         setRunStatusText(toStatusTextFromError(error));
@@ -509,7 +495,6 @@ function ensureDivergenceScanPolling(refreshOnComplete: boolean): void {
 export async function syncDivergenceScanUiState(): Promise<void> {
     try {
         const status = await fetchDivergenceScanStatus();
-        divergenceScanRunningState = Boolean(status.running);
         divergenceTableRunningState = Boolean(status.tableBuild?.running);
         divergenceFetchAllRunningState = Boolean(status.fetchAllData?.running);
         setRunButtonState(status.running, Boolean(status.scanControl?.can_resume));
@@ -523,15 +508,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchAllButtonState(fetchAllRunning, Boolean(status.fetchAllData?.can_resume));
         setFetchAllStatusText(summarizeFetchAllStatus(status));
         setFetchAllControlButtonState(status);
-        if (tableRunning) {
-            const processed = Number(status.tableBuild?.processed_tickers || 0);
-            const progressed = processed !== divergenceTableLastProcessedTickers;
-            divergenceTableLastProcessedTickers = processed;
-            refreshDivergenceTablesWhileRunning(progressed);
-        } else {
-            divergenceTableLastProcessedTickers = -1;
-        }
-        if (fetchAllRunning) {
+        if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
             divergenceFetchAllLastProcessedTickers = processed;
@@ -539,17 +516,17 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         } else {
             divergenceFetchAllLastProcessedTickers = -1;
         }
-        if (!tableRunning && !fetchAllRunning) {
+        if (!fetchAllRunning) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
         if (status.running || tableRunning || fetchAllRunning) {
             ensureDivergenceScanPolling(true);
         } else {
             clearDivergenceScanPolling();
+            allowAutoCardRefreshFromFetchAll = false;
         }
     } catch (error) {
         console.error('Failed to sync divergence scan UI state:', error);
-        divergenceScanRunningState = false;
         divergenceTableRunningState = false;
         divergenceFetchAllRunningState = false;
         setRunButtonState(false, false);
@@ -567,6 +544,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
 export async function runManualDivergenceScan(): Promise<void> {
     setRunButtonState(true, false);
     setRunStatusText('Starting...');
+    allowAutoCardRefreshFromFetchAll = false;
     try {
         const started = await startDivergenceScan({
             force: true,
@@ -589,6 +567,7 @@ export async function runManualDivergenceScan(): Promise<void> {
 export async function runManualDivergenceTableBuild(): Promise<void> {
     setTableRunButtonState(true, false);
     setTableRunStatusText('Table starting...');
+    allowAutoCardRefreshFromFetchAll = false;
     try {
         const started = await startDivergenceTableBuild();
         if (started.status === 'running') {
@@ -608,6 +587,7 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
 export async function runManualDivergenceFetchAllData(): Promise<void> {
     setFetchAllButtonState(true, false);
     setFetchAllStatusText('All data starting...');
+    allowAutoCardRefreshFromFetchAll = true;
     try {
         const started = await startDivergenceFetchAllData();
         if (started.status === 'running') {
@@ -727,6 +707,7 @@ export async function togglePauseResumeManualDivergenceFetchAllData(): Promise<v
             if (result.status === 'no-resume') {
                 setFetchAllStatusText('Nothing to resume');
             } else {
+                allowAutoCardRefreshFromFetchAll = true;
                 setFetchAllStatusText('All data running');
                 ensureDivergenceScanPolling(true);
                 await pollDivergenceScanStatus(false);
@@ -746,6 +727,7 @@ export async function stopManualDivergenceFetchAllData(): Promise<void> {
         if (result.status === 'stop-requested') {
             setFetchAllStatusText('Stopping');
         }
+        allowAutoCardRefreshFromFetchAll = false;
         await syncDivergenceScanUiState();
     } catch (error) {
         console.error('Failed to stop fetch-all run:', error);
