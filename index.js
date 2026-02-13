@@ -1186,11 +1186,30 @@ app.get('/api/divergence/signals', async (req, res) => {
       return res.json([]);
     }
 
+    const PER_TIMEFRAME_SIGNAL_LIMIT = 3029;
     let query = 'SELECT * FROM divergence_signals ORDER BY timestamp DESC LIMIT 100';
     let values = [];
 
     if (startDate && endDate) {
       query = `
+        WITH filtered AS (
+          SELECT
+            id,
+            ticker,
+            signal_type,
+            price,
+            trade_date,
+            timestamp,
+            timeframe,
+            volume_delta,
+            is_favorite,
+            ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY timestamp DESC) AS timeframe_rank
+          FROM divergence_signals
+          WHERE timestamp >= $1
+            AND timestamp <= $2
+            AND timeframe IN ('1d', '1w')
+            AND ($3::date IS NULL OR trade_date <= $3::date)
+        )
         SELECT
           id,
           ticker,
@@ -1204,16 +1223,30 @@ app.get('/api/divergence/signals', async (req, res) => {
           0 AS intensity_score,
           0 AS combo_score,
           is_favorite
-        FROM divergence_signals
-        WHERE timestamp >= $1 AND timestamp <= $2
-          AND timeframe IN ('1d', '1w')
-          AND ($3::date IS NULL OR trade_date <= $3::date)
+        FROM filtered
+        WHERE timeframe_rank <= $4
         ORDER BY timestamp DESC
-        LIMIT 1000
       `;
-      values = [startDate, endDate, publishedTradeDate || null];
+      values = [startDate, endDate, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
     } else if (days > 0) {
       query = `
+        WITH filtered AS (
+          SELECT
+            id,
+            ticker,
+            signal_type,
+            price,
+            trade_date,
+            timestamp,
+            timeframe,
+            volume_delta,
+            is_favorite,
+            ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY timestamp DESC) AS timeframe_rank
+          FROM divergence_signals
+          WHERE timestamp >= NOW() - $1::interval
+            AND timeframe IN ('1d', '1w')
+            AND ($2::date IS NULL OR trade_date <= $2::date)
+        )
         SELECT
           id,
           ticker,
@@ -1227,16 +1260,29 @@ app.get('/api/divergence/signals', async (req, res) => {
           0 AS intensity_score,
           0 AS combo_score,
           is_favorite
-        FROM divergence_signals
-        WHERE timestamp >= NOW() - $1::interval
-          AND timeframe IN ('1d', '1w')
-          AND ($2::date IS NULL OR trade_date <= $2::date)
+        FROM filtered
+        WHERE timeframe_rank <= $3
         ORDER BY timestamp DESC
-        LIMIT 1000
       `;
-      values = [`${days} days`, publishedTradeDate || null];
+      values = [`${days} days`, publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
     } else {
       query = `
+        WITH filtered AS (
+          SELECT
+            id,
+            ticker,
+            signal_type,
+            price,
+            trade_date,
+            timestamp,
+            timeframe,
+            volume_delta,
+            is_favorite,
+            ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY timestamp DESC) AS timeframe_rank
+          FROM divergence_signals
+          WHERE timeframe IN ('1d', '1w')
+            AND ($1::date IS NULL OR trade_date <= $1::date)
+        )
         SELECT
           id,
           ticker,
@@ -1250,13 +1296,11 @@ app.get('/api/divergence/signals', async (req, res) => {
           0 AS intensity_score,
           0 AS combo_score,
           is_favorite
-        FROM divergence_signals
-        WHERE timeframe IN ('1d', '1w')
-          AND ($1::date IS NULL OR trade_date <= $1::date)
+        FROM filtered
+        WHERE timeframe_rank <= $2
         ORDER BY timestamp DESC
-        LIMIT 1000
       `;
-      values = [publishedTradeDate || null];
+      values = [publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT];
     }
 
     const result = await divergencePool.query(query, values);
