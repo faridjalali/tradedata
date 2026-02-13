@@ -360,10 +360,11 @@ export async function hydrateAlertCardDivergenceTables(
   const fetchedByTicker = new Map<string, DivergenceSummaryEntry>();
   for (let i = 0; i < tickers.length; i += batchSize) {
     const chunk = tickers.slice(i, i + batchSize);
+    const shouldForceRefreshChunk = (forceRefresh || noCache) && (noCache || chunk.length > 1);
     const fetched = await fetchDivergenceSummariesBatch(
       chunk,
       normalizedSource,
-      (forceRefresh || noCache) ? { forceRefresh: true, noCache } : undefined
+      shouldForceRefreshChunk ? { forceRefresh: true, noCache } : undefined
     );
     for (const [ticker, summary] of fetched.entries()) {
       fetchedByTicker.set(ticker, summary);

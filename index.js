@@ -493,6 +493,7 @@ let divergenceTableBuildStatus = {
   status: 'idle',
   totalTickers: 0,
   processedTickers: 0,
+  errorTickers: 0,
   startedAt: null,
   finishedAt: null,
   lastPublishedTradeDate: ''
@@ -3606,9 +3607,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
   if (noCache) {
     const nowMs = Date.now();
     const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
-    const fallbackTradeDate = await getPublishedTradeDateForSourceInterval(vdSourceInterval)
-      || latestCompletedPacificTradeDateKey(new Date(nowMs))
-      || currentEtDateString();
+    const fallbackTradeDate = await resolveDivergenceAsOfTradeDate(vdSourceInterval);
     const neutralStates = buildNeutralDivergenceStateMap();
 
     const rebuiltRows = await mapWithConcurrency(
@@ -3719,9 +3718,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
   const unresolvedAfterRefresh = uniqueTickers.filter((ticker) => !summariesByTicker.has(ticker));
   if (unresolvedAfterRefresh.length > 0) {
     const nowMs = Date.now();
-    const fallbackTradeDate = await getPublishedTradeDateForSourceInterval(vdSourceInterval)
-      || latestCompletedPacificTradeDateKey(new Date(nowMs))
-      || currentEtDateString();
+    const fallbackTradeDate = await resolveDivergenceAsOfTradeDate(vdSourceInterval);
     const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
     const neutralStates = buildNeutralDivergenceStateMap();
 
@@ -3847,6 +3844,18 @@ async function getPublishedTradeDateForSourceInterval(sourceInterval) {
     console.error(`Failed to read divergence publication state: ${message}`);
     return '';
   }
+}
+
+async function resolveDivergenceAsOfTradeDate(sourceInterval, explicitTradeDate = '') {
+  const explicit = String(explicitTradeDate || '').trim();
+  if (explicit) return explicit;
+
+  const publishedTradeDate = await getPublishedTradeDateForSourceInterval(sourceInterval);
+  const fallbackTradeDate = latestCompletedPacificTradeDateKey(new Date()) || currentEtDateString();
+  return maxEtDateString(publishedTradeDate, fallbackTradeDate)
+    || fallbackTradeDate
+    || publishedTradeDate
+    || currentEtDateString();
 }
 
 async function fetchUsStockUniverseFromFmp() {
@@ -4466,6 +4475,7 @@ function getDivergenceTableBuildStatus() {
     status: String(divergenceTableBuildStatus.status || 'idle'),
     total_tickers: Number(divergenceTableBuildStatus.totalTickers || 0),
     processed_tickers: Number(divergenceTableBuildStatus.processedTickers || 0),
+    error_tickers: Number(divergenceTableBuildStatus.errorTickers || 0),
     started_at: divergenceTableBuildStatus.startedAt || null,
     finished_at: divergenceTableBuildStatus.finishedAt || null,
     last_published_trade_date: divergenceTableBuildStatus.lastPublishedTradeDate || null
@@ -4586,6 +4596,7 @@ function normalizeDivergenceTableResumeState(state = {}) {
     : tickers.length;
   const backfillOffset = Math.max(0, Math.floor(Number(state.backfillOffset) || 0));
   const summarizeOffset = Math.max(0, Math.floor(Number(state.summarizeOffset) || 0));
+  const errorTickers = Math.max(0, Math.floor(Number(state.errorTickers) || 0));
   const phaseRaw = String(state.phase || '').trim().toLowerCase();
   const phase = phaseRaw === 'summarizing' ? 'summarizing' : 'backfilling';
   return {
@@ -4597,6 +4608,7 @@ function normalizeDivergenceTableResumeState(state = {}) {
     backfillTickers,
     backfillOffset: Math.min(backfillOffset, backfillTickers.length),
     summarizeOffset: Math.min(summarizeOffset, tickers.length),
+    errorTickers,
     phase,
     lastPublishedTradeDate: String(state.lastPublishedTradeDate || '').trim()
   };
@@ -4614,10 +4626,10 @@ async function rebuildStoredDivergenceSummariesForTickers(options = {}) {
     : [];
   if (tickers.length === 0) return new Map();
 
-  const asOfTradeDate = String(options.asOfTradeDate || '').trim()
-    || await getPublishedTradeDateForSourceInterval(sourceInterval)
-    || latestCompletedPacificTradeDateKey(new Date())
-    || currentEtDateString();
+  const asOfTradeDate = await resolveDivergenceAsOfTradeDate(
+    sourceInterval,
+    String(options.asOfTradeDate || '').trim()
+  );
   const lookbackDays = Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
   const historyStartDate = dateKeyDaysAgo(asOfTradeDate, lookbackDays + 7) || asOfTradeDate;
   const rowsByTicker = await loadDivergenceDailyHistoryByTicker({
@@ -4881,6 +4893,7 @@ async function runDivergenceTableBuild(options = {}) {
   let processedTickers = 0;
   let totalTickers = 0;
   let lastPublishedTradeDate = resumeState?.lastPublishedTradeDate || '';
+  let errorTickers = Math.max(0, Number(resumeState?.errorTickers || 0));
   const startedAtIso = new Date().toISOString();
   const tableAbortController = new AbortController();
   divergenceTableBuildAbortController = tableAbortController;
@@ -4891,6 +4904,7 @@ async function runDivergenceTableBuild(options = {}) {
     processedTickers: Number(resumeState?.phase === 'summarizing'
       ? resumeState?.summarizeOffset
       : resumeState?.backfillOffset) || 0,
+    errorTickers,
     startedAt: startedAtIso,
     finishedAt: null,
     lastPublishedTradeDate: divergenceTableBuildStatus.lastPublishedTradeDate || ''
@@ -4914,19 +4928,21 @@ async function runDivergenceTableBuild(options = {}) {
         status: 'completed',
         totalTickers: 0,
         processedTickers: 0,
+        errorTickers: 0,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: divergenceTableBuildStatus.lastPublishedTradeDate || ''
       };
-      return { status: 'completed', totalTickers: 0, processedTickers: 0, lastPublishedTradeDate: null };
+      return { status: 'completed', totalTickers: 0, processedTickers: 0, errorTickers: 0, lastPublishedTradeDate: null };
     }
 
     const requestedLookbackDays = resumeState?.requestedLookbackDays
       || Math.max(45, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
     const bootstrapMissing = options.bootstrapMissing !== false;
-    const publishedTradeDate = await getPublishedTradeDateForSourceInterval(sourceInterval);
-    const fallbackTradeDate = latestCompletedPacificTradeDateKey(new Date());
-    const asOfTradeDate = resumeState?.asOfTradeDate || publishedTradeDate || fallbackTradeDate || currentEtDateString();
+    const asOfTradeDate = await resolveDivergenceAsOfTradeDate(
+      sourceInterval,
+      resumeState?.asOfTradeDate
+    );
     const historyStartDate = dateKeyDaysAgo(asOfTradeDate, requestedLookbackDays + 7) || asOfTradeDate;
     let rowsByTicker = await loadDivergenceDailyHistoryByTicker({
       sourceInterval,
@@ -4962,6 +4978,7 @@ async function runDivergenceTableBuild(options = {}) {
         backfillTickers,
         backfillOffset,
         summarizeOffset,
+        errorTickers,
         phase,
         lastPublishedTradeDate
       });
@@ -4978,6 +4995,7 @@ async function runDivergenceTableBuild(options = {}) {
         status: 'paused',
         totalTickers,
         processedTickers,
+        errorTickers,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || divergenceTableBuildStatus.lastPublishedTradeDate || ''
@@ -4986,6 +5004,7 @@ async function runDivergenceTableBuild(options = {}) {
         status: 'paused',
         totalTickers,
         processedTickers,
+        errorTickers,
         lastPublishedTradeDate: lastPublishedTradeDate || null
       };
     };
@@ -5000,6 +5019,7 @@ async function runDivergenceTableBuild(options = {}) {
         status: 'stopped',
         totalTickers,
         processedTickers,
+        errorTickers,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || divergenceTableBuildStatus.lastPublishedTradeDate || ''
@@ -5008,6 +5028,7 @@ async function runDivergenceTableBuild(options = {}) {
         status: 'stopped',
         totalTickers,
         processedTickers,
+        errorTickers,
         lastPublishedTradeDate: lastPublishedTradeDate || null
       };
     };
@@ -5048,6 +5069,8 @@ async function runDivergenceTableBuild(options = {}) {
               if (isAbortError(result.error) && divergenceTableBuildStopRequested) {
                 return;
               }
+              errorTickers += 1;
+              divergenceTableBuildStatus.errorTickers = errorTickers;
               const message = result.error && result.error.message ? result.error.message : String(result.error);
               console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
             }
@@ -5074,6 +5097,7 @@ async function runDivergenceTableBuild(options = {}) {
     summarizeOffset = Math.min(summarizeOffset, tickers.length);
     processedTickers = summarizeOffset;
     divergenceTableBuildStatus.processedTickers = processedTickers;
+    divergenceTableBuildStatus.errorTickers = errorTickers;
 
     const summaryRows = [];
     const neutralStates = buildNeutralDivergenceStateMap();
@@ -5151,17 +5175,19 @@ async function runDivergenceTableBuild(options = {}) {
 
     divergenceTableBuildStatus = {
       running: false,
-      status: 'completed',
+      status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
       processedTickers,
+      errorTickers,
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: lastPublishedTradeDate || divergenceTableBuildStatus.lastPublishedTradeDate || ''
     };
     return {
-      status: 'completed',
+      status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
       processedTickers,
+      errorTickers,
       lastPublishedTradeDate: lastPublishedTradeDate || null
     };
   } catch (err) {
@@ -5172,6 +5198,7 @@ async function runDivergenceTableBuild(options = {}) {
       status: 'failed',
       totalTickers,
       processedTickers,
+      errorTickers,
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: divergenceTableBuildStatus.lastPublishedTradeDate || ''
@@ -5186,6 +5213,7 @@ async function runDivergenceTableBuild(options = {}) {
         backfillTickers: [],
         backfillOffset: 0,
         summarizeOffset: processedTickers,
+        errorTickers,
         phase: 'summarizing',
         lastPublishedTradeDate
       });

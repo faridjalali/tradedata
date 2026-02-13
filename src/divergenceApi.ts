@@ -65,6 +65,7 @@ export interface DivergenceScanStatus {
         status?: string;
         total_tickers?: number;
         processed_tickers?: number;
+        error_tickers?: number;
         started_at?: string | null;
         finished_at?: string | null;
         last_published_trade_date?: string | null;

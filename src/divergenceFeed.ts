@@ -238,6 +238,7 @@ function summarizeTableStatus(status: DivergenceScanStatus): string {
     const table = status.tableBuild;
     if (!table) return 'Table idle';
     const tableState = String(table.status || '').toLowerCase();
+    const errorTickers = Number(table.error_tickers || 0);
     if (tableState === 'stopped') {
         return 'Table stopped';
     }
@@ -264,6 +265,13 @@ function summarizeTableStatus(status: DivergenceScanStatus): string {
     if (tableState === 'completed') {
         const dateKey = toDateKey(table.last_published_trade_date || null);
         const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
+        return mmdd ? `Table ${mmdd}` : 'Table fetched';
+    }
+    if (tableState === 'completed-with-errors') {
+        const dateKey = toDateKey(table.last_published_trade_date || null);
+        const mmdd = dateKey ? dateKeyToMmDd(dateKey) : '';
+        if (mmdd && errorTickers > 0) return `Table ${mmdd} (${errorTickers} errors)`;
+        if (errorTickers > 0) return `Table done (${errorTickers} errors)`;
         return mmdd ? `Table ${mmdd}` : 'Table fetched';
     }
     if (tableState === 'failed') {
@@ -293,8 +301,13 @@ async function hydrateVisibleDivergenceTables(force = false, noCache = false): P
         containers.push(el);
     }
     if (containers.length > 0) {
+        const shouldForceRefresh = noCache;
         await Promise.allSettled(
-            containers.map((container) => hydrateAlertCardDivergenceTables(container, undefined, { forceRefresh: true, noCache }))
+            containers.map((container) => hydrateAlertCardDivergenceTables(
+                container,
+                undefined,
+                { forceRefresh: shouldForceRefresh, noCache }
+            ))
         );
     }
     refreshActiveTickerDivergenceSummary({ noCache });
