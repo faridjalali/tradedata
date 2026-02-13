@@ -1,9 +1,30 @@
 import { Alert } from './types';
-import { getRelativeTime, formatVolume, escapeHtml } from './utils';
+import { formatVolume, escapeHtml } from './utils';
 import { DIVERGENCE_LOOKBACK_DAYS } from './divergenceTable';
 
+function formatAlertCardDate(rawDate: string | null | undefined): string {
+    const value = String(rawDate || '').trim();
+    if (!value) return '';
+
+    const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+        const month = Number(dateOnlyMatch[2]);
+        const day = Number(dateOnlyMatch[3]);
+        if (Number.isFinite(month) && month > 0 && Number.isFinite(day) && day > 0) {
+            return `${month}/${day}`;
+        }
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+
+    return `${parsed.getMonth() + 1}/${parsed.getDate()}`;
+}
+
 export function createAlertCard(alert: Alert): string {
-    const timeStr = getRelativeTime(alert.timestamp);
+    const timeStr = formatAlertCardDate(alert.divergence_trade_date || alert.timestamp) || '--';
     const source = alert.source === 'TV' ? 'TV' : 'DataAPI';
     
     let isBull = false;
