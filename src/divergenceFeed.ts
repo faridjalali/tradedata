@@ -150,9 +150,7 @@ function setFetchAllButtonState(running: boolean, canResume = false): void {
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    if (running) {
-        button.textContent = 'Running';
-    } else if (canResume) {
+    if (canResume && !running) {
         button.textContent = 'Resume Fetch';
     } else {
         button.textContent = 'Fetch Daily';
@@ -170,9 +168,7 @@ function setFetchWeeklyButtonState(running: boolean, canResume = false): void {
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    if (running) {
-        button.textContent = 'Running';
-    } else if (canResume) {
+    if (canResume && !running) {
         button.textContent = 'Resume Fetch';
     } else {
         button.textContent = 'Fetch Weekly';
@@ -545,6 +541,13 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
         setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
         setFetchWeeklyControlButtonState(status);
+        if (fetchAllRunning) {
+            allowAutoCardRefreshFromFetchAll = true;
+            allowAutoCardRefreshFromFetchWeekly = false;
+        } else if (fetchWeeklyRunning) {
+            allowAutoCardRefreshFromFetchWeekly = true;
+            allowAutoCardRefreshFromFetchAll = false;
+        }
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
@@ -628,6 +631,13 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
         setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
         setFetchWeeklyControlButtonState(status);
+        if (fetchAllRunning) {
+            allowAutoCardRefreshFromFetchAll = true;
+            allowAutoCardRefreshFromFetchWeekly = false;
+        } else if (fetchWeeklyRunning) {
+            allowAutoCardRefreshFromFetchWeekly = true;
+            allowAutoCardRefreshFromFetchAll = false;
+        }
         if (fetchAllRunning && allowAutoCardRefreshFromFetchAll) {
             const processed = Number(status.fetchAllData?.processed_tickers || 0);
             const progressed = processed !== divergenceFetchAllLastProcessedTickers;
