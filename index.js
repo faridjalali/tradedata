@@ -3841,6 +3841,11 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
     workers.push(runOneWorker());
   }
   await Promise.race([Promise.all(workers), cancelPromise]);
+  // After cancel, wait for all in-flight workers to finish their current item
+  // so callers can safely access shared state (buffers, counters) without races.
+  if (cancelled) {
+    await Promise.allSettled(workers);
+  }
   return results;
 }
 
@@ -5895,7 +5900,10 @@ async function runDivergenceFetchAllData(options = {}) {
     };
 
     const markStopped = (nextIdx) => {
-      const safeNextIndex = Math.max(0, Math.min(totalTickers, nextIdx));
+      // Rewind by concurrency level so in-flight workers that got aborted
+      // (and never wrote their data) will be re-fetched on resume.
+      // Upserts make re-fetching already-completed tickers harmless.
+      const safeNextIndex = Math.max(0, Math.min(totalTickers, nextIdx - DIVERGENCE_TABLE_BUILD_CONCURRENCY));
       persistResumeState(safeNextIndex);
       divergenceFetchAllDataStopRequested = false;
       divergenceFetchAllDataStatus = {
@@ -6120,14 +6128,16 @@ async function runDivergenceFetchAllData(options = {}) {
     }
 
     if (divergenceFetchAllDataStopRequested || isAbortError(err)) {
-      // Persist resume state on stop/abort
+      // Persist resume state on stop/abort — rewind by concurrency level
+      // so in-flight aborted tickers are re-fetched on resume.
+      const safeNextIndex = Math.max(0, processedTickers - DIVERGENCE_TABLE_BUILD_CONCURRENCY);
       divergenceFetchAllDataResumeState = normalizeFetchAllDataResumeState({
         asOfTradeDate,
         sourceInterval,
         tickers,
         totalTickers,
-        nextIndex: processedTickers,
-        processedTickers,
+        nextIndex: safeNextIndex,
+        processedTickers: safeNextIndex,
         errorTickers,
         lookbackDays: runLookbackDays,
         lastPublishedTradeDate
