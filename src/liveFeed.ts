@@ -256,3 +256,13 @@ export function setWeeklySort(mode: SortMode): void {
     renderOverview();
 }
 
+export function initializeSortDefaults(): void {
+    dailySortMode = 'combo';
+    dailySortDirection = 'desc';
+    weeklySortMode = 'combo';
+    weeklySortDirection = 'desc';
+    updateSortButtonUi('#dashboard-view .column:first-child .header-sort-controls', dailySortMode, dailySortDirection);
+    updateSortButtonUi('#dashboard-view .column:last-child .header-sort-controls', weeklySortMode, weeklySortDirection);
+}
+
+

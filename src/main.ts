@@ -5,7 +5,8 @@ import {
     setLiveFeedModeState, 
     setDailySort,
     setWeeklySort,
-    setupLiveFeedDelegation
+    setupLiveFeedDelegation,
+    initializeSortDefaults
 } from './liveFeed';
 import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
@@ -741,6 +742,7 @@ function bootstrapApplication(): void {
     });
 
     // Initial Load
+    initializeSortDefaults();
     setLiveFeedMode('today');
     setDivergenceFeedMode('today', false);
     syncDivergenceScanUiState().catch(() => {});
