@@ -11,7 +11,7 @@ import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 declare const Chart: any;
 
 let currentChartTicker: string | null = null;
-let currentChartInterval: ChartInterval = '4hour';
+let currentChartInterval: ChartInterval = '1day';
 let priceChart: any = null;
 let candleSeries: any = null;
 let priceTimelineSeries: any = null;

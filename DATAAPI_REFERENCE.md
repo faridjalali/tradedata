@@ -344,11 +344,11 @@ Chart build:
 - `parseChartRequestParams()`
 - `getOrBuildChartResult()`
 
-Prewarm:
+Prewarm (extracted to `server/services/chartPrewarm.js`):
 
 - `getPostLoadPrewarmSequence()`
 - `schedulePostLoadPrewarmSequence()`
-- `prewarmChartResultFromRequest()`
+- `prewarmChartResult()`
 
 Divergence summary:
 
