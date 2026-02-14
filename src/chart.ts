@@ -1612,10 +1612,17 @@ function applyPaneOrderAndRefreshLayout(chartContent: HTMLElement): void {
   syncTopPaneTickerLabel();
 }
 
+function isChartFullscreen(): boolean {
+  const container = document.getElementById('custom-chart-container');
+  return container?.classList.contains('chart-fullscreen') === true;
+}
+
 function shouldShowPaneScale(paneId: PaneId): boolean {
   const order = normalizePaneOrder(paneOrder);
   const index = order.indexOf(paneId);
   // Show only on pane positions 2 and 4.
+  // In fullscreen mode, hide the 4th pane's time scale.
+  if (index === 3 && isChartFullscreen()) return false;
   return index === 1 || index === 3;
 }
 
@@ -5174,31 +5181,9 @@ function initChartFullscreen(): void {
     const isActive = container.classList.contains('chart-fullscreen');
     btn.innerHTML = isActive ? FULLSCREEN_EXIT_SVG : FULLSCREEN_ENTER_SVG;
     btn.title = isActive ? 'Exit fullscreen (Space)' : 'Fullscreen (Space)';
-    
-    // Toggle 4th pane X-Axis visibility based on fullscreen state
-    // We need to find which chart is in the 4th position (index 3)
-    const currentOrder = normalizePaneOrder(paneOrder);
-    const bottomPaneId = currentOrder[3]; // The 4th pane
-
-    let targetChart: any = null;
-    if (bottomPaneId === 'price-chart-container') targetChart = priceChart;
-    else if (bottomPaneId === 'vd-rsi-chart-container') targetChart = volumeDeltaRsiChart;
-    else if (bottomPaneId === 'rsi-chart-container') targetChart = rsiChart?.getChart();
-    else if (bottomPaneId === 'vd-chart-container') targetChart = volumeDeltaChart;
-
-    if (targetChart) {
-        targetChart.applyOptions({
-            timeScale: {
-                visible: !isActive // Hide in fullscreen, show otherwise
-            }
-        });
-    }
-
-    // If existing fullscreen, also ensure other panes are reset if needed (though applyPaneScaleVisibilityByPosition handles normal state)
-    // Actually, when exiting, we should re-run the standard visibility logic to be safe.
-    if (!isActive) {
-        applyPaneScaleVisibilityByPosition();
-    }
+    // Re-apply scale visibility — shouldShowPaneScale already accounts
+    // for fullscreen state, so this handles both enter and exit.
+    applyPaneScaleVisibilityByPosition();
   };
 
   const toggleFullscreen = () => {
