@@ -275,30 +275,7 @@ export function getTickerDivergenceScoreFromCache(
   return computeDivergenceScoreFromStates(summary.states);
 }
 
-export function syncTickerDivergenceSummaryToVisibleCards(
-  ticker: string,
-  summary: DivergenceSummaryEntry | null,
-  sourceInterval?: string
-): void {
-  const normalizedTicker = normalizeTicker(ticker);
-  if (!normalizedTicker) return;
-  const normalizedSource = sourceInterval
-    ? normalizeSourceInterval(sourceInterval)
-    : getPreferredDivergenceSourceInterval();
 
-  if (summary) {
-    setCachedSummary(normalizedSource, {
-      ...summary,
-      ticker: normalizedTicker
-    });
-  }
-
-  const cells = Array.from(document.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
-  for (const cell of cells) {
-    if (normalizeTicker(cell.dataset.ticker) !== normalizedTicker) continue;
-    renderMiniDivergenceRow(cell, summary || null);
-  }
-}
 
 export function renderAlertCardDivergenceTablesFromCache(
   container: ParentNode

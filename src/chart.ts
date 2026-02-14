@@ -3,9 +3,8 @@ import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, Chart
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 import {
   DIVERGENCE_LOOKBACK_DAYS,
-  getTickerDivergenceSummary,
   DivergenceSummaryEntry,
-  syncTickerDivergenceSummaryToVisibleCards
+  getTickerDivergenceSummary,
 } from './divergenceTable';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 
@@ -3963,7 +3962,6 @@ function renderVolumeDeltaDivergenceSummary(
         if (summaryEl.dataset.requestToken !== requestToken) return;
         if (String(currentChartTicker || '').trim().toUpperCase() !== ticker) return;
         lastSummary = summary || null;
-        syncTickerDivergenceSummaryToVisibleCards(ticker, lastSummary, sourceInterval);
         renderSummary(lastSummary, false);
       })
       .catch(() => {
@@ -4079,7 +4077,6 @@ function renderVolumeDeltaDivergenceSummary(
   )
     .then((summary) => {
       lastSummary = summary || null;
-      syncTickerDivergenceSummaryToVisibleCards(ticker, lastSummary, sourceInterval);
       renderSummary(lastSummary, false);
     })
     .catch(() => {
