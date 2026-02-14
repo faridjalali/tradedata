@@ -1,0 +1,29 @@
+Divergence DB not configured (set DIVERGENCE_DATABASE_URL to enable Divergence tab data).
+Server running on port 3000
+Failed to initialize database: AggregateError [ECONNREFUSED]: 
+    at /Users/home/Antigravity/tradedata/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async initDB (/Users/home/Antigravity/tradedata/index.js:908:5) {
+  code: 'ECONNREFUSED',
+  [errors]: [
+    Error: connect ECONNREFUSED ::1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -61,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '::1',
+      port: 5432
+    },
+    Error: connect ECONNREFUSED 127.0.0.1:5432
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -61,
+      code: 'ECONNREFUSED',
+      syscall: 'connect',
+      address: '127.0.0.1',
+      port: 5432
+    }
+  ]
+}
+Failed to prune old alerts: 

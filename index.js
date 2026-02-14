@@ -4026,7 +4026,7 @@ async function getOrBuildChartResult(params) {
   } = params;
 
   const cachedFinalResult = getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey);
-  if (cachedFinalResult) {
+  if (cachedFinalResult.status === 'fresh') {
     chartDebugMetrics.cacheHit += 1;
     if (!skipFollowUpPrewarm) {
       if (interval === '1day') {
@@ -4048,7 +4048,7 @@ async function getOrBuildChartResult(params) {
       console.log(`[chart-cache] ${ticker} ${interval} hit key=${requestKey}`);
     }
     return {
-      result: cachedFinalResult,
+      result: cachedFinalResult.value,
       serverTiming: 'cache_hit;dur=0.1,total;dur=0.1',
       cacheHit: true
     };
