@@ -686,6 +686,22 @@ function bootstrapApplication(): void {
         });
     });
 
+    // Main Dashboard Daily Sort Buttons
+    document.querySelectorAll('#dashboard-view .column:first-child .header-sort-controls .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDailySort(mode);
+        });
+    });
+
+    // Main Dashboard Weekly Sort Buttons
+    document.querySelectorAll('#dashboard-view .column:last-child .header-sort-controls .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setWeeklySort(mode);
+        });
+    });
+
     // Set defaults
     if (weekInput) weekInput.value = getCurrentWeekISO();
     if (monthInput) monthInput.value = getCurrentMonthISO();
