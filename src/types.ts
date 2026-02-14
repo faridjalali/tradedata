@@ -9,8 +9,6 @@ export interface Alert {
     timeframe?: string;
     signal_direction?: number;
     signal_volume?: number;
-    intensity_score?: number;
-    combo_score?: number;
     is_favorite: boolean;
     source?: 'TV' | 'DataAPI';
     divergence_states?: Record<string, string>;
@@ -27,6 +25,6 @@ export interface AppState {
     alerts: Alert[];
 }
 
-export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
-export type SortMode = 'time' | 'volume' | 'combo' | 'favorite';
+
+export type SortMode = 'time' | 'volume' | 'favorite';
 export type TickerListContext = 'daily' | 'weekly' | null;

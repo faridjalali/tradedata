@@ -1,13 +1,4 @@
 import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
-import { 
-    fetchLiveAlerts, 
-    renderOverview, 
-    setDailySort,
-    setWeeklySort,
-    setupLiveFeedDelegation,
-    initializeSortDefaults,
-    setLiveFeedMode
-} from './liveFeed';
 import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
@@ -38,10 +29,9 @@ import {
     setAppTimeZone
 } from './timezone';
 
-let currentView: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
-let liveDashboardScrollY = 0;
+let currentView: 'logs' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
 let divergenceDashboardScrollY = 0;
-let tickerOriginView: 'live' | 'divergence' = 'live';
+let tickerOriginView: 'divergence' = 'divergence';
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 
@@ -53,8 +43,6 @@ const SITE_LOCK_LENGTH = SITE_LOCK_PASSCODE.length;
 // Expose globals for HTML onclick attributes
 // Note: We declared the Window interface in liveFeed.ts (or global.d.ts ideally), 
 // but we need to assign them here.
-window.setDailySort = setDailySort;
-window.setWeeklySort = setWeeklySort;
 window.setTickerDailySort = setTickerDailySort;
 window.setTickerWeeklySort = setTickerWeeklySort;
 
@@ -62,35 +50,35 @@ export function getTickerListContext(): TickerListContext {
     return tickerListContext;
 }
 
-export function getTickerOriginView(): 'live' | 'divergence' {
+export function getTickerOriginView(): 'divergence' {
     return tickerOriginView;
 }
 
-window.showTickerView = function(ticker: string, sourceView: 'live' | 'divergence' = 'live', listContext: TickerListContext = null) {
+window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'divergence', listContext: TickerListContext = null) {
     tickerOriginView = sourceView;
     tickerListContext = listContext;
 
-    if (sourceView === 'divergence') {
-        divergenceDashboardScrollY = window.scrollY;
-    } else {
-        liveDashboardScrollY = window.scrollY;
-    }
+    divergenceDashboardScrollY = window.scrollY;
 
-    if (currentView !== 'live') {
-        switchView('live');
+    if (currentView !== 'divergence') {
+        switchView('divergence');
     }
-    // Ticker detail renders inside view-live, but keep header context aligned
-    // with where the user came from.
-    setActiveNavTab(sourceView === 'divergence' ? 'divergence' : 'live');
+    // Ticker detail renders inside view-live, assuming we keep the container structure or move it.
+    // For now, let's ensure we just set active tab to divergence.
+    setActiveNavTab('divergence');
 
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
         tickerView.dataset.ticker = ticker;
         document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
+        document.getElementById('view-divergence')?.classList.add('hidden'); // Ensure divergence list is hidden if it overlaps
+        // Actually, in the old code, tickerView was inside view-live. If we are removing view-live, we might need to change HTML structure.
+        // But for this TS file, we just need to remove 'live' references.
+        // Let's assume tickerView is a sibling or we will fix HTML next.
         tickerView.classList.remove('hidden');
         renderTickerView(ticker);
-        window.scrollTo(0, 0); // Scroll to top of ticker view
+        window.scrollTo(0, 0); 
     }
 }
 
@@ -98,32 +86,29 @@ window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
 
-    if (tickerOriginView === 'divergence') {
-        document.getElementById('reset-filter')?.classList.add('hidden');
-        switchView('divergence');
-        window.scrollTo(0, divergenceDashboardScrollY);
-        return;
-    }
-
-    renderOverview();
-    window.scrollTo(0, liveDashboardScrollY);
-
+    // Always return to divergence view as it's the only one left for alerts
+    document.getElementById('reset-filter')?.classList.add('hidden');
+    switchView('divergence');
+    window.scrollTo(0, divergenceDashboardScrollY);
 }
 
-function switchView(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth') {
+function switchView(view: 'logs' | 'divergence' | 'leaderboard' | 'breadth') {
     currentView = view;
     setActiveNavTab(view);
 
     // Hide all views and controls
     document.getElementById('view-logs')?.classList.add('hidden');
-    document.getElementById('view-live')?.classList.add('hidden');
+    // document.getElementById('view-live')?.classList.add('hidden'); // Removed
     document.getElementById('view-divergence')?.classList.add('hidden');
     document.getElementById('view-leaderboard')?.classList.add('hidden');
     document.getElementById('view-breadth')?.classList.add('hidden');
-    document.getElementById('live-controls')?.classList.add('hidden');
+    // document.getElementById('live-controls')?.classList.add('hidden'); // Removed
     document.getElementById('divergence-controls')?.classList.add('hidden');
     document.getElementById('leaderboard-controls')?.classList.add('hidden');
     document.getElementById('breadth-controls')?.classList.add('hidden');
+
+    // Also hide ticker view when switching main views
+    document.getElementById('ticker-view')?.classList.add('hidden');
 
     stopLogsPolling();
 
@@ -132,9 +117,6 @@ function switchView(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'brea
         document.getElementById('view-logs')?.classList.remove('hidden');
         refreshLogsView().catch(() => {});
         startLogsPolling();
-    } else if (view === 'live') {
-        document.getElementById('view-live')?.classList.remove('hidden');
-        document.getElementById('live-controls')?.classList.remove('hidden');
     } else if (view === 'divergence') {
         document.getElementById('view-divergence')?.classList.remove('hidden');
         document.getElementById('divergence-controls')?.classList.remove('hidden');
@@ -243,24 +225,23 @@ function syncCurrentDateInputsForTimeZoneChange(nextTimeZone: string, previousTi
     }
 }
 
-async function refreshViewAfterTimeZoneChange(): Promise<void> {
-    if (currentView === 'live') {
-        await fetchLiveAlerts(true);
-        const tickerView = document.getElementById('ticker-view');
-        const ticker = tickerView?.dataset.ticker;
-        if (ticker && !tickerView?.classList.contains('hidden')) {
-            renderTickerView(ticker, { refreshCharts: true });
-        } else {
-            renderOverview();
-        }
-        return;
+declare global {
+    interface Window {
+        setTickerDailySort: (mode: SortMode) => void;
+        setTickerWeeklySort: (mode: SortMode) => void;
+        showTickerView: (ticker: string, sourceView?: 'divergence', listContext?: TickerListContext) => void;
+        showOverview: () => void;
     }
+}
 
+async function refreshViewAfterTimeZoneChange(): Promise<void> {
     if (currentView === 'divergence') {
         await fetchDivergenceSignals(true);
         renderDivergenceOverview();
         return;
     }
+
+
 
     if (currentView === 'leaderboard') {
         fetchLeaderboardData();
@@ -534,7 +515,6 @@ function bootstrapApplication(): void {
     // Initialization
     // Navigation
     document.getElementById('nav-logs')?.addEventListener('click', () => switchView('logs'));
-    document.getElementById('nav-live')?.addEventListener('click', () => switchView('live'));
     document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
     document.getElementById('nav-leaderboard')?.addEventListener('click', () => {
         switchView('leaderboard');
@@ -621,9 +601,7 @@ function bootstrapApplication(): void {
     });
 
     // Initial Load
-    initializeSortDefaults();
     initializeDivergenceSortDefaults();
-    setLiveFeedMode('today');
     setDivergenceFeedMode('today', false);
     syncDivergenceScanUiState().catch(() => {});
     switchView('divergence');
@@ -634,7 +612,6 @@ function bootstrapApplication(): void {
     initLogsView();
     
     // Setup Event Delegation
-    setupLiveFeedDelegation();
     setupDivergenceFeedDelegation();
     setupLeaderboardDelegation();
 
@@ -673,8 +650,6 @@ function setupMobileCollapse(): void {
         });
     };
 
-    // Live dashboard columns only (exclude ticker view columns).
-    attachCollapseHandler(document.getElementById('view-live'), '#dashboard-view');
     // Alerts page (default) dashboard columns.
     attachCollapseHandler(document.getElementById('view-divergence'), '#divergence-dashboard-view');
 }

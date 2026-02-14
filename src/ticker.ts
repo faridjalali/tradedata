@@ -58,8 +58,7 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
     daily.sort(createAlertSortFn(tickerDailySortMode));
     weekly.sort(createAlertSortFn(tickerWeeklySortMode));
     
-    renderAvg('ticker-daily-avg', daily);
-    renderAvg('ticker-weekly-avg', weekly);
+    // renderAvg removed
     
     const dailyContainer = document.getElementById('ticker-daily-container');
     if (dailyContainer) {
@@ -87,39 +86,6 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
     }
 }
 
-function renderAvg(containerId: string, list: Alert[]): void {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const tvOnly = list.filter((a) => (a.source || 'TV') === 'TV');
-    if (tvOnly.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-
-    let signedSum = 0;
-    tvOnly.forEach(a => {
-        const rawScore = a.combo_score || 0;
-        const type = (a.signal_type || '').toLowerCase();
-        const isBull = type.includes('bull');
-        signedSum += isBull ? rawScore : -rawScore;
-    });
-
-    const signedAvg = Math.round(signedSum / tvOnly.length);
-    const absAvg = Math.abs(signedAvg);
-    const isPositive = signedAvg >= 0;
-
-    const fillColor = isPositive ? '#3fb950' : '#f85149';
-    const emptyColor = '#0d1117';
-    
-    const style = `background: conic-gradient(${fillColor} ${absAvg}%, ${emptyColor} 0%);`;
-    
-    container.innerHTML = `
-        <div class="metric-item" title="Average Score: ${signedAvg}">
-            <div class="score-circle" style="${style}"></div>
-        </div>
-    `;
-}
 
 function renderTradingViewChart(ticker: string): void {
     if (typeof TradingView === 'undefined') return;
