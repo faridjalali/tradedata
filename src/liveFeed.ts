@@ -22,6 +22,7 @@ declare global {
         setWeeklySort: (mode: SortMode) => void;
         setTickerDailySort: (mode: SortMode) => void;
         setTickerWeeklySort: (mode: SortMode) => void;
+        renderTickerView: (ticker: string, options?: { refreshCharts: boolean }) => void;
     }
 }
 
@@ -203,6 +204,42 @@ export function setupLiveFeedDelegation(): void {
             }
         }
     });
+
+    // Timeframe Buttons
+    const btnToday = document.getElementById('btn-t');
+    const btnYesterday = document.getElementById('btn-y');
+    const btn30 = document.getElementById('btn-30');
+    const btn7 = document.getElementById('btn-7');
+    const btnWeek = document.getElementById('btn-week');
+    const btnMonth = document.getElementById('btn-month');
+
+    btnToday?.addEventListener('click', () => setLiveFeedMode('today'));
+    btnYesterday?.addEventListener('click', () => setLiveFeedMode('yesterday'));
+    btn30?.addEventListener('click', () => setLiveFeedMode('30'));
+    btn7?.addEventListener('click', () => setLiveFeedMode('7'));
+    btnWeek?.addEventListener('click', () => setLiveFeedMode('week'));
+    btnMonth?.addEventListener('click', () => setLiveFeedMode('month'));
+
+    const inputWeek = document.getElementById('history-week');
+    const inputMonth = document.getElementById('history-month');
+
+    inputWeek?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
+    inputMonth?.addEventListener('change', () => fetchLiveAlerts(true).then(renderOverview));
+
+    // Sort Buttons
+    document.querySelectorAll('#dashboard-view .column:first-child .header-sort-controls .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDailySort(mode);
+        });
+    });
+
+    document.querySelectorAll('#dashboard-view .column:last-child .header-sort-controls .tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setWeeklySort(mode);
+        });
+    });
 }
 
 
@@ -239,3 +276,49 @@ export function initializeSortDefaults(): void {
 }
 
 
+// ... existing code ...
+
+export function setLiveFeedMode(mode: LiveFeedMode) {
+    liveFeedMode = mode;
+    
+    const btnToday = document.getElementById('btn-t');
+    const btnYesterday = document.getElementById('btn-y');
+    const btn30 = document.getElementById('btn-30');
+    const btn7 = document.getElementById('btn-7');
+    const btnWeek = document.getElementById('btn-week');
+    const btnMonth = document.getElementById('btn-month');
+    
+    const inputWeek = document.getElementById('history-week');
+    const inputMonth = document.getElementById('history-month');
+
+    // Reset all
+    [btnToday, btnYesterday, btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    inputWeek?.classList.add('hidden');
+    inputMonth?.classList.add('hidden');
+
+    if (mode === 'today') {
+        btnToday?.classList.add('active');
+    } else if (mode === 'yesterday') {
+        btnYesterday?.classList.add('active');
+    } else if (mode === '30') {
+        btn30?.classList.add('active');
+    } else if (mode === '7') {
+        btn7?.classList.add('active');
+    } else if (mode === 'week') {
+        btnWeek?.classList.add('active');
+        inputWeek?.classList.remove('hidden');
+    } else if (mode === 'month') {
+        btnMonth?.classList.add('active');
+        inputMonth?.classList.remove('hidden');
+    }
+
+    fetchLiveAlerts(true).then(() => {
+        const tickerView = document.getElementById('ticker-view');
+        const ticker = tickerView?.dataset.ticker;
+        if (ticker && !tickerView?.classList.contains('hidden') && window.renderTickerView) {
+             window.renderTickerView(ticker, { refreshCharts: false });
+        } else {
+            renderOverview();
+        }
+    });
+}

@@ -1114,6 +1114,42 @@ export function setupDivergenceFeedDelegation(): void {
             }
         }
     });
+
+    // Timeframe Buttons
+    const btnToday = document.getElementById('divergence-btn-t');
+    const btnYesterday = document.getElementById('divergence-btn-y');
+    const btn30 = document.getElementById('divergence-btn-30');
+    const btn7 = document.getElementById('divergence-btn-7');
+    const btnWeek = document.getElementById('divergence-btn-week');
+    const btnMonth = document.getElementById('divergence-btn-month');
+
+    btnToday?.addEventListener('click', () => setDivergenceFeedMode('today'));
+    btnYesterday?.addEventListener('click', () => setDivergenceFeedMode('yesterday'));
+    btn30?.addEventListener('click', () => setDivergenceFeedMode('30'));
+    btn7?.addEventListener('click', () => setDivergenceFeedMode('7'));
+    btnWeek?.addEventListener('click', () => setDivergenceFeedMode('week'));
+    btnMonth?.addEventListener('click', () => setDivergenceFeedMode('month'));
+
+    const inputWeek = document.getElementById('divergence-history-week');
+    const inputMonth = document.getElementById('divergence-history-month');
+
+    inputWeek?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
+    inputMonth?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
+
+    // Sort Buttons
+    document.querySelectorAll('#view-divergence .divergence-daily-sort').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDivergenceDailySort(mode);
+        });
+    });
+
+    document.querySelectorAll('#view-divergence .divergence-weekly-sort').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = (btn as HTMLElement).dataset.sort as SortMode;
+            setDivergenceWeeklySort(mode);
+        });
+    });
 }
 
 export function setDivergenceDailySort(mode: SortMode): void {
@@ -1145,4 +1181,43 @@ export function initializeDivergenceSortDefaults(): void {
     weeklySortDirection = 'desc';
     updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
     updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
+}
+// ... existing code ...
+
+export function setDivergenceFeedMode(mode: LiveFeedMode, fetchData = true) {
+    setDivergenceFeedModeState(mode);
+
+    const btnToday = document.getElementById('divergence-btn-t');
+    const btnYesterday = document.getElementById('divergence-btn-y');
+    const btn30 = document.getElementById('divergence-btn-30');
+    const btn7 = document.getElementById('divergence-btn-7');
+    const btnWeek = document.getElementById('divergence-btn-week');
+    const btnMonth = document.getElementById('divergence-btn-month');
+
+    const inputWeek = document.getElementById('divergence-history-week');
+    const inputMonth = document.getElementById('divergence-history-month');
+
+    [btnToday, btnYesterday, btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
+    inputWeek?.classList.add('hidden');
+    inputMonth?.classList.add('hidden');
+
+    if (mode === 'today') {
+        btnToday?.classList.add('active');
+    } else if (mode === 'yesterday') {
+        btnYesterday?.classList.add('active');
+    } else if (mode === '30') {
+        btn30?.classList.add('active');
+    } else if (mode === '7') {
+        btn7?.classList.add('active');
+    } else if (mode === 'week') {
+        btnWeek?.classList.add('active');
+        inputWeek?.classList.remove('hidden');
+    } else if (mode === 'month') {
+        btnMonth?.classList.add('active');
+        inputMonth?.classList.remove('hidden');
+    }
+
+    if (fetchData) {
+        fetchDivergenceSignals(true).then(renderDivergenceOverview);
+    }
 }
