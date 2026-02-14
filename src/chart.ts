@@ -74,6 +74,8 @@ let rsiDivergenceOverlayChart: any = null;
 let volumeDeltaRsiDivergenceOverlayChart: any = null;
 let hasLoadedSettingsFromStorage = false;
 let chartFetchAbortController: AbortController | null = null;
+let prefetchAbortController: AbortController | null = null;
+let chartActivelyLoading = false;
 let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
@@ -732,10 +734,17 @@ async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval)
   const normalizedTicker = String(ticker || '').trim().toUpperCase();
   if (!normalizedTicker) return;
   const targets = PREFETCH_INTERVAL_TARGETS[interval] || [];
-  
+
+  // P1/P3 prefetches share an AbortController so the active chart load (P0)
+  // can cancel them instantly when the user navigates.
+  abortPrefetches();
+  const controller = new AbortController();
+  prefetchAbortController = controller;
+
   const promises: Promise<void>[] = [];
 
   for (const target of targets) {
+    if (controller.signal.aborted) break;
     const cacheKey = buildChartDataCacheKey(normalizedTicker, target);
     if (getCachedChartData(cacheKey)) continue;
     if (chartPrefetchInFlight.has(cacheKey)) {
@@ -746,13 +755,14 @@ async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval)
     const prefetchPromise = fetchChartData(normalizedTicker, target, {
       vdRsiLength: volumeDeltaRsiSettings.length,
       vdSourceInterval: volumeDeltaSettings.sourceInterval,
-      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+      vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval,
+      signal: controller.signal
     })
       .then((prefetchedData) => {
         setCachedChartData(cacheKey, prefetchedData);
       })
       .catch(() => {
-        // Prefetch is opportunistic; ignore errors.
+        // Prefetch is opportunistic; ignore errors (including AbortError).
       })
       .finally(() => {
         chartPrefetchInFlight.delete(cacheKey);
@@ -762,9 +772,11 @@ async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval)
     promises.push(prefetchPromise);
   }
 
-  // user wants: finish current ticker pre-warming THEN do neighbor pre-warming
+  // P1 (same-ticker intervals) completes before P3 (neighbor tickers).
   await Promise.allSettled(promises);
-  prefetchNeighborTickers(interval).catch(() => {});
+  if (!controller.signal.aborted) {
+    prefetchNeighborTickers(interval, controller.signal).catch(() => {});
+  }
 }
 
 exposeChartPerfMetrics();
@@ -4525,6 +4537,32 @@ function ensureChartLiveRefreshTimer(): void {
   }, CHART_LIVE_REFRESH_MS);
 }
 
+export function isChartActivelyLoading(): boolean {
+  return chartActivelyLoading;
+}
+
+function abortPrefetches(): void {
+  if (prefetchAbortController) {
+    try { prefetchAbortController.abort(); } catch { /* ignore */ }
+    prefetchAbortController = null;
+  }
+}
+
+export function cancelChartLoading(): void {
+  if (chartFetchAbortController) {
+    try { chartFetchAbortController.abort(); } catch { /* ignore */ }
+    chartFetchAbortController = null;
+  }
+  abortPrefetches();
+  if (chartLiveRefreshTimer !== null) {
+    window.clearInterval(chartLiveRefreshTimer);
+    chartLiveRefreshTimer = null;
+  }
+  chartLiveRefreshInFlight = false;
+  chartActivelyLoading = false;
+  latestRenderRequestId++;
+}
+
 interface RenderCustomChartOptions {
   silent?: boolean;
 }
@@ -4640,6 +4678,9 @@ export async function renderCustomChart(
     showLoadingOverlay(volumeDeltaContainer);
   }
 
+  // P0: Active chart load — abort any in-flight prefetches (P1/P3) and
+  // prior active fetches so all resources go to the new request.
+  abortPrefetches();
   if (chartFetchAbortController) {
     try {
       chartFetchAbortController.abort();
@@ -4649,6 +4690,7 @@ export async function renderCustomChart(
   }
   const fetchController = new AbortController();
   chartFetchAbortController = fetchController;
+  if (!silent) chartActivelyLoading = true;
 
   try {
     const fetchStartedAt = performance.now();
@@ -4765,6 +4807,7 @@ export async function renderCustomChart(
     showRetryOverlay(rsiContainer, retryRender);
     showRetryOverlay(volumeDeltaContainer, retryRender);
   } finally {
+    if (!silent) chartActivelyLoading = false;
     if (chartFetchAbortController === fetchController) {
       chartFetchAbortController = null;
     }
@@ -5295,11 +5338,12 @@ function getNeighborTicker(direction: -1 | 1): string | null {
     return null;
 }
 
-async function prefetchNeighborTickers(interval: ChartInterval): Promise<void> {
+async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSignal): Promise<void> {
     const nextTicker = getNeighborTicker(1);
     const prevTicker = getNeighborTicker(-1);
 
     const fetchForTicker = async (ticker: string) => {
+        if (signal?.aborted) return;
         const cacheKey = buildChartDataCacheKey(ticker, interval);
         if (getCachedChartData(cacheKey)) return;
         if (chartPrefetchInFlight.has(cacheKey)) return;
@@ -5307,10 +5351,11 @@ async function prefetchNeighborTickers(interval: ChartInterval): Promise<void> {
         const promise = fetchChartData(ticker, interval, {
             vdRsiLength: volumeDeltaRsiSettings.length,
             vdSourceInterval: volumeDeltaSettings.sourceInterval,
-            vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+            vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval,
+            signal
         })
         .then(data => setCachedChartData(cacheKey, data))
-        .catch(() => {}) // Ignore errors
+        .catch(() => {})
         .finally(() => chartPrefetchInFlight.delete(cacheKey));
 
         chartPrefetchInFlight.set(cacheKey, promise);

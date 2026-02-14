@@ -2,7 +2,7 @@ import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
 
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
-import { initChartControls } from './chart';
+import { initChartControls, cancelChartLoading } from './chart';
 import {
     initLogsView,
     refreshLogsView,
@@ -69,6 +69,7 @@ window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'div
 
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
+        cancelChartLoading();
         tickerView.dataset.ticker = ticker;
         document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
@@ -81,6 +82,7 @@ window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'div
 }
 
 window.showOverview = function() {
+    cancelChartLoading();
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
 
@@ -108,6 +110,7 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
     // Also hide ticker view when switching main views
     document.getElementById('ticker-view')?.classList.add('hidden');
     document.getElementById('ticker-back-btn')?.classList.add('hidden');
+    cancelChartLoading();
 
     stopLogsPolling();
 

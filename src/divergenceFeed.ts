@@ -20,7 +20,7 @@ import {
 import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
-import { refreshActiveTickerDivergenceSummary } from './chart';
+import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './chart';
 import { SortMode, Alert } from './types';
 
 export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
@@ -534,6 +534,8 @@ async function hydrateVisibleDivergenceTables(force = false, noCache = false): P
 }
 
 function refreshDivergenceCardsWhileRunning(force = false, timeframe?: '1d' | '1w'): void {
+    // P2: Defer card refreshes while an active chart load (P0) is in progress.
+    if (isChartActivelyLoading()) return;
     const nowMs = Date.now();
     if (!force && (nowMs - divergenceTableLastUiRefreshAtMs) < DIVERGENCE_TABLE_UI_REFRESH_MIN_MS) {
         return;
