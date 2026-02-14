@@ -973,14 +973,10 @@ const initDB = async () => {
       "is_favorite BOOLEAN DEFAULT FALSE"
     ];
 
-    for (const col of columns) {
-      try {
-        await pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ${col}`);
-      } catch (e) {
-        // Ignore errors if column already exists (or other migration issues that shouldn't stop startup)
-        console.log(`Migration note for ${col}:`, e.message);
-      }
-    }
+    await Promise.allSettled(columns.map(col =>
+      pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ${col}`)
+        .catch(e => console.log(`Migration note for ${col}:`, e.message))
+    ));
     await pool.query(`
       CREATE TABLE IF NOT EXISTS run_metrics_history (
         id SERIAL PRIMARY KEY,
@@ -1120,6 +1116,14 @@ const initDivergenceDB = async () => {
     await divergencePool.query(`
       CREATE INDEX IF NOT EXISTS divergence_summaries_trade_date_idx
       ON divergence_summaries(source_interval, trade_date DESC, ticker ASC);
+    `);
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_signals_timeframe_tradedate_idx
+      ON divergence_signals(source_interval, timeframe, trade_date DESC);
+    `);
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_summaries_source_ticker_idx
+      ON divergence_summaries(source_interval, ticker);
     `);
     await divergencePool.query(`
       CREATE TABLE IF NOT EXISTS divergence_publication_state (
