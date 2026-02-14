@@ -87,6 +87,10 @@ export function renderOverview(): void {
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+
+    // Sync UI state
+    updateSortButtonUi('#dashboard-view .column:first-child .header-sort-controls', dailySortMode, dailySortDirection);
+    updateSortButtonUi('#dashboard-view .column:last-child .header-sort-controls', weeklySortMode, weeklySortDirection);
 }
 
 export function setupLiveFeedDelegation(): void {
@@ -201,6 +205,35 @@ export function setupLiveFeedDelegation(): void {
     });
 }
 
+function updateSortButtonUi(
+    containerSelector: string,
+    currentMode: SortMode,
+    direction: 'asc' | 'desc'
+): void {
+    const header = document.querySelector(containerSelector);
+    if (!header) return;
+    header.querySelectorAll('.tf-btn').forEach(btn => {
+        const el = btn as HTMLElement;
+        const mode = el.dataset.sort as SortMode;
+        if (mode === currentMode) {
+            el.classList.add('active');
+            // Update arrow
+            const baseText = el.getAttribute('data-base-text') || el.textContent || '';
+            if (!el.getAttribute('data-base-text')) el.setAttribute('data-base-text', baseText);
+            
+            // Don't add arrow for favorites or if text is empty/icon
+            if (mode !== 'favorite') {
+                el.textContent = `${baseText} ${direction === 'asc' ? '↑' : '↓'}`;
+            }
+        } else {
+            el.classList.remove('active');
+            // Reset text
+            const baseText = el.getAttribute('data-base-text');
+            if (baseText) el.textContent = baseText;
+        }
+    });
+}
+
 export function setDailySort(mode: SortMode): void {
     if (mode === dailySortMode && mode !== 'favorite') {
         dailySortDirection = dailySortDirection === 'desc' ? 'asc' : 'desc';
@@ -208,14 +241,7 @@ export function setDailySort(mode: SortMode): void {
         dailySortMode = mode;
         dailySortDirection = 'desc';
     }
-    const dailyHeader = document.querySelector('#dashboard-view .column:first-child .header-sort-controls');
-    if (dailyHeader) {
-        dailyHeader.querySelectorAll('.tf-btn').forEach(btn => {
-            const el = btn as HTMLElement;
-            if (el.dataset.sort === dailySortMode) el.classList.add('active');
-            else el.classList.remove('active');
-        });
-    }
+    updateSortButtonUi('#dashboard-view .column:first-child .header-sort-controls', dailySortMode, dailySortDirection);
     renderOverview();
 }
 
@@ -226,13 +252,7 @@ export function setWeeklySort(mode: SortMode): void {
         weeklySortMode = mode;
         weeklySortDirection = 'desc';
     }
-    const weeklyHeader = document.querySelector('#dashboard-view .column:last-child .header-sort-controls');
-    if (weeklyHeader) {
-        weeklyHeader.querySelectorAll('.tf-btn').forEach(btn => {
-            const el = btn as HTMLElement;
-            if (el.dataset.sort === mode) el.classList.add('active');
-            else el.classList.remove('active');
-        });
-    }
+    updateSortButtonUi('#dashboard-view .column:last-child .header-sort-controls', weeklySortMode, weeklySortDirection);
     renderOverview();
 }
+
