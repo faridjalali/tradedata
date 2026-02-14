@@ -7011,6 +7011,7 @@ async function runDivergenceFetchAllData(options = {}) {
       runMetricsTracker?.setPhase('retry');
       divergenceFetchAllDataStatus.status = 'running-retry';
       let retryRecovered = 0;
+      const stillFailedTickers = [];
       await mapWithConcurrency(
         failedTickers,
         Math.max(1, Math.floor(runConcurrency / 2)),
@@ -7021,6 +7022,7 @@ async function runDivergenceFetchAllData(options = {}) {
             if (!isAbortError(result.error)) {
               const message = result.error && result.error.message ? result.error.message : String(result.error);
               console.error(`Fetch-all retry still failed for ${ticker}: ${message}`);
+              stillFailedTickers.push(ticker);
             }
           } else {
             retryRecovered += 1;
@@ -7037,6 +7039,41 @@ async function runDivergenceFetchAllData(options = {}) {
       }
       await enqueueFlush();
       runMetricsTracker?.recordStallRetry();
+
+      // --- Second retry pass for tickers that failed both attempts ---
+      if (stillFailedTickers.length > 0 && !divergenceFetchAllDataStopRequested && !fetchAllAbortController.signal.aborted) {
+        const retry2Count = stillFailedTickers.length;
+        console.log(`Fetch-all: second retry for ${retry2Count} ticker(s)...`);
+        runMetricsTracker?.setPhase('retry-2');
+        divergenceFetchAllDataStatus.status = 'running-retry';
+        let retry2Recovered = 0;
+        await mapWithConcurrency(
+          stillFailedTickers,
+          Math.max(1, Math.floor(runConcurrency / 4)),
+          fetchAllTickerWorker,
+          (result, idx) => {
+            const ticker = stillFailedTickers[idx] || '';
+            if (result && result.error) {
+              if (!isAbortError(result.error)) {
+                const message = result.error && result.error.message ? result.error.message : String(result.error);
+                console.error(`Fetch-all retry-2 still failed for ${ticker}: ${message}`);
+              }
+            } else {
+              retry2Recovered += 1;
+              runMetricsTracker?.recordRetryRecovered(ticker);
+              errorTickers = Math.max(0, errorTickers - 1);
+            }
+            divergenceFetchAllDataStatus.errorTickers = errorTickers;
+            runMetricsTracker?.setProgress(processedTickers, errorTickers);
+          },
+          () => divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted
+        );
+        if (retry2Recovered > 0) {
+          console.log(`Fetch-all: second retry recovered ${retry2Recovered}/${retry2Count} ticker(s)`);
+        }
+        await enqueueFlush();
+        runMetricsTracker?.recordStallRetry();
+      }
     }
 
     if (maSeedRows.length > 0) {
@@ -7100,6 +7137,7 @@ async function runDivergenceFetchAllData(options = {}) {
         console.log(`Fetch-all: retrying ${maRetryCount} failed MA ticker(s)...`);
         divergenceFetchAllDataStatus.status = 'running-ma-retry';
         let maRetryRecovered = 0;
+        const stillFailedMaSeeds = [];
         await mapWithConcurrency(
           failedMaSeeds,
           Math.max(1, Math.floor(maConcurrency / 2)),
@@ -7110,6 +7148,7 @@ async function runDivergenceFetchAllData(options = {}) {
               if (!isAbortError(result.error)) {
                 const message = result.error && result.error.message ? result.error.message : String(result.error);
                 console.error(`Fetch-all MA retry still failed for ${seed?.ticker}: ${message}`);
+                stillFailedMaSeeds.push(seed);
               }
             } else {
               maRetryRecovered += 1;
@@ -7121,6 +7160,35 @@ async function runDivergenceFetchAllData(options = {}) {
           console.log(`Fetch-all: MA retry recovered ${maRetryRecovered}/${maRetryCount} ticker(s)`);
         }
         await enqueueFlush();
+
+        // --- Second retry pass for MA tickers ---
+        if (stillFailedMaSeeds.length > 0 && !divergenceFetchAllDataStopRequested && !fetchAllAbortController.signal.aborted) {
+          const maRetry2Count = stillFailedMaSeeds.length;
+          console.log(`Fetch-all: second MA retry for ${maRetry2Count} ticker(s)...`);
+          divergenceFetchAllDataStatus.status = 'running-ma-retry';
+          let maRetry2Recovered = 0;
+          await mapWithConcurrency(
+            stillFailedMaSeeds,
+            Math.max(1, Math.floor(maConcurrency / 4)),
+            fetchAllMaWorker,
+            (result, idx) => {
+              const seed = stillFailedMaSeeds[idx];
+              if (result && result.error) {
+                if (!isAbortError(result.error)) {
+                  const message = result.error && result.error.message ? result.error.message : String(result.error);
+                  console.error(`Fetch-all MA retry-2 still failed for ${seed?.ticker}: ${message}`);
+                }
+              } else {
+                maRetry2Recovered += 1;
+              }
+            },
+            () => divergenceFetchAllDataStopRequested || fetchAllAbortController.signal.aborted
+          );
+          if (maRetry2Recovered > 0) {
+            console.log(`Fetch-all: second MA retry recovered ${maRetry2Recovered}/${maRetry2Count} ticker(s)`);
+          }
+          await enqueueFlush();
+        }
       }
     }
 
@@ -7657,6 +7725,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       runMetricsTracker?.setPhase('retry');
       divergenceFetchWeeklyDataStatus.status = 'running-retry';
       let retryRecovered = 0;
+      const stillFailedTickers = [];
       await mapWithConcurrency(
         failedTickers,
         Math.max(1, Math.floor(runConcurrency / 2)),
@@ -7667,6 +7736,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             if (!isAbortError(result.error)) {
               const message = result.error && result.error.message ? result.error.message : String(result.error);
               console.error(`Fetch-weekly retry still failed for ${ticker}: ${message}`);
+              stillFailedTickers.push(ticker);
             }
           } else {
             retryRecovered += 1;
@@ -7683,6 +7753,41 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       }
       await enqueueFlush();
       runMetricsTracker?.recordStallRetry();
+
+      // --- Second retry pass for tickers that failed both attempts ---
+      if (stillFailedTickers.length > 0 && !divergenceFetchWeeklyDataStopRequested && !fetchWeeklyAbortController.signal.aborted) {
+        const retry2Count = stillFailedTickers.length;
+        console.log(`Fetch-weekly: second retry for ${retry2Count} ticker(s)...`);
+        runMetricsTracker?.setPhase('retry-2');
+        divergenceFetchWeeklyDataStatus.status = 'running-retry';
+        let retry2Recovered = 0;
+        await mapWithConcurrency(
+          stillFailedTickers,
+          Math.max(1, Math.floor(runConcurrency / 4)),
+          fetchWeeklyTickerWorker,
+          (result, idx) => {
+            const ticker = stillFailedTickers[idx] || '';
+            if (result && result.error) {
+              if (!isAbortError(result.error)) {
+                const message = result.error && result.error.message ? result.error.message : String(result.error);
+                console.error(`Fetch-weekly retry-2 still failed for ${ticker}: ${message}`);
+              }
+            } else {
+              retry2Recovered += 1;
+              runMetricsTracker?.recordRetryRecovered(ticker);
+              errorTickers = Math.max(0, errorTickers - 1);
+            }
+            divergenceFetchWeeklyDataStatus.errorTickers = errorTickers;
+            runMetricsTracker?.setProgress(processedTickers, errorTickers);
+          },
+          () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
+        );
+        if (retry2Recovered > 0) {
+          console.log(`Fetch-weekly: second retry recovered ${retry2Recovered}/${retry2Count} ticker(s)`);
+        }
+        await enqueueFlush();
+        runMetricsTracker?.recordStallRetry();
+      }
     }
 
     if (maSeedRows.length > 0) {
@@ -7746,6 +7851,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         console.log(`Fetch-weekly: retrying ${maRetryCount} failed MA ticker(s)...`);
         divergenceFetchWeeklyDataStatus.status = 'running-ma-retry';
         let maRetryRecovered = 0;
+        const stillFailedMaSeeds = [];
         await mapWithConcurrency(
           failedMaSeeds,
           Math.max(1, Math.floor(maConcurrency / 2)),
@@ -7756,6 +7862,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
               if (!isAbortError(result.error)) {
                 const message = result.error && result.error.message ? result.error.message : String(result.error);
                 console.error(`Fetch-weekly MA retry still failed for ${seed?.ticker}: ${message}`);
+                stillFailedMaSeeds.push(seed);
               }
             } else {
               maRetryRecovered += 1;
@@ -7767,6 +7874,35 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           console.log(`Fetch-weekly: MA retry recovered ${maRetryRecovered}/${maRetryCount} ticker(s)`);
         }
         await enqueueFlush();
+
+        // --- Second retry pass for MA tickers ---
+        if (stillFailedMaSeeds.length > 0 && !divergenceFetchWeeklyDataStopRequested && !fetchWeeklyAbortController.signal.aborted) {
+          const maRetry2Count = stillFailedMaSeeds.length;
+          console.log(`Fetch-weekly: second MA retry for ${maRetry2Count} ticker(s)...`);
+          divergenceFetchWeeklyDataStatus.status = 'running-ma-retry';
+          let maRetry2Recovered = 0;
+          await mapWithConcurrency(
+            stillFailedMaSeeds,
+            Math.max(1, Math.floor(maConcurrency / 4)),
+            fetchWeeklyMaWorker,
+            (result, idx) => {
+              const seed = stillFailedMaSeeds[idx];
+              if (result && result.error) {
+                if (!isAbortError(result.error)) {
+                  const message = result.error && result.error.message ? result.error.message : String(result.error);
+                  console.error(`Fetch-weekly MA retry-2 still failed for ${seed?.ticker}: ${message}`);
+                }
+              } else {
+                maRetry2Recovered += 1;
+              }
+            },
+            () => divergenceFetchWeeklyDataStopRequested || fetchWeeklyAbortController.signal.aborted
+          );
+          if (maRetry2Recovered > 0) {
+            console.log(`Fetch-weekly: second MA retry recovered ${maRetry2Recovered}/${maRetry2Count} ticker(s)`);
+          }
+          await enqueueFlush();
+        }
       }
     }
 
