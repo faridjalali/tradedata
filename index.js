@@ -7516,31 +7516,27 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           noCache: true,
           metricsTracker: runMetricsTracker
         });
-        // Fetch daily rows and weekly snapshot in parallel — both reuse
-        // sourceRows and only need their own independent parent interval.
-        const [rows, weeklySnapshot] = await Promise.all([
-          buildDivergenceDailyRowsForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: runLookbackDays,
-            asOfTradeDate,
-            parentInterval: '1day',
-            signal: tickerSignal,
-            noCache: true,
-            sourceRows,
-            metricsTracker: runMetricsTracker
-          }),
-          buildLatestWeeklyBarSnapshotForTicker({
-            ticker,
-            sourceInterval,
-            lookbackDays: runLookbackDays,
-            asOfTradeDate: weeklyTradeDate,
-            signal: tickerSignal,
-            noCache: true,
-            sourceRows,
-            metricsTracker: runMetricsTracker
-          })
-        ]);
+        const rows = await buildDivergenceDailyRowsForTicker({
+          ticker,
+          sourceInterval,
+          lookbackDays: runLookbackDays,
+          asOfTradeDate,
+          parentInterval: '1day',
+          signal: tickerSignal,
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
+        });
+        const weeklySnapshot = await buildLatestWeeklyBarSnapshotForTicker({
+          ticker,
+          sourceInterval,
+          lookbackDays: runLookbackDays,
+          asOfTradeDate: weeklyTradeDate,
+          signal: tickerSignal,
+          noCache: true,
+          sourceRows,
+          metricsTracker: runMetricsTracker
+        });
         const filteredRows = Array.isArray(rows)
           ? rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate)
           : [];
