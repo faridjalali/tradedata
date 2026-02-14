@@ -26,10 +26,6 @@
     <meta name="apple-mobile-web-app-title" content="Volume Delta" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
-    <script
-      type="text/javascript"
-      src="https://s3.tradingview.com/tv.js"
-    ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
   </head>
@@ -214,6 +210,12 @@
             <input type="week" id="divergence-history-week" class="glass-input hidden" />
             <input type="month" id="divergence-history-month" class="glass-input hidden" />
           </div>
+          <button id="ticker-back-btn" class="tf-btn hidden" title="Back to overview">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+          </button>
         </div>
 
         <!-- Breadth Controls -->
@@ -269,10 +271,10 @@
             <div class="column-header">
               <h2>Daily</h2>
               <div class="header-sort-controls divergence-daily-sort">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                 <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-daily-container" class="alerts-list">
@@ -284,10 +286,10 @@
             <div class="column-header">
               <h2>Weekly</h2>
               <div class="header-sort-controls divergence-weekly-sort">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                 <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-weekly-container" class="alerts-list">
@@ -299,15 +301,6 @@
 
       <!-- TICKER DETAIL VIEW (Moved from Live Feed) -->
       <div id="ticker-view" class="hidden">
-        <div class="ticker-view-header">
-          <button id="ticker-back-btn" class="tf-btn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-            Back
-          </button>
-        </div>
         <div class="ticker-history-section">
             <div class="split-view">
               <!-- Daily Column -->
@@ -317,9 +310,10 @@
                     <h2>Daily</h2>
                   </div>
                   <div class="header-sort-controls ticker-daily-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                     <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-daily-container" class="alerts-list">
@@ -334,9 +328,10 @@
                     <h2>Weekly</h2>
                   </div>
                   <div class="header-sort-controls ticker-weekly-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                     <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-weekly-container" class="alerts-list">
@@ -345,17 +340,7 @@
               </div>
             </div>
 
-            <!-- TradingView Widget Container -->
-            <div
-              id="tv-chart-container"
-              class="tradingview-widget-container"
-              style="height: 600px; width: 100%; margin-top: 20px; display: none;"
-            >
-              <div
-                id="tradingview_chart"
-                style="height: 100%; width: 100%"
-              ></div>
-            </div>
+
 
             <!-- Custom Chart Section -->
             <div id="custom-chart-container" class="custom-chart-section">

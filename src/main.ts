@@ -72,13 +72,11 @@ window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'div
         tickerView.dataset.ticker = ticker;
         document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
-        document.getElementById('view-divergence')?.classList.add('hidden'); // Ensure divergence list is hidden if it overlaps
-        // Actually, in the old code, tickerView was inside view-live. If we are removing view-live, we might need to change HTML structure.
-        // But for this TS file, we just need to remove 'live' references.
-        // Let's assume tickerView is a sibling or we will fix HTML next.
+        document.getElementById('view-divergence')?.classList.add('hidden');
+        document.getElementById('ticker-back-btn')?.classList.remove('hidden');
         tickerView.classList.remove('hidden');
         renderTickerView(ticker);
-        window.scrollTo(0, 0); 
+        window.scrollTo(0, 0);
     }
 }
 
@@ -86,8 +84,8 @@ window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
 
-    // Always return to divergence view as it's the only one left for alerts
     document.getElementById('reset-filter')?.classList.add('hidden');
+    document.getElementById('ticker-back-btn')?.classList.add('hidden');
     switchView('divergence');
     window.scrollTo(0, divergenceDashboardScrollY);
 }
@@ -109,6 +107,7 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
 
     // Also hide ticker view when switching main views
     document.getElementById('ticker-view')?.classList.add('hidden');
+    document.getElementById('ticker-back-btn')?.classList.add('hidden');
 
     stopLogsPolling();
 

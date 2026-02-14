@@ -26,5 +26,5 @@ export interface AppState {
 }
 
 
-export type SortMode = 'time' | 'volume' | 'favorite';
+export type SortMode = 'time' | 'volume' | 'favorite' | 'score';
 export type TickerListContext = 'daily' | 'weekly' | null;

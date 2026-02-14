@@ -236,6 +236,18 @@ h2 {
   align-items: center;
   width: 100%;
 }
+#ticker-back-btn {
+  margin-left: auto;
+  width: auto !important;
+  min-width: 28px !important;
+  padding: 2px 6px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#ticker-back-btn.hidden {
+  display: none;
+}
 .divergence-run-btn {
   width: auto !important;
   min-width: 52px !important;

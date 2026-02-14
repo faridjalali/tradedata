@@ -218,7 +218,7 @@ export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'd
             return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
         } else if (mode === 'volume') {
             result = (b.signal_volume || 0) - (a.signal_volume || 0);
-        } else if (mode === 'combo') {
+        } else if (mode === 'score') {
             const bScore = b.divergence_states
                 ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states)
                 : getTickerDivergenceScoreFromCache(b.ticker);

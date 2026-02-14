@@ -2,19 +2,12 @@ import { getAlerts } from './state';
 import { getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
-import { SortMode, Alert } from './types';
+import { SortMode } from './types';
 import { createAlertSortFn } from './utils';
 import { renderCustomChart } from './chart';
-import { getAppTimeZone } from './timezone';
 
-// Declare TradingView and Chart.js globals
-declare const TradingView: any;
-declare const Chart: any;
-
-let tickerDailySortMode: SortMode = 'time';
-let tickerWeeklySortMode: SortMode = 'time';
-let currentChartTicker: string | null = null;
-let currentTradingViewTimeZone: string | null = null;
+let tickerDailySortMode: SortMode = 'score';
+let tickerWeeklySortMode: SortMode = 'score';
 
 interface RenderTickerViewOptions {
     refreshCharts?: boolean;
@@ -52,72 +45,34 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
     primeDivergenceSummaryCacheFromAlerts(allAlerts);
     const alerts = allAlerts.filter(a => a.ticker === ticker);
     
-    const daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
-    const weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
+    let daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
+    let weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
 
-    daily.sort(createAlertSortFn(tickerDailySortMode));
-    weekly.sort(createAlertSortFn(tickerWeeklySortMode));
+    if (tickerDailySortMode === 'favorite') {
+        daily = daily.filter(a => a.is_favorite);
+    }
+    if (tickerWeeklySortMode === 'favorite') {
+        weekly = weekly.filter(a => a.is_favorite);
+    }
+
+    daily.sort(createAlertSortFn(tickerDailySortMode === 'favorite' ? 'time' : tickerDailySortMode));
+    weekly.sort(createAlertSortFn(tickerWeeklySortMode === 'favorite' ? 'time' : tickerWeeklySortMode));
     
     // renderAvg removed
     
     const dailyContainer = document.getElementById('ticker-daily-container');
     if (dailyContainer) {
-        if (daily.length === 0) {
-            dailyContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No daily alerts</div>';
-        } else {
-            dailyContainer.innerHTML = daily.map(createAlertCard).join('');
-            renderAlertCardDivergenceTablesFromCache(dailyContainer);
-        }
+        dailyContainer.innerHTML = daily.map(createAlertCard).join('');
+        if (daily.length > 0) renderAlertCardDivergenceTablesFromCache(dailyContainer);
     }
 
     const weeklyContainer = document.getElementById('ticker-weekly-container');
     if (weeklyContainer) {
-        if (weekly.length === 0) {
-            weeklyContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-secondary)">No weekly alerts</div>';
-        } else {
-            weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
-            renderAlertCardDivergenceTablesFromCache(weeklyContainer);
-        }
+        weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+        if (weekly.length > 0) renderAlertCardDivergenceTablesFromCache(weeklyContainer);
     }
 
     if (refreshCharts) {
-        renderTradingViewChart(ticker);
         renderCustomChart(ticker);
     }
-}
-
-
-function renderTradingViewChart(ticker: string): void {
-    if (typeof TradingView === 'undefined') return;
-    const activeTimeZone = getAppTimeZone();
-    if (currentChartTicker === ticker && currentTradingViewTimeZone === activeTimeZone) return; 
-
-    currentChartTicker = ticker;
-    currentTradingViewTimeZone = activeTimeZone;
-    const container = document.getElementById('tradingview_chart');
-    if (container) {
-        container.innerHTML = '';
-    }
-
-    new TradingView.widget({
-        "width": "100%",
-        "height": 600,
-        "symbol": ticker,
-        "interval": "D",
-        "timezone": activeTimeZone,
-        "theme": "dark",
-        "style": "1",
-        "locale": "en",
-        "toolbar_bg": "#f1f3f6",
-        "enable_publishing": false,
-        "allow_symbol_change": false,
-        "studies": ["MASimple@tv-basicstudies"],
-        "studies_overrides": {
-            "moving average.length": 50,
-            "moving average.source": "close",
-            "moving average.plot.color": "#ff9800",
-            "moving average.plot.linewidth": 2
-        },
-        "container_id": "tradingview_chart"
-    });
 }
