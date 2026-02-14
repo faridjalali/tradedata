@@ -5,7 +5,7 @@ This document is the authoritative handoff for the **DataAPI + divergence** syst
 Scope:
 
 - Included: custom chart, divergence pipeline, divergence tables, alert-card hydration, Railway deployment for app + divergence DB.
-- Excluded by design: TradingView webhook/TV alert workflow (kept in code for backward compatibility but intentionally not covered as a target architecture).
+- Excluded by design: legacy TradingView integrations (fully removed).
 
 ## 1) System Overview
 
@@ -513,7 +513,6 @@ Global settings panel:
 
 These remain in code but are not part of target long-term architecture:
 
-- TV webhook routes and TV alert tables (`/webhook`, `/api/alerts`, legacy `alerts` usage).
 - Some variable names/messages still mention old labels in isolated places (non-critical).
 
 ## 12) Backup Workflow

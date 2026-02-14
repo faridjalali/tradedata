@@ -45,9 +45,9 @@ app.use(express.json());
 
 const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
-const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '46110603');
+const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
-const BASIC_AUTH_EXEMPT_PREFIXES = ['/webhook'];
+const BASIC_AUTH_EXEMPT_PREFIXES = [];
 const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 let isShuttingDown = false;
@@ -265,7 +265,7 @@ function createRequestId() {
 function shouldLogRequestPath(pathname) {
   const path = String(pathname || '');
   if (path.startsWith('/api/')) return true;
-  return path === '/healthz' || path === '/readyz' || path.startsWith('/webhook');
+  return path === '/healthz' || path === '/readyz';
 }
 
 function extractSafeRequestMeta(req) {
@@ -523,6 +523,7 @@ const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.D
 // In-memory cache of daily OHLC bars populated during daily/weekly scans.
 // Key: uppercase ticker, Value: array of { time, open, high, low, close }.
 const miniBarsCacheByTicker = new Map();
+const MINI_BARS_CACHE_MAX_TICKERS = 2000;
 
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
@@ -922,33 +923,6 @@ async function withDivergenceClient(fn) {
   }
 }
 
-// Simple in-memory rate limiter for webhook endpoint
-const webhookRateLimit = new Map();
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
-const RATE_LIMIT_MAX = 60; // max requests per window per IP
-
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const entry = webhookRateLimit.get(ip);
-  if (!entry || now - entry.start > RATE_LIMIT_WINDOW_MS) {
-    webhookRateLimit.set(ip, { start: now, count: 1 });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= RATE_LIMIT_MAX;
-}
-
-// Cleanup stale entries every 5 minutes
-const webhookRateLimitCleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of webhookRateLimit) {
-    if (now - entry.start > RATE_LIMIT_WINDOW_MS) webhookRateLimit.delete(ip);
-  }
-}, 300000);
-if (typeof webhookRateLimitCleanupTimer.unref === 'function') {
-  webhookRateLimitCleanupTimer.unref();
-}
-
 const initDB = async () => {
   try {
     // Ensure table exists
@@ -1180,63 +1154,6 @@ const initDivergenceDB = async () => {
 };
 
 initDivergenceDB();
-
-// Endpoint for TradingView Webhook
-app.post("/webhook", async (req, res) => {
-  // Rate limiting
-  if (!checkRateLimit(req.ip)) {
-    return res.status(429).send("Too many requests");
-  }
-
-  const secret = req.query.secret;
-  // Simple security check
-  if (!process.env.WEBHOOK_SECRET || secret !== process.env.WEBHOOK_SECRET) {
-    console.log("Unauthorized access attempt");
-    return res.status(401).send("Unauthorized");
-  }
-
-  try {
-    // Validate and sanitize inputs
-    const ticker = typeof req.body.ticker === 'string' ? req.body.ticker.trim().substring(0, 20) : '';
-    if (!ticker) {
-        return res.status(400).send("Missing or invalid ticker");
-    }
-
-    const signalDir = Number(req.body.signalDir) || 0;
-    if (![1, -1, 0].includes(signalDir)) {
-        return res.status(400).send("Invalid signalDir (must be -1, 0, or 1)");
-    }
-    
-    // Infer signal_type from direction
-    let signal = 'neutral';
-    if (signalDir === 1) signal = 'bullish';
-    if (signalDir === -1) signal = 'bearish';
-
-    const price = Math.max(0, Number(req.body.price) || 0);
-    const message = typeof req.body.message === 'string' ? req.body.message.substring(0, 500) : '';
-    
-    // Strict 1d/1w logic
-    const rawTf = (req.body.timeframe || '').toString().toLowerCase();
-    const timeframe = rawTf.includes('w') ? '1w' : '1d'; 
-
-    const signalVolume = Math.max(0, Math.min(999999, Math.round(Number(req.body.signalVol) || 0)));
-    const intensityScore = Math.max(0, Math.min(100, Math.round(Number(req.body.finalIntensityScore) || 0)));
-    const comboScore = Math.max(0, Math.min(100, Math.round(Number(req.body.comboScore) || 0)));
-    
-    const query = `
-      INSERT INTO alerts(ticker, signal_type, price, message, timeframe, signal_direction, signal_volume, intensity_score, combo_score) 
-      VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) 
-      RETURNING *
-    `;
-    const values = [ticker, signal, price, message, timeframe, signalDir, signalVolume, intensityScore, comboScore];
-    const result = await pool.query(query, values);
-    console.log('Alert received:', result.rows[0]);
-    res.status(200).send('Alert Received');
-  } catch (err) {
-    console.error("Database error:", err);
-    res.status(500).send("Server Error");
-  }
-});
 
 app.get('/api/alerts', async (req, res) => {
   try {
@@ -3025,8 +2942,9 @@ function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
     const avgDiff = positiveDiffs.reduce((sum, value) => sum + value, 0) / positiveDiffs.length;
     if (!Number.isFinite(avgDiff) || avgDiff <= 0) return;
 
-    // Cumulative series tends to have absolute values much larger than per-bar differences.
-    if ((maxVolume / avgDiff) < 4) return;
+    // Cumulative series: absolute values are much larger than per-bar increments.
+    // Require ratio ≥ 6 (conservative) to avoid false positives from volume spikes.
+    if ((maxVolume / avgDiff) < 6) return;
 
     for (let i = startIndex + 1; i <= endIndex; i++) {
       const prev = Number(normalized[i - 1].volume) || 0;
@@ -3083,7 +3001,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
   }
 
   let lastClose = null;
-  let lastBull = true;
+  let lastBull = null;  // null = unknown; don't assume direction
   const deltas = [];
 
   for (let i = 0; i < parentBars.length; i++) {
@@ -3108,15 +3026,20 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
           } else if (ib.close < prevClose) {
             isBull = false;
           } else {
-            isBull = streamLastBull;
+            isBull = streamLastBull;  // may still be null
           }
         } else {
-          isBull = streamLastBull;
+          isBull = streamLastBull;  // may still be null
         }
       }
 
-      streamLastBull = Boolean(isBull);
-      runningDelta += streamLastBull ? ib.volume : -ib.volume;
+      // Pure doji with no prior reference: use running delta direction.
+      // Positive delta → bullish, negative → bearish, zero → skip.
+      if (isBull === null && runningDelta !== 0) {
+        isBull = runningDelta > 0;
+      }
+      if (isBull !== null) streamLastBull = isBull;
+      runningDelta += isBull === true ? ib.volume : (isBull === false ? -ib.volume : 0);
       if (j === stream.length - 1) {
         streamLastClose = ib.close;
       }
@@ -3168,7 +3091,7 @@ function computeVolumeDeltaCandlesByParentBars(parentBars, lowerTimeframeBars, i
   }
 
   let lastClose = null;
-  let lastBull = true;
+  let lastBull = null;  // null = unknown; don't assume direction
   const candles = [];
 
   for (let i = 0; i < parentBars.length; i++) {
@@ -3201,15 +3124,19 @@ function computeVolumeDeltaCandlesByParentBars(parentBars, lowerTimeframeBars, i
           } else if (ib.close < prevClose) {
             isBull = false;
           } else {
-            isBull = streamLastBull;
+            isBull = streamLastBull;  // may still be null
           }
         } else {
-          isBull = streamLastBull;
+          isBull = streamLastBull;  // may still be null
         }
       }
 
-      streamLastBull = Boolean(isBull);
-      runningDelta += streamLastBull ? ib.volume : -ib.volume;
+      // Pure doji with no prior reference: use running delta direction.
+      if (isBull === null && runningDelta !== 0) {
+        isBull = runningDelta > 0;
+      }
+      if (isBull !== null) streamLastBull = isBull;
+      runningDelta += isBull === true ? ib.volume : (isBull === false ? -ib.volume : 0);
       maxDelta = Math.max(maxDelta, runningDelta);
       minDelta = Math.min(minDelta, runningDelta);
       if (j === stream.length - 1) {
@@ -3298,8 +3225,12 @@ function parseBarTimeToUnixSeconds(bar) {
   const parts = parseDataApiDateTime(bar?.datetime || bar?.date);
   if (!parts) return null;
   const { year, month, day, hour, minute } = parts;
-  const testDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const etOffset = testDate.toLocaleString('en-US', {
+  // Determine EST (-5) vs EDT (-4) for the actual hour being converted.
+  // Use the bar's own hour (not noon) so that if a bar were near a DST
+  // boundary it gets the correct offset.  In practice US DST transitions
+  // happen at 2 AM ET on Sundays (markets closed), so this is defensive.
+  const probeDate = new Date(Date.UTC(year, month - 1, day, Math.max(hour, 0), minute, 0));
+  const etOffset = probeDate.toLocaleString('en-US', {
     timeZone: 'America/New_York',
     timeZoneName: 'short'
   }).includes('EST') ? -5 : -4;
@@ -5816,9 +5747,11 @@ function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const dayOfWeek = nowEt.getDay(); // 0=Sun, 6=Sat
   const totalMinutes = nowEt.getHours() * 60 + nowEt.getMinutes();
-  // Massive API has a ~15-min delay; treat 4:16 PM ET as the earliest moment today's
-  // closed daily candle is available (16 * 60 + 16 = 976).
-  const candleAvailableMinute = 976;
+  // Data API has a ~15-min delay after market close.  Normal close is 4:00 PM ET,
+  // but on early-close days (July 3, day before Thanksgiving, etc.) close is 1:00 PM ET.
+  // Using 1:16 PM ET (13*60+16 = 796) accommodates early close days.
+  // For normal days the daily candle is also available well before our typical scan window.
+  const candleAvailableMinute = Math.max(796, Number(process.env.CANDLE_AVAILABLE_MINUTE_ET) || 796);
 
   // Weekday, 4:16 PM ET or later → today's daily candle is closed and available
   if (dayOfWeek >= 1 && dayOfWeek <= 5 && totalMinutes >= candleAvailableMinute) {
@@ -6237,6 +6170,15 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
       low: Number(b.low),
       close: Number(b.close),
     })));
+    // Evict oldest entries when cache exceeds limit.
+    if (miniBarsCacheByTicker.size > MINI_BARS_CACHE_MAX_TICKERS) {
+      const excess = miniBarsCacheByTicker.size - MINI_BARS_CACHE_MAX_TICKERS;
+      const iter = miniBarsCacheByTicker.keys();
+      for (let n = 0; n < excess; n++) {
+        const key = iter.next().value;
+        if (key !== undefined) miniBarsCacheByTicker.delete(key);
+      }
+    }
   }
 
   const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
@@ -8658,7 +8600,6 @@ async function shutdownServer(signal) {
     clearTimeout(divergenceSchedulerTimer);
     divergenceSchedulerTimer = null;
   }
-  clearInterval(webhookRateLimitCleanupTimer);
   clearInterval(vdRsiCacheCleanupTimer);
 
   const forceExitTimer = setTimeout(() => {

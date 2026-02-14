@@ -505,7 +505,9 @@ function calculateRSIFromCloses(closePrices: number[], period: number): number[]
 
 function buildRSISeriesFromBars(bars: any[], period: number): Array<{ time: string | number, value: number }> {
   if (!bars || bars.length === 0) return [];
-  const closes = bars.map((bar) => Number(bar.close)).filter((value) => Number.isFinite(value));
+  // Don't filter — keep 1:1 index alignment between bars and closes.
+  // Non-finite values are handled inside calculateRSIFromCloses.
+  const closes = bars.map((bar) => Number(bar.close));
   const rsiValues = calculateRSIFromCloses(closes, period);
   const out: Array<{ time: string | number, value: number }> = [];
   for (let i = 0; i < bars.length; i++) {
@@ -1127,14 +1129,23 @@ function ensureSettingsLoadedFromStorage(): void {
 function computeSMA(values: number[], length: number): Array<number | null> {
   const period = Math.max(1, Math.floor(length));
   const out: Array<number | null> = new Array(values.length).fill(null);
+  // Forward-fill non-finite values so the sliding window stays consistent.
+  const filled = values.slice();
+  let lastFinite: number | null = null;
+  for (let i = 0; i < filled.length; i++) {
+    if (Number.isFinite(filled[i])) {
+      lastFinite = filled[i];
+    } else if (lastFinite !== null) {
+      filled[i] = lastFinite;
+    }
+  }
   let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i];
+  for (let i = 0; i < filled.length; i++) {
+    const value = filled[i];
     if (!Number.isFinite(value)) continue;
     sum += value;
     if (i >= period) {
-      const drop = values[i - period];
-      if (Number.isFinite(drop)) sum -= drop;
+      sum -= filled[i - period];
     }
     if (i >= period - 1) {
       out[i] = sum / period;
@@ -1182,14 +1193,30 @@ function computeEMA(values: number[], length: number): Array<number | null> {
   const period = Math.max(1, Math.floor(length));
   const out: Array<number | null> = new Array(values.length).fill(null);
   if (values.length === 0) return out;
+  // Forward-fill non-finite values so the EMA window stays consistent.
+  const filled = values.slice();
+  let lastFinite: number | null = null;
+  for (let i = 0; i < filled.length; i++) {
+    if (Number.isFinite(filled[i])) {
+      lastFinite = filled[i];
+    } else if (lastFinite !== null) {
+      filled[i] = lastFinite;
+    }
+  }
   const alpha = 2 / (period + 1);
   let ema: number | null = null;
 
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i];
+  for (let i = 0; i < filled.length; i++) {
+    const value = filled[i];
     if (!Number.isFinite(value)) continue;
     if (ema === null) {
-      ema = value;
+      // Seed with SMA of first `period` finite values.
+      let sum = 0;
+      let count = 0;
+      for (let j = i; j < filled.length && count < period; j++) {
+        if (Number.isFinite(filled[j])) { sum += filled[j]; count++; }
+      }
+      ema = count > 0 ? sum / count : value;
     } else {
       ema = (value * alpha) + (ema * (1 - alpha));
     }
@@ -4736,8 +4763,14 @@ export async function renderCustomChart(
     volumeDeltaRsiDivergencePlotSelected = false;
     rsiDivergencePlotStartIndex = null;
     volumeDeltaRsiDivergencePlotStartIndex = null;
+    rsiDivergencePlotToolActive = false;
+    volumeDeltaRsiDivergencePlotToolActive = false;
+    volumeDeltaDivergenceToolActive = false;
+    rsiDivergenceToolActive = false;
     hideDivergenceOverlay('rsi');
     hideDivergenceOverlay('volumeDeltaRsi');
+    // Re-bind chart sync on next setupChartSync call since charts may be recreated.
+    isChartSyncBound = false;
   }
 
   const chartContent = document.getElementById('chart-content');
