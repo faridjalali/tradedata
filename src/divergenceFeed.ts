@@ -28,6 +28,8 @@ let dailySortMode: SortMode = 'time';
 let weeklySortMode: SortMode = 'time';
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
+let divergenceScanPollConsecutiveErrors = 0;
+const DIVERGENCE_POLL_ERROR_THRESHOLD = 3;
 let divergenceFetchAllLastProcessedTickers = -1;
 let divergenceFetchWeeklyLastProcessedTickers = -1;
 let divergenceTableLastUiRefreshAtMs = 0;
@@ -545,6 +547,7 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
     divergenceScanPollInFlight = true;
     try {
         const status = await fetchDivergenceScanStatus();
+        divergenceScanPollConsecutiveErrors = 0;
         divergenceTableRunningState = Boolean(status.tableBuild?.running);
         divergenceFetchAllRunningState = Boolean(status.fetchAllData?.running);
         divergenceFetchWeeklyRunningState = Boolean(status.fetchWeeklyData?.running);
@@ -607,25 +610,33 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
             allowAutoCardRefreshFromFetchWeekly = false;
         }
     } catch (error) {
-        console.error('Failed to poll divergence scan status:', error);
-        divergenceTableRunningState = false;
-        divergenceFetchAllRunningState = false;
-        divergenceFetchWeeklyRunningState = false;
-        setRunStatusText(toStatusTextFromError(error));
-        setTableRunStatusText(toStatusTextFromError(error));
-        setFetchAllStatusText(toStatusTextFromError(error));
-        setFetchWeeklyStatusText(toStatusTextFromError(error));
-        clearDivergenceScanPolling();
-        setRunButtonState(false, false);
-        setRunControlButtonState(null);
-        setTableRunButtonState(false, false);
-        setTableControlButtonState(null);
-        setFetchAllButtonState(false, false);
-        setFetchAllControlButtonState(null);
-        setFetchWeeklyButtonState(false, false);
-        setFetchWeeklyControlButtonState(null);
-        allowAutoCardRefreshFromFetchAll = false;
-        allowAutoCardRefreshFromFetchWeekly = false;
+        divergenceScanPollConsecutiveErrors += 1;
+        // Transient errors during active fetches are expected (DB pool
+        // saturated). Keep polling and only show errors after repeated
+        // consecutive failures.
+        if (divergenceScanPollConsecutiveErrors < DIVERGENCE_POLL_ERROR_THRESHOLD) {
+            console.warn(`Scan status poll failed (${divergenceScanPollConsecutiveErrors}/${DIVERGENCE_POLL_ERROR_THRESHOLD}), retrying next cycle`);
+        } else {
+            console.error('Failed to poll divergence scan status:', error);
+            divergenceTableRunningState = false;
+            divergenceFetchAllRunningState = false;
+            divergenceFetchWeeklyRunningState = false;
+            setRunStatusText(toStatusTextFromError(error));
+            setTableRunStatusText(toStatusTextFromError(error));
+            setFetchAllStatusText(toStatusTextFromError(error));
+            setFetchWeeklyStatusText(toStatusTextFromError(error));
+            clearDivergenceScanPolling();
+            setRunButtonState(false, false);
+            setRunControlButtonState(null);
+            setTableRunButtonState(false, false);
+            setTableControlButtonState(null);
+            setFetchAllButtonState(false, false);
+            setFetchAllControlButtonState(null);
+            setFetchWeeklyButtonState(false, false);
+            setFetchWeeklyControlButtonState(null);
+            allowAutoCardRefreshFromFetchAll = false;
+            allowAutoCardRefreshFromFetchWeekly = false;
+        }
     } finally {
         divergenceScanPollInFlight = false;
     }

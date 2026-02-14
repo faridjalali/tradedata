@@ -423,37 +423,47 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
 
+    // In-memory statuses are always available and never fail.
+    const tableBuild = typeof getTableBuildStatus === 'function'
+      ? getTableBuildStatus()
+      : null;
+    const scanControl = typeof getScanControlStatus === 'function'
+      ? getScanControlStatus()
+      : null;
+    const fetchAllData = typeof getFetchAllDataStatus === 'function'
+      ? getFetchAllDataStatus()
+      : null;
+    const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function'
+      ? getFetchWeeklyDataStatus()
+      : null;
+
+    // The DB query for latestJob can fail under heavy write load
+    // (pool connections saturated during fetches). Fall back gracefully.
+    let statusPayload;
     try {
-      const statusPayload = await fetchLatestDivergenceScanStatus({
+      statusPayload = await fetchLatestDivergenceScanStatus({
         divergencePool,
         divergenceSourceInterval,
         getIsScanRunning,
         getLastFetchedTradeDateEt,
         getLastScanDateEt
       });
-      const tableBuild = typeof getTableBuildStatus === 'function'
-        ? getTableBuildStatus()
-        : null;
-      const scanControl = typeof getScanControlStatus === 'function'
-        ? getScanControlStatus()
-        : null;
-      const fetchAllData = typeof getFetchAllDataStatus === 'function'
-        ? getFetchAllDataStatus()
-        : null;
-      const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function'
-        ? getFetchWeeklyDataStatus()
-        : null;
-      return res.json({
-        ...statusPayload,
-        scanControl,
-        tableBuild,
-        fetchAllData,
-        fetchWeeklyData
-      });
     } catch (err) {
-      console.error('Failed to fetch divergence scan status:', err);
-      return res.status(500).json({ error: 'Failed to fetch scan status' });
+      console.error('Scan status DB query failed (returning in-memory status):', err.message);
+      statusPayload = {
+        running: getIsScanRunning(),
+        lastScanDateEt: getLastFetchedTradeDateEt() || getLastScanDateEt() || null,
+        latestJob: null
+      };
     }
+
+    return res.json({
+      ...statusPayload,
+      scanControl,
+      tableBuild,
+      fetchAllData,
+      fetchWeeklyData
+    });
   });
 }
 
