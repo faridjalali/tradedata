@@ -120,7 +120,6 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
 function closeAllHeaderDropdowns(): void {
     document.getElementById('header-nav-dropdown')?.classList.add('hidden');
     document.getElementById('header-nav-dropdown')?.classList.remove('open');
-    closeAllColumnCustomPanels();
 }
 
 function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'breadth'): void {
