@@ -6706,6 +6706,9 @@ async function runDivergenceFetchAllData(options = {}) {
   }
   divergenceFetchAllDataRunning = true;
   divergenceFetchAllDataStopRequested = false;
+  // Clear previous run metrics immediately so stale data never leaks into
+  // the new run's Logs page display (failedTickers, errors, etc.).
+  runMetricsByType.fetchDaily = null;
   if (!resumeRequested) {
     divergenceFetchAllDataResumeState = null;
   }
@@ -7264,6 +7267,9 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
   divergenceFetchWeeklyDataRunning = true;
   divergenceFetchWeeklyDataStopRequested = false;
+  // Clear previous run metrics immediately so stale data never leaks into
+  // the new run's Logs page display (failedTickers, errors, etc.).
+  runMetricsByType.fetchWeekly = null;
   if (!resumeRequested) {
     divergenceFetchWeeklyDataResumeState = null;
   }
