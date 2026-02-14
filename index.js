@@ -8,10 +8,10 @@ const compression = require("compression");
 const { setGlobalDispatcher, Agent } = require("undici");
 
 // setGlobalDispatcher(new Agent({
-//   keepAliveTimeout: 15000,
-//   keepAliveMaxTimeout: 30000,
+//   keepAliveTimeout: 10000,
+//   keepAliveMaxTimeout: 10000,
 //   connect: {
-//     timeout: 15000
+//     timeout: 10000
 //   }
 // }));
 
