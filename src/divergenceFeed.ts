@@ -31,6 +31,9 @@ let dailySortMode: SortMode = 'score';
 let weeklySortMode: SortMode = 'score';
 let dailySortDirection: 'asc' | 'desc' = 'desc';
 let weeklySortDirection: 'asc' | 'desc' = 'desc';
+const ALERTS_PAGE_SIZE = 100;
+let dailyVisibleCount = ALERTS_PAGE_SIZE;
+let weeklyVisibleCount = ALERTS_PAGE_SIZE;
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
 let divergenceScanPollConsecutiveErrors = 0;
@@ -976,9 +979,18 @@ export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]>
     }
 }
 
+function showMoreButtonHtml(shown: number, total: number, timeframe: '1d' | '1w'): string {
+    if (shown >= total) return '';
+    const remaining = total - shown;
+    const nextBatch = Math.min(remaining, ALERTS_PAGE_SIZE);
+    return `<button class="tf-btn show-more-btn" data-timeframe="${timeframe}">▼ Show ${nextBatch} more (${shown}/${total})</button>`;
+}
+
 export function renderDivergenceOverview(): void {
     const allSignals = getDivergenceSignals();
     primeDivergenceSummaryCacheFromAlerts(allSignals);
+    dailyVisibleCount = ALERTS_PAGE_SIZE;
+    weeklyVisibleCount = ALERTS_PAGE_SIZE;
     const dailyContainer = document.getElementById('divergence-daily-container');
     const weeklyContainer = document.getElementById('divergence-weekly-container');
     if (!dailyContainer || !weeklyContainer) return;
@@ -996,8 +1008,13 @@ export function renderDivergenceOverview(): void {
     daily.sort(createAlertSortFn(dailySortMode === 'favorite' ? 'time' : dailySortMode, dailySortDirection));
     weekly.sort(createAlertSortFn(weeklySortMode === 'favorite' ? 'time' : weeklySortMode, weeklySortDirection));
 
-    dailyContainer.innerHTML = daily.map(createAlertCard).join('');
-    weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
+    const dailySlice = daily.slice(0, dailyVisibleCount);
+    const weeklySlice = weekly.slice(0, weeklyVisibleCount);
+
+    dailyContainer.innerHTML = dailySlice.map(createAlertCard).join('')
+        + showMoreButtonHtml(dailySlice.length, daily.length, '1d');
+    weeklyContainer.innerHTML = weeklySlice.map(createAlertCard).join('')
+        + showMoreButtonHtml(weeklySlice.length, weekly.length, '1w');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
 }
@@ -1044,7 +1061,11 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
 
     signals.sort(createAlertSortFn(sortMode === 'favorite' ? 'time' : sortMode, sortDirection));
 
-    container.innerHTML = signals.map(createAlertCard).join('');
+    const visibleCount = timeframe === '1d' ? dailyVisibleCount : weeklyVisibleCount;
+    const slice = signals.slice(0, visibleCount);
+
+    container.innerHTML = slice.map(createAlertCard).join('')
+        + showMoreButtonHtml(slice.length, signals.length, timeframe);
     renderAlertCardDivergenceTablesFromCache(container);
 }
 
@@ -1340,6 +1361,21 @@ export function setupDivergenceFeedDelegation(): void {
         if (!target.closest('.alert-card')) return;
         destroyMiniChartOverlay();
     }, true); // capture phase — mouseleave doesn't bubble
+
+    // "Show more" pagination button
+    view.addEventListener('click', (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('.show-more-btn') as HTMLElement | null;
+        if (!btn) return;
+        const tf = btn.dataset.timeframe as '1d' | '1w' | undefined;
+        if (!tf) return;
+        if (tf === '1d') {
+            dailyVisibleCount += ALERTS_PAGE_SIZE;
+            renderDivergenceContainer('1d');
+        } else {
+            weeklyVisibleCount += ALERTS_PAGE_SIZE;
+            renderDivergenceContainer('1w');
+        }
+    });
 }
 
 export function setDivergenceDailySort(mode: SortMode): void {
@@ -1349,6 +1385,7 @@ export function setDivergenceDailySort(mode: SortMode): void {
         dailySortMode = mode;
         dailySortDirection = 'desc';
     }
+    dailyVisibleCount = ALERTS_PAGE_SIZE;
     updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
     renderDivergenceContainer('1d');
 }
@@ -1360,6 +1397,7 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
         weeklySortMode = mode;
         weeklySortDirection = 'desc';
     }
+    weeklyVisibleCount = ALERTS_PAGE_SIZE;
     updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
     renderDivergenceContainer('1w');
 }
