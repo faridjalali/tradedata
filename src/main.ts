@@ -13,8 +13,8 @@ import {
     fetchDivergenceSignals,
     renderDivergenceOverview,
     setupDivergenceFeedDelegation,
-    runManualDivergenceFetchAllData,
-    stopManualDivergenceFetchAllData,
+    runManualDivergenceFetchDailyData,
+    stopManualDivergenceFetchDailyData,
     runManualDivergenceFetchWeeklyData,
     stopManualDivergenceFetchWeeklyData,
     syncDivergenceScanUiState,
@@ -518,11 +518,11 @@ function bootstrapApplication(): void {
     
     // Live Feed Controls
 
-    document.getElementById('divergence-fetch-all-btn')?.addEventListener('click', () => {
-        runManualDivergenceFetchAllData();
+    document.getElementById('divergence-fetch-daily-btn')?.addEventListener('click', () => {
+        runManualDivergenceFetchDailyData();
     });
-    document.getElementById('divergence-fetch-all-stop-btn')?.addEventListener('click', () => {
-        stopManualDivergenceFetchAllData();
+    document.getElementById('divergence-fetch-daily-stop-btn')?.addEventListener('click', () => {
+        stopManualDivergenceFetchDailyData();
     });
     document.getElementById('divergence-fetch-weekly-btn')?.addEventListener('click', () => {
         runManualDivergenceFetchWeeklyData();

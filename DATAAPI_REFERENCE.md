@@ -60,8 +60,8 @@ Divergence feed + controls:
 - `POST /api/divergence/table/pause`
 - `POST /api/divergence/table/resume`
 - `POST /api/divergence/table/stop`
-- `POST /api/divergence/fetch-all/run`
-- `POST /api/divergence/fetch-all/stop`
+- `POST /api/divergence/fetch-daily/run`
+- `POST /api/divergence/fetch-daily/stop`
 
 Ops:
 
@@ -170,7 +170,7 @@ For each lookback window N days:
 
 ### 4.6 MA dots (alert cards)
 
-Per ticker during fetch-all:
+Per ticker during fetch-daily:
 
 - Fetches DataAPI indicator latest values:
   - EMA 8, EMA 21, SMA 50, SMA 200
@@ -226,7 +226,7 @@ Behavior:
 - Flushes summary rows in batches.
 - Persists resume state for pause/stop/failure recovery.
 
-### 5.4 `Fetch All Data` (`runDivergenceFetchAllData`)
+### 5.4 `Fetch Daily Data` (`runDivergenceFetchDailyData`)
 
 Purpose:
 
@@ -251,7 +251,7 @@ Behavior:
 - TV button is hidden in nav (`index.html`), but legacy logic remains in code.
 - Page settings panel (global settings) contains:
   - Timezone dropdown
-  - `Fetch All Data` button
+  - `Fetch Daily Data` button
   - `Stop` button
   - Fetch-all status text
 
@@ -262,7 +262,7 @@ Behavior:
 - Fetch/render divergence alerts (`fetchDivergenceSignals`, `renderDivergenceOverview`)
 - Drive manual control buttons and statuses
 - Poll `/api/divergence/scan/status`
-- Trigger controlled card-table hydration while fetch-all is running
+- Trigger controlled card-table hydration while fetch-daily is running
 
 ### 6.3 Divergence summary/table module
 
@@ -361,8 +361,8 @@ Divergence jobs:
 
 - `runDailyDivergenceScan()`
 - `runDivergenceTableBuild()`
-- `runDivergenceFetchAllData()`
-- `requestStopDivergenceFetchAllData()` and related pause/resume helpers
+- `runDivergenceFetchDailyData()`
+- `requestStopDivergenceFetchDailyData()` and related pause/resume helpers
 
 Scheduler:
 
@@ -382,8 +382,8 @@ Scheduler:
 `src/divergenceFeed.ts`:
 
 - `syncDivergenceScanUiState()`
-- `runManualDivergenceFetchAllData()`
-- `stopManualDivergenceFetchAllData()`
+- `runManualDivergenceFetchDailyData()`
+- `stopManualDivergenceFetchDailyData()`
 - `fetchDivergenceSignals()`
 - `renderDivergenceOverview()`
 
@@ -499,7 +499,7 @@ Status:
 
 Global settings panel:
 
-- `Fetch All Data` starts complete rebuild over `divergence_symbols`
+- `Fetch Daily Data` starts complete rebuild over `divergence_symbols`
 - Stop button sends immediate stop request
 - Status text shows progress or latest run date
 

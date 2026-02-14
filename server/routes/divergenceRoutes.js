@@ -9,13 +9,13 @@ function registerDivergenceRoutes(options = {}) {
     isDivergenceConfigured,
     divergenceScanSecret,
     getIsScanRunning,
-    getIsFetchAllDataRunning,
+    getIsFetchDailyDataRunning,
     getIsFetchWeeklyDataRunning,
     parseBooleanInput,
     parseEtDateInput,
     runDailyDivergenceScan,
     runDivergenceTableBuild,
-    runDivergenceFetchAllData,
+    runDivergenceFetchDailyData,
     runDivergenceFetchWeeklyData,
     divergencePool,
     divergenceSourceInterval,
@@ -30,9 +30,9 @@ function registerDivergenceRoutes(options = {}) {
     requestPauseTableBuild,
     requestStopTableBuild,
     canResumeTableBuild,
-    getFetchAllDataStatus,
-    requestStopFetchAllData,
-    canResumeFetchAllData,
+    getFetchDailyDataStatus,
+    requestStopFetchDailyData,
+    canResumeFetchDailyData,
     getFetchWeeklyDataStatus,
     requestStopFetchWeeklyData,
     canResumeFetchWeeklyData
@@ -59,7 +59,7 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
-    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
     if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
@@ -129,7 +129,7 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
-    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
     if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
@@ -184,7 +184,7 @@ function registerDivergenceRoutes(options = {}) {
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
       || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
       || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
@@ -258,7 +258,7 @@ function registerDivergenceRoutes(options = {}) {
     if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
       return res.status(409).json({ status: 'running' });
     }
-    if (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning()) {
+    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
       return res.status(409).json({ status: 'running' });
     }
     if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
@@ -304,7 +304,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/fetch-all/run', async (req, res) => {
+  app.post('/api/divergence/fetch-daily/run', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -317,34 +317,34 @@ function registerDivergenceRoutes(options = {}) {
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
       || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
       || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
 
-    if (typeof runDivergenceFetchAllData !== 'function') {
+    if (typeof runDivergenceFetchDailyData !== 'function') {
       return res.status(501).json({ error: 'Fetch-all endpoint is not enabled' });
     }
 
-    const shouldResume = typeof canResumeFetchAllData === 'function' && canResumeFetchAllData();
+    const shouldResume = typeof canResumeFetchDailyData === 'function' && canResumeFetchDailyData();
 
-    runDivergenceFetchAllData({
+    runDivergenceFetchDailyData({
       trigger: 'manual-api',
       resume: shouldResume,
       force: true
     })
       .then((summary) => {
-        console.log(`Manual divergence fetch-all ${shouldResume ? 'resumed' : 'started'}:`, summary);
+        console.log(`Manual divergence fetch-daily ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-all failed: ${message}`);
+        console.error(`Manual divergence fetch-daily failed: ${message}`);
       });
 
     return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
-  app.post('/api/divergence/fetch-all/stop', async (req, res) => {
+  app.post('/api/divergence/fetch-daily/stop', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -353,10 +353,10 @@ function registerDivergenceRoutes(options = {}) {
     if (configuredSecret && configuredSecret !== providedSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    if (typeof requestStopFetchAllData !== 'function') {
+    if (typeof requestStopFetchDailyData !== 'function') {
       return res.status(501).json({ error: 'Fetch-all stop endpoint is not enabled' });
     }
-    const accepted = requestStopFetchAllData();
+    const accepted = requestStopFetchDailyData();
     if (accepted) return res.status(202).json({ status: 'stop-requested' });
     return res.status(409).json({ status: 'idle' });
   });
@@ -374,7 +374,7 @@ function registerDivergenceRoutes(options = {}) {
 
     if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
       || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchAllDataRunning === 'function' && getIsFetchAllDataRunning())
+      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
       || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
       return res.status(409).json({ status: 'running' });
     }
@@ -430,8 +430,8 @@ function registerDivergenceRoutes(options = {}) {
     const scanControl = typeof getScanControlStatus === 'function'
       ? getScanControlStatus()
       : null;
-    const fetchAllData = typeof getFetchAllDataStatus === 'function'
-      ? getFetchAllDataStatus()
+    const fetchDailyData = typeof getFetchDailyDataStatus === 'function'
+      ? getFetchDailyDataStatus()
       : null;
     const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function'
       ? getFetchWeeklyDataStatus()
@@ -461,7 +461,7 @@ function registerDivergenceRoutes(options = {}) {
       ...statusPayload,
       scanControl,
       tableBuild,
-      fetchAllData,
+      fetchDailyData,
       fetchWeeklyData
     });
   });

@@ -73,7 +73,7 @@ export interface DivergenceScanStatus {
         finished_at?: string | null;
         last_published_trade_date?: string | null;
     } | null;
-    fetchAllData?: {
+    fetchDailyData?: {
         running?: boolean;
         stop_requested?: boolean;
         can_resume?: boolean;
@@ -279,8 +279,8 @@ export async function stopDivergenceTableBuild(): Promise<{ status: string }> {
     return { status: String(payload?.status || 'stop-requested') };
 }
 
-export async function startDivergenceFetchAllData(): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/fetch-all/run', {
+export async function startDivergenceFetchDailyData(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/fetch-daily/run', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -293,14 +293,14 @@ export async function startDivergenceFetchAllData(): Promise<{ status: string }>
         }
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
-            : `Failed to start fetch-all run (HTTP ${response.status})`;
+            : `Failed to start fetch-daily run (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'started') };
 }
 
-export async function stopDivergenceFetchAllData(): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/fetch-all/stop', {
+export async function stopDivergenceFetchDailyData(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/fetch-daily/stop', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -313,7 +313,7 @@ export async function stopDivergenceFetchAllData(): Promise<{ status: string }> 
         }
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
-            : `Failed to stop fetch-all run (HTTP ${response.status})`;
+            : `Failed to stop fetch-daily run (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'stop-requested') };
@@ -373,7 +373,7 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
         lastScanDateEt: (payload as any).lastScanDateEt ?? null,
         scanControl: (payload as any).scanControl ?? null,
         tableBuild: (payload as any).tableBuild ?? null,
-        fetchAllData: (payload as any).fetchAllData ?? null,
+        fetchDailyData: (payload as any).fetchDailyData ?? null,
         fetchWeeklyData: (payload as any).fetchWeeklyData ?? null,
         latestJob: (payload as any).latestJob ?? null
     };
