@@ -157,7 +157,7 @@
         <nav class="main-nav">
           <button id="nav-logs" class="nav-btn">Logs</button>
           <button id="nav-divergence" class="nav-btn active">Alerts</button>
-          <button id="nav-leaderboard" class="nav-btn">Leaders</button>
+
           <button id="nav-breadth" class="nav-btn">Breadth</button>
         </nav>
       </header>
@@ -215,18 +215,7 @@
             <input type="month" id="divergence-history-month" class="glass-input hidden" />
           </div>
         </div>
-        <!-- Leaderboard Controls -->
-        <div id="leaderboard-controls" class="hidden">
-          <div class="timeframe-buttons">
-            <button class="tf-btn" data-days="1">1</button>
-            <button class="tf-btn" data-days="7">7</button>
-            <button class="tf-btn" data-days="14">14</button>
-            <button class="tf-btn active" data-days="30">30</button>
-            <button class="tf-btn" data-days="60">60</button>
-            <button class="tf-btn" data-days="90">90</button>
-            <button class="tf-btn" data-days="0">∞</button>
-          </div>
-        </div>
+
         <!-- Breadth Controls -->
         <div id="breadth-controls" class="hidden">
           <div class="breadth-controls-inner">
@@ -310,7 +299,16 @@
 
       <!-- TICKER DETAIL VIEW (Moved from Live Feed) -->
       <div id="ticker-view" class="hidden">
-          <div class="ticker-history-section">
+        <div class="ticker-view-header">
+          <button id="ticker-back-btn" class="tf-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Back
+          </button>
+        </div>
+        <div class="ticker-history-section">
             <div class="split-view">
               <!-- Daily Column -->
               <div class="column">

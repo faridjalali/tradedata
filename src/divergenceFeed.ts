@@ -21,11 +21,13 @@ import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSig
 import { createAlertCard } from './components';
 import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { refreshActiveTickerDivergenceSummary } from './chart';
-import { LiveFeedMode, SortMode, Alert } from './types';
+import { SortMode, Alert } from './types';
+
+export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
 
 let divergenceFeedMode: LiveFeedMode = 'today';
-let dailySortMode: SortMode = 'combo';
-let weeklySortMode: SortMode = 'combo';
+let dailySortMode: SortMode = 'time';
+let weeklySortMode: SortMode = 'time';
 let dailySortDirection: 'asc' | 'desc' = 'desc';
 let weeklySortDirection: 'asc' | 'desc' = 'desc';
 let divergenceScanPollTimer: number | null = null;
@@ -1033,7 +1035,7 @@ export function setupDivergenceFeedDelegation(): void {
         if (starBtn) {
             e.stopPropagation();
             const id = (starBtn as HTMLElement).dataset.id;
-            const source = (starBtn as HTMLElement).dataset.source === 'TV' ? 'TV' : 'DataAPI';
+            const source = 'DataAPI';
             if (!id) return;
 
             const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
@@ -1175,9 +1177,9 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
 }
 
 export function initializeDivergenceSortDefaults(): void {
-    dailySortMode = 'combo';
+    dailySortMode = 'time';
     dailySortDirection = 'desc';
-    weeklySortMode = 'combo';
+    weeklySortMode = 'time';
     weeklySortDirection = 'desc';
     updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
     updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);

@@ -1,5 +1,5 @@
 import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
-import { fetchLeaderboardData, setupLeaderboardDelegation } from './leaderboard';
+
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls } from './chart';
@@ -29,7 +29,7 @@ import {
     setAppTimeZone
 } from './timezone';
 
-let currentView: 'logs' | 'divergence' | 'leaderboard' | 'breadth' = 'divergence'; 
+let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence'; 
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'divergence' = 'divergence';
 let tickerListContext: TickerListContext = null;
@@ -92,7 +92,7 @@ window.showOverview = function() {
     window.scrollTo(0, divergenceDashboardScrollY);
 }
 
-function switchView(view: 'logs' | 'divergence' | 'leaderboard' | 'breadth') {
+function switchView(view: 'logs' | 'divergence' | 'breadth') {
     currentView = view;
     setActiveNavTab(view);
 
@@ -122,10 +122,6 @@ function switchView(view: 'logs' | 'divergence' | 'leaderboard' | 'breadth') {
         document.getElementById('divergence-controls')?.classList.remove('hidden');
         fetchDivergenceSignals(true).then(renderDivergenceOverview);
         syncDivergenceScanUiState();
-    } else if (view === 'leaderboard') {
-        document.getElementById('view-leaderboard')?.classList.remove('hidden');
-        document.getElementById('leaderboard-controls')?.classList.remove('hidden');
-        fetchLeaderboardData(); 
     } else if (view === 'breadth') {
         document.getElementById('view-breadth')?.classList.remove('hidden');
         document.getElementById('breadth-controls')?.classList.remove('hidden');
@@ -133,7 +129,7 @@ function switchView(view: 'logs' | 'divergence' | 'leaderboard' | 'breadth') {
     }
 }
 
-function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth'): void {
+function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'breadth'): void {
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
     document.getElementById(`nav-${view}`)?.classList.add('active');
 }
@@ -243,10 +239,7 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
 
 
 
-    if (currentView === 'leaderboard') {
-        fetchLeaderboardData();
-        return;
-    }
+
 
     if (currentView === 'breadth') {
         initBreadth();
@@ -516,13 +509,12 @@ function bootstrapApplication(): void {
     // Navigation
     document.getElementById('nav-logs')?.addEventListener('click', () => switchView('logs'));
     document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
-    document.getElementById('nav-leaderboard')?.addEventListener('click', () => {
-        switchView('leaderboard');
-    });
+
     document.getElementById('nav-breadth')?.addEventListener('click', () => switchView('breadth'));
 
     // Inputs
     document.getElementById('reset-filter')?.addEventListener('click', window.showOverview);
+    document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);
     
     // Live Feed Controls
 
@@ -573,14 +565,7 @@ function bootstrapApplication(): void {
 
 
 
-    // Timeframe Buttons (Leaderboard)
-    document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            document.querySelectorAll('#leaderboard-controls .tf-btn').forEach(b => b.classList.remove('active'));
-            (e.target as HTMLElement).classList.add('active');
-            fetchLeaderboardData();
-        });
-    });
+
 
     // Breadth Controls
     document.querySelectorAll('#breadth-tf-btns .tf-btn').forEach(btn => {
@@ -613,7 +598,6 @@ function bootstrapApplication(): void {
     
     // Setup Event Delegation
     setupDivergenceFeedDelegation();
-    setupLeaderboardDelegation();
 
     // Mobile Collapse Toggle (only on mobile)
     setupMobileCollapse();
