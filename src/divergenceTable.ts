@@ -180,12 +180,19 @@ export async function getTickerDivergenceSummary(
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
   const forceRefresh = options?.forceRefresh === true;
+  const noCache = options?.noCache === true;
   if (!normalizedTicker) return null;
+
+  // When not forcing refresh, try the in-memory cache first.
+  if (!forceRefresh && !noCache) {
+    const cached = getCachedSummary(normalizedTicker, normalizedSource);
+    if (cached) return cached;
+  }
 
   const resultMap = await fetchDivergenceSummariesBatch(
     [normalizedTicker],
     normalizedSource,
-    { forceRefresh, noCache: true }
+    { forceRefresh, noCache }
   );
   return resultMap.get(normalizedTicker) || null;
 }

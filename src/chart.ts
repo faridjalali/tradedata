@@ -4086,20 +4086,44 @@ function renderVolumeDeltaDivergenceSummary(
     return;
   }
 
-  if (noCache) {
-    renderSummary(lastSummary, true);
-  }
-  getTickerDivergenceSummary(
-    ticker,
-    sourceInterval,
-    noCache ? { forceRefresh: true, noCache: true } : { forceRefresh: true }
-  )
+  // Phase 1: Fast path — try cached / stored value (no server recomputation).
+  getTickerDivergenceSummary(ticker, sourceInterval)
     .then((summary) => {
+      if (summaryEl.dataset.requestToken !== requestToken) return;
       lastSummary = summary || null;
       renderSummary(lastSummary, false);
+
+      // Phase 2: If the cached value is stale or missing, refresh in background.
+      const needsRefresh = noCache || !summary || !Number.isFinite(summary.expiresAtMs) || summary.expiresAtMs <= Date.now();
+      if (needsRefresh) {
+        getTickerDivergenceSummary(
+          ticker,
+          sourceInterval,
+          { forceRefresh: true, noCache: true }
+        )
+          .then((freshSummary) => {
+            if (summaryEl.dataset.requestToken !== requestToken) return;
+            lastSummary = freshSummary || null;
+            renderSummary(lastSummary, false);
+          })
+          .catch(() => {});
+      }
     })
     .catch(() => {
-      renderSummary(lastSummary, false);
+      // Phase 1 failed — fall back to force refresh.
+      getTickerDivergenceSummary(
+        ticker,
+        sourceInterval,
+        { forceRefresh: true, noCache: true }
+      )
+        .then((summary) => {
+          if (summaryEl.dataset.requestToken !== requestToken) return;
+          lastSummary = summary || null;
+          renderSummary(lastSummary, false);
+        })
+        .catch(() => {
+          renderSummary(lastSummary, false);
+        });
     });
 }
 
