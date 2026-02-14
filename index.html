@@ -151,12 +151,6 @@
           </div>
         </div>
         <div class="header-right">
-          <div id="header-tf-group" class="feed-controls-group hidden">
-            <button class="tf-btn" id="header-btn-c" data-tooltip="Custom date range">C</button>
-            <button class="tf-btn" id="header-btn-5" data-tooltip="Last 5 trading days">5</button>
-            <button class="tf-btn" id="header-btn-l" data-tooltip="Last trading day">L</button>
-            <button class="tf-btn active" id="header-btn-t" data-tooltip="Today's signals">T</button>
-          </div>
           <div id="header-nav-container">
             <button id="header-nav-toggle" class="settings-icon-btn" aria-label="Navigation" title="Navigation">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -170,17 +164,6 @@
               <button class="header-nav-item" data-view="logs">Logs</button>
               <button class="header-nav-item" data-view="breadth">Breadth</button>
             </div>
-          </div>
-          <div id="header-custom-range" class="header-dropdown-panel hidden">
-            <div class="header-custom-range-row">
-              <label class="header-custom-label">From</label>
-              <input type="date" id="header-custom-from" class="glass-input" />
-            </div>
-            <div class="header-custom-range-row">
-              <label class="header-custom-label">To</label>
-              <input type="date" id="header-custom-to" class="glass-input" />
-            </div>
-            <button class="tf-btn header-custom-apply-btn" id="header-custom-apply">Apply</button>
           </div>
         </div>
       </header>
@@ -217,7 +200,26 @@
         <div id="divergence-dashboard-view" class="split-view">
           <div class="column">
             <div class="column-header">
-              <h2>Daily</h2>
+              <div class="header-title-group">
+                <h2>Daily</h2>
+                <div class="column-tf-controls" data-column="daily">
+                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                    <div class="column-tf-custom-row">
+                      <label>From</label>
+                      <input type="date" class="glass-input column-tf-from" />
+                    </div>
+                    <div class="column-tf-custom-row">
+                      <label>To</label>
+                      <input type="date" class="glass-input column-tf-to" />
+                    </div>
+                    <button class="tf-btn column-tf-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
               <div class="header-sort-controls divergence-daily-sort">
                 <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
                 <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
@@ -232,7 +234,26 @@
 
           <div class="column">
             <div class="column-header">
-              <h2>Weekly</h2>
+              <div class="header-title-group">
+                <h2>Weekly</h2>
+                <div class="column-tf-controls" data-column="weekly">
+                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                    <div class="column-tf-custom-row">
+                      <label>From</label>
+                      <input type="date" class="glass-input column-tf-from" />
+                    </div>
+                    <div class="column-tf-custom-row">
+                      <label>To</label>
+                      <input type="date" class="glass-input column-tf-to" />
+                    </div>
+                    <button class="tf-btn column-tf-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
               <div class="header-sort-controls divergence-weekly-sort">
                 <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
                 <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
@@ -256,6 +277,23 @@
                 <div class="column-header">
                   <div class="header-title-group">
                     <h2>Daily</h2>
+                    <div class="column-tf-controls" data-column="daily">
+                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                        <div class="column-tf-custom-row">
+                          <label>From</label>
+                          <input type="date" class="glass-input column-tf-from" />
+                        </div>
+                        <div class="column-tf-custom-row">
+                          <label>To</label>
+                          <input type="date" class="glass-input column-tf-to" />
+                        </div>
+                        <button class="tf-btn column-tf-apply">Apply</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="header-sort-controls ticker-daily-sort">
                     <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
@@ -274,6 +312,23 @@
                 <div class="column-header">
                   <div class="header-title-group">
                     <h2>Weekly</h2>
+                    <div class="column-tf-controls" data-column="weekly">
+                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                        <div class="column-tf-custom-row">
+                          <label>From</label>
+                          <input type="date" class="glass-input column-tf-from" />
+                        </div>
+                        <div class="column-tf-custom-row">
+                          <label>To</label>
+                          <input type="date" class="glass-input column-tf-to" />
+                        </div>
+                        <button class="tf-btn column-tf-apply">Apply</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="header-sort-controls ticker-weekly-sort">
                     <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>

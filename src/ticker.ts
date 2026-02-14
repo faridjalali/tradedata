@@ -5,6 +5,7 @@ import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesF
 import { SortMode } from './types';
 import { createAlertSortFn, updateSortButtonUi } from './utils';
 import { renderCustomChart } from './chart';
+import { getColumnFeedMode, filterToLatestNDates, ColumnFeedMode } from './divergenceFeed';
 
 let tickerDailySortMode: SortMode = 'score';
 let tickerWeeklySortMode: SortMode = 'score';
@@ -51,6 +52,16 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
     
     let daily = alerts.filter(a => (a.timeframe || '').trim() === '1d');
     let weekly = alerts.filter(a => (a.timeframe || '').trim() === '1w');
+
+    // Apply per-column date filter (last N fetch days)
+    const applyTickerDateFilter = (alerts: typeof daily, mode: ColumnFeedMode) => {
+        if (mode === '1') return filterToLatestNDates(alerts, 1);
+        if (mode === '2') return filterToLatestNDates(alerts, 2);
+        if (mode === '5') return filterToLatestNDates(alerts, 5);
+        return alerts;
+    };
+    daily = applyTickerDateFilter(daily, getColumnFeedMode('daily'));
+    weekly = applyTickerDateFilter(weekly, getColumnFeedMode('weekly'));
 
     if (tickerDailySortMode === 'favorite') {
         daily = daily.filter(a => a.is_favorite);

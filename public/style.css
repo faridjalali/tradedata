@@ -277,43 +277,6 @@ h2 {
   color: var(--highlight);
 }
 
-/* Custom date range dropdown */
-#header-custom-range {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  min-width: 180px;
-}
-#header-custom-range label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-#header-custom-range input[type="date"] {
-  flex: 1;
-  height: 26px;
-  font-size: 0.78rem;
-  padding: 0 6px;
-}
-#header-custom-apply {
-  align-self: flex-end;
-  height: 26px;
-  padding: 0 12px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  border-radius: 4px;
-}
-
-/* Header timeframe group */
-#header-tf-group .tf-btn {
-  min-width: 28px;
-  height: 28px;
-  font-size: 0.82rem;
-}
 
 .divergence-run-btn {
   width: auto !important;
@@ -1093,6 +1056,76 @@ button:hover {
   background: var(--highlight);
   color: #ffffff;
   border-color: var(--highlight);
+}
+
+/* Column timeframe inline buttons */
+.column-tf-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+.column-tf-controls .tf-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  padding: 2px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 20px;
+}
+
+@media (hover: hover) {
+  .column-tf-controls .tf-btn:hover {
+    background: rgba(48, 54, 61, 0.5);
+    color: var(--text-primary);
+  }
+}
+
+.column-tf-controls .tf-btn.active {
+  background: var(--highlight);
+  color: #ffffff;
+  border-color: var(--highlight);
+}
+
+/* Custom date range panel (inside column-tf-controls) */
+.column-tf-custom-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  min-width: 180px;
+}
+
+.column-tf-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.column-tf-custom-row input[type="date"] {
+  flex: 1;
+  height: 24px;
+  font-size: 0.75rem;
+  padding: 0 4px;
+}
+
+.column-tf-apply {
+  align-self: flex-end;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+  margin-top: 2px;
 }
 
 /* Sort arrow indicator — tiny arrow in top-right corner via CSS */

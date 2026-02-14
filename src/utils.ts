@@ -2,24 +2,6 @@ import { SortMode, Alert } from './types';
 import { getAppTimeZone } from './timezone';
 import { computeDivergenceScoreFromStates, getTickerDivergenceScoreFromCache } from './divergenceTable';
 
-// Trading calendar context cache (set by main.ts on bootstrap)
-export interface TradingCalendarContext {
-    today: string;
-    lastTradingDay: string;
-    tradingDay5Back: string;
-    isTodayTradingDay: boolean;
-    calendarInitialized: boolean;
-}
-let _tradingCalendarCtx: TradingCalendarContext | null = null;
-
-export function setTradingCalendarContext(ctx: TradingCalendarContext): void {
-    _tradingCalendarCtx = ctx;
-}
-
-function getTradingCalendarContext(): TradingCalendarContext | null {
-    return _tradingCalendarCtx;
-}
-
 interface DateParts {
     year: number;
     month: number;
@@ -124,27 +106,9 @@ export function getDateRangeForMode(
     const today = getCurrentDateISO(timeZone);
     if (!today) return { startDate: '', endDate: '' };
 
-    if (mode === 'today') {
-        return { startDate: today, endDate: today };
-    }
-
-    if (mode === 'last_trading_day') {
-        const ctx = getTradingCalendarContext();
-        if (ctx?.lastTradingDay) {
-            return { startDate: ctx.lastTradingDay, endDate: ctx.lastTradingDay };
-        }
-        // Fallback: use yesterday
-        const yesterday = shiftDateKey(today, -1);
-        return yesterday ? { startDate: yesterday, endDate: yesterday } : { startDate: '', endDate: '' };
-    }
-
-    if (mode === '5') {
-        const ctx = getTradingCalendarContext();
-        if (ctx?.tradingDay5Back) {
-            return { startDate: ctx.tradingDay5Back, endDate: today };
-        }
-        // Fallback: 7 calendar days
-        const startDate = shiftDateKey(today, -6);
+    // Numeric modes: fetch a generous 30-day window; client-side filters to N most recent dates
+    if (mode === '1' || mode === '2' || mode === '5') {
+        const startDate = shiftDateKey(today, -29);
         return startDate ? { startDate, endDate: today } : { startDate: '', endDate: '' };
     }
 

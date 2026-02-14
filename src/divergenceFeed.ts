@@ -24,9 +24,14 @@ import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
 
-export type LiveFeedMode = 'today' | 'last_trading_day' | '5' | 'custom';
+export type ColumnFeedMode = '1' | '2' | '5' | 'custom';
 
-let divergenceFeedMode: LiveFeedMode = 'today';
+let dailyFeedMode: ColumnFeedMode = '1';
+let weeklyFeedMode: ColumnFeedMode = '1';
+let dailyCustomFrom = '';
+let dailyCustomTo = '';
+let weeklyCustomFrom = '';
+let weeklyCustomTo = '';
 let dailySortMode: SortMode = 'score';
 let weeklySortMode: SortMode = 'score';
 let dailySortDirection: 'asc' | 'desc' = 'desc';
@@ -56,12 +61,47 @@ let miniChartAbortController: AbortController | null = null;
 let miniChartCurrentTicker: string | null = null;
 const miniChartDataCache = new Map<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>>();
 
-export function getDivergenceFeedMode(): LiveFeedMode {
-    return divergenceFeedMode;
+export function getColumnFeedMode(column: 'daily' | 'weekly'): ColumnFeedMode {
+    return column === 'daily' ? dailyFeedMode : weeklyFeedMode;
 }
 
-function setDivergenceFeedModeState(mode: LiveFeedMode): void {
-    divergenceFeedMode = mode;
+export function setColumnCustomDates(column: 'daily' | 'weekly', from: string, to: string): void {
+    if (column === 'daily') {
+        dailyCustomFrom = from;
+        dailyCustomTo = to;
+    } else {
+        weeklyCustomFrom = from;
+        weeklyCustomTo = to;
+    }
+}
+
+function getColumnCustomDates(column: 'daily' | 'weekly'): { from: string; to: string } {
+    return column === 'daily'
+        ? { from: dailyCustomFrom, to: dailyCustomTo }
+        : { from: weeklyCustomFrom, to: weeklyCustomTo };
+}
+
+/** Filter alerts to only the N most recent unique trade dates */
+export function filterToLatestNDates(alerts: Alert[], n: number): Alert[] {
+    const dates = new Set<string>();
+    for (const a of alerts) {
+        const d = a.signal_trade_date || (a.timestamp ? a.timestamp.slice(0, 10) : null);
+        if (d) dates.add(d);
+    }
+    const sorted = [...dates].sort((a, b) => b.localeCompare(a));
+    const topN = new Set(sorted.slice(0, n));
+    return alerts.filter(a => {
+        const d = a.signal_trade_date || (a.timestamp ? a.timestamp.slice(0, 10) : null);
+        return d ? topN.has(d) : false;
+    });
+}
+
+/** Apply column feed mode date filter */
+function applyColumnDateFilter(alerts: Alert[], mode: ColumnFeedMode): Alert[] {
+    if (mode === '1') return filterToLatestNDates(alerts, 1);
+    if (mode === '2') return filterToLatestNDates(alerts, 2);
+    if (mode === '5') return filterToLatestNDates(alerts, 5);
+    return alerts; // 'custom' — server already filtered
 }
 
 export function shouldAutoRefreshDivergenceFeed(): boolean {
@@ -949,23 +989,16 @@ export async function hydrateDivergenceTablesNow(): Promise<void> {
     }
 }
 
-export function isCurrentDivergenceTimeframe(): boolean {
-    return divergenceFeedMode === 'today' || divergenceFeedMode === 'last_trading_day';
-}
-
 export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]> {
     try {
-        const customFrom = (document.getElementById('header-custom-from') as HTMLInputElement | null)?.value || '';
-        const customTo = (document.getElementById('header-custom-to') as HTMLInputElement | null)?.value || '';
-
-        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, customFrom, customTo);
-        if (!startDate || !endDate) return [];
-
-        const params = `?start_date=${startDate}&end_date=${endDate}`;
-        const data = await fetchDivergenceSignalsFromApi(params);
-        primeDivergenceSummaryCacheFromAlerts(data);
-        setDivergenceSignals(data);
-        return data;
+        // Fetch both columns independently using their per-column modes
+        const [daily, weekly] = await Promise.all([
+            fetchDivergenceSignalsByTimeframe('1d'),
+            fetchDivergenceSignalsByTimeframe('1w')
+        ]);
+        const all = [...daily, ...weekly];
+        primeDivergenceSummaryCacheFromAlerts(all);
+        return all;
     } catch (error) {
         console.error('Error fetching divergence signals:', error);
         return [];
@@ -991,6 +1024,10 @@ export function renderDivergenceOverview(): void {
     let daily = allSignals.filter((a) => (a.timeframe || '').trim() === '1d');
     let weekly = allSignals.filter((a) => (a.timeframe || '').trim() === '1w');
 
+    // Apply per-column date filter (last N fetch days)
+    daily = applyColumnDateFilter(daily, dailyFeedMode);
+    weekly = applyColumnDateFilter(weekly, weeklyFeedMode);
+
     if (dailySortMode === 'favorite') {
         daily = daily.filter(a => a.is_favorite);
     }
@@ -1014,14 +1051,16 @@ export function renderDivergenceOverview(): void {
 
 /**
  * Fetch signals for a single timeframe and update only that timeframe's state.
+ * Uses per-column feed mode for date range.
  * The other timeframe's signals are left completely untouched.
  */
 export async function fetchDivergenceSignalsByTimeframe(timeframe: '1d' | '1w'): Promise<Alert[]> {
     try {
-        const customFrom = (document.getElementById('header-custom-from') as HTMLInputElement | null)?.value || '';
-        const customTo = (document.getElementById('header-custom-to') as HTMLInputElement | null)?.value || '';
+        const column: 'daily' | 'weekly' = timeframe === '1d' ? 'daily' : 'weekly';
+        const mode = getColumnFeedMode(column);
+        const custom = getColumnCustomDates(column);
 
-        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, customFrom, customTo);
+        const { startDate, endDate } = getDateRangeForMode(mode, custom.from, custom.to);
         if (!startDate || !endDate) return [];
 
         const params = `?start_date=${startDate}&end_date=${endDate}&timeframe=${timeframe}`;
@@ -1044,9 +1083,14 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
     const container = document.getElementById(containerId);
     if (!container) return;
 
+    const column: 'daily' | 'weekly' = timeframe === '1d' ? 'daily' : 'weekly';
+    const mode = getColumnFeedMode(column);
     const sortMode = timeframe === '1d' ? dailySortMode : weeklySortMode;
     const sortDirection = timeframe === '1d' ? dailySortDirection : weeklySortDirection;
     let signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
+
+    // Apply per-column date filter (last N fetch days)
+    signals = applyColumnDateFilter(signals, mode);
 
     if (sortMode === 'favorite') {
         signals = signals.filter(a => a.is_favorite);
@@ -1379,32 +1423,35 @@ export function initializeDivergenceSortDefaults(): void {
     dailySortDirection = 'desc';
     weeklySortMode = 'score';
     weeklySortDirection = 'desc';
+    dailyFeedMode = '1';
+    weeklyFeedMode = '1';
     updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
     updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
 }
 // ... existing code ...
 
-export function setDivergenceFeedMode(mode: LiveFeedMode, fetchData = true) {
-    setDivergenceFeedModeState(mode);
-
-    const btnT = document.getElementById('header-btn-t');
-    const btnL = document.getElementById('header-btn-l');
-    const btn5 = document.getElementById('header-btn-5');
-    const btnC = document.getElementById('header-btn-c');
-
-    [btnT, btnL, btn5, btnC].forEach(b => b?.classList.remove('active'));
-
-    if (mode === 'today') {
-        btnT?.classList.add('active');
-    } else if (mode === 'last_trading_day') {
-        btnL?.classList.add('active');
-    } else if (mode === '5') {
-        btn5?.classList.add('active');
-    } else if (mode === 'custom') {
-        btnC?.classList.add('active');
+/**
+ * Set the feed mode for a specific column (daily or weekly) independently.
+ * Updates the dropdown UI and optionally re-fetches + re-renders that column.
+ */
+export function setColumnFeedMode(column: 'daily' | 'weekly', mode: ColumnFeedMode, fetchData = true): void {
+    if (column === 'daily') {
+        dailyFeedMode = mode;
+    } else {
+        weeklyFeedMode = mode;
     }
+
+    // Update button active state for all instances of this column
+    document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach(controls => {
+        controls.querySelectorAll('.tf-btn[data-tf]').forEach(btn => {
+            const el = btn as HTMLElement;
+            el.classList.toggle('active', el.dataset.tf === mode);
+        });
+    });
 
     if (fetchData) {
-        fetchDivergenceSignals(true).then(renderDivergenceOverview);
+        const timeframe: '1d' | '1w' = column === 'daily' ? '1d' : '1w';
+        fetchDivergenceSignalsByTimeframe(timeframe).then(() => renderDivergenceContainer(timeframe));
     }
 }
+
