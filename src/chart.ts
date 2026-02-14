@@ -283,6 +283,7 @@ const DEFAULT_PANE_HEIGHTS: Record<string, number> = {
 };
 let paneHeights: Record<string, number> = {};
 let paneResizeHandlesInstalled = false;
+let crosshairHidden = false;
 
 const rsiSettings: RSISettings = {
   ...DEFAULT_RSI_SETTINGS
@@ -3596,7 +3597,7 @@ function createPriceChart(container: HTMLElement) {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
     },
     kineticScroll: {
-      touch: true,
+      touch: false,
       mouse: false,
     },
     handleScroll: {
@@ -3671,7 +3672,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
     },
     kineticScroll: {
-      touch: true,
+      touch: false,
       mouse: false,
     },
     handleScroll: {
@@ -3776,7 +3777,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
     },
     kineticScroll: {
-      touch: true,
+      touch: false,
       mouse: false,
     },
     handleScroll: {
@@ -4771,6 +4772,7 @@ export async function renderCustomChart(
     hideDivergenceOverlay('volumeDeltaRsi');
     // Re-bind chart sync on next setupChartSync call since charts may be recreated.
     isChartSyncBound = false;
+    crosshairHidden = false;
   }
 
   const chartContent = document.getElementById('chart-content');
@@ -5068,6 +5070,23 @@ function getNearestMappedValueAtOrBefore(time: string | number, valuesByTime: Ma
   return null;
 }
 
+/** Toggle crosshair visibility on all four chart panes. */
+function toggleCrosshairVisibility() {
+  crosshairHidden = !crosshairHidden;
+  const lineOpts = { visible: !crosshairHidden };
+  const opts = { crosshair: { vertLine: lineOpts, horzLine: lineOpts } };
+  if (priceChart) priceChart.applyOptions(opts);
+  if (volumeDeltaRsiChart) volumeDeltaRsiChart.applyOptions(opts);
+  if (volumeDeltaChart) volumeDeltaChart.applyOptions(opts);
+  if (rsiChart) rsiChart.getChart()?.applyOptions(opts);
+  if (crosshairHidden) {
+    priceChart?.clearCrosshairPosition();
+    volumeDeltaRsiChart?.clearCrosshairPosition();
+    volumeDeltaChart?.clearCrosshairPosition();
+    rsiChart?.getChart()?.clearCrosshairPosition();
+  }
+}
+
 // Setup sync between price, Volume Delta RSI, RSI, and Volume Delta charts.
 function setupChartSync() {
   if (isChartSyncBound) return;
@@ -5210,6 +5229,7 @@ function setupChartSync() {
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (crosshairHidden) return;
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
@@ -5224,6 +5244,7 @@ function setupChartSync() {
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (crosshairHidden) return;
     if (volumeDeltaRsiDivergencePlotToolActive) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
     }
@@ -5241,6 +5262,7 @@ function setupChartSync() {
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (crosshairHidden) return;
     if (rsiDivergencePlotToolActive) {
       updateRsiDivergencePlotPoint(param.time, true);
     }
@@ -5258,6 +5280,7 @@ function setupChartSync() {
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
       return;
     }
+    if (crosshairHidden) return;
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
@@ -5269,6 +5292,25 @@ function setupChartSync() {
     if (!rsiDivergencePlotToolActive) return;
     updateRsiDivergencePlotPoint(param.time, false);
   });
+
+  // Double-tap on chart area toggles crosshair visibility (touch only).
+  // subscribeClick fires only for the chart area, not axes.
+  if (isMobileTouch) {
+    let lastTapTime = 0;
+    const handleDoubleTap = () => {
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        toggleCrosshairVisibility();
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+      }
+    };
+    priceChart.subscribeClick(handleDoubleTap);
+    volumeDeltaRsiChartInstance.subscribeClick(handleDoubleTap);
+    rsiChartInstance.subscribeClick(handleDoubleTap);
+    volumeDeltaChartInstance.subscribeClick(handleDoubleTap);
+  }
 }
 
 // Export for main.ts usage

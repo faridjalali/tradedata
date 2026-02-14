@@ -115,7 +115,7 @@ export class RSIChart {
         mode: 1 // CrosshairMode.Magnet — snaps to nearest data point
       },
       kineticScroll: {
-        touch: true,
+        touch: false,
         mouse: false,
       },
       handleScroll: {
