@@ -1415,3 +1415,14 @@ button:hover {
     gap: 10px;
   }
 }
+
+/* Mini-chart hover overlay */
+.mini-chart-overlay {
+    opacity: 0;
+    animation: miniChartFadeIn 0.15s ease-out forwards;
+}
+
+@keyframes miniChartFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
