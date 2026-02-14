@@ -65,7 +65,7 @@
       <header>
         <div class="header-left">
           <div id="global-settings-container">
-            <button id="global-settings-toggle" class="icon-btn" aria-label="Global settings" title="Settings">
+            <button id="global-settings-toggle" class="settings-icon-btn" aria-label="Global settings" title="Settings">
               <svg
                 width="16"
                 height="16"
@@ -150,74 +150,43 @@
             />
           </div>
         </div>
-        <nav class="main-nav">
-          <button id="nav-logs" class="nav-btn">Logs</button>
-          <button id="nav-divergence" class="nav-btn active">Alerts</button>
-
-          <button id="nav-breadth" class="nav-btn">Breadth</button>
-        </nav>
+        <div class="header-right">
+          <div id="header-tf-group" class="feed-controls-group hidden">
+            <button class="tf-btn" id="header-btn-c" data-tooltip="Custom date range">C</button>
+            <button class="tf-btn" id="header-btn-5" data-tooltip="Last 5 trading days">5</button>
+            <button class="tf-btn" id="header-btn-l" data-tooltip="Last trading day">L</button>
+            <button class="tf-btn active" id="header-btn-t" data-tooltip="Today's signals">T</button>
+          </div>
+          <div id="header-nav-container">
+            <button id="header-nav-toggle" class="settings-icon-btn" aria-label="Navigation" title="Navigation">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="12" cy="19" r="2"></circle>
+              </svg>
+            </button>
+            <div id="header-nav-dropdown" class="header-dropdown-panel hidden">
+              <button class="header-nav-item active" data-view="divergence">Alerts</button>
+              <button class="header-nav-item" data-view="logs">Logs</button>
+              <button class="header-nav-item" data-view="breadth">Breadth</button>
+            </div>
+          </div>
+          <div id="header-custom-range" class="header-dropdown-panel hidden">
+            <div class="header-custom-range-row">
+              <label class="header-custom-label">From</label>
+              <input type="date" id="header-custom-from" class="glass-input" />
+            </div>
+            <div class="header-custom-range-row">
+              <label class="header-custom-label">To</label>
+              <input type="date" id="header-custom-to" class="glass-input" />
+            </div>
+            <button class="tf-btn header-custom-apply-btn" id="header-custom-apply">Apply</button>
+          </div>
+        </div>
       </header>
 
       <!-- CONTROLS -->
       <div id="controls-bar">
-        <!-- Live Feed Controls -->
-
-        <!-- Divergence Controls -->
-        <div id="divergence-controls" class="hidden">
-          <div class="feed-controls-group">
-            <button
-              class="tf-btn active"
-              id="divergence-btn-t"
-              data-tooltip="Divergence signals where signal trade date is today"
-            >
-              T
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-y"
-              data-tooltip="Divergence signals where signal trade date is yesterday"
-            >
-              Y
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-7"
-              data-tooltip="Divergence signals from the last 7 signal trade dates (including today)"
-            >
-              7
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-30"
-              data-tooltip="Divergence signals from the last 30 signal trade dates (including today)"
-            >
-              30
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-week"
-              data-tooltip="Divergence signals from selected week by signal trade date"
-            >
-              W
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-month"
-              data-tooltip="Divergence signals from selected month by signal trade date"
-            >
-              M
-            </button>
-            <input type="week" id="divergence-history-week" class="glass-input hidden" />
-            <input type="month" id="divergence-history-month" class="glass-input hidden" />
-          </div>
-          <button id="ticker-back-btn" class="tf-btn hidden" title="Back to overview">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"></line>
-              <polyline points="12 19 5 12 12 5"></polyline>
-            </svg>
-          </button>
-        </div>
-
         <!-- Breadth Controls -->
         <div id="breadth-controls" class="hidden">
           <div class="breadth-controls-inner">
@@ -356,14 +325,14 @@
                   <button class="tf-btn" data-interval="1week">1W</button>
                 </div>
                 <div class="chart-navigation-group">
-                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Left Arrow)">
+                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Up Arrow)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="15 18 9 12 15 6"></polyline>
+                      <polyline points="18 15 12 9 6 15"></polyline>
                     </svg>
                   </button>
-                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Right Arrow)">
+                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Down Arrow)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="9 18 15 12 9 6"></polyline>
+                      <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
                   </button>
                 </div>
@@ -373,6 +342,12 @@
                     <polyline points="10.5 1 15 1 15 5.5"/>
                     <polyline points="10.5 15 15 15 15 10.5"/>
                     <polyline points="5.5 15 1 15 1 10.5"/>
+                  </svg>
+                </button>
+                <button id="ticker-back-btn" class="tf-btn icon-only" type="button" title="Back to overview">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
                   </svg>
                 </button>
               </div>

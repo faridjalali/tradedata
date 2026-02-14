@@ -3,19 +3,26 @@ import { getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import { SortMode } from './types';
-import { createAlertSortFn } from './utils';
+import { createAlertSortFn, updateSortButtonUi } from './utils';
 import { renderCustomChart } from './chart';
 
 let tickerDailySortMode: SortMode = 'score';
 let tickerWeeklySortMode: SortMode = 'score';
+let tickerDailySortDirection: 'asc' | 'desc' = 'desc';
+let tickerWeeklySortDirection: 'asc' | 'desc' = 'desc';
 
 interface RenderTickerViewOptions {
     refreshCharts?: boolean;
 }
 
 export function setTickerDailySort(mode: SortMode): void {
-    tickerDailySortMode = mode;
-    updateSortButtons('.ticker-daily-sort', mode);
+    if (mode === tickerDailySortMode && mode !== 'favorite') {
+        tickerDailySortDirection = tickerDailySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        tickerDailySortMode = mode;
+        tickerDailySortDirection = 'desc';
+    }
+    updateSortButtonUi('.ticker-daily-sort', tickerDailySortMode, tickerDailySortDirection);
     const tickerContainer = document.getElementById('ticker-view');
     if (!tickerContainer) return;
     const currentTicker = tickerContainer.dataset.ticker;
@@ -23,20 +30,17 @@ export function setTickerDailySort(mode: SortMode): void {
 }
 
 export function setTickerWeeklySort(mode: SortMode): void {
-    tickerWeeklySortMode = mode;
-    updateSortButtons('.ticker-weekly-sort', mode);
+    if (mode === tickerWeeklySortMode && mode !== 'favorite') {
+        tickerWeeklySortDirection = tickerWeeklySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        tickerWeeklySortMode = mode;
+        tickerWeeklySortDirection = 'desc';
+    }
+    updateSortButtonUi('.ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
     const tickerContainer = document.getElementById('ticker-view');
     if (!tickerContainer) return;
     const currentTicker = tickerContainer.dataset.ticker;
     if (currentTicker) renderTickerView(currentTicker, { refreshCharts: false });
-}
-
-// Helper to update active class on buttons
-function updateSortButtons(selector: string, mode: SortMode): void {
-    document.querySelectorAll(`${selector} .tf-btn`).forEach(btn => {
-        const el = btn as HTMLElement;
-        el.classList.toggle('active', el.dataset.sort === mode);
-    });
 }
 
 export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
@@ -55,8 +59,8 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
         weekly = weekly.filter(a => a.is_favorite);
     }
 
-    daily.sort(createAlertSortFn(tickerDailySortMode === 'favorite' ? 'time' : tickerDailySortMode));
-    weekly.sort(createAlertSortFn(tickerWeeklySortMode === 'favorite' ? 'time' : tickerWeeklySortMode));
+    daily.sort(createAlertSortFn(tickerDailySortMode === 'favorite' ? 'time' : tickerDailySortMode, tickerDailySortDirection));
+    weekly.sort(createAlertSortFn(tickerWeeklySortMode === 'favorite' ? 'time' : tickerWeeklySortMode, tickerWeeklySortDirection));
     
     // renderAvg removed
     

@@ -1888,7 +1888,7 @@ function createSettingsButton(container: HTMLElement, pane: PaneControlType): HT
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
-  btn.className = 'pane-settings-btn';
+  btn.className = 'pane-settings-btn settings-icon-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
   btn.title = pane === 'price'
@@ -1906,11 +1906,6 @@ function createSettingsButton(container: HTMLElement, pane: PaneControlType): HT
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.borderRadius = '4px';
-  btn.style.border = '1px solid #30363d';
-  btn.style.background = '#161b22';
-  btn.style.color = '#c9d1d9';
-  btn.style.cursor = 'pointer';
-  btn.style.padding = '0';
   container.appendChild(btn);
   return btn;
 }

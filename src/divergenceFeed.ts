@@ -1,4 +1,4 @@
-import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
+import { getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
 import {
     fetchDivergenceSignalsFromApi,
     toggleDivergenceFavorite,
@@ -24,7 +24,7 @@ import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
 
-export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
+export type LiveFeedMode = 'today' | 'last_trading_day' | '5' | 'custom';
 
 let divergenceFeedMode: LiveFeedMode = 'today';
 let dailySortMode: SortMode = 'score';
@@ -950,22 +950,15 @@ export async function hydrateDivergenceTablesNow(): Promise<void> {
 }
 
 export function isCurrentDivergenceTimeframe(): boolean {
-    if (divergenceFeedMode === 'today' || divergenceFeedMode === '30' || divergenceFeedMode === '7') return true;
-    if (divergenceFeedMode === 'yesterday') return false;
-    if (divergenceFeedMode === 'week') {
-        const val = (document.getElementById('divergence-history-week') as HTMLInputElement | null)?.value || '';
-        return val === getCurrentWeekISO();
-    }
-    const val = (document.getElementById('divergence-history-month') as HTMLInputElement | null)?.value || '';
-    return val === getCurrentMonthISO();
+    return divergenceFeedMode === 'today' || divergenceFeedMode === 'last_trading_day';
 }
 
 export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]> {
     try {
-        const weekVal = (document.getElementById('divergence-history-week') as HTMLInputElement | null)?.value || '';
-        const monthVal = (document.getElementById('divergence-history-month') as HTMLInputElement | null)?.value || '';
+        const customFrom = (document.getElementById('header-custom-from') as HTMLInputElement | null)?.value || '';
+        const customTo = (document.getElementById('header-custom-to') as HTMLInputElement | null)?.value || '';
 
-        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, weekVal, monthVal);
+        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, customFrom, customTo);
         if (!startDate || !endDate) return [];
 
         const params = `?start_date=${startDate}&end_date=${endDate}`;
@@ -1025,10 +1018,10 @@ export function renderDivergenceOverview(): void {
  */
 export async function fetchDivergenceSignalsByTimeframe(timeframe: '1d' | '1w'): Promise<Alert[]> {
     try {
-        const weekVal = (document.getElementById('divergence-history-week') as HTMLInputElement | null)?.value || '';
-        const monthVal = (document.getElementById('divergence-history-month') as HTMLInputElement | null)?.value || '';
+        const customFrom = (document.getElementById('header-custom-from') as HTMLInputElement | null)?.value || '';
+        const customTo = (document.getElementById('header-custom-to') as HTMLInputElement | null)?.value || '';
 
-        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, weekVal, monthVal);
+        const { startDate, endDate } = getDateRangeForMode(divergenceFeedMode, customFrom, customTo);
         if (!startDate || !endDate) return [];
 
         const params = `?start_date=${startDate}&end_date=${endDate}&timeframe=${timeframe}`;
@@ -1302,27 +1295,6 @@ export function setupDivergenceFeedDelegation(): void {
         }
     });
 
-    // Timeframe Buttons
-    const btnToday = document.getElementById('divergence-btn-t');
-    const btnYesterday = document.getElementById('divergence-btn-y');
-    const btn30 = document.getElementById('divergence-btn-30');
-    const btn7 = document.getElementById('divergence-btn-7');
-    const btnWeek = document.getElementById('divergence-btn-week');
-    const btnMonth = document.getElementById('divergence-btn-month');
-
-    btnToday?.addEventListener('click', () => setDivergenceFeedMode('today'));
-    btnYesterday?.addEventListener('click', () => setDivergenceFeedMode('yesterday'));
-    btn30?.addEventListener('click', () => setDivergenceFeedMode('30'));
-    btn7?.addEventListener('click', () => setDivergenceFeedMode('7'));
-    btnWeek?.addEventListener('click', () => setDivergenceFeedMode('week'));
-    btnMonth?.addEventListener('click', () => setDivergenceFeedMode('month'));
-
-    const inputWeek = document.getElementById('divergence-history-week');
-    const inputMonth = document.getElementById('divergence-history-month');
-
-    inputWeek?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
-    inputMonth?.addEventListener('change', () => fetchDivergenceSignals(true).then(renderDivergenceOverview));
-
     // Sort Buttons
     document.querySelectorAll('#view-divergence .divergence-daily-sort .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1415,34 +1387,21 @@ export function initializeDivergenceSortDefaults(): void {
 export function setDivergenceFeedMode(mode: LiveFeedMode, fetchData = true) {
     setDivergenceFeedModeState(mode);
 
-    const btnToday = document.getElementById('divergence-btn-t');
-    const btnYesterday = document.getElementById('divergence-btn-y');
-    const btn30 = document.getElementById('divergence-btn-30');
-    const btn7 = document.getElementById('divergence-btn-7');
-    const btnWeek = document.getElementById('divergence-btn-week');
-    const btnMonth = document.getElementById('divergence-btn-month');
+    const btnT = document.getElementById('header-btn-t');
+    const btnL = document.getElementById('header-btn-l');
+    const btn5 = document.getElementById('header-btn-5');
+    const btnC = document.getElementById('header-btn-c');
 
-    const inputWeek = document.getElementById('divergence-history-week');
-    const inputMonth = document.getElementById('divergence-history-month');
-
-    [btnToday, btnYesterday, btn30, btn7, btnWeek, btnMonth].forEach(b => b?.classList.remove('active'));
-    inputWeek?.classList.add('hidden');
-    inputMonth?.classList.add('hidden');
+    [btnT, btnL, btn5, btnC].forEach(b => b?.classList.remove('active'));
 
     if (mode === 'today') {
-        btnToday?.classList.add('active');
-    } else if (mode === 'yesterday') {
-        btnYesterday?.classList.add('active');
-    } else if (mode === '30') {
-        btn30?.classList.add('active');
-    } else if (mode === '7') {
-        btn7?.classList.add('active');
-    } else if (mode === 'week') {
-        btnWeek?.classList.add('active');
-        inputWeek?.classList.remove('hidden');
-    } else if (mode === 'month') {
-        btnMonth?.classList.add('active');
-        inputMonth?.classList.remove('hidden');
+        btnT?.classList.add('active');
+    } else if (mode === 'last_trading_day') {
+        btnL?.classList.add('active');
+    } else if (mode === '5') {
+        btn5?.classList.add('active');
+    } else if (mode === 'custom') {
+        btnC?.classList.add('active');
     }
 
     if (fetchData) {

@@ -8116,6 +8116,24 @@ app.get('/api/logs/run-metrics', (req, res) => {
   return res.status(200).json(getLogsRunMetricsPayload());
 });
 
+app.get('/api/trading-calendar/context', (req, res) => {
+  const today = currentEtDateString();
+  const isTodayTradingDay = tradingCalendar.isTradingDay(today);
+  const lastTradingDay = isTodayTradingDay ? today : tradingCalendar.previousTradingDay(today);
+  // Walk back 5 trading days from today
+  let cursor = today;
+  for (let i = 0; i < 5; i++) {
+    cursor = tradingCalendar.previousTradingDay(cursor);
+  }
+  return res.status(200).json({
+    today,
+    lastTradingDay,
+    tradingDay5Back: cursor,
+    isTodayTradingDay,
+    calendarInitialized: tradingCalendar.getStatus().initialized
+  });
+});
+
 function getDebugMetricsPayload() {
   return buildDebugMetricsPayload({
     startedAtMs,

@@ -1,5 +1,4 @@
-import { getCurrentWeekISO, getCurrentMonthISO } from './utils';
-
+import { setTradingCalendarContext, TradingCalendarContext } from './utils';
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls, cancelChartLoading } from './chart';
@@ -61,18 +60,17 @@ window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'div
     if (currentView !== 'divergence') {
         switchView('divergence');
     }
-    // Ticker detail renders inside view-live, assuming we keep the container structure or move it.
-    // For now, let's ensure we just set active tab to divergence.
     setActiveNavTab('divergence');
+
+    // Show header tf buttons for ticker view too
+    document.getElementById('header-tf-group')?.classList.remove('hidden');
 
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) {
         cancelChartLoading();
         tickerView.dataset.ticker = ticker;
-        document.getElementById('reset-filter')?.classList.remove('hidden');
         document.getElementById('dashboard-view')?.classList.add('hidden');
         document.getElementById('view-divergence')?.classList.add('hidden');
-        document.getElementById('ticker-back-btn')?.classList.remove('hidden');
         tickerView.classList.remove('hidden');
         renderTickerView(ticker);
         window.scrollTo(0, 0);
@@ -84,8 +82,6 @@ window.showOverview = function() {
     const tickerView = document.getElementById('ticker-view');
     if (tickerView) delete tickerView.dataset.ticker;
 
-    document.getElementById('reset-filter')?.classList.add('hidden');
-    document.getElementById('ticker-back-btn')?.classList.add('hidden');
     switchView('divergence');
     window.scrollTo(0, divergenceDashboardScrollY);
 }
@@ -96,19 +92,26 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
 
     // Hide all views and controls
     document.getElementById('view-logs')?.classList.add('hidden');
-    // document.getElementById('view-live')?.classList.add('hidden'); // Removed
     document.getElementById('view-divergence')?.classList.add('hidden');
     document.getElementById('view-breadth')?.classList.add('hidden');
-    // document.getElementById('live-controls')?.classList.add('hidden'); // Removed
-    document.getElementById('divergence-controls')?.classList.add('hidden');
     document.getElementById('breadth-controls')?.classList.add('hidden');
 
     // Also hide ticker view when switching main views
     document.getElementById('ticker-view')?.classList.add('hidden');
-    document.getElementById('ticker-back-btn')?.classList.add('hidden');
     cancelChartLoading();
 
     stopLogsPolling();
+
+    // Show/hide header timeframe group (visible for alerts/ticker, hidden for logs/breadth)
+    const tfGroup = document.getElementById('header-tf-group');
+    if (view === 'divergence') {
+        tfGroup?.classList.remove('hidden');
+    } else {
+        tfGroup?.classList.add('hidden');
+    }
+
+    // Close any open dropdowns
+    closeAllHeaderDropdowns();
 
     // Show the selected view and controls
     if (view === 'logs') {
@@ -117,7 +120,6 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
         startLogsPolling();
     } else if (view === 'divergence') {
         document.getElementById('view-divergence')?.classList.remove('hidden');
-        document.getElementById('divergence-controls')?.classList.remove('hidden');
         fetchDivergenceSignals(true).then(renderDivergenceOverview);
         syncDivergenceScanUiState();
     } else if (view === 'breadth') {
@@ -127,9 +129,16 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
     }
 }
 
+function closeAllHeaderDropdowns(): void {
+    document.getElementById('header-nav-dropdown')?.classList.add('hidden');
+    document.getElementById('header-nav-dropdown')?.classList.remove('open');
+    document.getElementById('header-custom-range')?.classList.add('hidden');
+    document.getElementById('header-custom-range')?.classList.remove('open');
+}
+
 function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'breadth'): void {
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-    document.getElementById(`nav-${view}`)?.classList.add('active');
+    document.querySelectorAll('.header-nav-item').forEach((b) => b.classList.remove('active'));
+    document.querySelector(`.header-nav-item[data-view="${view}"]`)?.classList.add('active');
 }
 
 
@@ -194,30 +203,6 @@ function initSearch() {
     });
 }
 
-function syncCurrentDateInputsForTimeZoneChange(nextTimeZone: string, previousTimeZone: string): void {
-    const previousWeek = getCurrentWeekISO(previousTimeZone);
-    const previousMonth = getCurrentMonthISO(previousTimeZone);
-    const nextWeek = getCurrentWeekISO(nextTimeZone);
-    const nextMonth = getCurrentMonthISO(nextTimeZone);
-
-    const liveWeekInput = document.getElementById('history-week') as HTMLInputElement | null;
-    const liveMonthInput = document.getElementById('history-month') as HTMLInputElement | null;
-    const divergenceWeekInput = document.getElementById('divergence-history-week') as HTMLInputElement | null;
-    const divergenceMonthInput = document.getElementById('divergence-history-month') as HTMLInputElement | null;
-
-    if (liveWeekInput && (!liveWeekInput.value || liveWeekInput.value === previousWeek)) {
-        liveWeekInput.value = nextWeek;
-    }
-    if (divergenceWeekInput && (!divergenceWeekInput.value || divergenceWeekInput.value === previousWeek)) {
-        divergenceWeekInput.value = nextWeek;
-    }
-    if (liveMonthInput && (!liveMonthInput.value || liveMonthInput.value === previousMonth)) {
-        liveMonthInput.value = nextMonth;
-    }
-    if (divergenceMonthInput && (!divergenceMonthInput.value || divergenceMonthInput.value === previousMonth)) {
-        divergenceMonthInput.value = nextMonth;
-    }
-}
 
 declare global {
     interface Window {
@@ -313,8 +298,7 @@ function initGlobalSettingsPanel() {
         setAppTimeZone(timezoneSelectEl.value);
     });
 
-    onAppTimeZoneChange((nextTimeZone, previousTimeZone) => {
-        syncCurrentDateInputsForTimeZoneChange(nextTimeZone, previousTimeZone);
+    onAppTimeZoneChange((nextTimeZone) => {
         timezoneSelectEl.value = nextTimeZone;
         refreshViewAfterTimeZoneChange().catch((error) => {
             console.error('Failed to refresh UI after timezone change:', error);
@@ -509,23 +493,104 @@ async function initializeSiteLock(onUnlock: () => void): Promise<void> {
     updateDots();
 }
 
+async function fetchTradingCalendarContext(): Promise<void> {
+    try {
+        const res = await fetch('/api/trading-calendar/context');
+        if (res.ok) {
+            const ctx: TradingCalendarContext = await res.json();
+            setTradingCalendarContext(ctx);
+        }
+    } catch { /* non-fatal */ }
+}
+
+function initHeaderNavDropdown(): void {
+    const toggle = document.getElementById('header-nav-toggle');
+    const dropdown = document.getElementById('header-nav-dropdown');
+    if (!toggle || !dropdown) return;
+
+    toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close custom range if open
+        const customRange = document.getElementById('header-custom-range');
+        customRange?.classList.add('hidden');
+        customRange?.classList.remove('open');
+
+        const isVisible = dropdown.classList.contains('open');
+        if (isVisible) {
+            dropdown.classList.remove('open');
+            setTimeout(() => dropdown.classList.add('hidden'), 150);
+        } else {
+            dropdown.classList.remove('hidden');
+            requestAnimationFrame(() => dropdown.classList.add('open'));
+        }
+    });
+
+    dropdown.addEventListener('click', (e) => {
+        const item = (e.target as HTMLElement).closest('.header-nav-item') as HTMLElement | null;
+        if (!item) return;
+        const view = item.dataset.view as 'logs' | 'divergence' | 'breadth';
+        if (view) {
+            switchView(view);
+            dropdown.classList.remove('open');
+            setTimeout(() => dropdown.classList.add('hidden'), 150);
+        }
+    });
+}
+
+function initHeaderTimeframeButtons(): void {
+    document.getElementById('header-btn-t')?.addEventListener('click', () => {
+        setDivergenceFeedMode('today');
+        closeAllHeaderDropdowns();
+    });
+    document.getElementById('header-btn-l')?.addEventListener('click', () => {
+        setDivergenceFeedMode('last_trading_day');
+        closeAllHeaderDropdowns();
+    });
+    document.getElementById('header-btn-5')?.addEventListener('click', () => {
+        setDivergenceFeedMode('5');
+        closeAllHeaderDropdowns();
+    });
+
+    // Custom range button toggles the custom range dropdown
+    const btnC = document.getElementById('header-btn-c');
+    const customPanel = document.getElementById('header-custom-range');
+    btnC?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!customPanel) return;
+        const isVisible = customPanel.classList.contains('open');
+        // Close nav dropdown first
+        const navDd = document.getElementById('header-nav-dropdown');
+        navDd?.classList.add('hidden');
+        navDd?.classList.remove('open');
+
+        if (isVisible) {
+            customPanel.classList.remove('open');
+            setTimeout(() => customPanel.classList.add('hidden'), 150);
+        } else {
+            customPanel.classList.remove('hidden');
+            requestAnimationFrame(() => customPanel.classList.add('open'));
+        }
+    });
+
+    // Apply custom range
+    document.getElementById('header-custom-apply')?.addEventListener('click', () => {
+        const fromInput = document.getElementById('header-custom-from') as HTMLInputElement | null;
+        const toInput = document.getElementById('header-custom-to') as HTMLInputElement | null;
+        if (fromInput?.value && toInput?.value) {
+            setDivergenceFeedMode('custom');
+        }
+        closeAllHeaderDropdowns();
+    });
+}
+
 function bootstrapApplication(): void {
     if (appInitialized) return;
     appInitialized = true;
 
-    // Initialization
-    // Navigation
-    document.getElementById('nav-logs')?.addEventListener('click', () => switchView('logs'));
-    document.getElementById('nav-divergence')?.addEventListener('click', () => switchView('divergence'));
-
-    document.getElementById('nav-breadth')?.addEventListener('click', () => switchView('breadth'));
-
-    // Inputs
-    document.getElementById('reset-filter')?.addEventListener('click', window.showOverview);
+    // Back button (in chart controls bar)
     document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);
-    
-    // Live Feed Controls
 
+    // Global settings panel controls
     document.getElementById('divergence-fetch-daily-btn')?.addEventListener('click', () => {
         runManualDivergenceFetchDailyData();
     });
@@ -538,12 +603,6 @@ function bootstrapApplication(): void {
     document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
         stopManualDivergenceFetchWeeklyData();
     });
-    
-    // New Date Inputs
-    const weekInput = document.getElementById('history-week') as HTMLInputElement;
-    const monthInput = document.getElementById('history-month') as HTMLInputElement;
-    const divergenceWeekInput = document.getElementById('divergence-history-week') as HTMLInputElement;
-    const divergenceMonthInput = document.getElementById('divergence-history-month') as HTMLInputElement;
 
     // Ticker View Daily Sort Buttons
     document.querySelectorAll('.ticker-daily-sort .tf-btn').forEach(btn => {
@@ -562,19 +621,6 @@ function bootstrapApplication(): void {
     });
 
 
-    // Main Dashboard Daily Sort Buttons
-
-
-    // Set defaults
-    if (weekInput) weekInput.value = getCurrentWeekISO();
-    if (monthInput) monthInput.value = getCurrentMonthISO();
-    if (divergenceWeekInput) divergenceWeekInput.value = getCurrentWeekISO();
-    if (divergenceMonthInput) divergenceMonthInput.value = getCurrentMonthISO();
-
-
-
-
-
     // Breadth Controls
     document.querySelectorAll('#breadth-tf-btns .tf-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -587,10 +633,21 @@ function bootstrapApplication(): void {
         btn.addEventListener('click', () => {
             const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
             setBreadthMetric(metric);
-            // Update subtitle
             const subtitle = document.getElementById('breadth-subtitle');
             if (subtitle) subtitle.textContent = `SPY vs ${metric} — Normalized`;
         });
+    });
+
+    // Header navigation dropdown & timeframe buttons
+    initHeaderNavDropdown();
+    initHeaderTimeframeButtons();
+
+    // Close header dropdowns on outside click
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement | null;
+        if (!target) return;
+        if (target.closest('#header-nav-container') || target.closest('#header-custom-range') || target.closest('#header-btn-c')) return;
+        closeAllHeaderDropdowns();
     });
 
     // Initial Load
@@ -598,20 +655,23 @@ function bootstrapApplication(): void {
     setDivergenceFeedMode('today', false);
     syncDivergenceScanUiState().catch(() => {});
     switchView('divergence');
-    
+
     // Setup Search
     initGlobalSettingsPanel();
     initSearch();
     initLogsView();
-    
+
     // Setup Event Delegation
     setupDivergenceFeedDelegation();
 
     // Mobile Collapse Toggle (only on mobile)
     setupMobileCollapse();
-    
+
     // Initialize Chart Controls
     initChartControls();
+
+    // Fetch trading calendar context (non-blocking)
+    fetchTradingCalendarContext();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

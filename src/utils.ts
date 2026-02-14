@@ -2,6 +2,24 @@ import { SortMode, Alert } from './types';
 import { getAppTimeZone } from './timezone';
 import { computeDivergenceScoreFromStates, getTickerDivergenceScoreFromCache } from './divergenceTable';
 
+// Trading calendar context cache (set by main.ts on bootstrap)
+export interface TradingCalendarContext {
+    today: string;
+    lastTradingDay: string;
+    tradingDay5Back: string;
+    isTodayTradingDay: boolean;
+    calendarInitialized: boolean;
+}
+let _tradingCalendarCtx: TradingCalendarContext | null = null;
+
+export function setTradingCalendarContext(ctx: TradingCalendarContext): void {
+    _tradingCalendarCtx = ctx;
+}
+
+function getTradingCalendarContext(): TradingCalendarContext | null {
+    return _tradingCalendarCtx;
+}
+
 interface DateParts {
     year: number;
     month: number;
@@ -64,40 +82,10 @@ function dayKeyToUtcMs(dayKey: string): number | null {
     return Date.UTC(year, month - 1, day);
 }
 
-function getIsoWeekStartUtc(year: number, week: number): Date {
-    const jan4 = new Date(Date.UTC(year, 0, 4));
-    const jan4Day = jan4.getUTCDay() || 7;
-    const week1Monday = new Date(jan4);
-    week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
-
-    const monday = new Date(week1Monday);
-    monday.setUTCDate(week1Monday.getUTCDate() + ((week - 1) * 7));
-    return monday;
-}
-
-export function getCurrentWeekISO(timeZone: string = getAppTimeZone()): string {
-    const now = new Date();
-    const parts = getDatePartsForTimeZone(now, timeZone);
-    const dateUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-
-    const dayNumber = dateUtc.getUTCDay() || 7;
-    dateUtc.setUTCDate(dateUtc.getUTCDate() + 4 - dayNumber);
-
-    const yearStart = new Date(Date.UTC(dateUtc.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((dateUtc.getTime() - yearStart.getTime()) / DAY_MS) + 1) / 7);
-    return `${dateUtc.getUTCFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
-}
-
 export function getCurrentDateISO(timeZone: string = getAppTimeZone()): string {
     const now = new Date();
     const parts = getDatePartsForTimeZone(now, timeZone);
     return formatDateKey(parts.year, parts.month, parts.day);
-}
-
-export function getCurrentMonthISO(timeZone: string = getAppTimeZone()): string {
-    const now = new Date();
-    const parts = getDatePartsForTimeZone(now, timeZone);
-    return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
 }
 
 export function getRelativeTime(timestamp?: string, timeZone: string = getAppTimeZone()): string {
@@ -129,8 +117,8 @@ export function formatVolume(vol?: number): string {
 
 export function getDateRangeForMode(
     mode: string,
-    weekVal: string,
-    monthVal: string,
+    customFrom: string = '',
+    customTo: string = '',
     timeZone: string = getAppTimeZone()
 ): { startDate: string, endDate: string } {
     const today = getCurrentDateISO(timeZone);
@@ -140,58 +128,33 @@ export function getDateRangeForMode(
         return { startDate: today, endDate: today };
     }
 
-    if (mode === 'yesterday') {
+    if (mode === 'last_trading_day') {
+        const ctx = getTradingCalendarContext();
+        if (ctx?.lastTradingDay) {
+            return { startDate: ctx.lastTradingDay, endDate: ctx.lastTradingDay };
+        }
+        // Fallback: use yesterday
         const yesterday = shiftDateKey(today, -1);
-        if (!yesterday) return { startDate: '', endDate: '' };
-        return { startDate: yesterday, endDate: yesterday };
+        return yesterday ? { startDate: yesterday, endDate: yesterday } : { startDate: '', endDate: '' };
     }
 
-    if (mode === '30' || mode === '7') {
-        const days = Math.max(1, Math.floor(Number(mode)));
-        const startDate = shiftDateKey(today, -(days - 1));
-        if (!startDate) return { startDate: '', endDate: '' };
-        return { startDate, endDate: today };
-    }
-
-    if (mode === 'week') {
-        const match = String(weekVal || '').trim().match(/^(\d{4})-W(\d{2})$/);
-        if (!match) return { startDate: '', endDate: '' };
-        const year = Number(match[1]);
-        const week = Number(match[2]);
-        if (!Number.isFinite(year) || !Number.isFinite(week) || week < 1 || week > 53) {
-            return { startDate: '', endDate: '' };
+    if (mode === '5') {
+        const ctx = getTradingCalendarContext();
+        if (ctx?.tradingDay5Back) {
+            return { startDate: ctx.tradingDay5Back, endDate: today };
         }
-
-        const mondayUtc = getIsoWeekStartUtc(year, week);
-        const sundayUtc = new Date(mondayUtc);
-        sundayUtc.setUTCDate(mondayUtc.getUTCDate() + 6);
-        const startDate = formatDateKey(
-            mondayUtc.getUTCFullYear(),
-            mondayUtc.getUTCMonth() + 1,
-            mondayUtc.getUTCDate()
-        );
-        const endDate = formatDateKey(
-            sundayUtc.getUTCFullYear(),
-            sundayUtc.getUTCMonth() + 1,
-            sundayUtc.getUTCDate()
-        );
-        return { startDate, endDate };
+        // Fallback: 7 calendar days
+        const startDate = shiftDateKey(today, -6);
+        return startDate ? { startDate, endDate: today } : { startDate: '', endDate: '' };
     }
 
-    if (mode === 'month') {
-        const match = String(monthVal || '').trim().match(/^(\d{4})-(\d{2})$/);
-        if (!match) return { startDate: '', endDate: '' };
-        const year = Number(match[1]);
-        const month = Number(match[2]);
-        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-            return { startDate: '', endDate: '' };
+    if (mode === 'custom') {
+        const from = String(customFrom || '').trim();
+        const to = String(customTo || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
+            return { startDate: from, endDate: to };
         }
-
-        const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-        return {
-            startDate: formatDateKey(year, month, 1),
-            endDate: formatDateKey(year, month, lastDay)
-        };
+        return { startDate: '', endDate: '' };
     }
 
     return { startDate: '', endDate: '' };
@@ -258,19 +221,13 @@ export function updateSortButtonUi(
         const mode = el.dataset.sort as SortMode;
         if (mode === currentMode) {
             el.classList.add('active');
-            // Update arrow
-            const baseText = el.getAttribute('data-base-text') || el.textContent || '';
-            if (!el.getAttribute('data-base-text')) el.setAttribute('data-base-text', baseText);
-            
-            // Don't add arrow for favorites or if text is empty/icon
+            // Set arrow indicator via CSS pseudo-element (positioned top-right by CSS)
             if (mode !== 'favorite') {
-                el.textContent = `${baseText} ${direction === 'asc' ? '↑' : '↓'}`;
+                el.setAttribute('data-sort-dir', direction === 'asc' ? '↑' : '↓');
             }
         } else {
             el.classList.remove('active');
-            // Reset text
-            const baseText = el.getAttribute('data-base-text');
-            if (baseText) el.textContent = baseText;
+            el.removeAttribute('data-sort-dir');
         }
     });
 }
