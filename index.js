@@ -1698,28 +1698,29 @@ async function runWithAbortAndTimeout(task, options = {}) {
 
   const controller = new AbortController();
   const unlinkAbort = linkAbortSignalToController(parentSignal, controller);
-  let timedOut = false;
-  const timeoutTimer = setTimeout(() => {
-    timedOut = true;
-    try {
-      controller.abort();
-    } catch {
-      // Ignore duplicate abort calls.
+  
+  let timeoutTimer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutTimer = setTimeout(() => {
+      try {
+        controller.abort();
+      } catch {
+        // Ignore duplicate abort calls.
+      }
+      reject(buildTaskTimeoutError(label, timeoutMs));
+    }, timeoutMs);
+    if (typeof timeoutTimer.unref === 'function') {
+      timeoutTimer.unref();
     }
-  }, timeoutMs);
-  if (typeof timeoutTimer.unref === 'function') {
-    timeoutTimer.unref();
-  }
+  });
 
   try {
-    return await task(controller.signal);
-  } catch (err) {
-    if (timedOut && isAbortError(err)) {
-      throw buildTaskTimeoutError(label, timeoutMs);
-    }
-    throw err;
+    return await Promise.race([
+      task(controller.signal),
+      timeoutPromise
+    ]);
   } finally {
-    clearTimeout(timeoutTimer);
+    if (timeoutTimer) clearTimeout(timeoutTimer);
     unlinkAbort();
   }
 }
