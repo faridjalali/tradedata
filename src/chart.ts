@@ -5077,6 +5077,47 @@ export function initChartControls() {
       }
     });
   });
+
+  // Fullscreen toggle
+  initChartFullscreen();
+}
+
+const FULLSCREEN_ENTER_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="5.5 1 1 1 1 5.5"/>
+  <polyline points="10.5 1 15 1 15 5.5"/>
+  <polyline points="10.5 15 15 15 15 10.5"/>
+  <polyline points="5.5 15 1 15 1 10.5"/>
+</svg>`;
+
+const FULLSCREEN_EXIT_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="1 5.5 5.5 5.5 5.5 1"/>
+  <polyline points="15 5.5 10.5 5.5 10.5 1"/>
+  <polyline points="15 10.5 10.5 10.5 10.5 15"/>
+  <polyline points="1 10.5 5.5 10.5 5.5 15"/>
+</svg>`;
+
+function initChartFullscreen(): void {
+  const btn = document.getElementById('chart-fullscreen-btn');
+  const container = document.getElementById('custom-chart-container');
+  if (!btn || !container) return;
+
+  const updateIcon = (): void => {
+    const isActive = container.classList.contains('chart-fullscreen');
+    btn.innerHTML = isActive ? FULLSCREEN_EXIT_SVG : FULLSCREEN_ENTER_SVG;
+    btn.title = isActive ? 'Exit fullscreen' : 'Fullscreen';
+  };
+
+  btn.addEventListener('click', () => {
+    container.classList.toggle('chart-fullscreen');
+    updateIcon();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && container.classList.contains('chart-fullscreen')) {
+      container.classList.remove('chart-fullscreen');
+      updateIcon();
+    }
+  });
 }
 
 export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {
