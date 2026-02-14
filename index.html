@@ -185,27 +185,6 @@
         </div>
       </header>
 
-      <!-- CONTROLS -->
-      <div id="controls-bar">
-        <!-- Breadth Controls -->
-        <div id="breadth-controls" class="hidden">
-          <div class="breadth-controls-inner">
-            <div id="breadth-tf-btns" class="feed-controls-group">
-              <button class="tf-btn" data-days="1">T</button>
-              <button class="tf-btn active" data-days="5">5</button>
-              <button class="tf-btn" data-days="10">10</button>
-              <button class="tf-btn" data-days="20">20</button>
-              <button class="tf-btn" data-days="30">30</button>
-            </div>
-            <div id="breadth-metric-btns" class="feed-controls-group">
-              <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
-              <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
-              <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- LOGS VIEW -->
       <main id="view-logs" class="hidden">
         <div class="logs-page">
@@ -368,16 +347,28 @@
 
       <!-- BREADTH VIEW -->
       <main id="view-breadth" class="hidden">
-        <div class="breadth-chart-container">
-          <div class="breadth-chart-header">
-            <h3>Market Breadth</h3>
-            <span id="breadth-subtitle" class="breadth-subtitle">SPY vs SVIX — Normalized</span>
+        <div class="single-page-container">
+          <div class="single-page-header">
+            <div class="single-page-controls">
+              <div id="breadth-tf-btns" class="feed-controls-group">
+                <button class="tf-btn" data-days="1">T</button>
+                <button class="tf-btn active" data-days="5">5</button>
+                <button class="tf-btn" data-days="10">10</button>
+                <button class="tf-btn" data-days="20">20</button>
+                <button class="tf-btn" data-days="30">30</button>
+              </div>
+              <div id="breadth-metric-btns" class="feed-controls-group">
+                <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
+                <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
+                <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
+              </div>
+            </div>
+            <span id="breadth-subtitle" class="single-page-subtitle">SPY vs SVIX — Normalized</span>
           </div>
-          <div class="breadth-chart-wrapper">
+          <div class="single-page-chart-wrapper">
             <canvas id="breadth-chart"></canvas>
           </div>
-
-          <div id="breadth-error" class="breadth-status" style="display:none;"></div>
+          <div id="breadth-error" class="single-page-status" style="display:none;"></div>
         </div>
       </main>
     </div>

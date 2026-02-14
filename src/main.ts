@@ -90,11 +90,10 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
     currentView = view;
     setActiveNavTab(view);
 
-    // Hide all views and controls
+    // Hide all views
     document.getElementById('view-logs')?.classList.add('hidden');
     document.getElementById('view-divergence')?.classList.add('hidden');
     document.getElementById('view-breadth')?.classList.add('hidden');
-    document.getElementById('breadth-controls')?.classList.add('hidden');
 
     // Also hide ticker view when switching main views
     document.getElementById('ticker-view')?.classList.add('hidden');
@@ -124,7 +123,6 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
         syncDivergenceScanUiState();
     } else if (view === 'breadth') {
         document.getElementById('view-breadth')?.classList.remove('hidden');
-        document.getElementById('breadth-controls')?.classList.remove('hidden');
         initBreadth();
     }
 }
