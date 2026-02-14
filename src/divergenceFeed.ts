@@ -1137,8 +1137,7 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
     // Guard: overlay may have been destroyed during await
     if (miniChartCurrentTicker !== ticker || !miniChartOverlayEl) return;
 
-    const trimmed = bars;
-    if (trimmed.length === 0) {
+    if (bars.length === 0) {
         destroyMiniChartOverlay();
         return;
     }
@@ -1175,7 +1174,7 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
         priceLineVisible: false,
         lastValueVisible: false,
     });
-    candleSeries.setData(trimmed as any);
+    candleSeries.setData(bars as any);
     chart.timeScale().fitContent();
 }
 

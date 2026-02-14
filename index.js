@@ -512,7 +512,7 @@ const DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE = Math.max(
   Number(process.env.DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE) || 500
 );
 const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25);
-const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(28, Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 35);
+const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(28, Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 50);
 const DIVERGENCE_FETCH_TICKER_TIMEOUT_MS = Math.max(5_000, Number(process.env.DIVERGENCE_FETCH_TICKER_TIMEOUT_MS) || 60_000);
 const DIVERGENCE_FETCH_MA_TIMEOUT_MS = Math.max(5_000, Number(process.env.DIVERGENCE_FETCH_MA_TIMEOUT_MS) || 30_000);
 const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
@@ -4283,17 +4283,6 @@ function extractLatestChartPayload(result) {
   };
 }
 
-function lowerBoundUnixArray(times, target) {
-  let lo = 0;
-  let hi = times.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (times[mid] < target) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
 function buildNeutralDivergenceStates() {
   const states = {};
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
@@ -4345,8 +4334,8 @@ function computeDivergenceSummaryStatesFromDailyResult(result, options = {}) {
   const lastIndex = unixTimes.length - 1;
   const latestUnix = unixTimes[lastIndex];
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
-    const cutoffUnix = latestUnix - (days * 24 * 60 * 60);
-    const startIndex = lowerBoundUnixArray(unixTimes, cutoffUnix);
+    // `days` = trading days; each entry in unixTimes is one trading day.
+    const startIndex = lastIndex - days;
     if (startIndex < 0 || startIndex >= lastIndex) continue;
     const startClose = closes[startIndex];
     const endClose = closes[lastIndex];
@@ -5342,13 +5331,6 @@ function classifyDivergenceStateMapFromDailyRows(rows) {
     return states;
   }
 
-  const latest = safeRows[safeRows.length - 1];
-  const latestDateMs = parseDateKeyToUtcMs(latest.trade_date);
-  if (!Number.isFinite(latestDateMs)) {
-    return states;
-  }
-
-  const dateMs = safeRows.map((row) => parseDateKeyToUtcMs(row.trade_date));
   const closes = safeRows.map((row) => Number(row.close));
   const deltaPrefix = [0];
   let runningDelta = 0;
@@ -5357,14 +5339,11 @@ function classifyDivergenceStateMapFromDailyRows(rows) {
     deltaPrefix.push(runningDelta);
   }
 
+  const endIndex = safeRows.length - 1;
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
-    const cutoffMs = latestDateMs - (days * 24 * 60 * 60 * 1000);
-    let startIndex = 0;
-    while (startIndex < dateMs.length && dateMs[startIndex] < cutoffMs) {
-      startIndex += 1;
-    }
-    const endIndex = safeRows.length - 1;
-    if (startIndex >= endIndex) continue;
+    // `days` = trading days; each row in safeRows is one trading day.
+    const startIndex = endIndex - days;
+    if (startIndex < 0 || startIndex >= endIndex) continue;
     const startClose = closes[startIndex];
     const endClose = closes[endIndex];
     if (!Number.isFinite(startClose) || !Number.isFinite(endClose)) continue;
@@ -5539,8 +5518,10 @@ async function rebuildDivergenceSummariesForTradeDate(options = {}) {
     return { asOfTradeDate: '', processedTickers: 0 };
   }
 
-  const maxLookbackDays = Math.max(...DIVERGENCE_LOOKBACK_DAYS);
-  const historyStartDate = dateKeyDaysAgo(asOfTradeDate, maxLookbackDays + 7) || asOfTradeDate;
+  const maxLookbackTradingDays = Math.max(...DIVERGENCE_LOOKBACK_DAYS);
+  // Convert trading days to calendar days (×7/5) with generous buffer for holidays.
+  const calendarDaysNeeded = Math.ceil(maxLookbackTradingDays * 7 / 5) + 10;
+  const historyStartDate = dateKeyDaysAgo(asOfTradeDate, calendarDaysNeeded) || asOfTradeDate;
   const result = await divergencePool.query(`
     SELECT
       ticker,
