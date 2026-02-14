@@ -1,4 +1,4 @@
-import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn } from './utils';
+import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
 import {
     fetchDivergenceSignalsFromApi,
     toggleDivergenceFavorite,
@@ -24,8 +24,10 @@ import { refreshActiveTickerDivergenceSummary } from './chart';
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let divergenceFeedMode: LiveFeedMode = 'today';
-let dailySortMode: SortMode = 'time';
-let weeklySortMode: SortMode = 'time';
+let dailySortMode: SortMode = 'combo';
+let weeklySortMode: SortMode = 'combo';
+let dailySortDirection: 'asc' | 'desc' = 'desc';
+let weeklySortDirection: 'asc' | 'desc' = 'desc';
 let divergenceScanPollTimer: number | null = null;
 let divergenceScanPollInFlight = false;
 let divergenceScanPollConsecutiveErrors = 0;
@@ -971,8 +973,8 @@ export function renderDivergenceOverview(): void {
     const daily = allSignals.filter((a) => (a.timeframe || '').trim() === '1d');
     const weekly = allSignals.filter((a) => (a.timeframe || '').trim() === '1w');
 
-    daily.sort(createAlertSortFn(dailySortMode));
-    weekly.sort(createAlertSortFn(weeklySortMode));
+    daily.sort(createAlertSortFn(dailySortMode, dailySortDirection));
+    weekly.sort(createAlertSortFn(weeklySortMode, weeklySortDirection));
 
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
@@ -1013,8 +1015,9 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
     if (!container) return;
 
     const sortMode = timeframe === '1d' ? dailySortMode : weeklySortMode;
+    const sortDirection = timeframe === '1d' ? dailySortDirection : weeklySortDirection;
     const signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
-    signals.sort(createAlertSortFn(sortMode));
+    signals.sort(createAlertSortFn(sortMode, sortDirection));
 
     container.innerHTML = signals.map(createAlertCard).join('');
     renderAlertCardDivergenceTablesFromCache(container);
@@ -1114,27 +1117,32 @@ export function setupDivergenceFeedDelegation(): void {
 }
 
 export function setDivergenceDailySort(mode: SortMode): void {
-    dailySortMode = mode;
-    const dailyHeader = document.querySelector('#view-divergence .divergence-daily-sort');
-    if (dailyHeader) {
-        dailyHeader.querySelectorAll('.tf-btn').forEach(btn => {
-            const el = btn as HTMLElement;
-            if (el.dataset.sort === mode) el.classList.add('active');
-            else el.classList.remove('active');
-        });
+    if (mode === dailySortMode && mode !== 'favorite') {
+        dailySortDirection = dailySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        dailySortMode = mode;
+        dailySortDirection = 'desc';
     }
+    updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
     renderDivergenceContainer('1d');
 }
 
 export function setDivergenceWeeklySort(mode: SortMode): void {
-    weeklySortMode = mode;
-    const weeklyHeader = document.querySelector('#view-divergence .divergence-weekly-sort');
-    if (weeklyHeader) {
-        weeklyHeader.querySelectorAll('.tf-btn').forEach(btn => {
-            const el = btn as HTMLElement;
-            if (el.dataset.sort === mode) el.classList.add('active');
-            else el.classList.remove('active');
-        });
+    if (mode === weeklySortMode && mode !== 'favorite') {
+        weeklySortDirection = weeklySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        weeklySortMode = mode;
+        weeklySortDirection = 'desc';
     }
+    updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
     renderDivergenceContainer('1w');
+}
+
+export function initializeDivergenceSortDefaults(): void {
+    dailySortMode = 'combo';
+    dailySortDirection = 'desc';
+    weeklySortMode = 'combo';
+    weeklySortDirection = 'desc';
+    updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
+    updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
 }

@@ -1,4 +1,4 @@
-import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn } from './utils';
+import { getCurrentWeekISO, getCurrentMonthISO, getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
 import { fetchAlertsFromApi, toggleFavorite } from './api';
 import { toggleDivergenceFavorite } from './divergenceApi';
 import { setAlerts, getAlerts } from './state';
@@ -205,34 +205,7 @@ export function setupLiveFeedDelegation(): void {
     });
 }
 
-function updateSortButtonUi(
-    containerSelector: string,
-    currentMode: SortMode,
-    direction: 'asc' | 'desc'
-): void {
-    const header = document.querySelector(containerSelector);
-    if (!header) return;
-    header.querySelectorAll('.tf-btn').forEach(btn => {
-        const el = btn as HTMLElement;
-        const mode = el.dataset.sort as SortMode;
-        if (mode === currentMode) {
-            el.classList.add('active');
-            // Update arrow
-            const baseText = el.getAttribute('data-base-text') || el.textContent || '';
-            if (!el.getAttribute('data-base-text')) el.setAttribute('data-base-text', baseText);
-            
-            // Don't add arrow for favorites or if text is empty/icon
-            if (mode !== 'favorite') {
-                el.textContent = `${baseText} ${direction === 'asc' ? '↑' : '↓'}`;
-            }
-        } else {
-            el.classList.remove('active');
-            // Reset text
-            const baseText = el.getAttribute('data-base-text');
-            if (baseText) el.textContent = baseText;
-        }
-    });
-}
+
 
 export function setDailySort(mode: SortMode): void {
     if (mode === dailySortMode && mode !== 'favorite') {

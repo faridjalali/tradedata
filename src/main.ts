@@ -29,7 +29,8 @@ import {
     stopManualDivergenceFetchAllData,
     runManualDivergenceFetchWeeklyData,
     stopManualDivergenceFetchWeeklyData,
-    syncDivergenceScanUiState
+    syncDivergenceScanUiState,
+    initializeDivergenceSortDefaults
 } from './divergenceFeed';
 import { SortMode, LiveFeedMode, TickerListContext } from './types';
 import {
@@ -743,6 +744,7 @@ function bootstrapApplication(): void {
 
     // Initial Load
     initializeSortDefaults();
+    initializeDivergenceSortDefaults();
     setLiveFeedMode('today');
     setDivergenceFeedMode('today', false);
     syncDivergenceScanUiState().catch(() => {});
