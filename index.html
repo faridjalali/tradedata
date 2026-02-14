@@ -390,7 +390,19 @@
                   <button class="tf-btn" data-interval="1day">1D</button>
                   <button class="tf-btn" data-interval="1week">1W</button>
                 </div>
-                <button id="chart-fullscreen-btn" class="chart-fullscreen-btn" type="button" title="Fullscreen">
+                <div class="chart-navigation-group">
+                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Left Arrow)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                  </button>
+                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Right Arrow)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                </div>
+                <button id="chart-fullscreen-btn" class="tf-btn icon-only" type="button" title="Fullscreen (Space)">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="5.5 1 1 1 1 5.5"/>
                     <polyline points="10.5 1 15 1 15 5.5"/>

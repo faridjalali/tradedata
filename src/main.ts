@@ -30,7 +30,7 @@ import {
     stopManualDivergenceFetchWeeklyData,
     syncDivergenceScanUiState
 } from './divergenceFeed';
-import { SortMode, LiveFeedMode } from './types';
+import { SortMode, LiveFeedMode, TickerListContext } from './types';
 import {
     getAppTimeZone,
     getAppTimeZoneOptions,
@@ -42,6 +42,7 @@ let currentView: 'logs' | 'live' | 'divergence' | 'leaderboard' | 'breadth' = 'd
 let liveDashboardScrollY = 0;
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'live' | 'divergence' = 'live';
+let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 
 const SITE_LOCK_STORAGE_KEY = 'catvue_unlock_v1';
@@ -57,8 +58,18 @@ window.setWeeklySort = setWeeklySort;
 window.setTickerDailySort = setTickerDailySort;
 window.setTickerWeeklySort = setTickerWeeklySort;
 
-window.showTickerView = function(ticker: string, sourceView: 'live' | 'divergence' = 'live') {
+export function getTickerListContext(): TickerListContext {
+    return tickerListContext;
+}
+
+export function getTickerOriginView(): 'live' | 'divergence' {
+    return tickerOriginView;
+}
+
+window.showTickerView = function(ticker: string, sourceView: 'live' | 'divergence' = 'live', listContext: TickerListContext = null) {
     tickerOriginView = sourceView;
+    tickerListContext = listContext;
+
     if (sourceView === 'divergence') {
         divergenceDashboardScrollY = window.scrollY;
     } else {

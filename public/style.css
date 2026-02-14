@@ -1222,25 +1222,22 @@ button:hover {
   align-items: center;
 }
 
-.chart-fullscreen-btn {
+.chart-navigation-group {
   margin-left: auto;
-  width: 28px;
-  height: 28px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.tf-btn.icon-only {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #30363d;
-  border-radius: 4px;
-  background: #161b22;
-  color: #8b949e;
-  cursor: pointer;
   flex-shrink: 0;
-}
-
-.chart-fullscreen-btn:hover {
-  color: #c9d1d9;
-  border-color: #58a6ff;
 }
 
 /* Fullscreen state */

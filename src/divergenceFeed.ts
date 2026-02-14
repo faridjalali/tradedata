@@ -1100,7 +1100,14 @@ export function setupDivergenceFeedDelegation(): void {
         if (card) {
             const ticker = (card as HTMLElement).dataset.ticker;
             if (ticker && window.showTickerView) {
-                window.showTickerView(ticker, 'divergence');
+                // Determine context
+                let listContext: 'daily' | 'weekly' | null = null;
+                if (card.closest('#divergence-daily-container')) {
+                    listContext = 'daily';
+                } else if (card.closest('#divergence-weekly-container')) {
+                    listContext = 'weekly';
+                }
+                window.showTickerView(ticker, 'divergence', listContext);
             }
         }
     });

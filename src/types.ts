@@ -29,3 +29,4 @@ export interface AppState {
 
 export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
 export type SortMode = 'time' | 'volume' | 'combo' | 'favorite';
+export type TickerListContext = 'daily' | 'weekly' | null;

@@ -1,4 +1,4 @@
-import { createChart, CrosshairMode } from 'lightweight-charts';
+import { createChart, CrosshairMode, IChartApi } from 'lightweight-charts';
 import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 import {
@@ -21,7 +21,9 @@ let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
 let volumeDeltaRsiTimelineSeries: any = null;
 let volumeDeltaRsiMidlineLine: any = null;
+export let volumeDeltaChartInstance: IChartApi; // specific instance if needed separately? Or alias?
 let volumeDeltaChart: any = null;
+
 let volumeDeltaHistogramSeries: any = null;
 let volumeDeltaTimelineSeries: any = null;
 let volumeDeltaRsiPoints: Array<{ time: string | number, value: number }> = [];
@@ -3751,6 +3753,10 @@ function createVolumeDeltaChart(container: HTMLElement) {
     title: '',
   });
 
+  // Assign global references
+  volumeDeltaChart = chart;
+  volumeDeltaChartInstance = chart;
+
   return { chart, histogramSeries, timelineSeries };
 }
 
@@ -5093,28 +5099,118 @@ const FULLSCREEN_EXIT_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fil
   <polyline points="1 10.5 5.5 10.5 5.5 15"/>
 </svg>`;
 
+import { getTickerListContext, getTickerOriginView } from './main';
+
 function initChartFullscreen(): void {
   const btn = document.getElementById('chart-fullscreen-btn');
   const container = document.getElementById('custom-chart-container');
+  const navPrevBtn = document.getElementById('chart-nav-prev');
+  const navNextBtn = document.getElementById('chart-nav-next');
+  
   if (!btn || !container) return;
+
+  // Initialize Navigation Buttons
+  if (navPrevBtn) {
+      navPrevBtn.addEventListener('click', () => navigateChart(-1));
+  }
+  if (navNextBtn) {
+      navNextBtn.addEventListener('click', () => navigateChart(1));
+  }
 
   const updateIcon = (): void => {
     const isActive = container.classList.contains('chart-fullscreen');
     btn.innerHTML = isActive ? FULLSCREEN_EXIT_SVG : FULLSCREEN_ENTER_SVG;
-    btn.title = isActive ? 'Exit fullscreen' : 'Fullscreen';
+    btn.title = isActive ? 'Exit fullscreen (Space)' : 'Fullscreen (Space)';
+    
+    // Toggle 4th pane X-Axis visibility based on fullscreen state
+    // We need to find which chart is in the 4th position (index 3)
+    const currentOrder = normalizePaneOrder(paneOrder);
+    const bottomPaneId = currentOrder[3]; // The 4th pane
+
+    let targetChart: any = null;
+    if (bottomPaneId === 'price-chart-container') targetChart = priceChart;
+    else if (bottomPaneId === 'vd-rsi-chart-container') targetChart = volumeDeltaRsiChart;
+    else if (bottomPaneId === 'rsi-chart-container') targetChart = rsiChart?.getChart();
+    else if (bottomPaneId === 'vd-chart-container') targetChart = volumeDeltaChart;
+
+    if (targetChart) {
+        targetChart.applyOptions({
+            timeScale: {
+                visible: !isActive // Hide in fullscreen, show otherwise
+            }
+        });
+    }
+
+    // If existing fullscreen, also ensure other panes are reset if needed (though applyPaneScaleVisibilityByPosition handles normal state)
+    // Actually, when exiting, we should re-run the standard visibility logic to be safe.
+    if (!isActive) {
+        applyPaneScaleVisibilityByPosition();
+    }
   };
 
-  btn.addEventListener('click', () => {
+  const toggleFullscreen = () => {
     container.classList.toggle('chart-fullscreen');
     updateIcon();
-  });
+  };
+
+  btn.addEventListener('click', toggleFullscreen);
 
   document.addEventListener('keydown', (e) => {
+    // Only handle if chart is visible
+    const tickerView = document.getElementById('ticker-view');
+    if (!tickerView || tickerView.classList.contains('hidden')) return;
+
     if (e.key === 'Escape' && container.classList.contains('chart-fullscreen')) {
       container.classList.remove('chart-fullscreen');
       updateIcon();
     }
+    
+    // Spacebar to toggle fullscreen
+    if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault(); // Prevent scrolling
+        toggleFullscreen();
+    }
+
+    // Arrow keys for navigation
+    if (e.key === 'ArrowLeft') {
+        navigateChart(-1);
+    } else if (e.key === 'ArrowRight') {
+        navigateChart(1);
+    }
   });
+}
+
+function navigateChart(direction: -1 | 1): void {
+    const context = getTickerListContext();
+    const origin = getTickerOriginView();
+    const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
+
+    if (!context || !currentTicker) return;
+
+    let containerId = '';
+    if (origin === 'divergence') {
+        containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
+    } else {
+        containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
+    }
+
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
+    const currentIndex = cards.findIndex(c => c.dataset.ticker === currentTicker);
+
+    if (currentIndex === -1) return;
+
+    const nextIndex = currentIndex + direction;
+    if (nextIndex >= 0 && nextIndex < cards.length) {
+        const nextCard = cards[nextIndex];
+        const nextTicker = nextCard.dataset.ticker;
+        if (nextTicker && window.showTickerView) {
+            // Keep the same context
+            window.showTickerView(nextTicker, origin, context);
+        }
+    }
 }
 
 export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {

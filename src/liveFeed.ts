@@ -14,7 +14,7 @@ let weeklySortMode: SortMode = 'time';
 // We need to declare the window Interface extension to avoid TS errors
 declare global {
     interface Window {
-        showTickerView: (ticker: string, sourceView?: 'live' | 'divergence') => void;
+        showTickerView: (ticker: string, sourceView?: 'live' | 'divergence', listContext?: 'daily' | 'weekly' | null) => void;
         showOverview: () => void;
         setDailySort: (mode: SortMode) => void;
         setWeeklySort: (mode: SortMode) => void;
@@ -186,7 +186,14 @@ export function setupLiveFeedDelegation(): void {
         if (card) {
             const ticker = (card as HTMLElement).dataset.ticker;
             if (ticker && window.showTickerView) {
-                window.showTickerView(ticker);
+                // Determine context
+                let listContext: 'daily' | 'weekly' | null = null;
+                if (card.closest('#daily-container')) {
+                    listContext = 'daily';
+                } else if (card.closest('#weekly-container')) {
+                    listContext = 'weekly';
+                }
+                window.showTickerView(ticker, 'live', listContext);
             }
         }
     });
