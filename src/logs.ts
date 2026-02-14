@@ -208,7 +208,7 @@ function renderHistory(payload: RunMetricsPayload): void {
         host.innerHTML = '<div class="loading">No run history yet</div>';
         return;
     }
-    host.innerHTML = history.slice(0, 24).map((run) => {
+    host.innerHTML = history.slice(0, 15).map((run) => {
         const processed = Number(run?.tickers?.processed || 0);
         const total = Number(run?.tickers?.total || 0);
         const errors = Number(run?.tickers?.errors || 0);

@@ -665,6 +665,49 @@ function pushRunMetricsHistory(snapshot) {
   if (runMetricsHistory.length > RUN_METRICS_HISTORY_LIMIT) {
     runMetricsHistory.length = RUN_METRICS_HISTORY_LIMIT;
   }
+  persistRunSnapshotToDb(snapshot);
+}
+
+const RUN_METRICS_DB_LIMIT = 15;
+
+function persistRunSnapshotToDb(snapshot) {
+  if (!snapshot || !snapshot.runId) return;
+  pool.query(
+    `INSERT INTO run_metrics_history (run_id, run_type, status, snapshot, started_at, finished_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (run_id) DO UPDATE SET status = $3, snapshot = $4, finished_at = $6`,
+    [
+      snapshot.runId,
+      snapshot.runType || 'unknown',
+      snapshot.status || 'unknown',
+      JSON.stringify(snapshot),
+      snapshot.startedAt || null,
+      snapshot.finishedAt || null
+    ]
+  ).then(() => {
+    // Prune old rows beyond the limit
+    return pool.query(
+      `DELETE FROM run_metrics_history WHERE id NOT IN (
+         SELECT id FROM run_metrics_history ORDER BY created_at DESC LIMIT $1
+       )`,
+      [RUN_METRICS_DB_LIMIT]
+    );
+  }).catch(err => {
+    console.error('Failed to persist run snapshot:', err.message);
+  });
+}
+
+async function loadRunHistoryFromDb() {
+  try {
+    const result = await pool.query(
+      `SELECT snapshot FROM run_metrics_history ORDER BY created_at DESC LIMIT $1`,
+      [RUN_METRICS_DB_LIMIT]
+    );
+    return result.rows.map(r => r.snapshot);
+  } catch (err) {
+    console.error('Failed to load run history from DB:', err.message);
+    return [];
+  }
 }
 
 function createRunMetricsTracker(runType, meta = {}) {
@@ -938,6 +981,27 @@ const initDB = async () => {
         console.log(`Migration note for ${col}:`, e.message);
       }
     }
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS run_metrics_history (
+        id SERIAL PRIMARY KEY,
+        run_id VARCHAR(120) NOT NULL UNIQUE,
+        run_type VARCHAR(40) NOT NULL,
+        status VARCHAR(40) NOT NULL DEFAULT 'unknown',
+        snapshot JSONB NOT NULL,
+        started_at TIMESTAMPTZ,
+        finished_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_run_metrics_history_created ON run_metrics_history (created_at DESC)`);
+
+    // Seed in-memory run history from persisted records
+    const persisted = await loadRunHistoryFromDb();
+    if (persisted.length > 0) {
+      runMetricsHistory.push(...persisted);
+      console.log(`Loaded ${persisted.length} persisted run history entries`);
+    }
+
     console.log("Database initialized successfully");
   } catch (err) {
     console.error("Failed to initialize database:", err);
