@@ -35,9 +35,7 @@ let tickerOriginView: 'divergence' = 'divergence';
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 
-const SITE_LOCK_STORAGE_KEY = 'catvue_unlock_v1';
-const SITE_LOCK_PASSCODE = '46110603';
-const SITE_LOCK_LENGTH = SITE_LOCK_PASSCODE.length;
+const SITE_LOCK_LENGTH = 8;
  
 
 // Expose globals for HTML onclick attributes
@@ -346,23 +344,29 @@ function initGlobalSettingsPanel() {
 
 }
 
-function isSiteLockAlreadyUnlocked(): boolean {
+async function checkServerSession(): Promise<boolean> {
     try {
-        return window.localStorage.getItem(SITE_LOCK_STORAGE_KEY) === '1';
+        const res = await fetch('/api/auth/check');
+        return res.ok;
     } catch {
         return false;
     }
 }
 
-function markSiteLockUnlocked(): void {
+async function verifyPasscodeOnServer(passcode: string): Promise<boolean> {
     try {
-        window.localStorage.setItem(SITE_LOCK_STORAGE_KEY, '1');
+        const res = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ passcode }),
+        });
+        return res.ok;
     } catch {
-        // Ignore storage errors.
+        return false;
     }
 }
 
-function initializeSiteLock(onUnlock: () => void): void {
+async function initializeSiteLock(onUnlock: () => void): Promise<void> {
     const overlay = document.getElementById('site-lock-overlay') as HTMLElement | null;
     if (!overlay) {
         onUnlock();
@@ -381,7 +385,8 @@ function initializeSiteLock(onUnlock: () => void): void {
     const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
     const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
 
-    if (isSiteLockAlreadyUnlocked()) {
+    // Check if we already have a valid server session
+    if (await checkServerSession()) {
         overlay.classList.add('hidden');
         document.body.classList.remove('site-locked');
         onUnlock();
@@ -392,6 +397,7 @@ function initializeSiteLock(onUnlock: () => void): void {
     overlay.classList.remove('hidden');
 
     let entered = '';
+    let verifying = false;
 
     const updateDots = () => {
         for (let i = 0; i < dotEls.length; i++) {
@@ -410,7 +416,6 @@ function initializeSiteLock(onUnlock: () => void): void {
     };
 
     const handleSuccess = () => {
-        markSiteLockUnlocked();
         overlay.classList.add('hidden');
         document.body.classList.remove('site-locked');
         window.removeEventListener('keydown', onKeyDown, true);
@@ -422,7 +427,6 @@ function initializeSiteLock(onUnlock: () => void): void {
         clearEntry();
         if (panel) {
             panel.classList.remove('shake');
-            // Force restart animation on repeated failures.
             // eslint-disable-next-line @typescript-eslint/no-unused-expressions
             panel.offsetWidth;
             panel.classList.add('shake');
@@ -432,13 +436,17 @@ function initializeSiteLock(onUnlock: () => void): void {
         }, 320);
     };
 
-    const verifyIfComplete = () => {
-        if (entered.length < SITE_LOCK_LENGTH) return;
-        if (entered === SITE_LOCK_PASSCODE) {
+    const verifyIfComplete = async () => {
+        if (entered.length < SITE_LOCK_LENGTH || verifying) return;
+        verifying = true;
+        const passcode = entered;
+        const ok = await verifyPasscodeOnServer(passcode);
+        verifying = false;
+        if (ok) {
             handleSuccess();
-            return;
+        } else {
+            handleFailure();
         }
-        handleFailure();
     };
 
     const appendDigit = (digit: string) => {
@@ -447,7 +455,7 @@ function initializeSiteLock(onUnlock: () => void): void {
         entered += digit;
         setStatus('');
         updateDots();
-        verifyIfComplete();
+        void verifyIfComplete();
     };
 
     const backspace = () => {

@@ -91,10 +91,9 @@ function registerChartRoutes(options = {}) {
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
-      const message = err && err.message ? err.message : 'Failed to fetch chart data';
-      console.error('Chart API Error:', message);
+      console.error('Chart API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
-      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
+      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: 'Failed to fetch chart data' });
     }
   });
 
@@ -147,10 +146,9 @@ function registerChartRoutes(options = {}) {
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
-      const message = err && err.message ? err.message : 'Failed to fetch latest chart data';
-      console.error('Chart Latest API Error:', message);
+      console.error('Chart Latest API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
-      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
+      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: 'Failed to fetch latest chart data' });
     }
   });
 
@@ -169,8 +167,8 @@ function registerChartRoutes(options = {}) {
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.status(200).json({ ticker, bars });
     } catch (err) {
-      const message = err && err.message ? err.message : 'Failed to fetch mini bars';
-      return res.status(500).json({ error: message });
+      console.error('Mini Bars API Error:', err && err.message ? err.message : err);
+      return res.status(500).json({ error: 'Failed to fetch mini bars' });
     }
   });
 
@@ -207,9 +205,8 @@ function registerChartRoutes(options = {}) {
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(payload);
     } catch (err) {
-      const message = err && err.message ? err.message : 'Failed to fetch divergence summary';
-      console.error('Chart Divergence Summary API Error:', message);
-      return res.status(502).json({ error: message });
+      console.error('Chart Divergence Summary API Error:', err && err.message ? err.message : err);
+      return res.status(502).json({ error: 'Failed to fetch divergence summary' });
     }
   });
 }

@@ -18,6 +18,7 @@ const { setGlobalDispatcher, Agent } = require("undici");
 const { registerChartRoutes } = require("./server/routes/chartRoutes");
 const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
 const { registerHealthRoutes } = require("./server/routes/healthRoutes");
+const sessionAuth = require("./server/services/sessionAuth");
 const {
   buildDebugMetricsPayload,
   buildHealthPayload,
@@ -49,6 +50,8 @@ const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toL
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
+const SITE_LOCK_PASSCODE = String(process.env.SITE_LOCK_PASSCODE || '46110603').trim();
+const SITE_LOCK_ENABLED = SITE_LOCK_PASSCODE.length > 0;
 const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 let isShuttingDown = false;
@@ -417,6 +420,49 @@ function basicAuthMiddleware(req, res, next) {
 }
 
 app.use(basicAuthMiddleware);
+
+// --- Session-based site lock auth ---
+app.post('/api/auth/verify', (req, res) => {
+  const passcode = String((req.body && req.body.passcode) || '').trim();
+  if (!SITE_LOCK_ENABLED || !passcode) {
+    return res.status(401).json({ error: 'Invalid passcode' });
+  }
+  if (!timingSafeStringEqual(passcode, SITE_LOCK_PASSCODE)) {
+    return res.status(401).json({ error: 'Invalid passcode' });
+  }
+  const token = sessionAuth.createSession();
+  sessionAuth.setSessionCookie(res, token);
+  return res.status(200).json({ status: 'ok' });
+});
+
+app.get('/api/auth/check', (req, res) => {
+  if (!SITE_LOCK_ENABLED) return res.status(200).json({ status: 'ok' });
+  const token = sessionAuth.parseCookieValue(req);
+  if (sessionAuth.validateSession(token)) {
+    return res.status(200).json({ status: 'ok' });
+  }
+  return res.status(401).json({ error: 'Not authenticated' });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = sessionAuth.parseCookieValue(req);
+  sessionAuth.destroySession(token);
+  sessionAuth.clearSessionCookie(res);
+  return res.status(200).json({ status: 'ok' });
+});
+
+// Session auth middleware — gate all /api/* except auth & health endpoints
+const SESSION_AUTH_EXEMPT = ['/api/auth/', '/api/health', '/api/ready'];
+app.use((req, res, next) => {
+  if (!SITE_LOCK_ENABLED) return next();
+  const path = String(req.path || '');
+  if (!path.startsWith('/api/')) return next();
+  if (SESSION_AUTH_EXEMPT.some((prefix) => path.startsWith(prefix))) return next();
+  const token = sessionAuth.parseCookieValue(req);
+  if (sessionAuth.validateSession(token)) return next();
+  return res.status(401).json({ error: 'Not authenticated' });
+});
+
 app.use(express.static('dist', {
   maxAge: '1y',
   immutable: true
@@ -461,7 +507,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000
+  connectionTimeoutMillis: 2000,
+  statement_timeout: 30000,
+});
+pool.on('error', (err) => {
+  console.error('Unexpected idle pool client error:', err.message);
 });
 
 const divergenceDatabaseUrl = process.env.DIVERGENCE_DATABASE_URL || '';
@@ -471,9 +521,15 @@ const divergencePool = divergenceDatabaseUrl
       ssl: { rejectUnauthorized: false },
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000
+      connectionTimeoutMillis: 2000,
+      statement_timeout: 30000,
     })
   : null;
+if (divergencePool) {
+  divergencePool.on('error', (err) => {
+    console.error('Unexpected idle divergence pool client error:', err.message);
+  });
+}
 
 const DIVERGENCE_SOURCE_INTERVAL = '1min';
 const DIVERGENCE_SCAN_PARENT_INTERVAL = '1day';
@@ -970,7 +1026,6 @@ const initDB = async () => {
   }
 };
 
-initDB();
 
 const initDivergenceDB = async () => {
   if (!divergencePool) {
@@ -1140,8 +1195,6 @@ const initDivergenceDB = async () => {
     console.error('Failed to initialize divergence database:', err);
   }
 };
-
-initDivergenceDB();
 
 app.get('/api/alerts', async (req, res) => {
   try {
@@ -4542,12 +4595,18 @@ async function startDivergenceScanJob(runForDate, totalSymbols, trigger) {
   return Number(result.rows[0]?.id || 0) || null;
 }
 
+const SCAN_JOB_ALLOWED_COLUMNS = new Set([
+  'status', 'finished_at', 'processed_symbols', 'bullish_count',
+  'bearish_count', 'error_count', 'notes', 'scanned_trade_date', 'total_symbols'
+]);
+
 async function updateDivergenceScanJob(jobId, patch) {
   if (!divergencePool || !jobId) return;
   const fields = [];
   const values = [];
   let idx = 1;
   for (const [key, value] of Object.entries(patch || {})) {
+    if (!SCAN_JOB_ALLOWED_COLUMNS.has(key)) continue;
     fields.push(`${key} = $${idx}`);
     values.push(value);
     idx += 1;
@@ -8135,13 +8194,33 @@ async function pruneOldAlerts() {
   }
 }
 
-const server = app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  scheduleNextDivergenceScan();
-  
-  // Schedule initial prune and recurring interval
-  setTimeout(pruneOldAlerts, 60 * 1000); // Run 1 minute after startup
-  setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
+let server;
+
+(async function startServer() {
+  try {
+    await initDB();
+    await initDivergenceDB();
+  } catch (err) {
+    console.error('Fatal: database initialization failed, exiting.', err);
+    process.exit(1);
+  }
+
+  server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+    scheduleNextDivergenceScan();
+
+    // Schedule initial prune and recurring interval
+    setTimeout(pruneOldAlerts, 60 * 1000); // Run 1 minute after startup
+    setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
+  });
+})();
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  shutdownServer('uncaughtException');
 });
 
 async function shutdownServer(signal) {
