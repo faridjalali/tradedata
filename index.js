@@ -19,6 +19,7 @@ const { registerChartRoutes } = require("./server/routes/chartRoutes");
 const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
 const { registerHealthRoutes } = require("./server/routes/healthRoutes");
 const sessionAuth = require("./server/services/sessionAuth");
+const tradingCalendar = require("./server/services/tradingCalendar");
 const {
   buildDebugMetricsPayload,
   buildHealthPayload,
@@ -2301,19 +2302,16 @@ function pacificLocalToUtcMs(year, month, day, hour, minute) {
   return Date.UTC(year, month - 1, day, hour - ptOffset, minute, 0);
 }
 
-function isPacificWeekday(datePacific) {
-  const day = datePacific.getDay();
-  return day >= 1 && day <= 5;
-}
-
 function nextPacificDivergenceRefreshUtcMs(nowUtc = new Date()) {
   const nowPacific = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
   const candidate = new Date(nowPacific);
   candidate.setHours(13, 1, 0, 0);
 
-  if (!isPacificWeekday(candidate) || nowPacific.getTime() >= candidate.getTime()) {
+  const candidateDateStr = () => `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
+
+  if (!tradingCalendar.isTradingDay(candidateDateStr()) || nowPacific.getTime() >= candidate.getTime()) {
     candidate.setDate(candidate.getDate() + 1);
-    while (!isPacificWeekday(candidate)) {
+    for (let i = 0; i < 15 && !tradingCalendar.isTradingDay(candidateDateStr()); i++) {
       candidate.setDate(candidate.getDate() + 1);
     }
   }
@@ -2375,18 +2373,6 @@ function pacificDateTimeParts(nowUtc = new Date()) {
   };
 }
 
-function previousPacificWeekdayDateKey(year, month, day) {
-  const cursor = new Date(Date.UTC(year, month - 1, day));
-  do {
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-  } while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6);
-  return dateKeyFromYmdParts(
-    cursor.getUTCFullYear(),
-    cursor.getUTCMonth() + 1,
-    cursor.getUTCDate()
-  );
-}
-
 function latestCompletedPacificTradeDateKey(nowUtc = new Date()) {
   const pt = pacificDateTimeParts(nowUtc);
   if (!Number.isFinite(pt.year) || !Number.isFinite(pt.month) || !Number.isFinite(pt.day)) {
@@ -2394,22 +2380,22 @@ function latestCompletedPacificTradeDateKey(nowUtc = new Date()) {
   }
   const todayKey = dateKeyFromYmdParts(pt.year, pt.month, pt.day);
   const minutesSinceMidnight = (Number(pt.hour) * 60) + Number(pt.minute);
-  const isWeekday = Number(pt.weekday) >= 1 && Number(pt.weekday) <= 5;
   const refreshMinute = (13 * 60) + 1;
-  if (isWeekday && minutesSinceMidnight < refreshMinute) {
-    return previousPacificWeekdayDateKey(pt.year, pt.month, pt.day);
+  if (tradingCalendar.isTradingDay(todayKey) && minutesSinceMidnight >= refreshMinute) {
+    return todayKey;
   }
-  return todayKey;
-}
-
-function isEtWeekday(dateEt) {
-  const day = dateEt.getDay();
-  return day >= 1 && day <= 5;
+  return tradingCalendar.previousTradingDay(todayKey);
 }
 
 function isEtRegularHours(dateEt) {
-  if (!isEtWeekday(dateEt)) return false;
+  const dateStr = `${dateEt.getFullYear()}-${String(dateEt.getMonth() + 1).padStart(2, '0')}-${String(dateEt.getDate()).padStart(2, '0')}`;
+  if (!tradingCalendar.isTradingDay(dateStr)) return false;
   const totalMinutes = dateEt.getHours() * 60 + dateEt.getMinutes();
+  if (tradingCalendar.isEarlyClose(dateStr)) {
+    const closeTime = tradingCalendar.getCloseTimeEt(dateStr) || '13:00';
+    const [ch, cm] = closeTime.split(':').map(Number);
+    return totalMinutes >= 570 && totalMinutes < (ch * 60 + cm); // 09:30 to early close
+  }
   return totalMinutes >= 570 && totalMinutes < 960; // 09:30-15:59 ET
 }
 
@@ -2418,9 +2404,11 @@ function nextEtMarketOpenUtcMs(nowUtc = new Date()) {
   const candidate = new Date(nowEt);
   const totalMinutes = candidate.getHours() * 60 + candidate.getMinutes();
 
-  if (!(isEtWeekday(candidate) && totalMinutes < 570)) {
+  const candidateDateStr = () => `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
+
+  if (!(tradingCalendar.isTradingDay(candidateDateStr()) && totalMinutes < 570)) {
     candidate.setDate(candidate.getDate() + 1);
-    while (!isEtWeekday(candidate)) {
+    for (let i = 0; i < 15 && !tradingCalendar.isTradingDay(candidateDateStr()); i++) {
       candidate.setDate(candidate.getDate() + 1);
     }
   }
@@ -5357,29 +5345,21 @@ function normalizeFetchWeeklyDataResumeState(state = {}) {
 
 function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const dayOfWeek = nowEt.getDay(); // 0=Sun, 6=Sat
   const totalMinutes = nowEt.getHours() * 60 + nowEt.getMinutes();
-  // Data API has a ~15-min delay after market close.  Normal close is 4:00 PM ET,
-  // but on early-close days (July 3, day before Thanksgiving, etc.) close is 1:00 PM ET.
-  // Using 1:16 PM ET (13*60+16 = 796) accommodates early close days.
-  // For normal days the daily candle is also available well before our typical scan window.
-  const candleAvailableMinute = Math.max(796, Number(process.env.CANDLE_AVAILABLE_MINUTE_ET) || 796);
+  const todayStr = currentEtDateString(nowUtc);
 
-  // Weekday, 4:16 PM ET or later → today's daily candle is closed and available
-  if (dayOfWeek >= 1 && dayOfWeek <= 5 && totalMinutes >= candleAvailableMinute) {
-    return currentEtDateString(nowUtc);
+  if (tradingCalendar.isTradingDay(todayStr)) {
+    // On early-close days candle is available at 1:16 PM ET (796 min);
+    // on normal days at 4:16 PM ET (976 min).
+    const threshold = tradingCalendar.isEarlyClose(todayStr) ? 796 : 976;
+    const candleAvailableMinute = Math.max(threshold, Number(process.env.CANDLE_AVAILABLE_MINUTE_ET) || threshold);
+    if (totalMinutes >= candleAvailableMinute) {
+      return todayStr;
+    }
   }
 
-  // Otherwise return the previous trading day (skip weekends)
-  const prev = new Date(nowEt);
-  prev.setDate(prev.getDate() - 1);
-  while (prev.getDay() === 0 || prev.getDay() === 6) {
-    prev.setDate(prev.getDate() - 1);
-  }
-  const yyyy = prev.getFullYear();
-  const mm = String(prev.getMonth() + 1).padStart(2, '0');
-  const dd = String(prev.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  // Not a trading day or before threshold — return previous trading day
+  return tradingCalendar.previousTradingDay(todayStr);
 }
 
 function resolveLastClosedWeeklyCandleDate(nowUtc = new Date()) {
@@ -5388,17 +5368,23 @@ function resolveLastClosedWeeklyCandleDate(nowUtc = new Date()) {
   const totalMinutes = nowEt.getHours() * 60 + nowEt.getMinutes();
   const candleAvailableMinute = 976; // 4:16 PM ET
 
-  // Friday at/after 4:16 PM ET -> this week's close is available.
-  if (dayOfWeek === 5 && totalMinutes >= candleAvailableMinute) {
+  // Friday at/after 4:16 PM ET -> this week's close is available
+  // (but only if Friday is actually a trading day).
+  if (dayOfWeek === 5 && totalMinutes >= candleAvailableMinute && tradingCalendar.isTradingDay(currentEtDateString(nowUtc))) {
     return currentEtDateString(nowUtc);
   }
 
-  // Otherwise walk back to previous Friday.
+  // Walk back to the last Friday that was a trading day.
   const prev = new Date(nowEt);
   prev.setDate(prev.getDate() - 1);
-  while (prev.getDay() !== 5) {
+  for (let i = 0; i < 30; i++) {
+    if (prev.getDay() === 5) {
+      const key = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+      if (tradingCalendar.isTradingDay(key)) return key;
+    }
     prev.setDate(prev.getDate() - 1);
   }
+  // Absolute fallback
   const yyyy = prev.getFullYear();
   const mm = String(prev.getMonth() + 1).padStart(2, '0');
   const dd = String(prev.getDate()).padStart(2, '0');
@@ -8031,9 +8017,11 @@ function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
   const candidate = new Date(nowEt);
   candidate.setHours(16, 20, 0, 0);
 
-  if (!isEtWeekday(candidate) || nowEt.getTime() >= candidate.getTime()) {
+  const candidateDateStr = () => `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
+
+  if (!tradingCalendar.isTradingDay(candidateDateStr()) || nowEt.getTime() >= candidate.getTime()) {
     candidate.setDate(candidate.getDate() + 1);
-    while (!isEtWeekday(candidate)) {
+    for (let i = 0; i < 15 && !tradingCalendar.isTradingDay(candidateDateStr()); i++) {
       candidate.setDate(candidate.getDate() + 1);
     }
   }
@@ -8205,6 +8193,16 @@ let server;
     process.exit(1);
   }
 
+  // Build trading calendar (non-fatal — falls back to weekday-only if API unreachable)
+  await tradingCalendar.init({
+    fetchDataApiJson,
+    buildDataApiUrl,
+    formatDateUTC,
+    log: (msg) => console.log(`[TradingCalendar] ${msg}`)
+  }).catch(err => {
+    console.warn('[TradingCalendar] Init failed (non-fatal, using weekday fallback):', err && err.message ? err.message : err);
+  });
+
   server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
     scheduleNextDivergenceScan();
@@ -8232,6 +8230,7 @@ async function shutdownServer(signal) {
     clearTimeout(divergenceSchedulerTimer);
     divergenceSchedulerTimer = null;
   }
+  tradingCalendar.destroy();
   clearInterval(vdRsiCacheCleanupTimer);
 
   const forceExitTimer = setTimeout(() => {

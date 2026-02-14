@@ -160,13 +160,37 @@ For each lookback window N days:
    - bearish if endClose > startClose and sumDelta < 0
    - neutral otherwise
 
-### 4.5 As-of date for daily candle availability
+### 4.5 Trading Calendar (`server/services/tradingCalendar.js`)
+
+Hybrid approach providing bulletproof market-day awareness:
+
+- **Historical**: Fetches SPY daily bars (~900 days back) via `/v2/aggs/ticker/SPY/range/1/day/{from}/{to}`. Any date with a bar = confirmed trading day.
+- **Future**: Fetches `/v1/marketstatus/upcoming` for holidays and early closes.
+- Stores trading days as an in-memory `Set<string>` of YYYY-MM-DD keys.
+- Stores early-close dates with their close times.
+- **Refresh**: Self-scheduling daily at 5:00 AM ET.
+- **Fallback**: If API is unreachable at init, degrades to weekday-only (current behavior preserved).
+
+Exports: `isTradingDay(dateStr)`, `isEarlyClose(dateStr)`, `getCloseTimeEt(dateStr)`, `previousTradingDay(dateStr)`, `nextTradingDay(dateStr)`, `getTradingDaysBetween(start, end)`, `getStatus()`.
+
+Calendar-aware functions in `index.js`:
+
+- `resolveLastClosedDailyCandleDate()` — skips holidays, uses early-close threshold (1:16 PM) vs normal (4:16 PM)
+- `resolveLastClosedWeeklyCandleDate()` — finds last trading Friday
+- `getNextDivergenceScanUtcMs()` — skips holidays when scheduling scans
+- `nextEtMarketOpenUtcMs()` — skips holidays
+- `isEtRegularHours()` — uses early-close times
+- `latestCompletedPacificTradeDateKey()` — skips holidays
+- `nextPacificDivergenceRefreshUtcMs()` — skips holidays
+
+### 4.6 As-of date for daily candle availability
 
 `resolveLastClosedDailyCandleDate()`:
 
-- Uses ET calendar/time.
-- Treats daily candle as available at/after **4:16 PM ET** (Massive delay-aware threshold).
-- Before threshold or on weekends, uses previous trading day.
+- Uses ET calendar/time + trading calendar for holiday/early-close awareness.
+- On early-close days: candle available at **1:16 PM ET** (796 min).
+- On normal trading days: candle available at **4:16 PM ET** (976 min).
+- On non-trading days (weekends + holidays): returns previous trading day.
 
 ### 4.6 MA dots (alert cards)
 
@@ -195,7 +219,7 @@ Tie-break behavior in feed sorting is handled by `createAlertSortFn(...)` in `sr
 
 Scheduler in `index.js`:
 
-- `getNextDivergenceScanUtcMs()` schedules weekday runs at **4:20 PM ET**.
+- `getNextDivergenceScanUtcMs()` schedules runs at **4:20 PM ET on trading days** (skips weekends and holidays via trading calendar).
 - `runScheduledDivergencePipeline()` executes:
   1. `runDailyDivergenceScan(...)`
   2. if completed, `runDivergenceTableBuild(...)`
