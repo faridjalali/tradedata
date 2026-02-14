@@ -206,21 +206,19 @@ export function escapeHtml(s: string): string {
         .replace(/'/g, '&#39;');
 }
 
-export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => number {
+export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'desc'): (a: Alert, b: Alert) => number {
     return (a: Alert, b: Alert): number => {
+        let result = 0;
         if (mode === 'time') {
-            return (b.timestamp || '').localeCompare(a.timestamp || '');
-        }
-        if (mode === 'favorite') {
+            result = (b.timestamp || '').localeCompare(a.timestamp || '');
+        } else if (mode === 'favorite') {
             if (a.is_favorite === b.is_favorite) {
                 return (b.timestamp || '').localeCompare(a.timestamp || '');
             }
             return (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0);
-        }
-        if (mode === 'volume') {
-            return (b.signal_volume || 0) - (a.signal_volume || 0);
-        }
-        if (mode === 'combo') {
+        } else if (mode === 'volume') {
+            result = (b.signal_volume || 0) - (a.signal_volume || 0);
+        } else if (mode === 'combo') {
             const bScore = b.divergence_states
                 ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states)
                 : getTickerDivergenceScoreFromCache(b.ticker);
@@ -228,14 +226,22 @@ export function createAlertSortFn(mode: SortMode): (a: Alert, b: Alert) => numbe
                 ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
                 : getTickerDivergenceScoreFromCache(a.ticker);
             if (bScore !== aScore) {
-                return bScore - aScore;
+                result = bScore - aScore;
+            } else {
+                const volumeDiff = (b.signal_volume || 0) - (a.signal_volume || 0);
+                if (volumeDiff !== 0) {
+                    result = volumeDiff;
+                } else {
+                    result = (b.timestamp || '').localeCompare(a.timestamp || '');
+                }
             }
-            const volumeDiff = (b.signal_volume || 0) - (a.signal_volume || 0);
-            if (volumeDiff !== 0) {
-                return volumeDiff;
-            }
-            return (b.timestamp || '').localeCompare(a.timestamp || '');
+        } else {
+            result = (b.timestamp || '').localeCompare(a.timestamp || '');
         }
-        return (b.timestamp || '').localeCompare(a.timestamp || '');
+
+        if ((mode as string) !== 'favorite' && direction === 'asc') {
+            return -result;
+        }
+        return result;
     };
 }

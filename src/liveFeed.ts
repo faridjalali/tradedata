@@ -8,8 +8,10 @@ import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesF
 import { LiveFeedMode, SortMode, Alert } from './types';
 
 let liveFeedMode: LiveFeedMode = 'today';
-let dailySortMode: SortMode = 'time';
-let weeklySortMode: SortMode = 'time';
+let dailySortMode: SortMode = 'combo';
+let weeklySortMode: SortMode = 'combo';
+let dailySortDirection: 'asc' | 'desc' = 'desc';
+let weeklySortDirection: 'asc' | 'desc' = 'desc';
 
 // We need to declare the window Interface extension to avoid TS errors
 declare global {
@@ -78,8 +80,8 @@ export function renderOverview(): void {
     const daily = allAlerts.filter(a => (a.timeframe || '').trim() === '1d');
     const weekly = allAlerts.filter(a => (a.timeframe || '').trim() === '1w');
 
-    daily.sort(createAlertSortFn(dailySortMode));
-    weekly.sort(createAlertSortFn(weeklySortMode));
+    daily.sort(createAlertSortFn(dailySortMode, dailySortDirection));
+    weekly.sort(createAlertSortFn(weeklySortMode, weeklySortDirection));
     
     dailyContainer.innerHTML = daily.map(createAlertCard).join('');
     weeklyContainer.innerHTML = weekly.map(createAlertCard).join('');
@@ -200,12 +202,17 @@ export function setupLiveFeedDelegation(): void {
 }
 
 export function setDailySort(mode: SortMode): void {
-    dailySortMode = mode;
+    if (mode === dailySortMode && mode !== 'favorite') {
+        dailySortDirection = dailySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        dailySortMode = mode;
+        dailySortDirection = 'desc';
+    }
     const dailyHeader = document.querySelector('#dashboard-view .column:first-child .header-sort-controls');
     if (dailyHeader) {
         dailyHeader.querySelectorAll('.tf-btn').forEach(btn => {
             const el = btn as HTMLElement;
-            if (el.dataset.sort === mode) el.classList.add('active');
+            if (el.dataset.sort === dailySortMode) el.classList.add('active');
             else el.classList.remove('active');
         });
     }
@@ -213,7 +220,12 @@ export function setDailySort(mode: SortMode): void {
 }
 
 export function setWeeklySort(mode: SortMode): void {
-    weeklySortMode = mode;
+    if (mode === weeklySortMode && mode !== 'favorite') {
+        weeklySortDirection = weeklySortDirection === 'desc' ? 'asc' : 'desc';
+    } else {
+        weeklySortMode = mode;
+        weeklySortDirection = 'desc';
+    }
     const weeklyHeader = document.querySelector('#dashboard-view .column:last-child .header-sort-controls');
     if (weeklyHeader) {
         weeklyHeader.querySelectorAll('.tf-btn').forEach(btn => {
