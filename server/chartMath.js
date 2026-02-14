@@ -252,5 +252,7 @@ module.exports = {
   aggregateDailyDivergenceToWeekly,
   isoWeekKeyFromEtUnixSeconds,
   barsToTuples,
-  pointsToTuples
+  pointsToTuples,
+  formatDateUTC,
+  dayKeyInLA,
 };

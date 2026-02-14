@@ -100,11 +100,9 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
     document.getElementById('view-logs')?.classList.add('hidden');
     // document.getElementById('view-live')?.classList.add('hidden'); // Removed
     document.getElementById('view-divergence')?.classList.add('hidden');
-    document.getElementById('view-leaderboard')?.classList.add('hidden');
     document.getElementById('view-breadth')?.classList.add('hidden');
     // document.getElementById('live-controls')?.classList.add('hidden'); // Removed
     document.getElementById('divergence-controls')?.classList.add('hidden');
-    document.getElementById('leaderboard-controls')?.classList.add('hidden');
     document.getElementById('breadth-controls')?.classList.add('hidden');
 
     // Also hide ticker view when switching main views

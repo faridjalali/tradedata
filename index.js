@@ -28,7 +28,9 @@ const {
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,
   barsToTuples,
-  pointsToTuples
+  pointsToTuples,
+  formatDateUTC,
+  dayKeyInLA,
 } = require("./server/chartMath");
 require("dotenv").config();
 
@@ -47,7 +49,6 @@ const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toL
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
-const BASIC_AUTH_EXEMPT_PREFIXES = [];
 const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 let isShuttingDown = false;
@@ -384,13 +385,8 @@ function timingSafeStringEqual(left, right) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function shouldSkipBasicAuth(req) {
-  const path = String(req.path || req.originalUrl || '');
-  return BASIC_AUTH_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix));
-}
-
 function basicAuthMiddleware(req, res, next) {
-  if (!BASIC_AUTH_ENABLED || shouldSkipBasicAuth(req) || req.method === 'OPTIONS') {
+  if (!BASIC_AUTH_ENABLED || req.method === 'OPTIONS') {
     return next();
   }
 
@@ -2198,13 +2194,6 @@ function patchLatestBarCloseWithQuote(result, quote) {
   result.rsi = patchedRsi;
 }
 
-function formatDateUTC(date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function addUtcDays(date, days) {
   const next = new Date(date);
   next.setUTCDate(next.getUTCDate() + days);
@@ -2892,15 +2881,6 @@ function getIntervalSeconds(interval) {
   return map[interval] || 60;
 }
 
-function dayKeyInLA(unixSeconds) {
-  if (!Number.isFinite(unixSeconds)) return '';
-  return new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
-    timeZone: 'America/Los_Angeles',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  });
-}
 
 function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
   if (!Array.isArray(bars) || bars.length < 2) return bars || [];
@@ -3043,111 +3023,6 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
   }
 
   return deltas;
-}
-
-function computeVolumeDeltaCandlesByParentBars(parentBars, lowerTimeframeBars, interval) {
-  if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
-  if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
-    return parentBars.map((bar) => ({
-      time: bar.time,
-      open: 0,
-      high: 0,
-      low: 0,
-      close: 0
-    }));
-  }
-
-  const intervalSeconds = getIntervalSeconds(interval);
-  const parentTimes = parentBars.map((bar) => Number(bar.time));
-  const intrabarsPerParent = parentBars.map(() => []);
-  let parentIndex = 0;
-
-  for (const bar of lowerTimeframeBars) {
-    const t = Number(bar.time);
-    if (!Number.isFinite(t)) continue;
-
-    while (parentIndex + 1 < parentTimes.length && t >= parentTimes[parentIndex + 1]) {
-      parentIndex += 1;
-    }
-
-    const currentParentStart = parentTimes[parentIndex];
-    if (!Number.isFinite(currentParentStart)) continue;
-    if (t < currentParentStart || t >= (currentParentStart + intervalSeconds)) continue;
-
-    const open = Number(bar.open);
-    const close = Number(bar.close);
-    const volume = Number(bar.volume);
-    if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(volume)) continue;
-
-    intrabarsPerParent[parentIndex].push({ open, close, volume });
-  }
-
-  let lastClose = null;
-  let lastBull = null;  // null = unknown; don't assume direction
-  const candles = [];
-
-  for (let i = 0; i < parentBars.length; i++) {
-    const stream = intrabarsPerParent[i];
-    if (!stream || stream.length === 0) {
-      candles.push({
-        time: parentBars[i].time,
-        open: 0,
-        high: 0,
-        low: 0,
-        close: 0
-      });
-      continue;
-    }
-
-    let runningDelta = 0;
-    let maxDelta = 0;
-    let minDelta = 0;
-    let streamLastClose = lastClose;
-    let streamLastBull = lastBull;
-
-    for (let j = 0; j < stream.length; j++) {
-      const ib = stream[j];
-      let isBull = ib.close > ib.open ? true : (ib.close < ib.open ? false : null);
-      if (isBull === null) {
-        const prevClose = (j === 0) ? streamLastClose : stream[j - 1].close;
-        if (Number.isFinite(prevClose)) {
-          if (ib.close > prevClose) {
-            isBull = true;
-          } else if (ib.close < prevClose) {
-            isBull = false;
-          } else {
-            isBull = streamLastBull;  // may still be null
-          }
-        } else {
-          isBull = streamLastBull;  // may still be null
-        }
-      }
-
-      // Pure doji with no prior reference: use running delta direction.
-      if (isBull === null && runningDelta !== 0) {
-        isBull = runningDelta > 0;
-      }
-      if (isBull !== null) streamLastBull = isBull;
-      runningDelta += isBull === true ? ib.volume : (isBull === false ? -ib.volume : 0);
-      maxDelta = Math.max(maxDelta, runningDelta);
-      minDelta = Math.min(minDelta, runningDelta);
-      if (j === stream.length - 1) {
-        streamLastClose = ib.close;
-      }
-    }
-
-    lastClose = Number.isFinite(streamLastClose) ? streamLastClose : lastClose;
-    lastBull = streamLastBull;
-    candles.push({
-      time: parentBars[i].time,
-      open: 0,
-      high: maxDelta,
-      low: minDelta,
-      close: runningDelta
-    });
-  }
-
-  return candles;
 }
 
 function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
@@ -4378,10 +4253,6 @@ registerChartRoutes({
   pointsToTuples,
   getMiniBarsCacheByTicker: () => miniBarsCacheByTicker
 });
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-}
 
 function etDateStringFromUnixSeconds(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';

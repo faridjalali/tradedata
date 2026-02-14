@@ -60,7 +60,7 @@ export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
 }
 
-export function setDivergenceFeedModeState(mode: LiveFeedMode): void {
+function setDivergenceFeedModeState(mode: LiveFeedMode): void {
     divergenceFeedMode = mode;
 }
 

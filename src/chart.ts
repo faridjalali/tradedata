@@ -1,4 +1,4 @@
-import { createChart, CrosshairMode, IChartApi } from 'lightweight-charts';
+import { createChart, CrosshairMode } from 'lightweight-charts';
 import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, VolumeDeltaSourceInterval } from './chartApi';
 import { RSIChart, RSIPersistedTrendline } from './rsi';
 import {
@@ -20,7 +20,6 @@ let volumeDeltaRsiChart: any = null;
 let volumeDeltaRsiSeries: any = null;
 let volumeDeltaRsiTimelineSeries: any = null;
 let volumeDeltaRsiMidlineLine: any = null;
-export let volumeDeltaChartInstance: IChartApi; // specific instance if needed separately? Or alias?
 let volumeDeltaChart: any = null;
 
 let volumeDeltaHistogramSeries: any = null;
@@ -3844,9 +3843,8 @@ function createVolumeDeltaChart(container: HTMLElement) {
     title: '',
   });
 
-  // Assign global references
+  // Assign global reference
   volumeDeltaChart = chart;
-  volumeDeltaChartInstance = chart;
 
   return { chart, histogramSeries, timelineSeries };
 }
