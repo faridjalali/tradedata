@@ -23,7 +23,6 @@ import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts
 import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './chart';
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
-import { fetchChartData, CandleBar } from './chartApi';
 
 export type LiveFeedMode = 'today' | 'yesterday' | '30' | '7' | 'week' | 'month';
 
@@ -52,7 +51,7 @@ let miniChartInstance: ReturnType<typeof createChart> | null = null;
 let miniChartHoverTimer: number | null = null;
 let miniChartAbortController: AbortController | null = null;
 let miniChartCurrentTicker: string | null = null;
-const miniChartDataCache = new Map<string, CandleBar[]>();
+const miniChartDataCache = new Map<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>>();
 
 export function getDivergenceFeedMode(): LiveFeedMode {
     return divergenceFeedMode;
@@ -1051,25 +1050,6 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
 
 // --- Mini-chart hover helpers ---
 
-function miniChartComputeSMA(values: number[], length: number): Array<number | null> {
-    const period = Math.max(1, Math.floor(length));
-    const out: Array<number | null> = new Array(values.length).fill(null);
-    let sum = 0;
-    for (let i = 0; i < values.length; i++) {
-        const value = values[i];
-        if (!Number.isFinite(value)) continue;
-        sum += value;
-        if (i >= period) {
-            const drop = values[i - period];
-            if (Number.isFinite(drop)) sum -= drop;
-        }
-        if (i >= period - 1) {
-            out[i] = sum / period;
-        }
-    }
-    return out;
-}
-
 function destroyMiniChartOverlay(): void {
     if (miniChartHoverTimer !== null) {
         window.clearTimeout(miniChartHoverTimer);
@@ -1131,8 +1111,8 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
     document.body.appendChild(overlay);
     miniChartOverlayEl = overlay;
 
-    // Fetch data (with cache)
-    let bars: CandleBar[];
+    // Fetch cached daily bars from server (populated during daily/weekly scans)
+    let bars: Array<{ time: string | number; open: number; high: number; low: number; close: number }>;
     const cached = miniChartDataCache.get(ticker);
     if (cached) {
         bars = cached;
@@ -1140,9 +1120,13 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
         const controller = new AbortController();
         miniChartAbortController = controller;
         try {
-            const data = await fetchChartData(ticker, '1day', { signal: controller.signal });
-            bars = data.bars || [];
-            miniChartDataCache.set(ticker, bars);
+            const res = await fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`, {
+                signal: controller.signal,
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            bars = Array.isArray(data?.bars) ? data.bars : [];
+            if (bars.length > 0) miniChartDataCache.set(ticker, bars);
         } catch {
             if (miniChartCurrentTicker === ticker) destroyMiniChartOverlay();
             return;
@@ -1153,8 +1137,7 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
     // Guard: overlay may have been destroyed during await
     if (miniChartCurrentTicker !== ticker || !miniChartOverlayEl) return;
 
-    // Trim to last ~65 trading days (~3 months)
-    const trimmed = bars.slice(-65);
+    const trimmed = bars;
     if (trimmed.length === 0) {
         destroyMiniChartOverlay();
         return;
@@ -1193,24 +1176,6 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
         lastValueVisible: false,
     });
     candleSeries.setData(trimmed as any);
-
-    // 50-day SMA line
-    const closes = trimmed.map(b => Number(b.close));
-    const smaValues = miniChartComputeSMA(closes, 50);
-    const smaData: Array<{ time: string | number; value: number }> = [];
-    for (let i = 0; i < trimmed.length; i++) {
-        const val = smaValues[i];
-        if (val !== null) smaData.push({ time: trimmed[i].time, value: val });
-    }
-    const smaSeries = chart.addLineSeries({
-        color: '#f0b90b',
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-    });
-    smaSeries.setData(smaData as any);
-
     chart.timeScale().fitContent();
 }
 

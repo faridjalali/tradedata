@@ -520,6 +520,10 @@ const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(1_000, Number(process.env.DI
 const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
 const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.DIVERGENCE_STALL_MAX_RETRIES) || 3));
 
+// In-memory cache of daily OHLC bars populated during daily/weekly scans.
+// Key: uppercase ticker, Value: array of { time, open, high, low, close }.
+const miniBarsCacheByTicker = new Map();
+
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
 let divergenceLastScanDateEt = '';
@@ -4769,7 +4773,8 @@ registerChartRoutes({
   isValidTickerSymbol,
   getDivergenceSummaryForTickers,
   barsToTuples,
-  pointsToTuples
+  pointsToTuples,
+  getMiniBarsCacheByTicker: () => miniBarsCacheByTicker
 });
 
 function sleep(ms) {
@@ -6241,6 +6246,17 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
     ? sortedParent
     : aggregate4HourBarsToDaily(sortedParent);
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
+
+  // Cache daily OHLC bars for the mini-chart hover overlay.
+  if (ticker && dailyBars.length > 0) {
+    miniBarsCacheByTicker.set(ticker, dailyBars.map(b => ({
+      time: Number(b.time),
+      open: Number(b.open),
+      high: Number(b.high),
+      low: Number(b.low),
+      close: Number(b.close),
+    })));
+  }
 
   const sourceBars = normalizeIntradayVolumesFromCumulativeIfNeeded(
     convertToLATime(sourceRows || [], sourceInterval).sort((a, b) => Number(a.time) - Number(b.time))

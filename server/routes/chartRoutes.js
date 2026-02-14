@@ -34,7 +34,8 @@ function registerChartRoutes(options = {}) {
     isValidTickerSymbol,
     getDivergenceSummaryForTickers,
     barsToTuples,
-    pointsToTuples
+    pointsToTuples,
+    getMiniBarsCacheByTicker
   } = options;
 
   if (!app) {
@@ -150,6 +151,26 @@ function registerChartRoutes(options = {}) {
       console.error('Chart Latest API Error:', message);
       const statusCode = Number(err && err.httpStatus);
       res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: message });
+    }
+  });
+
+  // Lightweight endpoint: returns cached daily OHLC bars from the last scan.
+  app.get('/api/chart/mini-bars', (req, res) => {
+    try {
+      const ticker = String(req.query.ticker || '').trim().toUpperCase();
+      if (!ticker) {
+        return res.status(400).json({ error: 'Provide a ticker query parameter' });
+      }
+      if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
+        return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+      }
+      const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
+      const bars = cache ? (cache.get(ticker) || []) : [];
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.status(200).json({ ticker, bars });
+    } catch (err) {
+      const message = err && err.message ? err.message : 'Failed to fetch mini bars';
+      return res.status(500).json({ error: message });
     }
   });
 
