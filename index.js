@@ -8221,6 +8221,50 @@ let server;
     console.warn('[TradingCalendar] Init failed (non-fatal, using weekday fallback):', err && err.message ? err.message : err);
   });
 
+  // --- TEMPORARY: one-time admin endpoint to clear fetch data ---
+  app.post('/api/admin/clear-fetch-data', async (req, res) => {
+    try {
+      const secret = String(req.body?.secret || '').trim();
+      if (!secret || secret !== SITE_LOCK_PASSCODE) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      if (!divergencePool) {
+        return res.status(500).json({ error: 'Divergence DB not configured' });
+      }
+      const tables = [
+        'alerts',
+        'run_metrics_history',
+        'divergence_scan_jobs',
+        'divergence_daily_bars',
+        'divergence_signals',
+        'divergence_summaries',
+        'divergence_publication_state',
+      ];
+      const client = await divergencePool.connect();
+      const results = {};
+      try {
+        for (const table of tables) {
+          try {
+            const before = await client.query(`SELECT COUNT(*) AS cnt FROM ${table}`);
+            await client.query(`TRUNCATE TABLE ${table} CASCADE`);
+            results[table] = { before: Number(before.rows[0].cnt), status: 'truncated' };
+          } catch (e) {
+            results[table] = { status: 'error', message: e.message };
+          }
+        }
+        // Verify divergence_symbols preserved
+        const symCount = await client.query('SELECT COUNT(*) AS cnt FROM divergence_symbols');
+        results['divergence_symbols'] = { count: Number(symCount.rows[0].cnt), status: 'preserved' };
+      } finally {
+        client.release();
+      }
+      res.json({ success: true, results });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  // --- END TEMPORARY ---
+
   server = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
     scheduleNextDivergenceScan();
