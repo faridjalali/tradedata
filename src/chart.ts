@@ -729,14 +729,20 @@ function exposeChartPerfMetrics(): void {
   };
 }
 
-function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): void {
+async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): Promise<void> {
   const normalizedTicker = String(ticker || '').trim().toUpperCase();
   if (!normalizedTicker) return;
   const targets = PREFETCH_INTERVAL_TARGETS[interval] || [];
+  
+  const promises: Promise<void>[] = [];
+
   for (const target of targets) {
     const cacheKey = buildChartDataCacheKey(normalizedTicker, target);
     if (getCachedChartData(cacheKey)) continue;
-    if (chartPrefetchInFlight.has(cacheKey)) continue;
+    if (chartPrefetchInFlight.has(cacheKey)) {
+        promises.push(chartPrefetchInFlight.get(cacheKey)!);
+        continue;
+    }
 
     const prefetchPromise = fetchChartData(normalizedTicker, target, {
       vdRsiLength: volumeDeltaRsiSettings.length,
@@ -754,7 +760,12 @@ function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): void
       });
 
     chartPrefetchInFlight.set(cacheKey, prefetchPromise);
+    promises.push(prefetchPromise);
   }
+
+  // user wants: finish current ticker pre-warming THEN do neighbor pre-warming
+  await Promise.allSettled(promises);
+  prefetchNeighborTickers(interval).catch(() => {});
 }
 
 exposeChartPerfMetrics();
@@ -5116,6 +5127,8 @@ function initChartFullscreen(): void {
   if (navNextBtn) {
       navNextBtn.addEventListener('click', () => navigateChart(1));
   }
+  
+  initPaneAxisNavigation();
 
   const updateIcon = (): void => {
     const isActive = container.classList.contains('chart-fullscreen');
@@ -5211,6 +5224,104 @@ function navigateChart(direction: -1 | 1): void {
             window.showTickerView(nextTicker, origin, context);
         }
     }
+}
+
+function initPaneAxisNavigation(): void {
+    const container = document.getElementById('custom-chart-container');
+    if (!container) return;
+
+    container.addEventListener('dblclick', (e) => {
+        // e.target might be the canvas or a wrapper
+        const rect = container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+
+        // Check if click is on the right side (Y-axis area)
+        // Assume Y-axis width is roughly 60px
+        const isRightSide = x > rect.width - 60;
+        if (!isRightSide) return;
+
+        // Determine which pane was clicked
+        // We need to find the DOM elements for the panes in current order
+        const currentOrder = normalizePaneOrder(paneOrder);
+        const pane3Id = currentOrder[2]; // 3rd pane
+        const pane4Id = currentOrder[3]; // 4th pane
+
+        const getPaneRect = (id: string) => {
+            const el = document.getElementById(id);
+            if (!el || el.style.display === 'none') return null;
+            // The pane element itself might be relative to chart content
+            return el.getBoundingClientRect();
+        };
+
+        // Check 3rd Pane -> Next (Right)
+        const pane3Rect = getPaneRect(pane3Id);
+        if (pane3Rect && e.clientY >= pane3Rect.top && e.clientY <= pane3Rect.bottom) {
+             navigateChart(1);
+             return;
+        }
+
+        // Check 4th Pane -> Prev (Left)
+        const pane4Rect = getPaneRect(pane4Id);
+        if (pane4Rect && e.clientY >= pane4Rect.top && e.clientY <= pane4Rect.bottom) {
+             navigateChart(-1);
+             return;
+        }
+    });
+}
+
+function getNeighborTicker(direction: -1 | 1): string | null {
+    const context = getTickerListContext();
+    const origin = getTickerOriginView();
+    const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
+
+    if (!context || !currentTicker) return null;
+
+    let containerId = '';
+    if (origin === 'divergence') {
+        containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
+    } else {
+        containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
+    }
+
+    const container = document.getElementById(containerId);
+    if (!container) return null;
+
+    const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
+    const currentIndex = cards.findIndex(c => c.dataset.ticker === currentTicker);
+
+    if (currentIndex === -1) return null;
+
+    const nextIndex = currentIndex + direction;
+    if (nextIndex >= 0 && nextIndex < cards.length) {
+        return cards[nextIndex].dataset.ticker || null;
+    }
+    return null;
+}
+
+async function prefetchNeighborTickers(interval: ChartInterval): Promise<void> {
+    const nextTicker = getNeighborTicker(1);
+    const prevTicker = getNeighborTicker(-1);
+
+    const fetchForTicker = async (ticker: string) => {
+        const cacheKey = buildChartDataCacheKey(ticker, interval);
+        if (getCachedChartData(cacheKey)) return;
+        if (chartPrefetchInFlight.has(cacheKey)) return;
+
+        const promise = fetchChartData(ticker, interval, {
+            vdRsiLength: volumeDeltaRsiSettings.length,
+            vdSourceInterval: volumeDeltaSettings.sourceInterval,
+            vdRsiSourceInterval: volumeDeltaRsiSettings.sourceInterval
+        })
+        .then(data => setCachedChartData(cacheKey, data))
+        .catch(() => {}) // Ignore errors
+        .finally(() => chartPrefetchInFlight.delete(cacheKey));
+
+        chartPrefetchInFlight.set(cacheKey, promise);
+        return promise;
+    };
+
+    if (nextTicker) await fetchForTicker(nextTicker);
+    if (prevTicker) await fetchForTicker(prevTicker);
 }
 
 export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {
