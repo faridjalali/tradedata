@@ -102,6 +102,13 @@ const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 const MONTH_GRIDLINE_COLOR = '#21262d';
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
+
+/** Detect touch-capable device — shared with rsi.ts */
+export const isMobileTouch: boolean =
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(max-width: 768px)').matches ||
+   'ontouchstart' in window ||
+   navigator.maxTouchPoints > 0);
 const TRENDLINES_STORAGE_KEY = 'custom_chart_trendlines_v1';
 const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
@@ -207,6 +214,7 @@ interface PersistedChartSettings {
   rsi: RSISettings;
   volumeDeltaRsi?: VolumeDeltaRSISettings;
   paneOrder?: PaneId[];
+  paneHeights?: Record<string, number>;
 }
 
 interface PersistedTrendlineBundle {
@@ -264,6 +272,17 @@ const DEFAULT_PANE_ORDER: PaneId[] = [
 
 let paneOrder: PaneId[] = [...DEFAULT_PANE_ORDER];
 let draggedPaneId: PaneId | null = null;
+
+const PANE_HEIGHT_MIN = 120;
+const PANE_HEIGHT_MAX = 600;
+const DEFAULT_PANE_HEIGHTS: Record<string, number> = {
+  'vd-chart-container': 240,
+  'price-chart-container': 400,
+  'rsi-chart-container': 400,
+  'vd-rsi-chart-container': 400,
+};
+let paneHeights: Record<string, number> = {};
+let paneResizeHandlesInstalled = false;
 
 const rsiSettings: RSISettings = {
   ...DEFAULT_RSI_SETTINGS
@@ -1000,7 +1019,8 @@ function persistSettingsToStorage(): void {
         midlineStyle: volumeDeltaRsiSettings.midlineStyle,
         sourceInterval: volumeDeltaRsiSettings.sourceInterval
       },
-      paneOrder: [...paneOrder]
+      paneOrder: [...paneOrder],
+      paneHeights: { ...paneHeights }
     };
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
@@ -1091,6 +1111,14 @@ function ensureSettingsLoadedFromStorage(): void {
     }
 
     paneOrder = normalizePaneOrder(parsed?.paneOrder);
+
+    if (parsed?.paneHeights && typeof parsed.paneHeights === 'object') {
+      for (const [id, h] of Object.entries(parsed.paneHeights)) {
+        if (typeof h === 'number' && h >= PANE_HEIGHT_MIN && h <= PANE_HEIGHT_MAX) {
+          paneHeights[id] = h;
+        }
+      }
+    }
   } catch {
     // Ignore malformed storage content.
   }
@@ -3526,11 +3554,6 @@ function sameLogicalRange(a: any, b: any): boolean {
 
 // Create price chart
 function createPriceChart(container: HTMLElement) {
-  const isMobileTouch = (
-    (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) ||
-    (typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0))
-  );
-
   const chart = createChart(container, {
     layout: {
       background: { color: '#0d1117' },
@@ -3543,12 +3566,15 @@ function createPriceChart(container: HTMLElement) {
       horzLines: { visible: false },
     },
     crosshair: {
-      mode: CrosshairMode.Normal,
+      mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+    },
+    kineticScroll: {
+      touch: true,
+      mouse: false,
     },
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      // Required for touch-based price-axis drag on mobile.
       vertTouchDrag: isMobileTouch,
       mouseWheel: true,
     },
@@ -3615,12 +3641,16 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       horzLines: { visible: false },
     },
     crosshair: {
-      mode: CrosshairMode.Normal,
+      mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+    },
+    kineticScroll: {
+      touch: true,
+      mouse: false,
     },
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: false,
+      vertTouchDrag: isMobileTouch,
       mouseWheel: true,
     },
     handleScale: {
@@ -3716,12 +3746,16 @@ function createVolumeDeltaChart(container: HTMLElement) {
       horzLines: { visible: false },
     },
     crosshair: {
-      mode: CrosshairMode.Normal,
+      mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+    },
+    kineticScroll: {
+      touch: true,
+      mouse: false,
     },
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: false,
+      vertTouchDrag: isMobileTouch,
       mouseWheel: true,
     },
     handleScale: {
@@ -4237,6 +4271,84 @@ function ensureResizeObserver(
   chartResizeObserver.observe(volumeDeltaContainer);
 }
 
+/** Apply persisted pane heights (if any) to the containers. */
+function applyPersistedPaneHeights(
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
+  const containers = [chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer];
+  for (const c of containers) {
+    const h = paneHeights[c.id];
+    if (h && h >= PANE_HEIGHT_MIN && h <= PANE_HEIGHT_MAX) {
+      c.style.height = `${h}px`;
+    }
+  }
+}
+
+/** Install draggable resize handles on the bottom edge of each pane. */
+function ensurePaneResizeHandles(
+  chartContainer: HTMLElement,
+  volumeDeltaRsiContainer: HTMLElement,
+  rsiContainer: HTMLElement,
+  volumeDeltaContainer: HTMLElement
+): void {
+  if (paneResizeHandlesInstalled) return;
+  paneResizeHandlesInstalled = true;
+
+  const containers = [chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer];
+  for (const container of containers) {
+    const handle = document.createElement('div');
+    handle.className = 'pane-resize-handle';
+    container.appendChild(handle);
+
+    let startY = 0;
+    let startHeight = 0;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const delta = e.clientY - startY;
+      const newHeight = Math.min(PANE_HEIGHT_MAX, Math.max(PANE_HEIGHT_MIN, startHeight + delta));
+      container.style.height = `${newHeight}px`;
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      handle.classList.remove('active');
+      handle.releasePointerCapture(e.pointerId);
+      handle.removeEventListener('pointermove', onPointerMove);
+      handle.removeEventListener('pointerup', onPointerUp);
+
+      // Persist the final height.
+      const finalHeight = container.getBoundingClientRect().height;
+      paneHeights[container.id] = Math.round(finalHeight);
+      persistSettingsToStorage();
+    };
+
+    handle.addEventListener('pointerdown', (e: PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startY = e.clientY;
+      startHeight = container.getBoundingClientRect().height;
+      handle.classList.add('active');
+      handle.setPointerCapture(e.pointerId);
+      handle.addEventListener('pointermove', onPointerMove);
+      handle.addEventListener('pointerup', onPointerUp);
+    });
+
+    // Double-click resets to default height.
+    handle.addEventListener('dblclick', (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const defaultH = DEFAULT_PANE_HEIGHTS[container.id];
+      if (defaultH) {
+        container.style.height = `${defaultH}px`;
+        delete paneHeights[container.id];
+        persistSettingsToStorage();
+      }
+    });
+  }
+}
+
 function showLoadingOverlay(container: HTMLElement): void {
   // Remove existing overlay if present
   const existingOverlay = container.querySelector('.chart-loading-overlay');
@@ -4681,7 +4793,9 @@ export async function renderCustomChart(
     volumeDeltaTimelineSeries = timelineSeries;
   }
 
+  applyPersistedPaneHeights(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   ensureResizeObserver(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
+  ensurePaneResizeHandles(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   applyChartSizes(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   applyPaneScaleVisibilityByPosition();
 

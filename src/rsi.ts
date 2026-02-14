@@ -2,6 +2,7 @@
 
 import { RSIPoint, RSIDisplayMode } from './chartApi';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
+import { isMobileTouch } from './chart';
 
 // Declare Lightweight Charts global
 declare const LightweightCharts: any;
@@ -111,12 +112,16 @@ export class RSIChart {
         }
       },
       crosshair: {
-        mode: 1 // CrosshairMode.Normal
+        mode: 1 // CrosshairMode.Magnet — snaps to nearest data point
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
       },
       handleScroll: {
         pressedMouseMove: true,
         horzTouchDrag: true,
-        vertTouchDrag: false,
+        vertTouchDrag: isMobileTouch,
         mouseWheel: true
       },
       handleScale: {

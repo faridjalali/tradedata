@@ -1395,20 +1395,20 @@ button:hover {
   }
 
   #price-chart-container {
-    height: 300px !important;
+    height: 300px;
   }
 
   #vd-rsi-chart-container {
-    height: 300px !important;
+    height: 300px;
   }
 
   #rsi-chart-container {
-    height: 300px !important;
+    height: 300px;
     overflow: hidden;
   }
 
   #vd-chart-container {
-    height: 220px !important;
+    height: 220px;
   }
 
   .chart-controls-bar {
@@ -1425,4 +1425,29 @@ button:hover {
 @keyframes miniChartFadeIn {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* Pane resize handles */
+.pane-resize-handle {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
+    z-index: 10;
+    background: transparent;
+    transition: background-color 0.15s ease;
+}
+.pane-resize-handle:hover,
+.pane-resize-handle.active {
+    background-color: rgba(88, 166, 255, 0.45);
+}
+@media (max-width: 768px) {
+    .pane-resize-handle {
+        height: 12px;
+    }
+}
+.custom-chart-section.chart-fullscreen .pane-resize-handle {
+    display: none;
 }
