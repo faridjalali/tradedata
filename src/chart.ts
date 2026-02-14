@@ -3974,13 +3974,9 @@ function renderVolumeDeltaDivergenceSummary(
     refreshButton.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.padding = '0';
     refreshButton.style.borderRadius = '4px';
-    refreshButton.style.border = '1px solid #30363d';
-    refreshButton.style.background = '#161b22';
-    refreshButton.style.fontSize = '12px';
-    refreshButton.style.fontWeight = '600';
-    refreshButton.style.lineHeight = '1';
-    refreshButton.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-    refreshButton.style.color = '#8b949e';
+    refreshButton.style.border = 'none';
+    refreshButton.style.background = 'transparent';
+    refreshButton.style.color = '#c9d1d9';
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
     refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
     refreshButton.style.userSelect = 'none';
@@ -3988,44 +3984,45 @@ function renderVolumeDeltaDivergenceSummary(
     refreshButton.style.verticalAlign = 'middle';
     refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
     refreshButton.disabled = false;
-    const iconHost = document.createElement('span');
-    iconHost.style.display = 'inline-flex';
-    iconHost.style.alignItems = 'center';
-    iconHost.style.justifyContent = 'center';
-    iconHost.style.width = '12px';
-    iconHost.style.height = '12px';
-    iconHost.style.lineHeight = '1';
-    iconHost.style.flex = '0 0 auto';
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2.5');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.style.display = 'block';
+    // Top arrow: arc from right curving down-left, with arrowhead
+    const path1 = document.createElementNS(svgNS, 'path');
+    path1.setAttribute('d', 'M21.5 2v6h-6');
+    const path2 = document.createElementNS(svgNS, 'path');
+    path2.setAttribute('d', 'M21.5 8A10 10 0 0 0 5.6 5.6');
+    // Bottom arrow: arc from left curving up-right, with arrowhead
+    const path3 = document.createElementNS(svgNS, 'path');
+    path3.setAttribute('d', 'M2.5 22v-6h6');
+    const path4 = document.createElementNS(svgNS, 'path');
+    path4.setAttribute('d', 'M2.5 16A10 10 0 0 0 18.4 18.4');
+    svg.appendChild(path1);
+    svg.appendChild(path2);
+    svg.appendChild(path3);
+    svg.appendChild(path4);
     if (loading) {
-      const spinner = document.createElement('span');
-      spinner.style.display = 'block';
-      spinner.style.width = '12px';
-      spinner.style.height = '12px';
-      spinner.style.border = '2px solid #30363d';
-      spinner.style.borderTopColor = '#8b949e';
-      spinner.style.borderRadius = '50%';
-      spinner.style.boxSizing = 'border-box';
-      spinner.animate(
+      svg.animate(
         [
           { transform: 'rotate(0deg)' },
           { transform: 'rotate(360deg)' }
         ],
         {
-          duration: 700,
+          duration: 800,
           iterations: Infinity,
           easing: 'linear'
         }
       );
-      iconHost.appendChild(spinner);
-    } else {
-      const glyph = document.createElement('span');
-      glyph.textContent = '↻';
-      glyph.style.display = 'block';
-      glyph.style.lineHeight = '1';
-      glyph.style.fontSize = '12px';
-      iconHost.appendChild(glyph);
     }
-    refreshButton.appendChild(iconHost);
+    refreshButton.appendChild(svg);
     refreshButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
