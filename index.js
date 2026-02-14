@@ -6839,7 +6839,6 @@ async function runDivergenceFetchAllData(options = {}) {
               latest_volume_delta: Number(latestRow.volume_delta)
             });
           }
-          lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, latestRow.trade_date);
         }
 
         // Flush buffers when thresholds are reached
@@ -6850,7 +6849,7 @@ async function runDivergenceFetchAllData(options = {}) {
           await enqueueFlush();
         }
 
-        return { ticker };
+        return { ticker, tradeDate: latestRow?.trade_date };
       }, {
         signal: fetchAllAbortController.signal,
         timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
@@ -6874,9 +6873,12 @@ async function runDivergenceFetchAllData(options = {}) {
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-all divergence build failed for ${ticker}: ${message}`);
           }
+        } else if (result && result.tradeDate) {
+           lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, result.tradeDate);
         }
         divergenceFetchAllDataStatus.processedTickers = processedTickers;
         divergenceFetchAllDataStatus.errorTickers = errorTickers;
+        divergenceFetchAllDataStatus.lastPublishedTradeDate = lastPublishedTradeDate;
         divergenceFetchAllDataStatus.status = divergenceFetchAllDataStopRequested ? 'stopping' : 'running';
         runMetricsTracker?.setProgress(processedTickers, errorTickers);
         // Update resume state as we progress
@@ -7025,6 +7027,9 @@ async function runDivergenceFetchAllData(options = {}) {
     clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
     // Completed successfully — clear resume state
+    if (!lastPublishedTradeDate && asOfTradeDate) {
+      lastPublishedTradeDate = asOfTradeDate;
+    }
     divergenceFetchAllDataResumeState = null;
     divergenceFetchAllDataStopRequested = false;
     divergenceFetchAllDataStatus = {
@@ -7491,7 +7496,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           await enqueueFlush();
         }
 
-        return { ticker };
+        return { ticker, tradeDate: latestRow?.trade_date };
       }, {
         signal: fetchWeeklyAbortController.signal,
         timeoutMs: DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
@@ -7515,9 +7520,12 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             const message = result.error && result.error.message ? result.error.message : String(result.error);
             console.error(`Fetch-weekly divergence build failed for ${ticker}: ${message}`);
           }
+        } else if (result && result.tradeDate) {
+          lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, result.tradeDate);
         }
         divergenceFetchWeeklyDataStatus.processedTickers = processedTickers;
         divergenceFetchWeeklyDataStatus.errorTickers = errorTickers;
+        divergenceFetchWeeklyDataStatus.lastPublishedTradeDate = lastPublishedTradeDate;
         divergenceFetchWeeklyDataStatus.status = divergenceFetchWeeklyDataStopRequested ? 'stopping' : 'running';
         runMetricsTracker?.setProgress(processedTickers, errorTickers);
         persistResumeState(startIndex + settledCount);

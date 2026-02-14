@@ -330,7 +330,8 @@ function registerDivergenceRoutes(options = {}) {
 
     runDivergenceFetchAllData({
       trigger: 'manual-api',
-      resume: shouldResume
+      resume: shouldResume,
+      force: true
     })
       .then((summary) => {
         console.log(`Manual divergence fetch-all ${shouldResume ? 'resumed' : 'started'}:`, summary);
@@ -386,7 +387,8 @@ function registerDivergenceRoutes(options = {}) {
 
     runDivergenceFetchWeeklyData({
       trigger: 'manual-api',
-      resume: shouldResume
+      resume: shouldResume,
+      force: true
     })
       .then((summary) => {
         console.log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
