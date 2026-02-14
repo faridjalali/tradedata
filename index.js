@@ -1129,6 +1129,42 @@ const initDivergenceDB = async () => {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
+    // Restore in-memory status from persisted data so the UI shows correct
+    // "Ran M/D" dates even after a server restart.
+    try {
+      const pubResult = await divergencePool.query(`
+        SELECT published_trade_date::text AS trade_date
+        FROM divergence_publication_state
+        WHERE source_interval = $1
+        LIMIT 1
+      `, [DIVERGENCE_SOURCE_INTERVAL]);
+      const restoredTradeDate = String(pubResult.rows[0]?.trade_date || '').trim();
+      if (restoredTradeDate) {
+        divergenceLastFetchedTradeDateEt = maxEtDateString(divergenceLastFetchedTradeDateEt, restoredTradeDate);
+        divergenceFetchAllDataStatus.lastPublishedTradeDate = maxEtDateString(
+          divergenceFetchAllDataStatus.lastPublishedTradeDate, restoredTradeDate
+        );
+      }
+
+      const weeklyResult = await divergencePool.query(`
+        SELECT MAX(trade_date)::text AS trade_date
+        FROM divergence_signals
+        WHERE timeframe = '1w'
+          AND source_interval = $1
+      `, [DIVERGENCE_SOURCE_INTERVAL]);
+      const restoredWeeklyDate = String(weeklyResult.rows[0]?.trade_date || '').trim();
+      if (restoredWeeklyDate) {
+        divergenceFetchWeeklyDataStatus.lastPublishedTradeDate = maxEtDateString(
+          divergenceFetchWeeklyDataStatus.lastPublishedTradeDate, restoredWeeklyDate
+        );
+      }
+      if (restoredTradeDate || restoredWeeklyDate) {
+        console.log(`Restored trade dates from DB — daily: ${restoredTradeDate || '(none)'}, weekly: ${restoredWeeklyDate || '(none)'}`);
+      }
+    } catch (restoreErr) {
+      console.error('Failed to restore trade dates from DB:', restoreErr.message);
+    }
+
     console.log('Divergence database initialized successfully');
   } catch (err) {
     console.error('Failed to initialize divergence database:', err);
