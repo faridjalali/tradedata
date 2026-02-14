@@ -1039,81 +1039,92 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
     renderAlertCardDivergenceTablesFromCache(container);
 }
 
+function handleFavoriteClick(e: Event): void {
+    const target = e.target as HTMLElement;
+    const starBtn = target.closest('.fav-icon');
+    if (!starBtn) return;
+
+    e.stopPropagation();
+    const id = (starBtn as HTMLElement).dataset.id;
+    const source = 'DataAPI';
+    if (!id) return;
+
+    const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
+    const isCurrentlyFilled = starBtn.classList.contains('filled');
+
+    allStars.forEach(star => {
+        const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+        if (!isCurrentlyFilled) {
+            star.classList.add('filled');
+            if (checkmark) {
+                checkmark.style.visibility = 'visible';
+                checkmark.style.opacity = '1';
+            }
+        } else {
+            star.classList.remove('filled');
+            if (checkmark) {
+                checkmark.style.visibility = 'hidden';
+                checkmark.style.opacity = '0';
+            }
+        }
+    });
+    toggleDivergenceFavorite(Number(id)).then((updatedAlert) => {
+        const all = getDivergenceSignals();
+        const idx = all.findIndex((a) => a.id === updatedAlert.id);
+        if (idx !== -1) {
+            all[idx].is_favorite = updatedAlert.is_favorite;
+            setDivergenceSignals(all);
+        }
+        allStars.forEach(star => {
+            const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+            if (updatedAlert.is_favorite) {
+                star.classList.add('filled');
+                if (checkmark) {
+                    checkmark.style.visibility = 'visible';
+                    checkmark.style.opacity = '1';
+                }
+            } else {
+                star.classList.remove('filled');
+                if (checkmark) {
+                    checkmark.style.visibility = 'hidden';
+                    checkmark.style.opacity = '0';
+                }
+            }
+        });
+    }).catch(() => {
+        allStars.forEach(star => {
+            const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+            if (isCurrentlyFilled) {
+                star.classList.add('filled');
+                if (checkmark) {
+                    checkmark.style.visibility = 'visible';
+                    checkmark.style.opacity = '1';
+                }
+            } else {
+                star.classList.remove('filled');
+                if (checkmark) {
+                    checkmark.style.visibility = 'hidden';
+                    checkmark.style.opacity = '0';
+                }
+            }
+        });
+    });
+}
+
 export function setupDivergenceFeedDelegation(): void {
     const view = document.getElementById('view-divergence');
     if (!view) return;
 
+    // Favorite toggle — attach to both alerts page and ticker page
+    view.addEventListener('click', handleFavoriteClick);
+    const tickerView = document.getElementById('ticker-view');
+    if (tickerView) {
+        tickerView.addEventListener('click', handleFavoriteClick);
+    }
+
     view.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
-        const starBtn = target.closest('.fav-icon');
-        if (starBtn) {
-            e.stopPropagation();
-            const id = (starBtn as HTMLElement).dataset.id;
-            const source = 'DataAPI';
-            if (!id) return;
-
-            const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
-            const isCurrentlyFilled = starBtn.classList.contains('filled');
-
-            allStars.forEach(star => {
-                const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-                if (!isCurrentlyFilled) {
-                    star.classList.add('filled');
-                    if (checkmark) {
-                        checkmark.style.visibility = 'visible';
-                        checkmark.style.opacity = '1';
-                    }
-                } else {
-                    star.classList.remove('filled');
-                    if (checkmark) {
-                        checkmark.style.visibility = 'hidden';
-                        checkmark.style.opacity = '0';
-                    }
-                }
-            });
-            toggleDivergenceFavorite(Number(id)).then((updatedAlert) => {
-                const all = getDivergenceSignals();
-                const idx = all.findIndex((a) => a.id === updatedAlert.id);
-                if (idx !== -1) {
-                    all[idx].is_favorite = updatedAlert.is_favorite;
-                    setDivergenceSignals(all);
-                }
-                allStars.forEach(star => {
-                    const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-                    if (updatedAlert.is_favorite) {
-                        star.classList.add('filled');
-                        if (checkmark) {
-                            checkmark.style.visibility = 'visible';
-                            checkmark.style.opacity = '1';
-                        }
-                    } else {
-                        star.classList.remove('filled');
-                        if (checkmark) {
-                            checkmark.style.visibility = 'hidden';
-                            checkmark.style.opacity = '0';
-                        }
-                    }
-                });
-            }).catch(() => {
-                allStars.forEach(star => {
-                    const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-                    if (isCurrentlyFilled) {
-                        star.classList.add('filled');
-                        if (checkmark) {
-                            checkmark.style.visibility = 'visible';
-                            checkmark.style.opacity = '1';
-                        }
-                    } else {
-                        star.classList.remove('filled');
-                        if (checkmark) {
-                            checkmark.style.visibility = 'hidden';
-                            checkmark.style.opacity = '0';
-                        }
-                    }
-                });
-            });
-            return;
-        }
+        if (target.closest('.fav-icon')) return; // Already handled above
 
         const card = target.closest('.alert-card');
         if (card) {
