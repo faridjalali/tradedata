@@ -79,7 +79,7 @@ effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
 1. **Price Direction**: Price change must be between **-45% and +3%**. Crashes (>45%) are not consolidation. Rallies (>3%) don't need accumulation detection.
 2. **Net Delta Floor**: Net delta % must be **> -1.5%**. Deeply negative delta indicates concordant selling with no hidden accumulation.
 3. **Delta Slope Gate**: Normalized cumulative weekly delta slope must be **> -0.5**. Prevents scoring windows where delta is actively declining.
-4. **Concordant Rally Gate** *(new)*: If the window contains an **intra-window rally > 10%** (peak price vs start price) AND the **concordant-up delta fraction > 70%** of all positive delta AND overall price change is negative → reject. This catches windows that span a rally-then-crash where positive net delta is a byproduct of the concordant rally, not hidden accumulation. See [DAVE false positive case study](#dave-false-positive-case-study) below.
+4. **Concordant-Dominated Gate** *(standalone)*: If **concordantFrac > 70%** of all positive delta comes from concordant-up days (price↑ + delta↑) → reject. This is the **core quality gate**: true accumulation requires divergence (price↓ + delta↑), not concordance. Applied whenever `netDeltaPct > 0`, regardless of intra-window rally magnitude — even windows starting near a price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days within the decline. See [DAVE false positive case study](#dave-false-positive-case-study) below.
 
 ### 8-Component Scoring System
 
@@ -100,19 +100,19 @@ effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
 
 ### Concordance Penalty (Soft)
 
-After computing the raw score, apply a concordance penalty for windows that contain a moderate rally-then-crash pattern (below the hard gate threshold):
+After computing the raw score, apply a concordance penalty when concordant-up delta dominates (below the 70% hard gate threshold):
 
 ```
-If intraRally > 5% AND overallPriceChange < 0 AND concordantFrac > 0.55:
-  concordancePenalty = max(0.40, 1.0 - ((intraRally - 5) / 15) × ((concordantFrac - 0.55) / 0.35))
+If concordantFrac > 0.55:
+  concordancePenalty = max(0.40, 1.0 - (concordantFrac - 0.55) × 1.5)
   rawScore *= concordancePenalty
 ```
 
 Where:
-- **intraRally** = `(max_close_in_window - start_close) / start_close × 100` — how much price rallied above start before declining
-- **concordantFrac** = `concordant_up_delta / (concordant_up_delta + absorption_delta)` — fraction of all positive delta from concordant-up days (price up AND delta positive) vs true absorption days (price down AND delta positive)
+- **concordantFrac** = `concordant_up_delta / (concordant_up_delta + absorption_delta)` — fraction of all positive delta from concordant-up days (price↑ AND delta↑) vs true absorption days (price↓ AND delta↑). Always computed when `netDeltaPct > 0`.
+- **intraRally** = `(max_close_in_window - start_close) / start_close × 100` — computed but no longer used as a guard condition (kept for diagnostics)
 
-The penalty scales with both rally magnitude and concordance dominance. True accumulation zones during declines have concordantFrac below 0.55 and intraRally near 0%, so this penalty does not affect them.
+The penalty is a **standalone function of concordantFrac only**. No intraRally or overallPriceChange conditions — concordance quality is the fundamental measure of divergence validity. Examples: 55% → 1.0 (no penalty), 60% → 0.925, 65% → 0.85, 70% → hard gate fires. True accumulation zones with genuine divergence have concordantFrac well below 0.55.
 
 ### Duration Scaling
 
@@ -658,7 +658,8 @@ This provides a high-level "institutional weather map" — when phases transitio
 | IREN | Jan 6 – Feb 14, 2026 | -9.2% | -1.48% | 0.02 | Concordant selling |
 | SMCI | Oct 1 – Nov 15, 2024 | -46.4% | +0.34% | 0.00 | Crash gate: >45% decline |
 | RIVN | Oct 1 – Nov 15, 2024 | -4.4% | -2.06% | 0.00 | Concordant selling gate: delta < -1.5% |
-| DAVE | Dec 11 – Jan 21, 2026 | -8.9% | +3.44% | 0.00 | Concordant rally gate: 17.2% intra-rally, 78% concordant fraction |
+| DAVE | Dec 11 – Jan 21, 2026 | -8.9% | +3.44% | 0.00 | Concordant-dominated gate: 78% concordant fraction |
+| DAVE | Nov 5 – Dec 23, 2025 | -10.6% | +1.8% | 0.00 | Concordant-dominated gate: 74.3% concordant fraction |
 
 ### DAVE False Positive Case Study
 
@@ -677,11 +678,13 @@ This provides a high-level "institutional weather map" — when phases transitio
 
 **The pattern**: The algorithm sees "price down start-to-end + delta positive = divergence" but the delta positivity is a **byproduct of the rally**, not evidence of hidden buying during a decline. The window captures a price reversal (rally → crash), not accumulation during consolidation.
 
-**The fix**: Two-part concordant rally detection:
-1. **Hard gate**: If intra-window rally > 10% AND concordant fraction > 70% → reject (score = 0)
-2. **Soft penalty**: If intra-window rally > 5% AND concordant fraction > 55% → scale score down proportionally
+**The fix**: Standalone concordantFrac as the core quality gate:
+1. **Hard gate**: If concordantFrac > 70% → reject (score = 0). No intraRally requirement — this is a standalone quality metric. Even windows starting at the price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days.
+2. **Soft penalty**: If concordantFrac > 55% → scale score down proportionally (`1.0 - (concordantFrac - 0.55) × 1.5`)
 
-**Result after fix**: Old Zone 1 (12/11→1/21, score 0.92) correctly rejected. Algorithm now finds a different Zone 1 (11/5→12/23, score 0.86) which is a genuine decline period starting at the price peak ($245 → $219, -10.6%) with no significant intra-window rally.
+**Key insight**: ConcordantFrac is the **fundamental measure of divergence quality**. True accumulation = price declining while institutions buy (divergence, absorption). Normal behavior = price rising with buying (concordance). The ratio of concordant-to-absorption delta tells you how much of the "signal" is genuine divergence vs noise from normal market behavior.
+
+**Result after fix**: Old Zone 1 (12/11→1/21, concordantFrac 78%) correctly rejected. Old Zone 1 replacement (11/5→12/23, concordantFrac 74.3%) also correctly rejected — despite having intraRally of only 0.8%, the delta was still concordant-dominated from bounce days within the decline. The algorithm now correctly identifies only the genuine divergence zone (8/18→9/5, concordantFrac 36.6%).
 
 ---
 
@@ -913,7 +916,7 @@ Exports:
 
 18. **Highest proximity score correlates with strongest breakout**: COHR's 100-point IMMINENT proximity (2/10/26) coincided with 6/6 signals firing simultaneously — the only time all signals aligned. The subsequent breakout reached all-time highs ($238). Composite proximity scoring has predictive power for breakout magnitude, not just timing.
 
-19. **Rally-then-crash windows are the #1 false positive source**: DAVE (12/11→1/21) scored 0.92 but was a false positive. The window spanned a +17.2% rally followed by a -22.3% crash. Overall price change was -8.9% (passes gate) with +3.44% net delta (looks like divergence), but 78% of the positive delta came from concordant-up days during the rally — not from absorption during the decline. The fix: check the **intra-window rally** (peak vs start) and **concordant fraction** (concordant-up delta / total positive delta). If the rally was >10% and concordant fraction >70%, gate out the window entirely. For moderate cases (rally >5%, concordant >55%), apply a scaling penalty. True accumulation zones have near-zero intra-window rallies because price stays flat or declines throughout.
+19. **ConcordantFrac is the fundamental measure of divergence quality**: The core thesis is that true accumulation = price declining while institutions buy (divergence/absorption), not price rising with buying (concordance). `concordantFrac` — the ratio of concordant-up delta to total positive delta — directly measures this. DAVE demonstrated that false positives can come from any window shape: rally-then-crash (12/11→1/21, 78%), peak-start decline with bounces (11/5→12/23, 74.3%), or flat-looking windows with hidden volatility (8/28→9/25, 68%). The common thread is always concordantFrac > 70%. The fix: make concordantFrac a **standalone gate** (>70% → reject) and **standalone penalty** (>55% → scale down), with no intraRally guard. True accumulation zones have concordantFrac well below 55% because genuine institutional buying occurs on price-down days.
 
 ---
 
@@ -962,10 +965,10 @@ Exports:
 - [ ] Implement accumulation-in-decline detection (10-day rolling: price <-3%, delta >+3%)
 - [ ] Implement monthly phase analysis (20-day rolling institutional flow classification)
 - [ ] Implement breakout auto-detection (>8% in 5 days on volume >1.2x avg)
-- [ ] Test concordant rally gate against all confirmed true positives (verify no regressions)
+- [ ] Test standalone concordantFrac gate (>70%) against all confirmed true positives (IREN, MOD, COHR — verify no regressions)
 - [ ] Test with more negative controls (declining stocks that never broke out)
 - [ ] Test with false breakouts (stocks that triggered but failed)
-- [ ] Test with more rally-then-crash patterns (tickers that peaked and reversed within scan window)
+- [ ] Calibrate concordantFrac thresholds on broader ticker set (is 70% hard gate optimal? is 55% soft penalty too aggressive?)
 - [ ] Test macro cycle detection on more tickers with long histories
 - [ ] Test: does proximity score magnitude correlate with breakout magnitude? (COHR suggests yes)
 - [ ] Test position management framework on more multi-month tickers (need 6+ months of data)
