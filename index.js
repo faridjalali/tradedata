@@ -25,7 +25,7 @@ const {
   buildHealthPayload,
   buildReadyPayload
 } = require("./server/services/healthService");
-const { detectHTF, HTF_CONFIG, HTF_CONFIG_MODERATE } = require("./server/services/htfDetector");
+const { detectHTF, HTF_CONFIG, HTF_CONFIG_MODERATE, detectVDAccumulation } = require("./server/services/htfDetector");
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
@@ -4453,14 +4453,48 @@ async function getHTFStatus(ticker, options = {}) {
       config: htfConfig
     });
 
-    // Store in DB
-    await upsertHTFResult(ticker, today, result, mode);
+    // In moderate mode, also run VD Accumulation Divergence detection.
+    // This catches multi-week hidden accumulation patterns that the classic
+    // HTF algorithm misses (e.g. RKLB, IREN style bull-flag accumulation).
+    let vdAccum = null;
+    if (mode === 'moderate') {
+      try {
+        vdAccum = await detectVDAccumulation(ticker, {
+          dataApiFetcher: dataApiIntradayChartHistory,
+          signal,
+        });
+      } catch (vdErr) {
+        if (isAbortError(vdErr)) throw vdErr;
+        // VD accumulation is supplementary — don't fail the whole detection
+        vdAccum = null;
+      }
+    }
+
+    // Merge: detected if classic HTF OR VD accumulation triggers
+    const htfDetected = result.is_detected || false;
+    const vdDetected = vdAccum && vdAccum.detected;
+    const isDetected = htfDetected || vdDetected;
+
+    // Build status string
+    let status = result.status || '';
+    if (vdDetected && !htfDetected) {
+      status = `VD Accumulation detected (score ${vdAccum.score.toFixed(2)}, ${vdAccum.weeks}wk)`;
+    } else if (vdDetected && htfDetected) {
+      status = `HTF + VD Accumulation (VD score ${vdAccum.score.toFixed(2)})`;
+    }
+
+    // Use the higher of HTF composite or VD score for the composite_score field
+    const compositeScore = Math.max(result.composite_score || 0, vdAccum ? vdAccum.score : 0);
+
+    // Store in DB (with the merged detection result)
+    const mergedResult = { ...result, is_detected: isDetected, composite_score: compositeScore, status };
+    await upsertHTFResult(ticker, today, mergedResult, mode);
 
     return {
-      is_detected: result.is_detected || false,
+      is_detected: isDetected,
       is_candidate: result.is_candidate || false,
-      composite_score: result.composite_score || 0,
-      status: result.status || '',
+      composite_score: compositeScore,
+      status,
       impulse_gain_pct: result.impulse_gain_pct != null ? result.impulse_gain_pct : null,
       details: {
         impulse: result.impulse,
@@ -4469,6 +4503,7 @@ async function getHTFStatus(ticker, options = {}) {
         yz_percentile: result.yz_percentile,
         composite: result.composite,
         breakout: result.breakout,
+        vd_accumulation: vdAccum || undefined,
       },
       mode,
       cached: false
