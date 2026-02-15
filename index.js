@@ -4611,7 +4611,7 @@ async function runVDFScan(options = {}) {
         }
         const apiStart = Date.now();
         try {
-          const result = await getVDFStatus(ticker, { force: false, signal: scanAbort.signal });
+          const result = await getVDFStatus(ticker, { force: true, signal: scanAbort.signal });
           const latencyMs = Date.now() - apiStart;
           if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
           return { ticker, result, error: null };

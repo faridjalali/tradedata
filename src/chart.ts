@@ -3032,11 +3032,7 @@ function ensureSettingsUI(
     vdfBtn.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (event.shiftKey) {
-        if (currentChartTicker) runVDFDetection(currentChartTicker, true);
-      } else {
-        toggleVDFAnalysisPanel();
-      }
+      if (currentChartTicker) runVDFDetection(currentChartTicker, true);
     });
     vdfBtn.dataset.bound = '1';
   }
@@ -4334,12 +4330,6 @@ function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
   return overlay;
 }
 
-function dateStringToUnixSeconds(dateStr: string): number {
-  const parts = dateStr.split('-');
-  if (parts.length < 3) return 0;
-  return Math.floor(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 1000);
-}
-
 function renderVDZones(entry?: VDFCacheEntry | null): void {
   if (!vdZoneOverlayEl) return;
   vdZoneOverlayEl.innerHTML = '';
@@ -4349,8 +4339,23 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
   const overlayHeight = vdZoneOverlayEl.clientHeight || vdZoneOverlayEl.offsetHeight;
   if (!Number.isFinite(overlayWidth) || overlayWidth <= 0) return;
 
+  // Build lookup from YYYY-MM-DD (ET) → actual bar time value.
+  // Chart bars use midnight ET converted to UTC as their time, so we must
+  // map zone date strings to the real bar times the chart knows about.
+  const dateToBarTime = new Map<string, number>();
+  for (const bar of currentBars) {
+    const t = unixSecondsFromTimeValue(bar?.time);
+    if (t === null) continue;
+    const dateKey = new Date(t * 1000).toLocaleDateString('en-CA', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    if (!dateToBarTime.has(dateKey)) dateToBarTime.set(dateKey, t);
+  }
+
   const dateToX = (dateStr: string): number | null => {
-    const x = priceChart!.timeScale().timeToCoordinate(dateStringToUnixSeconds(dateStr));
+    const barTime = dateToBarTime.get(dateStr);
+    if (barTime === undefined) return null;
+    const x = priceChart!.timeScale().timeToCoordinate(barTime as any);
     return Number.isFinite(x) ? x : null;
   };
 
