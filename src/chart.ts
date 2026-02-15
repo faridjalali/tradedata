@@ -86,6 +86,7 @@ let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let htfButtonEl: HTMLButtonElement | null = null;
 let htfLoadingForTicker: string | null = null;
 let htfResultCache = new Map<string, { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }>();
+const HTF_CACHE_MAX_SIZE = 200;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
@@ -4301,6 +4302,10 @@ async function runHTFDetection(ticker: string, force = false): Promise<void> {
       impulse_gain_pct: result.impulse_gain_pct != null ? Number(result.impulse_gain_pct) : null,
     };
     htfResultCache.set(cacheKey, entry);
+    if (htfResultCache.size > HTF_CACHE_MAX_SIZE) {
+      const oldest = htfResultCache.keys().next().value;
+      if (oldest !== undefined) htfResultCache.delete(oldest);
+    }
     setHTFButtonColor(
       entry.is_detected ? HTF_COLOR_DETECTED : HTF_COLOR_NOT_DETECTED,
       buildHTFTooltip(entry)

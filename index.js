@@ -47,6 +47,12 @@ const brotliCompressAsync = promisify(zlib.brotliCompress);
 app.use(cors());
 app.use(compression());
 app.use(express.json());
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
@@ -504,9 +510,10 @@ app.use((req, res, next) => {
   return next();
 });
 
+const dbSslRejectUnauthorized = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() !== 'false';
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: dbSslRejectUnauthorized },
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -520,7 +527,7 @@ const divergenceDatabaseUrl = process.env.DIVERGENCE_DATABASE_URL || '';
 const divergencePool = divergenceDatabaseUrl
   ? new Pool({
       connectionString: divergenceDatabaseUrl,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: dbSslRejectUnauthorized },
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
@@ -1309,13 +1316,12 @@ app.get('/api/alerts', async (req, res) => {
 });
 
 app.post('/api/alerts/:id/favorite', async (req, res) => {
-    const { id } = req.params;
-    const { is_favorite } = req.body; // Expect boolean, or toggle if undefined? Let's be explicit or query first.
-    
-    // Simple toggle logic if is_favorite is not provided would require a read first.
-    // For efficiency, let's assume the frontend sends the DESIRED state.
-    // Or, simpler: update alerts set is_favorite = NOT is_favorite where id = $1 returning *;
-    
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ error: 'Invalid alert ID' });
+    }
+    const { is_favorite } = req.body;
+
     try {
         let query;
         let values;
@@ -1546,7 +1552,10 @@ app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
   if (!isDivergenceConfigured()) {
     return res.status(503).json({ error: 'Divergence database is not configured' });
   }
-  const { id } = req.params;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid signal ID' });
+  }
   const { is_favorite } = req.body;
   try {
     let query;
@@ -4400,6 +4409,7 @@ async function upsertHTFResult(ticker, tradeDate, result) {
 
 async function getHTFStatus(ticker, options = {}) {
   const force = options.force === true;
+  const signal = options.signal || null;
   const today = currentEtDateString();
 
   // Check DB cache (same trading day) unless force
@@ -4417,7 +4427,7 @@ async function getHTFStatus(ticker, options = {}) {
   try {
     const result = await detectHTF(ticker, {
       dataApiFetcher: dataApiIntradayChartHistory,
-      signal: null
+      signal
     });
 
     // Store in DB
@@ -4545,7 +4555,7 @@ async function runHTFScan(options = {}) {
         }
         const apiStart = Date.now();
         try {
-          const result = await getHTFStatus(ticker, { force: false });
+          const result = await getHTFStatus(ticker, { force: false, signal: scanAbort.signal });
           const latencyMs = Date.now() - apiStart;
           if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, false);
           return { ticker, result, error: null };
@@ -8627,6 +8637,8 @@ async function pruneOldAlerts() {
 }
 
 let server;
+let pruneOldAlertsInitialTimer = null;
+let pruneOldAlertsIntervalTimer = null;
 
 (async function startServer() {
   try {
@@ -8652,8 +8664,8 @@ let server;
     scheduleNextDivergenceScan();
 
     // Schedule initial prune and recurring interval
-    setTimeout(pruneOldAlerts, 60 * 1000); // Run 1 minute after startup
-    setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
+    pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000); // Run 1 minute after startup
+    pruneOldAlertsIntervalTimer = setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
   });
 })();
 
@@ -8673,6 +8685,14 @@ async function shutdownServer(signal) {
   if (divergenceSchedulerTimer) {
     clearTimeout(divergenceSchedulerTimer);
     divergenceSchedulerTimer = null;
+  }
+  if (pruneOldAlertsInitialTimer) {
+    clearTimeout(pruneOldAlertsInitialTimer);
+    pruneOldAlertsInitialTimer = null;
+  }
+  if (pruneOldAlertsIntervalTimer) {
+    clearInterval(pruneOldAlertsIntervalTimer);
+    pruneOldAlertsIntervalTimer = null;
   }
   tradingCalendar.destroy();
   clearInterval(vdRsiCacheCleanupTimer);
