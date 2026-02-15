@@ -83,6 +83,9 @@ let chartCacheHydratedFromSession = false;
 let chartCachePersistTimer: number | null = null;
 let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
+let htfButtonEl: HTMLButtonElement | null = null;
+let htfLoadingForTicker: string | null = null;
+let htfResultCache = new Map<string, { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }>();
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
@@ -2874,6 +2877,7 @@ function ensureSettingsUI(
   volumeDeltaContainer: HTMLElement
 ): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
+  const htfBtn = ensureHTFButton(chartContainer);
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
@@ -3001,6 +3005,15 @@ function ensureSettingsUI(
       toggleRsiDivergencePlotTool();
     });
     rsiDivergenceBtn.dataset.bound = '1';
+  }
+
+  if (!htfBtn.dataset.bound) {
+    htfBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (currentChartTicker) runHTFDetection(currentChartTicker, true);
+    });
+    htfBtn.dataset.bound = '1';
   }
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
@@ -4182,6 +4195,125 @@ function renderVolumeDeltaDivergenceSummary(
     });
 }
 
+// =============================================================================
+// HTF (High-Tight Flag) Detector Button
+// =============================================================================
+
+const HTF_COLOR_LOADING = '#c9d1d9';
+const HTF_COLOR_DETECTED = '#26a69a';
+const HTF_COLOR_NOT_DETECTED = '#484f58';
+const HTF_COLOR_ERROR = '#ef5350';
+
+function ensureHTFButton(container: HTMLElement): HTMLButtonElement {
+  if (htfButtonEl && htfButtonEl.parentElement === container) return htfButtonEl;
+  // Remove orphaned button
+  if (htfButtonEl && htfButtonEl.parentElement) {
+    htfButtonEl.parentElement.removeChild(htfButtonEl);
+  }
+
+  const btn = document.createElement('button');
+  btn.className = 'htf-indicator-btn';
+  btn.type = 'button';
+  btn.title = 'High-Tight Flag Detector';
+  btn.textContent = 'HTF';
+  btn.style.position = 'absolute';
+  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
+  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
+  btn.style.zIndex = '34';
+  btn.style.width = 'auto';
+  btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.padding = '0 5px';
+  btn.style.borderRadius = '4px';
+  btn.style.border = '1px solid #30363d';
+  btn.style.background = '#161b22';
+  btn.style.color = HTF_COLOR_LOADING;
+  btn.style.cursor = 'pointer';
+  btn.style.fontSize = '9px';
+  btn.style.fontWeight = '700';
+  btn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  btn.style.letterSpacing = '0.5px';
+  btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.textAlign = 'center';
+  btn.style.userSelect = 'none';
+  container.appendChild(btn);
+  htfButtonEl = btn;
+  return btn;
+}
+
+function setHTFButtonColor(color: string, title?: string): void {
+  if (!htfButtonEl) return;
+  htfButtonEl.style.color = color;
+  if (title !== undefined) htfButtonEl.title = title;
+}
+
+function buildHTFTooltip(result: { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }): string {
+  let tip = `HTF: ${result.status}`;
+  if (result.is_candidate) {
+    tip += `\nComposite: ${(result.composite_score * 100).toFixed(1)}%`;
+  }
+  if (result.impulse_gain_pct != null) {
+    tip += `\nImpulse: +${result.impulse_gain_pct.toFixed(1)}%`;
+  }
+  return tip;
+}
+
+async function runHTFDetection(ticker: string, force = false): Promise<void> {
+  if (!ticker) return;
+  // Prevent concurrent runs for the same ticker
+  if (htfLoadingForTicker === ticker && !force) return;
+
+  // Client-side cache check (same ticker, same date)
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const cacheKey = `${ticker}|${today}`;
+  if (!force && htfResultCache.has(cacheKey)) {
+    const cached = htfResultCache.get(cacheKey)!;
+    setHTFButtonColor(
+      cached.is_detected ? HTF_COLOR_DETECTED : HTF_COLOR_NOT_DETECTED,
+      buildHTFTooltip(cached)
+    );
+    return;
+  }
+
+  htfLoadingForTicker = ticker;
+  setHTFButtonColor(HTF_COLOR_LOADING, 'HTF: Loading...');
+
+  try {
+    const params = new URLSearchParams({ ticker });
+    if (force) params.set('force', '1');
+    const response = await fetch(`/api/chart/htf-status?${params}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+
+    // Verify we're still on the same ticker
+    if (currentChartTicker !== ticker) return;
+
+    const entry = {
+      is_detected: result.is_detected || false,
+      is_candidate: result.is_candidate || false,
+      composite_score: Number(result.composite_score) || 0,
+      status: result.status || '',
+      impulse_gain_pct: result.impulse_gain_pct != null ? Number(result.impulse_gain_pct) : null,
+    };
+    htfResultCache.set(cacheKey, entry);
+    setHTFButtonColor(
+      entry.is_detected ? HTF_COLOR_DETECTED : HTF_COLOR_NOT_DETECTED,
+      buildHTFTooltip(entry)
+    );
+  } catch {
+    if (currentChartTicker === ticker) {
+      setHTFButtonColor(HTF_COLOR_ERROR, 'HTF: Failed to load');
+    }
+  } finally {
+    if (htfLoadingForTicker === ticker) htfLoadingForTicker = null;
+  }
+}
+
 function applyPricePaneDivergentBarColors(): void {
   if (!candleSeries) return;
   if (!Array.isArray(currentBars) || currentBars.length === 0) {
@@ -4680,6 +4812,11 @@ function applyChartDataToUi(
   applyRightMargin();
   syncChartsToPriceRange();
   scheduleChartLayoutRefresh();
+
+  // Run HTF detection after divergence table + MAs complete
+  if (currentChartTicker) {
+    runHTFDetection(currentChartTicker);
+  }
 }
 
 function ensureChartLiveRefreshTimer(): void {

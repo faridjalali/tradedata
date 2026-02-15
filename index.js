@@ -25,6 +25,7 @@ const {
   buildHealthPayload,
   buildReadyPayload
 } = require("./server/services/healthService");
+const { detectHTF } = require("./server/services/htfDetector");
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
@@ -1153,6 +1154,20 @@ const initDivergenceDB = async () => {
         published_trade_date DATE,
         last_scan_job_id INTEGER,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await divergencePool.query(`
+      CREATE TABLE IF NOT EXISTS htf_results (
+        ticker VARCHAR(20) NOT NULL,
+        trade_date VARCHAR(10) NOT NULL,
+        is_detected BOOLEAN NOT NULL DEFAULT FALSE,
+        is_candidate BOOLEAN NOT NULL DEFAULT FALSE,
+        composite_score REAL DEFAULT 0,
+        status TEXT DEFAULT '',
+        impulse_gain_pct REAL,
+        result_json TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (ticker, trade_date)
       );
     `);
     // Restore in-memory status from persisted data so the UI shows correct
@@ -4278,6 +4293,121 @@ async function getDivergenceSummaryForTickers(options = {}) {
   };
 }
 
+// --- HTF (High-Tight Flag) Detector helpers ---
+let htfRunningTickers = new Set();
+
+async function getStoredHTFResult(ticker, tradeDate) {
+  if (!isDivergenceConfigured()) return null;
+  try {
+    const { rows } = await divergencePool.query(
+      `SELECT is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json
+       FROM htf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
+      [ticker, tradeDate]
+    );
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    let parsed = {};
+    try { parsed = row.result_json ? JSON.parse(row.result_json) : {}; } catch { /* ignore */ }
+    return {
+      is_detected: row.is_detected,
+      is_candidate: row.is_candidate,
+      composite_score: Number(row.composite_score) || 0,
+      status: row.status || '',
+      impulse_gain_pct: row.impulse_gain_pct != null ? Number(row.impulse_gain_pct) : null,
+      details: parsed
+    };
+  } catch (err) {
+    console.error('getStoredHTFResult error:', err && err.message ? err.message : err);
+    return null;
+  }
+}
+
+async function upsertHTFResult(ticker, tradeDate, result) {
+  if (!isDivergenceConfigured()) return;
+  try {
+    const resultJson = JSON.stringify({
+      impulse: result.impulse || null,
+      consolidation_bars: result.consolidation_bars || 0,
+      flag_retrace_pct: result.flag_retrace_pct,
+      yz_percentile: result.yz_percentile,
+      delta_metrics: result.delta_metrics,
+      range_decay: result.range_decay,
+      vwap_deviation: result.vwap_deviation,
+      composite: result.composite,
+      breakout: result.breakout,
+    });
+    await divergencePool.query(
+      `INSERT INTO htf_results (ticker, trade_date, is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (ticker, trade_date) DO UPDATE SET
+         is_detected = EXCLUDED.is_detected,
+         is_candidate = EXCLUDED.is_candidate,
+         composite_score = EXCLUDED.composite_score,
+         status = EXCLUDED.status,
+         impulse_gain_pct = EXCLUDED.impulse_gain_pct,
+         result_json = EXCLUDED.result_json,
+         updated_at = NOW()`,
+      [
+        ticker, tradeDate,
+        result.is_detected || false,
+        result.is_candidate || false,
+        result.composite_score || 0,
+        result.status || '',
+        result.impulse_gain_pct != null ? result.impulse_gain_pct : null,
+        resultJson
+      ]
+    );
+  } catch (err) {
+    console.error('upsertHTFResult error:', err && err.message ? err.message : err);
+  }
+}
+
+async function getHTFStatus(ticker, options = {}) {
+  const force = options.force === true;
+  const today = currentEtDateString();
+
+  // Check DB cache (same trading day) unless force
+  if (!force) {
+    const cached = await getStoredHTFResult(ticker, today);
+    if (cached) return { ...cached, cached: true };
+  }
+
+  // Prevent parallel detection for the same ticker
+  if (htfRunningTickers.has(ticker)) {
+    return { is_detected: false, is_candidate: false, composite_score: 0, status: 'Detection in progress', cached: false };
+  }
+  htfRunningTickers.add(ticker);
+
+  try {
+    const result = await detectHTF(ticker, {
+      dataApiFetcher: dataApiIntradayChartHistory,
+      signal: null
+    });
+
+    // Store in DB
+    await upsertHTFResult(ticker, today, result);
+
+    return {
+      is_detected: result.is_detected || false,
+      is_candidate: result.is_candidate || false,
+      composite_score: result.composite_score || 0,
+      status: result.status || '',
+      impulse_gain_pct: result.impulse_gain_pct != null ? result.impulse_gain_pct : null,
+      details: {
+        impulse: result.impulse,
+        consolidation_bars: result.consolidation_bars,
+        flag_retrace_pct: result.flag_retrace_pct,
+        yz_percentile: result.yz_percentile,
+        composite: result.composite,
+        breakout: result.breakout,
+      },
+      cached: false
+    };
+  } finally {
+    htfRunningTickers.delete(ticker);
+  }
+}
+
 registerChartRoutes({
   app,
   parseChartRequestParams,
@@ -4292,7 +4422,8 @@ registerChartRoutes({
   getDivergenceSummaryForTickers,
   barsToTuples,
   pointsToTuples,
-  getMiniBarsCacheByTicker: () => miniBarsCacheByTicker
+  getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
+  getHTFStatus
 });
 
 function etDateStringFromUnixSeconds(unixSeconds) {

@@ -172,6 +172,28 @@ function registerChartRoutes(options = {}) {
     }
   });
 
+  app.get('/api/chart/htf-status', async (req, res) => {
+    try {
+      if (typeof options.getHTFStatus !== 'function') {
+        return res.status(501).json({ error: 'HTF endpoint is not enabled' });
+      }
+      const ticker = String(req.query.ticker || '').trim().toUpperCase();
+      if (!ticker) {
+        return res.status(400).json({ error: 'Provide a ticker query parameter' });
+      }
+      if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
+        return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+      }
+      const force = parseBooleanQueryFlag(req.query.force);
+      const result = await options.getHTFStatus(ticker, { force });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json(result);
+    } catch (err) {
+      console.error('HTF Status API Error:', err && err.message ? err.message : err);
+      return res.status(502).json({ error: 'Failed to fetch HTF status' });
+    }
+  });
+
   app.get('/api/chart/divergence-summary', async (req, res) => {
     try {
       if (typeof getDivergenceSummaryForTickers !== 'function') {
