@@ -20,6 +20,8 @@ export interface Alert {
         sma200?: boolean;
     };
     vdf_detected?: boolean;
+    vdf_score?: number;
+    vdf_proximity?: string;
 }
 
 export interface AppState {

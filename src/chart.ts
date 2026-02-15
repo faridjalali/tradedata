@@ -85,7 +85,15 @@ let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
-let vdfResultCache = new Map<string, { is_detected: boolean; composite_score: number; status: string; weeks: number }>();
+interface VDFZone { startDate: string; endDate: string; score: number; windowDays: number; absorptionPct?: number; netDeltaPct?: number; }
+interface VDFDistribution { startDate: string; endDate: string; spanDays: number; }
+interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
+interface VDFCacheEntry {
+  is_detected: boolean; composite_score: number; status: string; weeks: number;
+  zones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
+}
+let vdfResultCache = new Map<string, VDFCacheEntry>();
+let vdZoneOverlayEl: HTMLDivElement | null = null;
 const VDF_CACHE_MAX_SIZE = 200;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
@@ -1406,6 +1414,7 @@ function scheduleChartLayoutRefresh(): void {
   chartLayoutRefreshRafId = requestAnimationFrame(() => {
     chartLayoutRefreshRafId = null;
     refreshMonthGridLines();
+    refreshVDZones();
   });
 }
 
@@ -4203,7 +4212,6 @@ function renderVolumeDeltaDivergenceSummary(
 // =============================================================================
 
 const VDF_COLOR_LOADING = '#c9d1d9';
-const VDF_COLOR_DETECTED = '#26a69a';
 const VDF_COLOR_NOT_DETECTED = '#484f58';
 const VDF_COLOR_ERROR = '#ef5350';
 
@@ -4249,15 +4257,131 @@ function setVDFButtonColor(color: string, title?: string): void {
   if (title !== undefined) vdfButtonEl.title = title;
 }
 
-function buildVDFTooltip(result: { is_detected: boolean; composite_score: number; status: string; weeks: number }): string {
-  let tip = `VDF: ${result.status}`;
-  if (result.composite_score > 0) {
-    tip += `\nScore: ${(result.composite_score * 100).toFixed(1)}%`;
+function buildVDFTooltip(entry: VDFCacheEntry): string {
+  if (!entry.is_detected) return `VD Accumulation: Not detected`;
+  const score = Math.round(entry.composite_score * 100);
+  let tip = `VD Accumulation Score: ${score}`;
+  const bestZone = entry.zones?.[0];
+  if (bestZone) {
+    const startParts = bestZone.startDate.split('-');
+    const endParts = bestZone.endDate.split('-');
+    const startLabel = startParts.length >= 3 ? `${Number(startParts[1])}/${Number(startParts[2])}` : bestZone.startDate;
+    const endLabel = endParts.length >= 3 ? `${Number(endParts[1])}/${Number(endParts[2])}` : bestZone.endDate;
+    tip += `\nZone: ${startLabel}→${endLabel} (${bestZone.windowDays}d)`;
+    if (bestZone.absorptionPct != null) tip += `\nAbsorption: ${(bestZone.absorptionPct * 100).toFixed(1)}%`;
   }
-  if (result.weeks > 0) {
-    tip += `\nDuration: ${result.weeks} weeks`;
+  if (entry.zones?.length > 1) tip += `\n+${entry.zones.length - 1} more zone(s)`;
+  if (entry.distribution?.length > 0) tip += `\nDistribution: ${entry.distribution.length} cluster(s)`;
+  const prox = entry.proximity;
+  if (prox && prox.level !== 'none') {
+    tip += `\nProximity: ${prox.level.charAt(0).toUpperCase() + prox.level.slice(1)} (${prox.compositeScore} pts)`;
+    for (const sig of prox.signals) {
+      tip += `\n  ✓ ${sig.detail} +${sig.points}`;
+    }
   }
   return tip;
+}
+
+function updateVDFButton(entry: VDFCacheEntry): void {
+  if (!vdfButtonEl) return;
+  if (entry.is_detected) {
+    const score = Math.round(entry.composite_score * 100);
+    vdfButtonEl.textContent = String(score);
+    vdfButtonEl.style.color = score >= 80 ? '#26a69a' : score >= 60 ? '#8bc34a' : '#c9d1d9';
+    const proxLevel = entry.proximity?.level || 'none';
+    if (proxLevel === 'imminent' || proxLevel === 'high') {
+      vdfButtonEl.style.borderColor = '#ff9800';
+    } else if (proxLevel === 'elevated') {
+      vdfButtonEl.style.borderColor = '#ffc107';
+    } else {
+      vdfButtonEl.style.borderColor = '#30363d';
+    }
+  } else {
+    vdfButtonEl.textContent = 'VDF';
+    vdfButtonEl.style.color = VDF_COLOR_NOT_DETECTED;
+    vdfButtonEl.style.borderColor = '#30363d';
+  }
+  vdfButtonEl.title = buildVDFTooltip(entry);
+}
+
+function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
+  if (vdZoneOverlayEl && vdZoneOverlayEl.parentElement === container) return vdZoneOverlayEl;
+  if (vdZoneOverlayEl?.parentElement) vdZoneOverlayEl.parentElement.removeChild(vdZoneOverlayEl);
+  const overlay = document.createElement('div');
+  overlay.className = 'vd-zone-overlay';
+  overlay.style.position = 'absolute';
+  overlay.style.top = '0';
+  overlay.style.right = '0';
+  overlay.style.bottom = '0';
+  overlay.style.left = '0';
+  overlay.style.pointerEvents = 'none';
+  overlay.style.zIndex = '5';
+  container.appendChild(overlay);
+  vdZoneOverlayEl = overlay;
+  return overlay;
+}
+
+function dateStringToUnixSeconds(dateStr: string): number {
+  const parts = dateStr.split('-');
+  if (parts.length < 3) return 0;
+  return Math.floor(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 1000);
+}
+
+function renderVDZones(entry?: VDFCacheEntry | null): void {
+  if (!vdZoneOverlayEl) return;
+  vdZoneOverlayEl.innerHTML = '';
+  if (!priceChart || !entry) return;
+
+  const overlayWidth = vdZoneOverlayEl.clientWidth || vdZoneOverlayEl.offsetWidth;
+  if (!Number.isFinite(overlayWidth) || overlayWidth <= 0) return;
+
+  // Render accumulation zones (green)
+  if (entry.zones) {
+    for (const zone of entry.zones) {
+      const x1 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(zone.startDate));
+      const x2 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(zone.endDate));
+      if (!Number.isFinite(x1) || !Number.isFinite(x2)) continue;
+      const left = Math.min(x1, x2);
+      const width = Math.abs(x2 - x1);
+      if (left > overlayWidth || left + width < 0) continue;
+
+      const opacity = 0.04 + zone.score * 0.08;
+      const rect = document.createElement('div');
+      rect.style.cssText = `position:absolute;left:${Math.round(left)}px;top:0;width:${Math.max(Math.round(width), 2)}px;height:100%;background:rgba(38,166,154,${opacity.toFixed(3)});border-left:1px solid rgba(38,166,154,0.3);border-right:1px solid rgba(38,166,154,0.3);`;
+
+      const badge = document.createElement('div');
+      badge.style.cssText = 'position:absolute;top:2px;right:2px;font-size:9px;color:rgba(38,166,154,0.8);font-family:monospace;';
+      badge.textContent = (zone.score * 100).toFixed(0);
+      rect.appendChild(badge);
+      vdZoneOverlayEl.appendChild(rect);
+    }
+  }
+
+  // Render distribution clusters (red)
+  if (entry.distribution) {
+    for (const dist of entry.distribution) {
+      const x1 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(dist.startDate));
+      const x2 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(dist.endDate));
+      if (!Number.isFinite(x1) || !Number.isFinite(x2)) continue;
+      const left = Math.min(x1, x2);
+      const width = Math.abs(x2 - x1);
+      if (left > overlayWidth || left + width < 0) continue;
+
+      const rect = document.createElement('div');
+      rect.style.cssText = `position:absolute;left:${Math.round(left)}px;top:0;width:${Math.max(Math.round(width), 2)}px;height:100%;background:rgba(239,83,80,0.06);border-left:1px solid rgba(239,83,80,0.3);border-right:1px solid rgba(239,83,80,0.3);`;
+      vdZoneOverlayEl.appendChild(rect);
+    }
+  }
+}
+
+function refreshVDZones(): void {
+  if (!vdZoneOverlayEl || !currentChartTicker) return;
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const cached = vdfResultCache.get(`${currentChartTicker}|${today}`);
+  if (cached) renderVDZones(cached);
+  else renderVDZones(null);
 }
 
 async function runVDFDetection(ticker: string, force = false): Promise<void> {
@@ -4273,10 +4397,8 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
   const cacheKey = `${ticker}|${today}`;
   if (!force && vdfResultCache.has(cacheKey)) {
     const cached = vdfResultCache.get(cacheKey)!;
-    setVDFButtonColor(
-      cached.is_detected ? VDF_COLOR_DETECTED : VDF_COLOR_NOT_DETECTED,
-      buildVDFTooltip(cached)
-    );
+    updateVDFButton(cached);
+    renderVDZones(cached);
     return;
   }
 
@@ -4292,21 +4414,22 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
 
     if (currentChartTicker !== ticker) return;
 
-    const entry = {
+    const entry: VDFCacheEntry = {
       is_detected: result.is_detected || false,
       composite_score: Number(result.composite_score) || 0,
       status: result.status || '',
       weeks: Number(result.weeks) || 0,
+      zones: Array.isArray(result.zones) ? result.zones : [],
+      distribution: Array.isArray(result.distribution) ? result.distribution : [],
+      proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
     };
     vdfResultCache.set(cacheKey, entry);
     if (vdfResultCache.size > VDF_CACHE_MAX_SIZE) {
       const oldest = vdfResultCache.keys().next().value;
       if (oldest !== undefined) vdfResultCache.delete(oldest);
     }
-    setVDFButtonColor(
-      entry.is_detected ? VDF_COLOR_DETECTED : VDF_COLOR_NOT_DETECTED,
-      buildVDFTooltip(entry)
-    );
+    updateVDFButton(entry);
+    renderVDZones(entry);
   } catch {
     if (currentChartTicker === ticker) {
       setVDFButtonColor(VDF_COLOR_ERROR, 'VDF: Failed to load');
@@ -4935,6 +5058,7 @@ export async function renderCustomChart(
   ensureMonthGridOverlay(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   ensureMonthGridOverlay(rsiContainer, 'rsi');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
+  ensureVDZoneOverlay(chartContainer);
   ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   syncTopPaneTickerLabel();
 
@@ -5090,6 +5214,7 @@ export async function renderCustomChart(
       clearMonthGridOverlay(volumeDeltaRsiMonthGridOverlayEl);
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
+      renderVDZones(null);
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
       deactivateRsiDivergencePlotTool();
       deactivateVolumeDeltaRsiDivergencePlotTool();

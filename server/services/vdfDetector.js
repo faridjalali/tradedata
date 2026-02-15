@@ -1,71 +1,37 @@
 /**
- * Volume Divergence Flag (VDF) Detector
- * ======================================
+ * Volume Divergence Flag (VDF) Detector — Full Algorithm
+ * ======================================================
  * Detects hidden institutional accumulation during multi-week price declines
  * using 1-minute volume delta to reveal net buying that diverges from price.
  *
- * Weekly-smoothed, duration-scaling, aberration-resistant.
- * See ALGORITHM-VD-ACCUMULATION.md for full documentation.
+ * Features:
+ *   - 7-component scoring with 3σ outlier capping
+ *   - Subwindow scanner (10–35 day sliding windows)
+ *   - Multi-zone greedy clustering (up to 3 zones)
+ *   - Distribution cluster detection (inverse: price up, delta negative)
+ *   - Proximity signal evaluation (7 signals → composite score)
  *
- * Data strategy: fetch 1-min bars at native interval via Massive API.
+ * See ALGORITHM-VD-ACCUMULATION.md for full documentation.
  */
 
 "use strict";
 
 // =============================================================================
-// VD ACCUMULATION DIVERGENCE DETECTOR
+// UTILITY FUNCTIONS
 // =============================================================================
 
-/**
- * Aggregate 1-minute bars into daily + ISO-week buckets.
- */
-function vdAggregateWeekly(bars1m) {
-  const dailyMap = new Map();
-  for (const b of bars1m) {
-    const d = new Date(b.time * 1000).toISOString().split('T')[0];
-    if (!dailyMap.has(d)) dailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0, close: 0, open: 0, first: true });
-    const day = dailyMap.get(d);
-    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
-    if (delta > 0) day.buyVol += b.volume;
-    else if (delta < 0) day.sellVol += b.volume;
-    day.totalVol += b.volume;
-    day.close = b.close;
-    if (day.first) { day.open = b.open; day.first = false; }
-  }
-
-  const dates = [...dailyMap.keys()].sort();
-  const daily = dates.map(d => {
-    const day = dailyMap.get(d);
-    return { date: d, delta: day.buyVol - day.sellVol, totalVol: day.totalVol,
-             buyVol: day.buyVol, sellVol: day.sellVol, close: day.close, open: day.open };
-  });
-
-  // Group into ISO weeks (Mon-Sun)
-  const weekMap = new Map();
-  for (const d of daily) {
-    const dt = new Date(d.date + 'T12:00:00Z');
-    const dow = dt.getUTCDay();
-    const monday = new Date(dt);
-    monday.setUTCDate(monday.getUTCDate() - (dow === 0 ? 6 : dow - 1));
-    const wk = monday.toISOString().split('T')[0];
-    if (!weekMap.has(wk)) weekMap.set(wk, []);
-    weekMap.get(wk).push(d);
-  }
-
-  const weeks = [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([weekStart, days]) => {
-    const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
-    const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
-    const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
-    return { weekStart, delta: buyVol - sellVol, totalVol, deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0, nDays: days.length };
-  });
-
-  return { daily, weeks };
+function mean(arr) {
+  if (!arr || arr.length === 0) return 0;
+  return arr.reduce((s, v) => s + v, 0) / arr.length;
 }
 
-/**
- * Simple linear regression: returns { slope, r2 }.
- */
-function vdLinReg(xs, ys) {
+function std(arr) {
+  if (!arr || arr.length < 2) return 0;
+  const m = mean(arr);
+  return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
+}
+
+function linReg(xs, ys) {
   const n = xs.length;
   if (n < 2) return { slope: 0, r2: 0 };
   let sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -80,167 +46,674 @@ function vdLinReg(xs, ys) {
   return { slope, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0 };
 }
 
+// =============================================================================
+// DAILY AGGREGATION — 1-minute bars → daily buckets
+// =============================================================================
+
+function vdAggregateDaily(bars1m) {
+  const dailyMap = new Map();
+  for (const b of bars1m) {
+    const d = new Date(b.time * 1000).toISOString().split('T')[0];
+    if (!dailyMap.has(d)) dailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0, close: 0, open: 0, high: -Infinity, low: Infinity, first: true });
+    const day = dailyMap.get(d);
+    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
+    if (delta > 0) day.buyVol += b.volume;
+    else if (delta < 0) day.sellVol += b.volume;
+    day.totalVol += b.volume;
+    day.close = b.close;
+    if (b.high > day.high) day.high = b.high;
+    if (b.low < day.low) day.low = b.low;
+    if (day.first) { day.open = b.open; day.first = false; }
+  }
+
+  const dates = [...dailyMap.keys()].sort();
+  return dates.map(d => {
+    const day = dailyMap.get(d);
+    return {
+      date: d,
+      delta: day.buyVol - day.sellVol,
+      totalVol: day.totalVol,
+      buyVol: day.buyVol,
+      sellVol: day.sellVol,
+      close: day.close,
+      open: day.open,
+      high: day.high === -Infinity ? day.close : day.high,
+      low: day.low === Infinity ? day.close : day.low,
+    };
+  });
+}
+
+// =============================================================================
+// WEEKLY GROUPING — daily buckets → ISO weeks
+// =============================================================================
+
+function buildWeeks(daily) {
+  const weekMap = new Map();
+  for (const d of daily) {
+    const dt = new Date(d.date + 'T12:00:00Z');
+    const dow = dt.getUTCDay();
+    const monday = new Date(dt);
+    monday.setUTCDate(monday.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+    const wk = monday.toISOString().split('T')[0];
+    if (!weekMap.has(wk)) weekMap.set(wk, []);
+    weekMap.get(wk).push(d);
+  }
+  return [...weekMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, days]) => {
+      const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
+      const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
+      const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
+      return {
+        weekStart,
+        delta: buyVol - sellVol,
+        totalVol,
+        deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0,
+        nDays: days.length,
+      };
+    });
+}
+
+// =============================================================================
+// SINGLE SUBWINDOW SCORING — 7-component system with 3σ capping
+// =============================================================================
+
 /**
- * Score accumulation divergence from 1-minute bars.
+ * Score a single subwindow of daily data for accumulation divergence.
  *
- * @param {Array} consolBars1m — 1m bars for the candidate consolidation window
- * @param {Array} preBars1m   — 1m bars for the pre-context window (~30 days before)
- * @returns {{ score: number, detected: boolean, reason: string, weeks: number, metrics: object }}
+ * @param {Array} dailySlice — daily aggregates for the candidate window
+ * @param {Array} preDaily — daily aggregates for 30-day pre-context window
+ * @returns {object|null} — scoring result or null if gated out
  */
-function scoreAccumulationDivergence(consolBars1m, preBars1m) {
-  const { daily, weeks } = vdAggregateWeekly(consolBars1m);
+function scoreSubwindow(dailySlice, preDaily) {
+  const weeks = buildWeeks(dailySlice);
+  if (weeks.length < 2) return null;
 
-  if (weeks.length < 2) return { score: 0, detected: false, reason: 'need_2_weeks', weeks: 0, metrics: {} };
+  const n = dailySlice.length;
+  const totalVol = dailySlice.reduce((s, d) => s + d.totalVol, 0);
+  const avgDailyVol = totalVol / n;
+  const closes = dailySlice.map(d => d.close);
+  const overallPriceChange = ((closes[n - 1] - closes[0]) / closes[0]) * 100;
 
-  const totalVol = daily.reduce((s, d) => s + d.totalVol, 0);
-  const avgDailyVol = totalVol / daily.length;
-  const closes = daily.map(d => d.close);
-  const avgPrice = closes.reduce((s, v) => s + v, 0) / closes.length;
-
-  // Price check: must be declining or flat, not rallying or crashing
-  const overallPriceChange = ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100;
-  if (overallPriceChange > 10) return { score: 0, detected: false, reason: 'price_rising', weeks: weeks.length, metrics: { overallPriceChange } };
-  if (overallPriceChange < -45) return { score: 0, detected: false, reason: 'crash', weeks: weeks.length, metrics: { overallPriceChange } };
+  // === HARD GATES ===
+  if (overallPriceChange > 10 || overallPriceChange < -45) return null;
 
   // Pre-context baseline
-  const preAgg = vdAggregateWeekly(preBars1m);
-  const preAvgDelta = preAgg.daily.length > 0 ? preAgg.daily.reduce((s, d) => s + d.delta, 0) / preAgg.daily.length : 0;
-  const preAvgVol = preAgg.daily.length > 0 ? preAgg.daily.reduce((s, d) => s + d.totalVol, 0) / preAgg.daily.length : avgDailyVol;
+  const preAvgDelta = preDaily.length > 0
+    ? preDaily.reduce((s, d) => s + d.delta, 0) / preDaily.length : 0;
+  const preAvgVol = preDaily.length > 0
+    ? preDaily.reduce((s, d) => s + d.totalVol, 0) / preDaily.length : avgDailyVol;
+
+  // 3σ outlier capping
+  let effectiveDeltas = dailySlice.map(d => d.delta);
+  const dm = mean(effectiveDeltas);
+  const ds = std(effectiveDeltas);
+  const capHigh = dm + 3 * ds;
+  const capLow = dm - 3 * ds;
+  const cappedDays = [];
+  effectiveDeltas = effectiveDeltas.map((d, i) => {
+    if (d > capHigh || d < capLow) {
+      const capped = Math.max(capLow, Math.min(capHigh, d));
+      cappedDays.push({ date: dailySlice[i].date, original: d, capped });
+      return capped;
+    }
+    return d;
+  });
 
   // Net delta
-  const netDelta = daily.reduce((s, d) => s + d.delta, 0);
+  const netDelta = effectiveDeltas.reduce((s, v) => s + v, 0);
   const netDeltaPct = totalVol > 0 ? (netDelta / totalVol) * 100 : 0;
 
-  // Gate: net delta must not be deeply negative
-  if (netDeltaPct < -1.5) return { score: 0, detected: false, reason: 'concordant_selling', weeks: weeks.length, metrics: { netDeltaPct, overallPriceChange } };
+  // Gate: net delta must not be deeply negative (concordant selling)
+  if (netDeltaPct < -1.5) {
+    return { score: 0, detected: false, reason: 'concordant_selling', netDeltaPct, overallPriceChange };
+  }
 
-  // Cumulative weekly delta slope
+  // Cumulative weekly delta slope (using capped deltas)
+  const weeklyDeltas = [];
+  let dayIdx = 0;
+  for (const w of weeks) {
+    let wd = 0;
+    for (let j = 0; j < w.nDays && dayIdx < effectiveDeltas.length; j++, dayIdx++) {
+      wd += effectiveDeltas[dayIdx];
+    }
+    weeklyDeltas.push(wd);
+  }
   const cumWeeklyDelta = [];
   let cwd = 0;
-  for (const w of weeks) { cwd += w.delta; cumWeeklyDelta.push(cwd); }
+  for (const wd of weeklyDeltas) { cwd += wd; cumWeeklyDelta.push(cwd); }
   const weeklyXs = weeks.map((_, i) => i);
   const avgWeeklyVol = weeks.reduce((s, w) => s + w.totalVol, 0) / weeks.length;
-  const deltaSlopeNorm = avgWeeklyVol > 0 ? (vdLinReg(weeklyXs, cumWeeklyDelta).slope / avgWeeklyVol) * 100 : 0;
+  const deltaSlopeNorm = avgWeeklyVol > 0
+    ? (linReg(weeklyXs, cumWeeklyDelta).slope / avgWeeklyVol) * 100 : 0;
+
+  // Gate: delta slope must not be falling steeply
+  if (deltaSlopeNorm < -0.5) {
+    return { score: 0, detected: false, reason: 'slope_gate', netDeltaPct, overallPriceChange, deltaSlopeNorm };
+  }
 
   // Delta shift vs pre-context
-  const consolAvgDailyDelta = netDelta / daily.length;
-  const deltaShift = preAvgVol > 0 ? ((consolAvgDailyDelta - preAvgDelta) / preAvgVol) * 100 : 0;
+  const consolAvgDailyDelta = netDelta / n;
+  const deltaShift = preAvgVol > 0
+    ? ((consolAvgDailyDelta - preAvgDelta) / preAvgVol) * 100 : 0;
 
-  // Strong absorption days (price down, delta > 5% avg vol)
-  let strongAbsorptionDays = 0;
-  for (let i = 1; i < daily.length; i++) {
-    if (daily[i].close < daily[i - 1].close && daily[i].delta > avgDailyVol * 0.05) strongAbsorptionDays++;
+  // Absorption: days where price down but delta positive
+  let absorptionDays = 0;
+  for (let i = 1; i < n; i++) {
+    if (dailySlice[i].close < dailySlice[i - 1].close && dailySlice[i].delta > 0) absorptionDays++;
   }
-  const strongAbsorptionPct = daily.length > 1 ? (strongAbsorptionDays / (daily.length - 1)) * 100 : 0;
+  const absorptionPct = n > 1 ? (absorptionDays / (n - 1)) * 100 : 0;
 
   // Large buy vs sell days
-  const largeBuyDays = daily.filter(d => d.delta > avgDailyVol * 0.10).length;
-  const largeSellDays = daily.filter(d => d.delta < -avgDailyVol * 0.10).length;
-  const largeBuyVsSell = ((largeBuyDays - largeSellDays) / daily.length) * 100;
+  const largeBuyDays = dailySlice.filter(d => d.delta > avgDailyVol * 0.10).length;
+  const largeSellDays = dailySlice.filter(d => d.delta < -avgDailyVol * 0.10).length;
+  const largeBuyVsSell = ((largeBuyDays - largeSellDays) / n) * 100;
 
-  // Price-cumDelta correlation
-  const cumDeltas = [];
-  let cd = 0;
-  for (const d of daily) { cd += d.delta; cumDeltas.push(cd); }
-  let priceDeltaCorr = 0;
-  {
-    const n = daily.length;
-    const meanP = closes.reduce((s, v) => s + v, 0) / n;
-    const meanD = cumDeltas.reduce((s, v) => s + v, 0) / n;
-    let cov = 0, varP = 0, varD = 0;
-    for (let i = 0; i < n; i++) {
-      cov += (closes[i] - meanP) * (cumDeltas[i] - meanD);
-      varP += (closes[i] - meanP) ** 2;
-      varD += (cumDeltas[i] - meanD) ** 2;
-    }
-    priceDeltaCorr = (varP > 0 && varD > 0) ? cov / Math.sqrt(varP * varD) : 0;
-  }
-
-  // Accumulation week ratio
-  const accumWeeks = weeks.filter(w => w.deltaPct > 0).length;
+  // Accumulation week ratio (using capped weekly deltas)
+  const accumWeeks = weeklyDeltas.filter(wd => wd > 0).length;
   const accumWeekRatio = accumWeeks / weeks.length;
 
-  // Volatility contraction in the last third (range shrinkage -> breakout imminent)
-  let volContractionScore = 0;
-  if (daily.length >= 9) {
-    const dThird = Math.floor(daily.length / 3);
-    const t1Ranges = daily.slice(0, dThird).map(d => ((d.close !== 0 ? Math.abs(d.close - d.open) / d.close : 0)) * 100);
-    const t3Ranges = daily.slice(2 * dThird).map(d => ((d.close !== 0 ? Math.abs(d.close - d.open) / d.close : 0)) * 100);
-    const avgT1 = t1Ranges.reduce((s, v) => s + v, 0) / t1Ranges.length;
-    const avgT3 = t3Ranges.reduce((s, v) => s + v, 0) / t3Ranges.length;
-    if (avgT1 > 0) {
-      const contraction = (avgT3 - avgT1) / avgT1; // negative = contracting
-      volContractionScore = Math.max(0, Math.min(1, -contraction / 0.4)); // 40% contraction = full score
+  // Volume decline: first-third vs last-third
+  const third = Math.floor(n / 3);
+  let volDeclineScore = 0;
+  if (third >= 3) {
+    const t1Vols = dailySlice.slice(0, third).map(d => d.totalVol);
+    const t3Vols = dailySlice.slice(2 * third).map(d => d.totalVol);
+    const avgT1 = mean(t1Vols);
+    const avgT3 = mean(t3Vols);
+    if (avgT1 > 0 && avgT3 < avgT1) {
+      volDeclineScore = Math.min(1, (avgT1 - avgT3) / avgT1 / 0.3);
     }
   }
 
-  // Score components (0-1 each)
-  const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));          // Net Delta (22%)
-  const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));       // Delta Slope (18%)
-  const s3 = Math.max(0, Math.min(1, (deltaShift + 1) / 8));             // Delta Shift (15%)
-  const s4 = Math.max(0, Math.min(1, strongAbsorptionPct / 18));          // Absorption (13%)
-  const s5 = Math.max(0, Math.min(1, (largeBuyVsSell + 3) / 12));        // Buy vs Sell (8%)
-  const s6 = Math.max(0, Math.min(1, (-priceDeltaCorr + 0.3) / 1.5));    // Anti-corr (9%)
-  const s7 = Math.max(0, Math.min(1, (accumWeekRatio - 0.2) / 0.6));     // Week ratio (5%)
-  const s8 = volContractionScore;                                          // Vol contraction (10%)
+  // === 7 SCORING COMPONENTS ===
+  const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));         // Net Delta (25%)
+  const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));      // Delta Slope (22%)
+  const s3 = Math.max(0, Math.min(1, (deltaShift + 1) / 8));            // Delta Shift (15%)
+  const s4 = Math.max(0, Math.min(1, (accumWeekRatio - 0.2) / 0.6));    // Accum Week Ratio (15%)
+  const s5 = Math.max(0, Math.min(1, (largeBuyVsSell + 3) / 12));       // Large Buy vs Sell (10%)
+  const s6 = Math.max(0, Math.min(1, absorptionPct / 20));              // Absorption (8%)
+  const s7 = volDeclineScore;                                             // Vol Decline (5%)
 
-  const rawScore = s1 * 0.22 + s2 * 0.18 + s3 * 0.15 + s4 * 0.13 + s5 * 0.08 + s6 * 0.09 + s7 * 0.05 + s8 * 0.10;
+  const rawScore = s1 * 0.25 + s2 * 0.22 + s3 * 0.15 + s4 * 0.15 + s5 * 0.10 + s6 * 0.08 + s7 * 0.05;
 
-  // Duration scaling: longer accumulation = more bullish
-  // 70% at 2 weeks, 100% at 6 weeks, continues growing to 115% at 8+ weeks
+  // Duration scaling
   const durationMultiplier = Math.min(1.15, 0.70 + (weeks.length - 2) * 0.075);
-  const score = weeks.length >= 2 ? rawScore * durationMultiplier : 0;
+  const score = rawScore * durationMultiplier;
   const detected = score >= 0.30;
 
   return {
     score,
     detected,
     reason: detected ? 'accumulation_divergence' : 'below_threshold',
+    netDeltaPct,
+    overallPriceChange,
+    deltaSlopeNorm,
+    accumWeekRatio,
+    deltaShift,
     weeks: weeks.length,
     accumWeeks,
+    absorptionPct,
+    largeBuyVsSell,
+    volDeclineScore,
+    components: { s1, s2, s3, s4, s5, s6, s7 },
     durationMultiplier,
-    metrics: { netDeltaPct, deltaSlopeNorm, deltaShift, strongAbsorptionPct, largeBuyVsSell, priceDeltaCorr, accumWeekRatio, overallPriceChange, volContractionScore, s1, s2, s3, s4, s5, s6, s7, s8 },
+    cappedDays,
   };
 }
 
+// =============================================================================
+// SUBWINDOW SCANNER + MULTI-ZONE CLUSTERING
+// =============================================================================
+
 /**
- * Run VDF (VD Accumulation Divergence) detection for a ticker.
- * Fetches ~75 days of 1m data (42-day consolidation window + 30-day pre-context).
+ * Scan all possible subwindows and cluster into non-overlapping zones.
+ *
+ * @param {Array} allDaily — daily aggregates for the full scan period
+ * @param {Array} preDaily — daily aggregates for 30-day pre-context
+ * @param {number} maxZones — max zones to return (default 3)
+ * @returns {Array} — sorted zones, highest score first
+ */
+function findAccumulationZones(allDaily, preDaily, maxZones = 3) {
+  const windowSizes = [10, 14, 17, 20, 24, 28, 35];
+  const detected = [];
+
+  for (const winSize of windowSizes) {
+    if (allDaily.length < winSize) continue;
+    for (let start = 0; start <= allDaily.length - winSize; start++) {
+      const slice = allDaily.slice(start, start + winSize);
+      const result = scoreSubwindow(slice, preDaily);
+      if (result && result.detected) {
+        detected.push({
+          start,
+          end: start + winSize - 1,
+          winSize,
+          startDate: slice[0].date,
+          endDate: slice[slice.length - 1].date,
+          ...result,
+        });
+      }
+    }
+  }
+
+  // Greedy clustering: highest score first, reject overlap >30% or gap <10 days
+  detected.sort((a, b) => b.score - a.score);
+  const zones = [];
+  for (const w of detected) {
+    let overlaps = false;
+    for (const z of zones) {
+      const overlapStart = Math.max(w.start, z.start);
+      const overlapEnd = Math.min(w.end, z.end);
+      const overlapDays = Math.max(0, overlapEnd - overlapStart + 1);
+      const thisSize = w.end - w.start + 1;
+      const gap = w.start > z.end ? w.start - z.end : (z.start > w.end ? z.start - w.end : 0);
+      if (overlapDays / thisSize > 0.30 || gap < 10) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (!overlaps && zones.length < maxZones) {
+      zones.push({ ...w, rank: zones.length + 1 });
+    }
+  }
+
+  return zones;
+}
+
+// =============================================================================
+// DISTRIBUTION CLUSTER DETECTION
+// =============================================================================
+
+/**
+ * Find distribution clusters: 10-day rolling windows where price rises
+ * but cumulative delta is negative (institutions selling into rally).
+ *
+ * @param {Array} allDaily — daily aggregates
+ * @returns {{ distClusters: Array, accumInDecline: Array }}
+ */
+function findDistributionClusters(allDaily) {
+  // 10-day rolling: price >+3% but delta <-3% → distribution
+  const distWindows = [];
+  for (let i = 10; i <= allDaily.length; i++) {
+    const window = allDaily.slice(i - 10, i);
+    const priceChange = ((window[9].close - window[0].close) / window[0].close) * 100;
+    const totalVol = window.reduce((s, d) => s + d.totalVol, 0);
+    const netDelta = window.reduce((s, d) => s + d.delta, 0);
+    const netDeltaPct = totalVol > 0 ? (netDelta / totalVol) * 100 : 0;
+    if (priceChange > 3 && netDeltaPct < -3) {
+      distWindows.push({
+        start: i - 10, end: i - 1,
+        startDate: window[0].date, endDate: window[9].date,
+        priceChange, netDeltaPct, netDelta,
+      });
+    }
+  }
+
+  // Cluster overlapping distribution windows (within 5 days)
+  const distClusters = [];
+  for (const w of distWindows) {
+    let merged = false;
+    for (const c of distClusters) {
+      if (w.start <= c.end + 5) {
+        c.end = Math.max(c.end, w.end);
+        c.endDate = allDaily[Math.min(c.end, allDaily.length - 1)].date;
+        c.count++;
+        c.maxPriceChg = Math.max(c.maxPriceChg, w.priceChange);
+        c.minDeltaPct = Math.min(c.minDeltaPct, w.netDeltaPct);
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) {
+      distClusters.push({
+        start: w.start, end: w.end,
+        startDate: w.startDate, endDate: w.endDate,
+        count: 1, maxPriceChg: w.priceChange, minDeltaPct: w.netDeltaPct,
+      });
+    }
+  }
+
+  // Enrich distribution clusters with full-period stats
+  for (const c of distClusters) {
+    const chunk = allDaily.slice(c.start, Math.min(c.end + 1, allDaily.length));
+    if (chunk.length > 0) {
+      c.spanDays = c.end - c.start + 1;
+      c.priceChangePct = ((chunk[chunk.length - 1].close - chunk[0].close) / chunk[0].close) * 100;
+      c.netDelta = chunk.reduce((s, d) => s + d.delta, 0);
+      const fullVol = chunk.reduce((s, d) => s + d.totalVol, 0);
+      c.netDeltaPct = fullVol > 0 ? (c.netDelta / fullVol) * 100 : 0;
+    }
+  }
+
+  return { distClusters };
+}
+
+// =============================================================================
+// PROXIMITY SIGNAL EVALUATION
+// =============================================================================
+
+/**
+ * Evaluate proximity signals for breakout prediction.
+ * Only fires when at least one zone has score >= 0.50.
+ *
+ * @param {Array} allDaily — daily aggregates (full scan period)
+ * @param {Array} zones — detected accumulation zones
+ * @returns {{ compositeScore: number, level: string, signals: Array }}
+ */
+function evaluateProximitySignals(allDaily, zones) {
+  const noResult = { compositeScore: 0, level: 'none', signals: [] };
+
+  if (!zones || zones.length === 0) return noResult;
+  const bestZone = zones.reduce((best, z) => z.score > best.score ? z : best, zones[0]);
+  if (bestZone.score < 0.50) return noResult;
+
+  const signals = [];
+  const n = allDaily.length;
+  if (n < 15) return noResult;
+
+  // Use last 25 days for proximity evaluation
+  const lookback = Math.min(25, n);
+  const recent = allDaily.slice(n - lookback);
+  const avgDelta = mean(allDaily.map(d => Math.abs(d.delta)));
+
+  // --- Signal 1: Seller Exhaustion (3+ red, intensifying) — +15 pts ---
+  {
+    let maxStreakLen = 0;
+    let intensifying = false;
+    let streakLen = 0;
+    for (let i = 0; i < recent.length; i++) {
+      if (recent[i].delta < 0) {
+        streakLen++;
+        if (streakLen >= 3) {
+          if (streakLen > maxStreakLen) maxStreakLen = streakLen;
+          const streakStart = i - streakLen + 1;
+          if (Math.abs(recent[i].delta) > Math.abs(recent[streakStart].delta)) {
+            intensifying = true;
+          }
+        }
+      } else {
+        streakLen = 0;
+      }
+    }
+    if (maxStreakLen >= 3) {
+      signals.push({
+        type: 'seller_exhaustion',
+        points: 15,
+        detail: `${maxStreakLen}-day red streak${intensifying ? ' (intensifying)' : ' (fading)'}`,
+      });
+    }
+  }
+
+  // --- Signal 2: Delta Anomaly (>4x rolling avg) — +25 pts ---
+  {
+    for (let i = Math.max(0, recent.length - 15); i < recent.length; i++) {
+      const d = recent[i];
+      const globalIdx = n - lookback + i;
+      const startIdx = Math.max(0, globalIdx - 20);
+      const rollingAvg = mean(allDaily.slice(startIdx, globalIdx).map(x => Math.abs(x.delta)));
+      if (rollingAvg > 0 && Math.abs(d.delta) > 4 * rollingAvg) {
+        signals.push({
+          type: 'delta_anomaly',
+          points: 25,
+          detail: `${d.date}: ${(Math.abs(d.delta) / rollingAvg).toFixed(1)}x avg (${d.delta > 0 ? '+' : ''}${(d.delta / 1000).toFixed(0)}K)`,
+        });
+        break;
+      }
+    }
+  }
+
+  // --- Signal 3: Green Delta Streak (4+ consecutive positive) — +20 pts ---
+  {
+    let maxGreenStreak = 0;
+    let greenStreak = 0;
+    for (const d of recent) {
+      if (d.delta > 0) {
+        greenStreak++;
+        if (greenStreak > maxGreenStreak) maxGreenStreak = greenStreak;
+      } else {
+        greenStreak = 0;
+      }
+    }
+    if (maxGreenStreak >= 4) {
+      signals.push({
+        type: 'green_streak',
+        points: 20,
+        detail: `${maxGreenStreak} consecutive green delta days`,
+      });
+    }
+  }
+
+  // --- Signal 4: Absorption Cluster (3/5 days absorption) — +15 pts ---
+  {
+    let found = false;
+    for (let i = 4; i < recent.length && !found; i++) {
+      let absorb = 0;
+      for (let j = i - 4; j <= i; j++) {
+        if (j > 0 && recent[j].close < recent[j - 1].close && recent[j].delta > 0) absorb++;
+      }
+      if (absorb >= 3) {
+        signals.push({
+          type: 'absorption_cluster',
+          points: 15,
+          detail: `${absorb}/5 absorption days in window`,
+        });
+        found = true;
+      }
+    }
+  }
+
+  // --- Signal 5: Final Capitulation Dump — +10 pts ---
+  {
+    const last5 = recent.slice(-5);
+    for (const d of last5) {
+      if (d.delta < 0 && Math.abs(d.delta) > 2 * avgDelta) {
+        const idx = allDaily.findIndex(x => x.date === d.date);
+        if (idx > 0) {
+          const priceChg = ((d.close - allDaily[idx - 1].close) / allDaily[idx - 1].close) * 100;
+          if (priceChg < -2) {
+            signals.push({
+              type: 'final_capitulation',
+              points: 10,
+              detail: `${d.date}: ${(d.delta / 1000).toFixed(0)}K (${priceChg.toFixed(1)}%)`,
+            });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // --- Signal 6: Multi-Zone Sequence — +20 pts ---
+  {
+    if (zones.length >= 2) {
+      const sortedByDate = [...zones].sort((a, b) => a.startDate.localeCompare(b.startDate));
+      for (let i = 1; i < sortedByDate.length; i++) {
+        const gap = sortedByDate[i].start - sortedByDate[i - 1].end;
+        if (gap > 0 && gap < 30) {
+          signals.push({
+            type: 'multi_zone_sequence',
+            points: 20,
+            detail: `${sortedByDate.length} zones with ${gap}-day gap`,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // --- Signal 7: Extreme Absorption Rate (>40%) — +15 pts ---
+  {
+    for (const z of zones) {
+      if (z.absorptionPct > 40) {
+        signals.push({
+          type: 'extreme_absorption',
+          points: 15,
+          detail: `Zone ${z.rank}: ${z.absorptionPct.toFixed(1)}% absorption`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Compute composite score
+  const compositeScore = signals.reduce((s, sig) => s + sig.points, 0);
+  let level = 'none';
+  if (compositeScore >= 70) level = 'imminent';
+  else if (compositeScore >= 50) level = 'high';
+  else if (compositeScore >= 30) level = 'elevated';
+
+  return { compositeScore, level, signals };
+}
+
+// =============================================================================
+// MAIN DETECTOR — orchestrates all detection phases
+// =============================================================================
+
+/**
+ * Run full VDF detection for a ticker.
  *
  * @param {string} ticker
  * @param {object} options
  * @param {function} options.dataApiFetcher — async (symbol, interval, lookbackDays, opts) => bars[]
  * @param {AbortSignal|null} options.signal
- * @returns {Promise<object>} VDF detection result
+ * @param {number} options.lookbackDays — calendar days to scan (default 130)
+ * @returns {Promise<object>} — full detection result
  */
 async function detectVDF(ticker, options) {
-  const { dataApiFetcher, signal } = options;
+  const { dataApiFetcher, signal, lookbackDays = 130 } = options;
 
   try {
-    // Fetch ~75 days of 1m data (45 calendar days consol + 30 pre-context)
-    const bars1m = await dataApiFetcher(ticker, '1min', 75, { signal });
+    const bars1m = await dataApiFetcher(ticker, '1min', lookbackDays, { signal });
     if (!bars1m || bars1m.length < 500) {
-      return { score: 0, detected: false, reason: 'insufficient_1m_data', weeks: 0, metrics: {} };
+      return {
+        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_1m_data',
+        status: 'Insufficient 1m data',
+        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+        metrics: {},
+      };
     }
 
-    // Split into consolidation window (last ~42 calendar days) and pre-context (before that)
     const sorted = bars1m.sort((a, b) => a.time - b.time);
     const latestTime = sorted[sorted.length - 1].time;
-    const consolCutoff = latestTime - 42 * 86400; // ~6 weeks back
-    const preCutoff = consolCutoff - 30 * 86400;  // 30 more days for pre-context
+    // Scan the last ~90 calendar days; pre-context is the 30 days before that
+    const scanCutoff = latestTime - 90 * 86400;
+    const preCutoff = scanCutoff - 30 * 86400;
 
-    const consolBars = sorted.filter(b => b.time >= consolCutoff);
-    const preBars = sorted.filter(b => b.time >= preCutoff && b.time < consolCutoff);
+    const scanBars = sorted.filter(b => b.time >= scanCutoff);
+    const preBars = sorted.filter(b => b.time >= preCutoff && b.time < scanCutoff);
 
-    if (consolBars.length < 200) {
-      return { score: 0, detected: false, reason: 'insufficient_consol_data', weeks: 0, metrics: {} };
+    if (scanBars.length < 200) {
+      return {
+        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_scan_data',
+        status: 'Insufficient scan data',
+        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+        metrics: {},
+      };
     }
 
-    return scoreAccumulationDivergence(consolBars, preBars);
+    // Build daily aggregates
+    const allDaily = vdAggregateDaily(scanBars);
+    const preDaily = vdAggregateDaily(preBars);
+
+    if (allDaily.length < 10) {
+      return {
+        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_daily_data',
+        status: 'Insufficient daily data',
+        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+        metrics: {},
+      };
+    }
+
+    // Phase 1: Find accumulation zones
+    const zones = findAccumulationZones(allDaily, preDaily, 3);
+
+    // Phase 2: Find distribution clusters
+    const { distClusters } = findDistributionClusters(allDaily);
+
+    // Phase 3: Evaluate proximity signals
+    const proximity = evaluateProximitySignals(allDaily, zones);
+
+    // Determine best zone
+    const bestZone = zones.length > 0
+      ? zones.reduce((best, z) => z.score > best.score ? z : best, zones[0])
+      : null;
+    const bestScore = bestZone ? bestZone.score : 0;
+    const bestZoneWeeks = bestZone ? bestZone.weeks : 0;
+    const detected = zones.length > 0;
+
+    // Build status string
+    let status;
+    if (detected) {
+      status = `VD Accumulation detected: ${zones.length} zone${zones.length > 1 ? 's' : ''}, best ${bestScore.toFixed(2)} (${bestZoneWeeks}wk)`;
+      if (proximity.level !== 'none') {
+        status += ` | Proximity: ${proximity.level} (${proximity.compositeScore}pts)`;
+      }
+      if (distClusters.length > 0) {
+        status += ` | ${distClusters.length} distribution cluster${distClusters.length > 1 ? 's' : ''}`;
+      }
+    } else {
+      status = 'No accumulation zones detected';
+    }
+
+    // Format zones for output (strip internal indices)
+    const formattedZones = zones.map(z => ({
+      rank: z.rank,
+      startDate: z.startDate,
+      endDate: z.endDate,
+      windowDays: z.winSize,
+      score: z.score,
+      weeks: z.weeks,
+      accumWeeks: z.accumWeeks,
+      netDeltaPct: z.netDeltaPct,
+      absorptionPct: z.absorptionPct,
+      accumWeekRatio: z.accumWeekRatio,
+      overallPriceChange: z.overallPriceChange,
+      components: z.components,
+      durationMultiplier: z.durationMultiplier,
+    }));
+
+    // Format distribution clusters for output
+    const formattedDist = distClusters.map(c => ({
+      startDate: c.startDate,
+      endDate: c.endDate,
+      spanDays: c.spanDays || (c.end - c.start + 1),
+      priceChangePct: c.priceChangePct || c.maxPriceChg,
+      netDeltaPct: c.netDeltaPct || c.minDeltaPct,
+    }));
+
+    return {
+      detected,
+      bestScore,
+      bestZoneWeeks,
+      status,
+      reason: detected ? 'accumulation_divergence' : 'below_threshold',
+      zones: formattedZones,
+      distribution: formattedDist,
+      proximity,
+      metrics: {
+        totalDays: allDaily.length,
+        scanStart: allDaily[0]?.date,
+        scanEnd: allDaily[allDaily.length - 1]?.date,
+        preDays: preDaily.length,
+      },
+    };
   } catch (err) {
     if (err && (err.name === 'AbortError' || err.message === 'This operation was aborted')) throw err;
-    return { score: 0, detected: false, reason: `error: ${err.message || err}`, weeks: 0, metrics: {} };
+    return {
+      detected: false, bestScore: 0, bestZoneWeeks: 0,
+      reason: `error: ${err.message || err}`, status: `Error: ${err.message || err}`,
+      zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+      metrics: {},
+    };
   }
 }
 
-module.exports = { detectVDF, scoreAccumulationDivergence };
+module.exports = {
+  detectVDF,
+  scoreSubwindow,
+  findAccumulationZones,
+  findDistributionClusters,
+  evaluateProximitySignals,
+  vdAggregateDaily,
+  buildWeeks,
+};

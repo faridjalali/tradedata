@@ -1187,6 +1187,16 @@ const initDivergenceDB = async () => {
         END IF;
       END $$;
     `);
+    // Migration: add new columns for multi-zone detection, proximity signals
+    await divergencePool.query(`
+      DO $$ BEGIN
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS best_zone_score REAL DEFAULT 0;
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS proximity_score REAL DEFAULT 0;
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS proximity_level VARCHAR(10) DEFAULT 'none';
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS num_zones INTEGER DEFAULT 0;
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS has_distribution BOOLEAN DEFAULT FALSE;
+      END $$;
+    `);
     // Restore in-memory status from persisted data so the UI shows correct
     // "Ran M/D" dates even after a server restart.
     try {
@@ -1277,16 +1287,20 @@ app.get('/api/alerts', async (req, res) => {
       console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
     }
     const neutralStates = buildNeutralDivergenceStateMap();
-    let vdfDetectedSetTv = new Set();
+    let vdfDataMapTv = new Map();
     try {
       if (tickers.length > 0 && isDivergenceConfigured()) {
         const vdfTradeDate = currentEtDateString();
         const vdfRes = await divergencePool.query(
-          `SELECT DISTINCT ticker FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers]
         );
         for (const row of vdfRes.rows) {
-          vdfDetectedSetTv.add(String(row.ticker).toUpperCase());
+          vdfDataMapTv.set(String(row.ticker).toUpperCase(), {
+            score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
+            proximityLevel: row.proximity_level || 'none',
+            numZones: Number(row.num_zones) || 0,
+          });
         }
       }
     } catch {
@@ -1296,6 +1310,7 @@ app.get('/api/alerts', async (req, res) => {
       const ticker = String(row?.ticker || '').trim().toUpperCase();
       const summary = summariesByTicker.get(ticker) || null;
       const states = summary?.states || neutralStates;
+      const vdfData = vdfDataMapTv.get(ticker);
       return {
         ...row,
         divergence_trade_date: summary?.tradeDate || null,
@@ -1312,7 +1327,9 @@ app.get('/api/alerts', async (req, res) => {
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
         },
-        vdf_detected: vdfDetectedSetTv.has(ticker)
+        vdf_detected: !!vdfData,
+        vdf_score: vdfData?.score || 0,
+        vdf_proximity: vdfData?.proximityLevel || 'none',
       };
     });
     res.json(enrichedRows);
@@ -1510,16 +1527,20 @@ app.get('/api/divergence/signals', async (req, res) => {
     }
     const neutralStates = buildNeutralDivergenceStateMap();
     // Enrich with VDF detection results
-    let vdfDetectedSet = new Set();
+    let vdfDataMap = new Map();
     try {
       if (tickers.length > 0) {
         const vdfTradeDate = currentEtDateString();
         const vdfRes = await divergencePool.query(
-          `SELECT DISTINCT ticker FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers]
         );
         for (const row of vdfRes.rows) {
-          vdfDetectedSet.add(String(row.ticker).toUpperCase());
+          vdfDataMap.set(String(row.ticker).toUpperCase(), {
+            score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
+            proximityLevel: row.proximity_level || 'none',
+            numZones: Number(row.num_zones) || 0,
+          });
         }
       }
     } catch {
@@ -1529,6 +1550,7 @@ app.get('/api/divergence/signals', async (req, res) => {
       const ticker = String(row?.ticker || '').trim().toUpperCase();
       const summary = summariesByTicker.get(ticker) || null;
       const states = summary?.states || neutralStates;
+      const vdfData = vdfDataMap.get(ticker);
       return {
         ...row,
         divergence_trade_date: summary?.tradeDate || null,
@@ -1545,7 +1567,9 @@ app.get('/api/divergence/signals', async (req, res) => {
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
         },
-        vdf_detected: vdfDetectedSet.has(ticker)
+        vdf_detected: !!vdfData,
+        vdf_score: vdfData?.score || 0,
+        vdf_proximity: vdfData?.proximityLevel || 'none',
       };
     });
     res.json(enrichedRows);
@@ -4352,7 +4376,8 @@ async function getStoredVDFResult(ticker, tradeDate) {
   if (!isDivergenceConfigured()) return null;
   try {
     const { rows } = await divergencePool.query(
-      `SELECT is_detected, composite_score, status, weeks, result_json
+      `SELECT is_detected, composite_score, status, weeks, result_json,
+              best_zone_score, proximity_score, proximity_level, num_zones, has_distribution
        FROM vdf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
       [ticker, tradeDate]
     );
@@ -4365,6 +4390,14 @@ async function getStoredVDFResult(ticker, tradeDate) {
       composite_score: Number(row.composite_score) || 0,
       status: row.status || '',
       weeks: Number(row.weeks) || 0,
+      best_zone_score: Number(row.best_zone_score) || 0,
+      proximity_score: Number(row.proximity_score) || 0,
+      proximity_level: row.proximity_level || 'none',
+      num_zones: Number(row.num_zones) || 0,
+      has_distribution: row.has_distribution || false,
+      zones: parsed.zones || [],
+      distribution: parsed.distribution || [],
+      proximity: parsed.proximity || { compositeScore: 0, level: 'none', signals: [] },
       details: parsed
     };
   } catch (err) {
@@ -4376,29 +4409,46 @@ async function getStoredVDFResult(ticker, tradeDate) {
 async function upsertVDFResult(ticker, tradeDate, result) {
   if (!isDivergenceConfigured()) return;
   try {
+    const bestScore = result.bestScore || result.score || 0;
+    const proxScore = result.proximity?.compositeScore || 0;
+    const proxLevel = result.proximity?.level || 'none';
+    const numZones = result.zones?.length || 0;
+    const hasDist = (result.distribution?.length || 0) > 0;
     const resultJson = JSON.stringify({
+      zones: result.zones || [],
+      distribution: result.distribution || [],
+      proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
       metrics: result.metrics || null,
-      accumWeeks: result.accumWeeks || 0,
-      durationMultiplier: result.durationMultiplier || 1,
       reason: result.reason || '',
     });
     await divergencePool.query(
-      `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json,
+                                best_zone_score, proximity_score, proximity_level, num_zones, has_distribution, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
        ON CONFLICT (ticker, trade_date) DO UPDATE SET
          is_detected = EXCLUDED.is_detected,
          composite_score = EXCLUDED.composite_score,
          status = EXCLUDED.status,
          weeks = EXCLUDED.weeks,
          result_json = EXCLUDED.result_json,
+         best_zone_score = EXCLUDED.best_zone_score,
+         proximity_score = EXCLUDED.proximity_score,
+         proximity_level = EXCLUDED.proximity_level,
+         num_zones = EXCLUDED.num_zones,
+         has_distribution = EXCLUDED.has_distribution,
          updated_at = NOW()`,
       [
         ticker, tradeDate,
         result.detected || false,
-        result.score || 0,
+        bestScore,
         result.status || '',
-        result.weeks || 0,
-        resultJson
+        result.bestZoneWeeks || result.weeks || 0,
+        resultJson,
+        bestScore,
+        proxScore,
+        proxLevel,
+        numZones,
+        hasDist
       ]
     );
   } catch (err) {
@@ -4419,7 +4469,12 @@ async function getVDFStatus(ticker, options = {}) {
 
   // Prevent parallel detection for the same ticker
   if (vdfRunningTickers.has(ticker)) {
-    return { is_detected: false, composite_score: 0, status: 'Detection in progress', weeks: 0, cached: false };
+    return {
+      is_detected: false, composite_score: 0, status: 'Detection in progress', weeks: 0,
+      best_zone_score: 0, proximity_score: 0, proximity_level: 'none', num_zones: 0, has_distribution: false,
+      zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+      cached: false
+    };
   }
   vdfRunningTickers.add(ticker);
 
@@ -4427,30 +4482,26 @@ async function getVDFStatus(ticker, options = {}) {
     const result = await detectVDF(ticker, {
       dataApiFetcher: dataApiIntradayChartHistory,
       signal,
+      lookbackDays: 130,
     });
 
-    // Build status string
-    let status = '';
-    if (result.detected) {
-      status = `VD Accumulation detected (score ${result.score.toFixed(2)}, ${result.weeks}wk)`;
-    } else {
-      status = result.reason || 'Not detected';
-    }
-
     // Store in DB
-    await upsertVDFResult(ticker, today, { ...result, status });
+    await upsertVDFResult(ticker, today, result);
 
     return {
       is_detected: result.detected || false,
-      composite_score: result.score || 0,
-      status,
-      weeks: result.weeks || 0,
-      details: {
-        metrics: result.metrics,
-        accumWeeks: result.accumWeeks,
-        durationMultiplier: result.durationMultiplier,
-        reason: result.reason,
-      },
+      composite_score: result.bestScore || 0,
+      status: result.status || '',
+      weeks: result.bestZoneWeeks || 0,
+      best_zone_score: result.bestScore || 0,
+      proximity_score: result.proximity?.compositeScore || 0,
+      proximity_level: result.proximity?.level || 'none',
+      num_zones: result.zones?.length || 0,
+      has_distribution: (result.distribution?.length || 0) > 0,
+      zones: result.zones || [],
+      distribution: result.distribution || [],
+      proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
+      details: { metrics: result.metrics, reason: result.reason },
       cached: false
     };
   } finally {
