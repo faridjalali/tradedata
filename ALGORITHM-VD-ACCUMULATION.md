@@ -668,129 +668,162 @@ This provides a high-level "institutional weather map" — when phases transitio
 
 ---
 
-## Deployment Strategy
+## Production Deployment (Implemented)
+
+### Architecture Overview
+
+The algorithm is deployed as a full-stack feature: detector service → database → API route → chart overlay + alert cards. Results are cached at two layers (server DB + browser memory) with per-ticker per-trading-day granularity.
+
+### File Map
+
+| File | Role |
+|------|------|
+| `server/services/vdfDetector.js` | Core algorithm — subwindow scanner, 7-component scoring, multi-zone clustering, distribution detection, proximity signals |
+| `index.js` | DB schema, scan orchestration (`getVDFStatus`, `runVDFScan`), alert enrichment, result storage/retrieval |
+| `server/routes/chartRoutes.js` | `/api/chart/vdf-status` endpoint — passes full result to frontend |
+| `src/chart.ts` | Zone overlay rendering, VDF button with score, rich tooltip, browser-side cache |
+| `src/components.ts` | Alert card score badge (replaces plain "VDF" tag) |
+| `src/types.ts` | `Alert` interface with `vdf_score`, `vdf_proximity` fields |
+| `src/utils.ts` | Score-based sort boost (0-10 range from 0-100 score) |
+| `public/style.css` | `.vdf-score-badge`, `.vdf-high`, `.vdf-imminent` with pulse animation |
 
 ### Database Schema
 
+Extends the existing `vdf_results` table (no new tables needed). Full zone/distribution/proximity data is stored in the `result_json` JSONB column; indexed columns enable fast queries.
+
 ```sql
--- Accumulation/distribution zone results
-CREATE TABLE vd_zones (
-  id SERIAL PRIMARY KEY,
-  ticker TEXT NOT NULL,
-  scan_date DATE NOT NULL,
-  zone_type TEXT NOT NULL CHECK (zone_type IN ('accumulation', 'distribution')),
-  zone_rank INT NOT NULL DEFAULT 1,         -- 1, 2, or 3
-  zone_start DATE NOT NULL,
-  zone_end DATE NOT NULL,
-  window_days INT NOT NULL,
-  score REAL NOT NULL,
-  net_delta_pct REAL,
-  price_change_pct REAL,
-  delta_slope REAL,
-  price_delta_corr REAL,
-  accum_week_ratio REAL,
-  absorption_pct REAL,
-  large_buy_vs_sell REAL,
-  vol_decline_score REAL,
-  duration_multiplier REAL,
-  components JSONB,                          -- {s1, s2, s3, s4, s5, s6, s7}
-  capped_days JSONB,                         -- [{date, original, capped}]
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (ticker, scan_date, zone_type, zone_rank)
-);
+-- Added columns (idempotent migration in index.js)
+ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS best_zone_score REAL DEFAULT 0;
+ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS proximity_score REAL DEFAULT 0;
+ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS proximity_level VARCHAR(10) DEFAULT 'none';
+ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS num_zones INTEGER DEFAULT 0;
+ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS has_distribution BOOLEAN DEFAULT FALSE;
 
--- Breakout proximity signals
-CREATE TABLE vd_proximity_signals (
-  id SERIAL PRIMARY KEY,
-  ticker TEXT NOT NULL,
-  signal_date DATE NOT NULL,
-  signal_type TEXT NOT NULL,                 -- 'seller_exhaustion', 'delta_anomaly', etc.
-  signal_strength REAL NOT NULL,             -- 0-1 normalized
-  details JSONB,                             -- signal-specific data
-  zone_score REAL,                           -- score of parent zone
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (ticker, signal_date, signal_type)
-);
-
--- Composite proximity score (daily per ticker)
-CREATE TABLE vd_proximity_composite (
-  ticker TEXT NOT NULL,
-  score_date DATE NOT NULL,
-  composite_score REAL NOT NULL,             -- sum of active signal points
-  level TEXT NOT NULL CHECK (level IN ('none', 'elevated', 'high', 'imminent')),
-  active_signals JSONB,                      -- [{type, points, date}]
-  PRIMARY KEY (ticker, score_date)
-);
+-- Existing columns (unchanged)
+-- ticker, trade_date, is_detected, composite_score, result_json, created_at, updated_at
+-- UNIQUE(ticker, trade_date)
 ```
 
-### Server-Side Scan Pipeline
+The `result_json` column stores the full detection result:
+
+```json
+{
+  "detected": true,
+  "bestScore": 0.87,
+  "bestZoneWeeks": 5,
+  "zones": [
+    {
+      "rank": 1, "startDate": "2026-01-05", "endDate": "2026-01-23",
+      "windowDays": 14, "score": 0.87, "netDeltaPct": 4.2,
+      "absorptionPct": 38.5, "accumWeekRatio": 0.75,
+      "components": { "s1": 0.82, "s2": 0.65, "s3": 0.71, "s4": 0.75, "s5": 0.60, "s6": 0.55, "s7": 0.40 },
+      "durationMultiplier": 1.05, "cappedDays": 2
+    }
+  ],
+  "distribution": [
+    { "startDate": "2025-12-10", "endDate": "2025-12-18", "spanDays": 8, "priceChangePct": 5.2, "netDeltaPct": -4.1 }
+  ],
+  "proximity": {
+    "compositeScore": 45,
+    "level": "elevated",
+    "signals": [
+      { "type": "green_streak", "points": 20, "detail": "4 consecutive green-delta days" },
+      { "type": "absorption_cluster", "points": 15, "detail": "3/5 days with >20% absorption" }
+    ]
+  },
+  "reason": "Accumulation zone detected: score 0.87, 14 trading days, 3.5 weeks",
+  "metrics": { ... }
+}
+```
+
+### Server-Side Pipeline
 
 ```
-File: server/services/vdAccumulationDetector.js
+File: server/services/vdfDetector.js
 
 Exports:
-  - detectAccumulationZones(ticker, options)    → zones[]
-  - detectDistributionZones(ticker, options)    → zones[]
-  - evaluateProximitySignals(ticker, zones, dailyData) → signals[]
-  - computeProximityScore(signals)              → { score, level }
-  - HTF_CONFIG (renamed to VD_CONFIG)
-  - VD_CONFIG_MODERATE (relaxed thresholds)
+  - detectVDF(ticker, options)                 → full result object
+  - scoreSubwindow(dailySlice, preDaily)       → score + components
+  - findAccumulationZones(allDaily, preDaily)   → zones[] (up to 3)
+  - findDistributionClusters(allDaily)          → distribution[]
+  - evaluateProximitySignals(allDaily, zones)   → { compositeScore, level, signals[] }
 ```
 
 **Scan Flow:**
-1. Fetch 1-minute data for lookback period (35 trading days + 30-day pre-context)
-2. Build daily aggregates
-3. Run subwindow scanner → find accumulation zones
-4. Run inverse scanner → find distribution zones
-5. If accumulation zones detected:
-   a. Run proximity signal evaluation on last 25 days
-   b. Compute composite proximity score
-6. Upsert all results to database
-7. If proximity level is "high" or "imminent", trigger alert
+1. Fetch 1-minute data for 130 calendar days (90-day scan + 30-day pre-context + 10-day buffer)
+2. Build daily aggregates with 3σ outlier capping
+3. Run subwindow scanner across 7 window sizes [10, 14, 17, 20, 24, 28, 35] → greedy clustering → up to 3 accumulation zones
+4. Run distribution cluster detection (10-day rolling: price >+3%, delta <-3%)
+5. If any zone scores ≥ 0.50, evaluate 7 proximity signals on last 25 days → composite score + level
+6. Upsert result to `vdf_results` table (one row per ticker per trading day)
 
-**Scan Schedule:**
-- Full scan: daily at market close (after 4:15 PM ET)
-- Per-ticker on-demand: when user opens a chart (cached for the day)
-- Proximity signals: re-evaluated on each scan
+**Scan Triggers:**
+- **Manual scan**: "VDF Scan" button in UI → `runVDFScan()` → iterates all tickers with adaptive concurrency
+- **Per-ticker on-demand**: Opening a chart → `getVDFStatus()` → computes if no cached result for today
+- **Force refresh**: Long-press VDF button on chart → bypasses both caches, re-runs detection
+
+### Two-Layer Cache Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Browser Memory Cache                                 │
+│ Map<"${ticker}|${todayET}", VDFCacheEntry>           │
+│ Lifetime: current browser session                    │
+│ Key format: "AAPL|2026-02-14"                       │
+│ Populated: on chart load or VDF button click         │
+│ Cleared: page refresh or new trading day             │
+├─────────────────────────────────────────────────────┤
+│ Server DB Cache (vdf_results table)                  │
+│ Key: (ticker, trade_date) UNIQUE                     │
+│ Lifetime: permanent (one row per ticker per day)     │
+│ Populated: first VDF check of the day per ticker     │
+│ Used by: manual scan (skip already-computed tickers) │
+└─────────────────────────────────────────────────────┘
+```
+
+**Cache flow when loading a chart:**
+1. Check browser memory for `${ticker}|${todayET}` → if hit, use cached result
+2. If miss, fetch `/api/chart/vdf-status?ticker=X`
+3. Server checks DB for `(ticker, todayET)` → if cached, return stored result
+4. If no DB cache, run full `detectVDF()`, store in DB, return result
+5. Browser caches the response in memory
+
+**Cache invalidation:**
+- Automatic: cache keys include the ET date, so results expire at midnight ET
+- Manual: force-click on VDF button sends `force=true`, bypassing both layers
+- Full scan: `runVDFScan()` passes `force: false`, so same-day results are reused from DB
 
 ### Frontend Visualization
 
-#### Chart Overlay (Price Pane)
-- **Green shaded regions** for accumulation zones (opacity based on score)
-- **Red shaded regions** for distribution zones
-- Zone score badge in the shaded region corner (e.g., "VD 0.87")
-- On hover: tooltip showing zone details (net delta %, absorption, duration)
+#### Chart Zone Overlay (`src/chart.ts`)
+- Absolutely positioned `<div>` overlay behind candles (z-index: 5, below month grid at 6)
+- **Green shaded rectangles** for accumulation zones — opacity scales with score: `0.04 + score * 0.08`
+- **Red shaded rectangles** for distribution clusters — fixed `rgba(239,83,80,0.08)`
+- Score badge in top-right corner of each zone rectangle (9px monospace)
+- Green/red left and right borders on each zone
+- Refreshed on scroll/zoom via `subscribeVisibleLogicalRangeChange` and on window resize via `scheduleChartLayoutRefresh`
+- X coordinates mapped via `priceChart.timeScale().timeToCoordinate()` — zones off-screen are skipped
 
-#### Chart Button (Existing HTF/VDF Button)
-- Color indicates status:
-  - Gray: no zones detected
-  - Green: accumulation zone(s) active
-  - Red: distribution zone(s) active
-  - Pulsing amber: proximity level "elevated" or higher
-- On click: shows zone details panel
+#### VDF Button (Chart Header)
+- Shows numeric score (0-100) instead of "VDF" text when detected
+- Score color tiers: ≥80 teal (`#26a69a`), ≥60 lime (`#8bc34a`), <60 gray (`#c9d1d9`)
+- Border color indicates proximity level:
+  - `none` / `elevated`: default border (`#30363d` / `#ffc107`)
+  - `high` / `imminent`: orange (`#ff9800`)
+- When not detected: shows "VDF" text in gray
+- Rich tooltip on hover showing zone details, absorption %, proximity signals with checkmarks
 
-#### Divergence Feed Integration
-- "VD Accumulation" scan option alongside existing HTF scan
-- Results table: ticker, best zone score, zone dates, proximity level
-- Sort by score or proximity level
+#### Alert Cards (`src/components.ts`)
+- Score badge replaces plain "VDF" tag: `<span class="vdf-score-badge">87</span>`
+- CSS classes for proximity levels:
+  - `.vdf-high` — orange border and text
+  - `.vdf-imminent` — red border and text with 1.5s pulse animation
+- Fallback: if `vdf_detected` is true but no score, shows original "VDF" tag
 
-#### Ticker Page Text Container
-- Section showing active VD zones with characterization
-- Proximity signal timeline if applicable
-
-### Alert System
-
-When proximity level reaches "high" or "imminent":
-
-```
-🔥 BREAKOUT PROXIMITY — {TICKER}
-Score: {composite_score} ({level})
-Active signals:
-  ✓ Green delta streak (4 days)     +20 pts
-  ✓ Absorption cluster (3/5 days)   +15 pts
-  ✓ Seller exhaustion resolved      +15 pts
-Zone: {zone_start} → {zone_end} | Score: {zone_score}
-```
+#### Score Sorting (`src/utils.ts`)
+- Score sort mode adds `Math.round(vdf_score / 10)` to divergence score (0-10 range)
+- Fallback: if `vdf_detected` but no score, adds flat +10 (backward compatible)
+- Tiebreaker chain: divergence+VDF score → volume → timestamp
 
 ---
 
@@ -863,27 +896,33 @@ Zone: {zone_start} → {zone_end} | Score: {zone_score}
 
 ## Open Questions / Future Work
 
-- [ ] Implement `server/services/vdAccumulationDetector.js` with full subwindow scanner
-- [ ] Implement distribution zone detection (inverse scoring)
-- [ ] Implement proximity signal evaluation pipeline (all 11 signals)
-- [ ] Implement macro cycle detection (5-stage framework)
-- [ ] Design DB schema migration and add to `index.js`
-- [ ] Build chart overlay rendering for green/red zone shading
-- [ ] Build proximity alert system
-- [ ] Add post-breakout delta polarity check (sustained positive = durable, immediate negative = fragile)
+### Completed
+
+- [x] Implement full subwindow scanner with 7-component scoring → `server/services/vdfDetector.js`
+- [x] Implement distribution cluster detection (10-day rolling: price >+3%, delta <-3%) → `findDistributionClusters()`
+- [x] Implement proximity signal evaluation (7 signals, composite scoring) → `evaluateProximitySignals()`
+- [x] Design DB schema migration and add to `index.js` → 5 new columns on `vdf_results`
+- [x] Build chart overlay rendering for green/red zone shading → `src/chart.ts` zone overlay
+- [x] Alert card score badge with proximity-level styling → `src/components.ts`
+- [x] Score-based sort integration → `src/utils.ts`
+- [x] Two-layer cache architecture (browser memory + server DB) → per-ticker per-trading-day
+
+### Remaining
+
+- [ ] Implement macro cycle detection (5-stage framework: Distribution → Markdown → Accumulation → Markup → Distribution)
+- [ ] Implement post-breakout delta polarity check (4-week DURABLE/MIXED/FRAGILE classification)
+- [ ] Build proximity push-alert system (notify when level reaches "high" or "imminent")
+- [ ] Implement position management layer (ENTER/ADD/HOLD/REDUCE/EXIT state machine)
+- [ ] Implement accumulation-in-decline detection (10-day rolling: price <-3%, delta >+3%)
+- [ ] Implement monthly phase analysis (20-day rolling institutional flow classification)
+- [ ] Implement breakout auto-detection (>8% in 5 days on volume >1.2x avg)
 - [ ] Test with more negative controls (declining stocks that never broke out)
 - [ ] Test with false breakouts (stocks that triggered but failed)
 - [ ] Test macro cycle detection on more tickers with long histories
+- [ ] Test: does proximity score magnitude correlate with breakout magnitude? (COHR suggests yes)
+- [ ] Test position management framework on more multi-month tickers (need 6+ months of data)
 - [ ] Consider: does the algorithm work on 15-minute data for faster/cheaper scanning?
 - [ ] Consider: moderate vs strict mode thresholds (similar to existing VDF toggle)
 - [ ] Consider: sector-relative volume normalization for cross-sector comparisons
 - [ ] Consider: delta anomaly cluster as standalone screener (scan all tickers for 3+ anomalies at lows)
-- [ ] Implement position management layer (ENTER/ADD/HOLD/REDUCE/EXIT state machine)
-- [ ] Implement post-breakout delta polarity check (4-week DURABLE/MIXED/FRAGILE classification)
-- [ ] Implement distribution cluster detection (10-day rolling: price >+3%, delta <-3%)
-- [ ] Implement accumulation-in-decline detection (10-day rolling: price <-3%, delta >+3%)
-- [ ] Implement monthly phase analysis (20-day rolling institutional flow classification)
-- [ ] Implement breakout auto-detection (>8% in 5 days on volume >1.2x avg)
-- [ ] Test: does proximity score magnitude correlate with breakout magnitude? (COHR suggests yes)
-- [ ] Test position management framework on more multi-month tickers (need 6+ months of data)
 - [ ] Consider: alert escalation based on position state (different alert urgency for EXIT vs ENTER)
