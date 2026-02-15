@@ -4544,6 +4544,7 @@ async function runHTFScan(options = {}) {
       totalTickers,
       concurrency: runConcurrency
     });
+    runMetricsTracker.setTotals(totalTickers);
     runMetricsTracker.setPhase('core');
 
     await mapWithConcurrency(
@@ -4557,11 +4558,11 @@ async function runHTFScan(options = {}) {
         try {
           const result = await getHTFStatus(ticker, { force: false, signal: scanAbort.signal });
           const latencyMs = Date.now() - apiStart;
-          if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, false);
+          if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
           return { ticker, result, error: null };
         } catch (err) {
           const latencyMs = Date.now() - apiStart;
-          if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, true);
+          if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: false });
           return { ticker, result: null, error: err };
         }
       },
@@ -4582,10 +4583,7 @@ async function runHTFScan(options = {}) {
         htfScanStatus.detectedTickers = detectedTickers;
         htfScanStatus.status = htfScanStopRequested ? 'stopping' : 'running';
         if (runMetricsTracker) {
-          runMetricsTracker.update({
-            processedTickers,
-            errorTickers
-          });
+          runMetricsTracker.setProgress(processedTickers, errorTickers);
         }
       },
       () => htfScanStopRequested || scanAbort.signal.aborted
@@ -4630,13 +4628,13 @@ async function runHTFScan(options = {}) {
           }
           const apiStart = Date.now();
           try {
-            const result = await getHTFStatus(ticker, { force: true });
+            const result = await getHTFStatus(ticker, { force: true, signal: scanAbort.signal });
             const latencyMs = Date.now() - apiStart;
-            if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, false);
+            if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
             return { ticker, result, error: null };
           } catch (err) {
             const latencyMs = Date.now() - apiStart;
-            if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, true);
+            if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: false });
             return { ticker, result: null, error: err };
           }
         },
