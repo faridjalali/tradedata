@@ -188,7 +188,8 @@ function scoreSubwindow(dailySlice, preDaily) {
   let concordantUpDelta = 0;
   let absorptionDelta = 0;
 
-  if (intraRally > 5 && overallPriceChange < 0 && netDeltaPct > 0) {
+  if (netDeltaPct > 0) {
+    // Classify each day: concordant-up (price↑ + delta↑) vs absorption (price↓ + delta↑)
     for (let i = 1; i < n; i++) {
       const dayPriceChg = dailySlice[i].close - dailySlice[i - 1].close;
       const dayDelta = effectiveDeltas[i];
@@ -198,15 +199,20 @@ function scoreSubwindow(dailySlice, preDaily) {
     const totalPosDelta = concordantUpDelta + absorptionDelta;
     concordantFrac = totalPosDelta > 0 ? concordantUpDelta / totalPosDelta : 0;
 
-    // HARD GATE: extreme rally (>10%) + high concordance (>70%)
-    // The "accumulation" is just a normal rally that reversed — false positive.
-    // Example: DAVE 12/11→1/21 (intraRally 17.2%, concordantFrac 0.78)
-    if (intraRally > 10 && concordantFrac > 0.70) {
+    // HARD GATE 1: Concordant-dominated zone (standalone)
+    // If >70% of positive delta comes from concordant-up days (price↑ + delta↑),
+    // this is NOT accumulation — it's normal buying during a rally.
+    // No intraRally requirement: even windows starting near a peak can be concordant-
+    // dominated from bounce days within the decline (e.g., DAVE 11/5→12/23: 74.3%).
+    if (concordantFrac > 0.70) {
       return {
-        score: 0, detected: false, reason: 'concordant_rally',
+        score: 0, detected: false, reason: 'concordant_dominated',
         netDeltaPct, overallPriceChange, intraRally, concordantFrac,
       };
     }
+
+    // Note: previous HARD GATE 2 (intraRally > 10 && concordantFrac > 0.70) was removed
+    // because HARD GATE 1 (concordantFrac > 0.70 standalone) now subsumes it entirely.
   }
 
   // Cumulative weekly delta slope (using capped deltas)
@@ -306,12 +312,15 @@ function scoreSubwindow(dailySlice, preDaily) {
 
   const rawScore = s1 * 0.20 + s2 * 0.15 + s3 * 0.10 + s4 * 0.10 + s5 * 0.05 + s6 * 0.18 + s7 * 0.05 + s8 * 0.17;
 
-  // Concordance penalty (soft) for moderate rally-then-crash patterns
-  // Fires when intra-window rally > 5%, overall price negative, and concordant delta dominates.
-  // Scales rawScore down proportionally to rally magnitude × concordance fraction.
+  // Concordance penalty (soft) — standalone quality gate
+  // When >55% of positive delta comes from concordant-up days, the "accumulation" signal
+  // is diluted by normal rally behavior. Scale score down proportionally.
+  // Formula: linear ramp from 1.0 at 55% to 0.40 at 95%, floored at 0.40.
+  //   penalty = 1.0 - (concordantFrac - 0.55) * 1.5
+  // Examples: 55% → 1.0 (no penalty), 60% → 0.925, 65% → 0.85, 70% → hard gate fires
   let concordancePenalty = 1.0;
-  if (intraRally > 5 && overallPriceChange < 0 && concordantFrac > 0.55) {
-    concordancePenalty = Math.max(0.40, 1.0 - ((intraRally - 5) / 15) * ((concordantFrac - 0.55) / 0.35));
+  if (concordantFrac > 0.55) {
+    concordancePenalty = Math.max(0.40, 1.0 - (concordantFrac - 0.55) * 1.5);
   }
 
   // Duration scaling
