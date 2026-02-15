@@ -25,7 +25,7 @@ const {
   buildHealthPayload,
   buildReadyPayload
 } = require("./server/services/healthService");
-const { detectHTF, HTF_CONFIG, HTF_CONFIG_MODERATE, detectVDAccumulation } = require("./server/services/htfDetector");
+const { detectVDF } = require("./server/services/vdfDetector");
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
@@ -635,7 +635,7 @@ const RUN_METRICS_HISTORY_LIMIT = Math.max(10, Number(process.env.RUN_METRICS_HI
 const runMetricsByType = {
   fetchDaily: null,
   fetchWeekly: null,
-  htfScan: null
+  vdfScan: null
 };
 const runMetricsHistory = [];
 
@@ -952,12 +952,12 @@ function getLogsRunMetricsPayload() {
       fetchWeekly: getDivergenceFetchWeeklyDataStatus(),
       scan: getDivergenceScanControlStatus(),
       table: getDivergenceTableBuildStatus(),
-      htfScan: getHTFScanStatus()
+      vdfScan: getVDFScanStatus()
     },
     runs: {
       fetchDaily: summarizeRunMetrics(runMetricsByType.fetchDaily),
       fetchWeekly: summarizeRunMetrics(runMetricsByType.fetchWeekly),
-      htfScan: summarizeRunMetrics(runMetricsByType.htfScan)
+      vdfScan: summarizeRunMetrics(runMetricsByType.vdfScan)
     },
     history: runMetricsHistory.slice(0, RUN_METRICS_HISTORY_LIMIT)
   };
@@ -1167,35 +1167,23 @@ const initDivergenceDB = async () => {
       );
     `);
     await divergencePool.query(`
-      CREATE TABLE IF NOT EXISTS htf_results (
+      CREATE TABLE IF NOT EXISTS vdf_results (
         ticker VARCHAR(20) NOT NULL,
         trade_date VARCHAR(10) NOT NULL,
         is_detected BOOLEAN NOT NULL DEFAULT FALSE,
-        is_candidate BOOLEAN NOT NULL DEFAULT FALSE,
         composite_score REAL DEFAULT 0,
         status TEXT DEFAULT '',
-        impulse_gain_pct REAL,
+        weeks INTEGER DEFAULT 0,
         result_json TEXT,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (ticker, trade_date)
       );
     `);
-    // Migration: add mode column for moderate/strict HTF detection
+    // Migration: rename htf_results -> vdf_results if old table exists
     await divergencePool.query(`
       DO $$ BEGIN
-        ALTER TABLE htf_results ADD COLUMN mode VARCHAR(10) NOT NULL DEFAULT 'strict';
-      EXCEPTION WHEN duplicate_column THEN NULL;
-      END $$;
-    `);
-    await divergencePool.query(`
-      DO $$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.key_column_usage
-          WHERE table_name = 'htf_results' AND column_name = 'mode'
-            AND constraint_name = 'htf_results_pkey'
-        ) THEN
-          ALTER TABLE htf_results DROP CONSTRAINT htf_results_pkey;
-          ALTER TABLE htf_results ADD PRIMARY KEY (ticker, trade_date, mode);
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'htf_results') THEN
+          DROP TABLE IF EXISTS htf_results;
         END IF;
       END $$;
     `);
@@ -1289,16 +1277,16 @@ app.get('/api/alerts', async (req, res) => {
       console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
     }
     const neutralStates = buildNeutralDivergenceStateMap();
-    let htfDetectedSetTv = new Set();
+    let vdfDetectedSetTv = new Set();
     try {
       if (tickers.length > 0 && isDivergenceConfigured()) {
-        const htfTradeDate = currentEtDateString();
-        const htfRes = await divergencePool.query(
-          `SELECT DISTINCT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
-          [htfTradeDate, tickers]
+        const vdfTradeDate = currentEtDateString();
+        const vdfRes = await divergencePool.query(
+          `SELECT DISTINCT ticker FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          [vdfTradeDate, tickers]
         );
-        for (const row of htfRes.rows) {
-          htfDetectedSetTv.add(String(row.ticker).toUpperCase());
+        for (const row of vdfRes.rows) {
+          vdfDetectedSetTv.add(String(row.ticker).toUpperCase());
         }
       }
     } catch {
@@ -1324,7 +1312,7 @@ app.get('/api/alerts', async (req, res) => {
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
         },
-        htf_detected: htfDetectedSetTv.has(ticker)
+        vdf_detected: vdfDetectedSetTv.has(ticker)
       };
     });
     res.json(enrichedRows);
@@ -1521,21 +1509,21 @@ app.get('/api/divergence/signals', async (req, res) => {
       console.error(`Failed to enrich divergence signals with divergence summaries: ${message}`);
     }
     const neutralStates = buildNeutralDivergenceStateMap();
-    // Enrich with HTF detection results
-    let htfDetectedSet = new Set();
+    // Enrich with VDF detection results
+    let vdfDetectedSet = new Set();
     try {
       if (tickers.length > 0) {
-        const htfTradeDate = currentEtDateString();
-        const htfRes = await divergencePool.query(
-          `SELECT DISTINCT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
-          [htfTradeDate, tickers]
+        const vdfTradeDate = currentEtDateString();
+        const vdfRes = await divergencePool.query(
+          `SELECT DISTINCT ticker FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          [vdfTradeDate, tickers]
         );
-        for (const row of htfRes.rows) {
-          htfDetectedSet.add(String(row.ticker).toUpperCase());
+        for (const row of vdfRes.rows) {
+          vdfDetectedSet.add(String(row.ticker).toUpperCase());
         }
       }
     } catch {
-      // Non-critical: if htf_results table doesn't exist yet or query fails, skip silently
+      // Non-critical: if vdf_results table doesn't exist yet or query fails, skip silently
     }
     const enrichedRows = result.rows.map((row) => {
       const ticker = String(row?.ticker || '').trim().toUpperCase();
@@ -1557,7 +1545,7 @@ app.get('/api/divergence/signals', async (req, res) => {
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
         },
-        htf_detected: htfDetectedSet.has(ticker)
+        vdf_detected: vdfDetectedSet.has(ticker)
       };
     });
     res.json(enrichedRows);
@@ -4357,16 +4345,16 @@ async function getDivergenceSummaryForTickers(options = {}) {
   };
 }
 
-// --- HTF (High-Tight Flag) Detector helpers ---
-let htfRunningTickers = new Set();
+// --- VDF (Volume Divergence Flag) Detector helpers ---
+let vdfRunningTickers = new Set();
 
-async function getStoredHTFResult(ticker, tradeDate, mode) {
+async function getStoredVDFResult(ticker, tradeDate) {
   if (!isDivergenceConfigured()) return null;
   try {
     const { rows } = await divergencePool.query(
-      `SELECT is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json
-       FROM htf_results WHERE ticker = $1 AND trade_date = $2 AND mode = $3 LIMIT 1`,
-      [ticker, tradeDate, mode || 'strict']
+      `SELECT is_detected, composite_score, status, weeks, result_json
+       FROM vdf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
+      [ticker, tradeDate]
     );
     if (rows.length === 0) return null;
     const row = rows[0];
@@ -4374,150 +4362,107 @@ async function getStoredHTFResult(ticker, tradeDate, mode) {
     try { parsed = row.result_json ? JSON.parse(row.result_json) : {}; } catch { /* ignore */ }
     return {
       is_detected: row.is_detected,
-      is_candidate: row.is_candidate,
       composite_score: Number(row.composite_score) || 0,
       status: row.status || '',
-      impulse_gain_pct: row.impulse_gain_pct != null ? Number(row.impulse_gain_pct) : null,
+      weeks: Number(row.weeks) || 0,
       details: parsed
     };
   } catch (err) {
-    console.error('getStoredHTFResult error:', err && err.message ? err.message : err);
+    console.error('getStoredVDFResult error:', err && err.message ? err.message : err);
     return null;
   }
 }
 
-async function upsertHTFResult(ticker, tradeDate, result, mode) {
+async function upsertVDFResult(ticker, tradeDate, result) {
   if (!isDivergenceConfigured()) return;
-  const modeVal = mode || 'strict';
   try {
     const resultJson = JSON.stringify({
-      impulse: result.impulse || null,
-      consolidation_bars: result.consolidation_bars || 0,
-      flag_retrace_pct: result.flag_retrace_pct,
-      yz_percentile: result.yz_percentile,
-      delta_metrics: result.delta_metrics,
-      range_decay: result.range_decay,
-      vwap_deviation: result.vwap_deviation,
-      composite: result.composite,
-      breakout: result.breakout,
+      metrics: result.metrics || null,
+      accumWeeks: result.accumWeeks || 0,
+      durationMultiplier: result.durationMultiplier || 1,
+      reason: result.reason || '',
     });
     await divergencePool.query(
-      `INSERT INTO htf_results (ticker, trade_date, mode, is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-       ON CONFLICT (ticker, trade_date, mode) DO UPDATE SET
+      `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT (ticker, trade_date) DO UPDATE SET
          is_detected = EXCLUDED.is_detected,
-         is_candidate = EXCLUDED.is_candidate,
          composite_score = EXCLUDED.composite_score,
          status = EXCLUDED.status,
-         impulse_gain_pct = EXCLUDED.impulse_gain_pct,
+         weeks = EXCLUDED.weeks,
          result_json = EXCLUDED.result_json,
          updated_at = NOW()`,
       [
-        ticker, tradeDate, modeVal,
-        result.is_detected || false,
-        result.is_candidate || false,
-        result.composite_score || 0,
+        ticker, tradeDate,
+        result.detected || false,
+        result.score || 0,
         result.status || '',
-        result.impulse_gain_pct != null ? result.impulse_gain_pct : null,
+        result.weeks || 0,
         resultJson
       ]
     );
   } catch (err) {
-    console.error('upsertHTFResult error:', err && err.message ? err.message : err);
+    console.error('upsertVDFResult error:', err && err.message ? err.message : err);
   }
 }
 
-async function getHTFStatus(ticker, options = {}) {
+async function getVDFStatus(ticker, options = {}) {
   const force = options.force === true;
   const signal = options.signal || null;
-  const mode = options.mode || 'strict';
   const today = currentEtDateString();
 
-  // Check DB cache (same trading day + mode) unless force
+  // Check DB cache (same trading day) unless force
   if (!force) {
-    const cached = await getStoredHTFResult(ticker, today, mode);
-    if (cached) return { ...cached, mode, cached: true };
+    const cached = await getStoredVDFResult(ticker, today);
+    if (cached) return { ...cached, cached: true };
   }
 
   // Prevent parallel detection for the same ticker
-  if (htfRunningTickers.has(ticker)) {
-    return { is_detected: false, is_candidate: false, composite_score: 0, status: 'Detection in progress', mode, cached: false };
+  if (vdfRunningTickers.has(ticker)) {
+    return { is_detected: false, composite_score: 0, status: 'Detection in progress', weeks: 0, cached: false };
   }
-  htfRunningTickers.add(ticker);
+  vdfRunningTickers.add(ticker);
 
   try {
-    const htfConfig = mode === 'moderate' ? HTF_CONFIG_MODERATE : HTF_CONFIG;
-    const result = await detectHTF(ticker, {
+    const result = await detectVDF(ticker, {
       dataApiFetcher: dataApiIntradayChartHistory,
       signal,
-      config: htfConfig
     });
 
-    // In moderate mode, also run VD Accumulation Divergence detection.
-    // This catches multi-week hidden accumulation patterns that the classic
-    // HTF algorithm misses (e.g. RKLB, IREN style bull-flag accumulation).
-    let vdAccum = null;
-    if (mode === 'moderate') {
-      try {
-        vdAccum = await detectVDAccumulation(ticker, {
-          dataApiFetcher: dataApiIntradayChartHistory,
-          signal,
-        });
-      } catch (vdErr) {
-        if (isAbortError(vdErr)) throw vdErr;
-        // VD accumulation is supplementary — don't fail the whole detection
-        vdAccum = null;
-      }
-    }
-
-    // Merge: detected if classic HTF OR VD accumulation triggers
-    const htfDetected = result.is_detected || false;
-    const vdDetected = vdAccum && vdAccum.detected;
-    const isDetected = htfDetected || vdDetected;
-
     // Build status string
-    let status = result.status || '';
-    if (vdDetected && !htfDetected) {
-      status = `VD Accumulation detected (score ${vdAccum.score.toFixed(2)}, ${vdAccum.weeks}wk)`;
-    } else if (vdDetected && htfDetected) {
-      status = `HTF + VD Accumulation (VD score ${vdAccum.score.toFixed(2)})`;
+    let status = '';
+    if (result.detected) {
+      status = `VD Accumulation detected (score ${result.score.toFixed(2)}, ${result.weeks}wk)`;
+    } else {
+      status = result.reason || 'Not detected';
     }
 
-    // Use the higher of HTF composite or VD score for the composite_score field
-    const compositeScore = Math.max(result.composite_score || 0, vdAccum ? vdAccum.score : 0);
-
-    // Store in DB (with the merged detection result)
-    const mergedResult = { ...result, is_detected: isDetected, composite_score: compositeScore, status };
-    await upsertHTFResult(ticker, today, mergedResult, mode);
+    // Store in DB
+    await upsertVDFResult(ticker, today, { ...result, status });
 
     return {
-      is_detected: isDetected,
-      is_candidate: result.is_candidate || false,
-      composite_score: compositeScore,
+      is_detected: result.detected || false,
+      composite_score: result.score || 0,
       status,
-      impulse_gain_pct: result.impulse_gain_pct != null ? result.impulse_gain_pct : null,
+      weeks: result.weeks || 0,
       details: {
-        impulse: result.impulse,
-        consolidation_bars: result.consolidation_bars,
-        flag_retrace_pct: result.flag_retrace_pct,
-        yz_percentile: result.yz_percentile,
-        composite: result.composite,
-        breakout: result.breakout,
-        vd_accumulation: vdAccum || undefined,
+        metrics: result.metrics,
+        accumWeeks: result.accumWeeks,
+        durationMultiplier: result.durationMultiplier,
+        reason: result.reason,
       },
-      mode,
       cached: false
     };
   } finally {
-    htfRunningTickers.delete(ticker);
+    vdfRunningTickers.delete(ticker);
   }
 }
 
-// --- HTF Scan (bulk) state ---
-let htfScanRunning = false;
-let htfScanStopRequested = false;
-let htfScanAbortController = null;
-let htfScanStatus = {
+// --- VDF Scan (bulk) state ---
+let vdfScanRunning = false;
+let vdfScanStopRequested = false;
+let vdfScanAbortController = null;
+let vdfScanStatus = {
   running: false,
   status: 'idle',
   totalTickers: 0,
@@ -4528,31 +4473,31 @@ let htfScanStatus = {
   finishedAt: null
 };
 
-function getHTFScanStatus() {
+function getVDFScanStatus() {
   return {
-    running: Boolean(htfScanRunning),
-    stop_requested: Boolean(htfScanStopRequested),
-    status: String(htfScanStatus.status || 'idle'),
-    total_tickers: Number(htfScanStatus.totalTickers || 0),
-    processed_tickers: Number(htfScanStatus.processedTickers || 0),
-    error_tickers: Number(htfScanStatus.errorTickers || 0),
-    detected_tickers: Number(htfScanStatus.detectedTickers || 0),
-    started_at: htfScanStatus.startedAt || null,
-    finished_at: htfScanStatus.finishedAt || null
+    running: Boolean(vdfScanRunning),
+    stop_requested: Boolean(vdfScanStopRequested),
+    status: String(vdfScanStatus.status || 'idle'),
+    total_tickers: Number(vdfScanStatus.totalTickers || 0),
+    processed_tickers: Number(vdfScanStatus.processedTickers || 0),
+    error_tickers: Number(vdfScanStatus.errorTickers || 0),
+    detected_tickers: Number(vdfScanStatus.detectedTickers || 0),
+    started_at: vdfScanStatus.startedAt || null,
+    finished_at: vdfScanStatus.finishedAt || null
   };
 }
 
-function requestStopHTFScan() {
-  if (!htfScanRunning) return false;
-  htfScanStopRequested = true;
-  htfScanStatus = {
-    ...htfScanStatus,
+function requestStopVDFScan() {
+  if (!vdfScanRunning) return false;
+  vdfScanStopRequested = true;
+  vdfScanStatus = {
+    ...vdfScanStatus,
     status: 'stopping',
     finishedAt: null
   };
-  if (htfScanAbortController && !htfScanAbortController.signal.aborted) {
+  if (vdfScanAbortController && !vdfScanAbortController.signal.aborted) {
     try {
-      htfScanAbortController.abort();
+      vdfScanAbortController.abort();
     } catch {
       // Ignore duplicate aborts.
     }
@@ -4560,27 +4505,25 @@ function requestStopHTFScan() {
   return true;
 }
 
-async function runHTFScan(options = {}) {
+async function runVDFScan(options = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (htfScanRunning) {
+  if (vdfScanRunning) {
     return { status: 'running' };
   }
 
-  const mode = (options.mode === 'moderate' || options.mode === 'strict') ? options.mode : 'strict';
-
-  htfScanRunning = true;
-  htfScanStopRequested = false;
-  runMetricsByType.htfScan = null;
+  vdfScanRunning = true;
+  vdfScanStopRequested = false;
+  runMetricsByType.vdfScan = null;
 
   let processedTickers = 0;
   let errorTickers = 0;
   let detectedTickers = 0;
   const startedAtIso = new Date().toISOString();
   const scanAbort = new AbortController();
-  htfScanAbortController = scanAbort;
-  htfScanStatus = {
+  vdfScanAbortController = scanAbort;
+  vdfScanStatus = {
     running: true,
     status: 'running',
     totalTickers: 0,
@@ -4591,7 +4534,7 @@ async function runHTFScan(options = {}) {
     finishedAt: null
   };
 
-  const runConcurrency = resolveAdaptiveFetchConcurrency('htf-scan');
+  const runConcurrency = resolveAdaptiveFetchConcurrency('vdf-scan');
   let runMetricsTracker = null;
   const today = currentEtDateString();
   const failedTickers = [];
@@ -4599,9 +4542,9 @@ async function runHTFScan(options = {}) {
   try {
     const tickers = await getStoredDivergenceSymbolTickers();
     const totalTickers = tickers.length;
-    htfScanStatus.totalTickers = totalTickers;
+    vdfScanStatus.totalTickers = totalTickers;
 
-    runMetricsTracker = createRunMetricsTracker('htfScan', {
+    runMetricsTracker = createRunMetricsTracker('vdfScan', {
       totalTickers,
       concurrency: runConcurrency
     });
@@ -4612,12 +4555,12 @@ async function runHTFScan(options = {}) {
       tickers,
       runConcurrency,
       async (ticker) => {
-        if (htfScanStopRequested || scanAbort.signal.aborted) {
+        if (vdfScanStopRequested || scanAbort.signal.aborted) {
           return { ticker, skipped: true };
         }
         const apiStart = Date.now();
         try {
-          const result = await getHTFStatus(ticker, { force: false, signal: scanAbort.signal, mode });
+          const result = await getVDFStatus(ticker, { force: false, signal: scanAbort.signal });
           const latencyMs = Date.now() - apiStart;
           if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
           return { ticker, result, error: null };
@@ -4633,26 +4576,26 @@ async function runHTFScan(options = {}) {
         if (settled.error) {
           errorTickers++;
           failedTickers.push(settled.ticker);
-          if (!(htfScanStopRequested && isAbortError(settled.error))) {
-            console.error(`HTF scan error for ${settled.ticker}:`, settled.error?.message || settled.error);
+          if (!(vdfScanStopRequested && isAbortError(settled.error))) {
+            console.error(`VDF scan error for ${settled.ticker}:`, settled.error?.message || settled.error);
           }
         } else if (settled.result && settled.result.is_detected) {
           detectedTickers++;
         }
-        htfScanStatus.processedTickers = processedTickers;
-        htfScanStatus.errorTickers = errorTickers;
-        htfScanStatus.detectedTickers = detectedTickers;
-        htfScanStatus.status = htfScanStopRequested ? 'stopping' : 'running';
+        vdfScanStatus.processedTickers = processedTickers;
+        vdfScanStatus.errorTickers = errorTickers;
+        vdfScanStatus.detectedTickers = detectedTickers;
+        vdfScanStatus.status = vdfScanStopRequested ? 'stopping' : 'running';
         if (runMetricsTracker) {
           runMetricsTracker.setProgress(processedTickers, errorTickers);
         }
       },
-      () => htfScanStopRequested || scanAbort.signal.aborted
+      () => vdfScanStopRequested || scanAbort.signal.aborted
     );
 
-    if (htfScanStopRequested) {
-      htfScanStopRequested = false;
-      htfScanStatus = {
+    if (vdfScanStopRequested) {
+      vdfScanStopRequested = false;
+      vdfScanStatus = {
         running: false,
         status: 'stopped',
         totalTickers,
@@ -4674,22 +4617,22 @@ async function runHTFScan(options = {}) {
     }
 
     // Retry failed tickers once
-    if (failedTickers.length > 0 && !htfScanStopRequested && !scanAbort.signal.aborted) {
+    if (failedTickers.length > 0 && !vdfScanStopRequested && !scanAbort.signal.aborted) {
       const retryTickers = [...failedTickers];
       failedTickers.length = 0;
-      htfScanStatus.status = 'running-retry';
+      vdfScanStatus.status = 'running-retry';
       if (runMetricsTracker) runMetricsTracker.setPhase('retry');
 
       await mapWithConcurrency(
         retryTickers,
         Math.max(1, Math.floor(runConcurrency / 2)),
         async (ticker) => {
-          if (htfScanStopRequested || scanAbort.signal.aborted) {
+          if (vdfScanStopRequested || scanAbort.signal.aborted) {
             return { ticker, skipped: true };
           }
           const apiStart = Date.now();
           try {
-            const result = await getHTFStatus(ticker, { force: true, signal: scanAbort.signal, mode });
+            const result = await getVDFStatus(ticker, { force: true, signal: scanAbort.signal });
             const latencyMs = Date.now() - apiStart;
             if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
             return { ticker, result, error: null };
@@ -4709,16 +4652,16 @@ async function runHTFScan(options = {}) {
               detectedTickers++;
             }
           }
-          htfScanStatus.errorTickers = errorTickers;
-          htfScanStatus.detectedTickers = detectedTickers;
+          vdfScanStatus.errorTickers = errorTickers;
+          vdfScanStatus.detectedTickers = detectedTickers;
         },
-        () => htfScanStopRequested || scanAbort.signal.aborted
+        () => vdfScanStopRequested || scanAbort.signal.aborted
       );
     }
 
     const finalStatus = errorTickers > 0 ? 'completed-with-errors' : 'completed';
-    htfScanStopRequested = false;
-    htfScanStatus = {
+    vdfScanStopRequested = false;
+    vdfScanStatus = {
       running: false,
       status: finalStatus,
       totalTickers,
@@ -4739,12 +4682,12 @@ async function runHTFScan(options = {}) {
     return { status: finalStatus, processedTickers, errorTickers, detectedTickers };
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
-    console.error(`HTF scan failed: ${message}`);
-    htfScanStopRequested = false;
-    htfScanStatus = {
+    console.error(`VDF scan failed: ${message}`);
+    vdfScanStopRequested = false;
+    vdfScanStatus = {
       running: false,
       status: 'failed',
-      totalTickers: htfScanStatus.totalTickers,
+      totalTickers: vdfScanStatus.totalTickers,
       processedTickers,
       errorTickers,
       detectedTickers,
@@ -4753,7 +4696,7 @@ async function runHTFScan(options = {}) {
     };
     if (runMetricsTracker) {
       runMetricsTracker.finish('failed', {
-        totalTickers: htfScanStatus.totalTickers,
+        totalTickers: vdfScanStatus.totalTickers,
         processedTickers,
         errorTickers,
         failedTickers
@@ -4761,10 +4704,10 @@ async function runHTFScan(options = {}) {
     }
     return { status: 'failed', error: message };
   } finally {
-    if (htfScanAbortController === scanAbort) {
-      htfScanAbortController = null;
+    if (vdfScanAbortController === scanAbort) {
+      vdfScanAbortController = null;
     }
-    htfScanRunning = false;
+    vdfScanRunning = false;
   }
 }
 
@@ -4783,7 +4726,7 @@ registerChartRoutes({
   barsToTuples,
   pointsToTuples,
   getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
-  getHTFStatus
+  getVDFStatus
 });
 
 function etDateStringFromUnixSeconds(unixSeconds) {
@@ -8601,10 +8544,10 @@ registerDivergenceRoutes({
   getFetchWeeklyDataStatus: () => getDivergenceFetchWeeklyDataStatus(),
   requestStopFetchWeeklyData: () => requestStopDivergenceFetchWeeklyData(),
   canResumeFetchWeeklyData: () => canResumeDivergenceFetchWeeklyData(),
-  getHTFScanStatus: () => getHTFScanStatus(),
-  requestStopHTFScan: () => requestStopHTFScan(),
-  runHTFScan,
-  getIsHTFScanRunning: () => htfScanRunning
+  getVDFScanStatus: () => getVDFScanStatus(),
+  requestStopVDFScan: () => requestStopVDFScan(),
+  runVDFScan,
+  getIsVDFScanRunning: () => vdfScanRunning
 });
 
 app.get('/api/logs/run-metrics', (req, res) => {

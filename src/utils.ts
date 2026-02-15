@@ -152,8 +152,8 @@ export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'd
             let aScore = a.divergence_states
                 ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
                 : getTickerDivergenceScoreFromCache(a.ticker);
-            if (b.htf_detected) bScore += 10;
-            if (a.htf_detected) aScore += 10;
+            if (b.vdf_detected) bScore += 10;
+            if (a.vdf_detected) aScore += 10;
             if (bScore !== aScore) {
                 result = bScore - aScore;
             } else {

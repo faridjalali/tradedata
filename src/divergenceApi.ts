@@ -97,7 +97,7 @@ export interface DivergenceScanStatus {
         finished_at?: string | null;
         last_published_trade_date?: string | null;
     } | null;
-    htfScan?: {
+    vdfScan?: {
         running?: boolean;
         stop_requested?: boolean;
         status?: string;
@@ -370,13 +370,12 @@ export async function stopDivergenceFetchWeeklyData(): Promise<{ status: string 
     return { status: String(payload?.status || 'stop-requested') };
 }
 
-export async function startHTFScan(mode?: string): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/htf-scan/run', {
+export async function startVDFScan(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/vdf-scan/run', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ mode: mode || 'strict' })
+        }
     });
     const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
     if (!response.ok) {
@@ -385,14 +384,14 @@ export async function startHTFScan(mode?: string): Promise<{ status: string }> {
         }
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
-            : `Failed to start HTF scan (HTTP ${response.status})`;
+            : `Failed to start VDF scan (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'started') };
 }
 
-export async function stopHTFScan(): Promise<{ status: string }> {
-    const response = await fetch('/api/divergence/htf-scan/stop', {
+export async function stopVDFScan(): Promise<{ status: string }> {
+    const response = await fetch('/api/divergence/vdf-scan/stop', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -405,7 +404,7 @@ export async function stopHTFScan(): Promise<{ status: string }> {
         }
         const reason = typeof payload?.error === 'string' && payload.error.trim()
             ? payload.error.trim()
-            : `Failed to stop HTF scan (HTTP ${response.status})`;
+            : `Failed to stop VDF scan (HTTP ${response.status})`;
         throw new Error(reason);
     }
     return { status: String(payload?.status || 'stop-requested') };
@@ -427,7 +426,7 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
         tableBuild: (payload as any).tableBuild ?? null,
         fetchDailyData: (payload as any).fetchDailyData ?? null,
         fetchWeeklyData: (payload as any).fetchWeeklyData ?? null,
-        htfScan: (payload as any).htfScan ?? null,
+        vdfScan: (payload as any).vdfScan ?? null,
         latestJob: (payload as any).latestJob ?? null
     };
 }

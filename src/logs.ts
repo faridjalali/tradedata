@@ -52,12 +52,12 @@ interface RunMetricsPayload {
     statuses?: {
         fetchDaily?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null;
         fetchWeekly?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null;
-        htfScan?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number; detected_tickers?: number } | null;
+        vdfScan?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number; detected_tickers?: number } | null;
     };
     runs?: {
         fetchDaily?: RunMetricsSnapshot | null;
         fetchWeekly?: RunMetricsSnapshot | null;
-        htfScan?: RunMetricsSnapshot | null;
+        vdfScan?: RunMetricsSnapshot | null;
     };
     history?: RunMetricsSnapshot[];
 }
@@ -197,7 +197,7 @@ function renderRunCards(payload: RunMetricsPayload): void {
     const cards = [
         buildRunCardHtml('Fetch Daily', payload.runs?.fetchDaily, payload.statuses?.fetchDaily),
         buildRunCardHtml('Fetch Weekly', payload.runs?.fetchWeekly, payload.statuses?.fetchWeekly),
-        buildRunCardHtml('HTF Scan', payload.runs?.htfScan, payload.statuses?.htfScan),
+        buildRunCardHtml('VDF Scan', payload.runs?.vdfScan, payload.statuses?.vdfScan),
         buildConfigCardHtml(payload)
     ];
     host.innerHTML = cards.join('');

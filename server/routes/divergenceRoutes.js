@@ -36,10 +36,10 @@ function registerDivergenceRoutes(options = {}) {
     getFetchWeeklyDataStatus,
     requestStopFetchWeeklyData,
     canResumeFetchWeeklyData,
-    getHTFScanStatus,
-    requestStopHTFScan,
-    runHTFScan,
-    getIsHTFScanRunning
+    getVDFScanStatus,
+    requestStopVDFScan,
+    runVDFScan,
+    getIsVDFScanRunning
   } = options;
 
   if (!app) {
@@ -461,8 +461,8 @@ function registerDivergenceRoutes(options = {}) {
       };
     }
 
-    const htfScan = typeof getHTFScanStatus === 'function'
-      ? getHTFScanStatus()
+    const vdfScan = typeof getVDFScanStatus === 'function'
+      ? getVDFScanStatus()
       : null;
 
     return res.json({
@@ -471,11 +471,11 @@ function registerDivergenceRoutes(options = {}) {
       tableBuild,
       fetchDailyData,
       fetchWeeklyData,
-      htfScan
+      vdfScan
     });
   });
 
-  app.post('/api/divergence/htf-scan/run', async (req, res) => {
+  app.post('/api/divergence/vdf-scan/run', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -486,30 +486,27 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (typeof getIsHTFScanRunning === 'function' && getIsHTFScanRunning()) {
+    if (typeof getIsVDFScanRunning === 'function' && getIsVDFScanRunning()) {
       return res.status(409).json({ status: 'running' });
     }
 
-    if (typeof runHTFScan !== 'function') {
-      return res.status(501).json({ error: 'HTF scan endpoint is not enabled' });
+    if (typeof runVDFScan !== 'function') {
+      return res.status(501).json({ error: 'VDF scan endpoint is not enabled' });
     }
 
-    const modeRaw = String(req.body?.mode || req.query.mode || 'strict').toLowerCase();
-    const htfMode = (modeRaw === 'moderate' || modeRaw === 'strict') ? modeRaw : 'strict';
-
-    runHTFScan({ trigger: 'manual-api', mode: htfMode })
+    runVDFScan({ trigger: 'manual-api' })
       .then((summary) => {
-        console.log('Manual HTF scan completed:', summary);
+        console.log('Manual VDF scan completed:', summary);
       })
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual HTF scan failed: ${message}`);
+        console.error(`Manual VDF scan failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });
   });
 
-  app.post('/api/divergence/htf-scan/stop', async (req, res) => {
+  app.post('/api/divergence/vdf-scan/stop', async (req, res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -518,10 +515,10 @@ function registerDivergenceRoutes(options = {}) {
     if (configuredSecret && configuredSecret !== providedSecret) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    if (typeof requestStopHTFScan !== 'function') {
-      return res.status(501).json({ error: 'HTF scan stop endpoint is not enabled' });
+    if (typeof requestStopVDFScan !== 'function') {
+      return res.status(501).json({ error: 'VDF scan stop endpoint is not enabled' });
     }
-    const accepted = requestStopHTFScan();
+    const accepted = requestStopVDFScan();
     if (accepted) return res.status(202).json({ status: 'stop-requested' });
     return res.status(409).json({ status: 'idle' });
   });

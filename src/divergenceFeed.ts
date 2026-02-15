@@ -14,8 +14,8 @@ import {
     stopDivergenceFetchDailyData,
     startDivergenceFetchWeeklyData,
     stopDivergenceFetchWeeklyData,
-    startHTFScan,
-    stopHTFScan,
+    startVDFScan,
+    stopVDFScan,
     fetchDivergenceScanStatus,
     DivergenceScanStatus
 } from './divergenceApi';
@@ -54,8 +54,8 @@ let divergenceFetchDailyRunningState = false;
 let divergenceFetchWeeklyRunningState = false;
 let allowAutoCardRefreshFromFetchDaily = false;
 let allowAutoCardRefreshFromFetchWeekly = false;
-let allowAutoCardRefreshFromHTFScan = false;
-let htfScanLastProcessedTickers = -1;
+let allowAutoCardRefreshFromVDFScan = false;
+let vdfScanLastProcessedTickers = -1;
 
 // --- Mini-chart hover overlay state ---
 let miniChartOverlayEl: HTMLDivElement | null = null;
@@ -243,44 +243,44 @@ function setFetchWeeklyStatusText(text: string): void {
     status.textContent = text;
 }
 
-function getHTFScanButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
+function getVDFScanButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
     return {
-        button: document.getElementById('divergence-htf-scan-btn') as HTMLButtonElement | null,
-        status: document.getElementById('divergence-htf-scan-status')
+        button: document.getElementById('divergence-vdf-scan-btn') as HTMLButtonElement | null,
+        status: document.getElementById('divergence-vdf-scan-status')
     };
 }
 
-function getHTFScanControlButtons(): { stopButton: HTMLButtonElement | null } {
+function getVDFScanControlButtons(): { stopButton: HTMLButtonElement | null } {
     return {
-        stopButton: document.getElementById('divergence-htf-scan-stop-btn') as HTMLButtonElement | null,
+        stopButton: document.getElementById('divergence-vdf-scan-stop-btn') as HTMLButtonElement | null,
     };
 }
 
-function setHTFScanButtonState(running: boolean): void {
-    const { button } = getHTFScanButtonElements();
+function setVDFScanButtonState(running: boolean): void {
+    const { button } = getVDFScanButtonElements();
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    button.textContent = 'HTF Scan';
+    button.textContent = 'VDF Scan';
 }
 
-function setHTFScanStatusText(text: string): void {
-    const { status } = getHTFScanButtonElements();
+function setVDFScanStatusText(text: string): void {
+    const { status } = getVDFScanButtonElements();
     if (!status) return;
     status.textContent = text;
 }
 
-function setHTFScanControlButtonState(status: DivergenceScanStatus | null): void {
-    const { stopButton } = getHTFScanControlButtons();
-    const htfScan = status?.htfScan || null;
-    const running = Boolean(htfScan?.running);
-    const stopRequested = Boolean(htfScan?.stop_requested);
+function setVDFScanControlButtonState(status: DivergenceScanStatus | null): void {
+    const { stopButton } = getVDFScanControlButtons();
+    const vdfScan = status?.vdfScan || null;
+    const running = Boolean(vdfScan?.running);
+    const stopRequested = Boolean(vdfScan?.stop_requested);
     if (stopButton) {
         stopButton.textContent = '\u23F9';
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
-        stopButton.setAttribute('aria-label', 'Stop HTF Scan');
-        stopButton.title = 'Stop HTF Scan';
+        stopButton.setAttribute('aria-label', 'Stop VDF Scan');
+        stopButton.title = 'Stop VDF Scan';
     }
 }
 
@@ -597,36 +597,36 @@ function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
     return ranText;
 }
 
-function summarizeHTFScanStatus(status: DivergenceScanStatus): string {
-    const htfScan = status.htfScan;
-    if (!htfScan) return 'Ran --';
-    const htfState = String(htfScan.status || '').toLowerCase();
-    const lastRunDateKey = toDateKey(htfScan.finished_at || htfScan.started_at || null);
+function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
+    const scan = status.vdfScan;
+    if (!scan) return 'Ran --';
+    const state = String(scan.status || '').toLowerCase();
+    const lastRunDateKey = toDateKey(scan.finished_at || scan.started_at || null);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
     const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
-    if (htfState === 'stopping') {
+    if (state === 'stopping') {
         return 'Stopping';
     }
-    if (htfState === 'stopped') {
+    if (state === 'stopped') {
         return 'Stopped';
     }
-    if (htfScan.running) {
-        const processed = Number(htfScan.processed_tickers || 0);
-        const total = Number(htfScan.total_tickers || 0);
-        const detected = Number(htfScan.detected_tickers || 0);
-        if (htfScan.stop_requested) {
+    if (scan.running) {
+        const processed = Number(scan.processed_tickers || 0);
+        const total = Number(scan.total_tickers || 0);
+        const detected = Number(scan.detected_tickers || 0);
+        if (scan.stop_requested) {
             return 'Stopping';
         }
-        if (htfState === 'running-retry') {
+        if (state === 'running-retry') {
             return `Retrying (${processed}/${total})`;
         }
-        return `${processed}/${total} (${detected} HTF)`;
+        return `${processed}/${total} (${detected} VDF)`;
     }
-    if (htfState === 'completed' || htfState === 'completed-with-errors') {
-        const detected = Number(htfScan.detected_tickers || 0);
-        return detected > 0 ? `${ranText} (${detected} HTF)` : ranText;
+    if (state === 'completed' || state === 'completed-with-errors') {
+        const detected = Number(scan.detected_tickers || 0);
+        return detected > 0 ? `${ranText} (${detected} VDF)` : ranText;
     }
-    if (htfState === 'failed') {
+    if (state === 'failed') {
         return ranText;
     }
     return ranText;
@@ -706,10 +706,10 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
         setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
         setFetchWeeklyControlButtonState(status);
-        const htfRunning1 = Boolean(status.htfScan?.running);
-        setHTFScanButtonState(htfRunning1);
-        setHTFScanStatusText(summarizeHTFScanStatus(status));
-        setHTFScanControlButtonState(status);
+        const vdfRunning1 = Boolean(status.vdfScan?.running);
+        setVDFScanButtonState(vdfRunning1);
+        setVDFScanStatusText(summarizeVDFScanStatus(status));
+        setVDFScanControlButtonState(status);
         if (fetchDailyRunning) {
             allowAutoCardRefreshFromFetchDaily = true;
             allowAutoCardRefreshFromFetchWeekly = false;
@@ -733,20 +733,20 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
         } else {
             divergenceFetchWeeklyLastProcessedTickers = -1;
         }
-        if (htfRunning1 && allowAutoCardRefreshFromHTFScan) {
-            const processed = Number(status.htfScan?.processed_tickers || 0);
-            const progressed = processed !== htfScanLastProcessedTickers;
-            htfScanLastProcessedTickers = processed;
+        if (vdfRunning1 && allowAutoCardRefreshFromVDFScan) {
+            const processed = Number(status.vdfScan?.processed_tickers || 0);
+            const progressed = processed !== vdfScanLastProcessedTickers;
+            vdfScanLastProcessedTickers = processed;
             if (progressed) {
                 refreshDivergenceCardsWhileRunning(true);
             }
         } else {
-            htfScanLastProcessedTickers = -1;
+            vdfScanLastProcessedTickers = -1;
         }
-        if (!fetchDailyRunning && !fetchWeeklyRunning && !htfRunning1) {
+        if (!fetchDailyRunning && !fetchWeeklyRunning && !vdfRunning1) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
-        if (!status.running && !tableRunning && !fetchDailyRunning && !fetchWeeklyRunning && !htfRunning1) {
+        if (!status.running && !tableRunning && !fetchDailyRunning && !fetchWeeklyRunning && !vdfRunning1) {
             clearDivergenceScanPolling();
             if (refreshOnComplete) {
                 if (allowAutoCardRefreshFromFetchDaily) {
@@ -757,14 +757,14 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
                     await fetchDivergenceSignalsByTimeframe('1w');
                     renderDivergenceContainer('1w');
                 }
-                if (allowAutoCardRefreshFromHTFScan) {
+                if (allowAutoCardRefreshFromVDFScan) {
                     await fetchDivergenceSignals();
                     renderDivergenceOverview();
                 }
             }
             allowAutoCardRefreshFromFetchDaily = false;
             allowAutoCardRefreshFromFetchWeekly = false;
-            allowAutoCardRefreshFromHTFScan = false;
+            allowAutoCardRefreshFromVDFScan = false;
         }
     } catch (error) {
         divergenceScanPollConsecutiveErrors += 1;
@@ -791,8 +791,8 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
             setFetchDailyControlButtonState(null);
             setFetchWeeklyButtonState(false, false);
             setFetchWeeklyControlButtonState(null);
-            setHTFScanButtonState(false);
-            setHTFScanControlButtonState(null);
+            setVDFScanButtonState(false);
+            setVDFScanControlButtonState(null);
             allowAutoCardRefreshFromFetchDaily = false;
             allowAutoCardRefreshFromFetchWeekly = false;
         }
@@ -831,10 +831,10 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchWeeklyButtonState(fetchWeeklyRunning, fetchWeeklyCanResume);
         setFetchWeeklyStatusText(summarizeFetchWeeklyStatus(status));
         setFetchWeeklyControlButtonState(status);
-        const htfRunning2 = Boolean(status.htfScan?.running);
-        setHTFScanButtonState(htfRunning2);
-        setHTFScanStatusText(summarizeHTFScanStatus(status));
-        setHTFScanControlButtonState(status);
+        const vdfRunning2 = Boolean(status.vdfScan?.running);
+        setVDFScanButtonState(vdfRunning2);
+        setVDFScanStatusText(summarizeVDFScanStatus(status));
+        setVDFScanControlButtonState(status);
         if (fetchDailyRunning) {
             allowAutoCardRefreshFromFetchDaily = true;
             allowAutoCardRefreshFromFetchWeekly = false;
@@ -861,7 +861,7 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         if (!fetchDailyRunning && !fetchWeeklyRunning) {
             divergenceTableLastUiRefreshAtMs = 0;
         }
-        if (status.running || tableRunning || fetchDailyRunning || fetchWeeklyRunning || htfRunning2) {
+        if (status.running || tableRunning || fetchDailyRunning || fetchWeeklyRunning || vdfRunning2) {
             ensureDivergenceScanPolling(true);
         } else {
             clearDivergenceScanPolling();
@@ -885,8 +885,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
         setFetchWeeklyButtonState(false, false);
         setFetchWeeklyStatusText(toStatusTextFromError(error));
         setFetchWeeklyControlButtonState(null);
-        setHTFScanButtonState(false);
-        setHTFScanControlButtonState(null);
+        setVDFScanButtonState(false);
+        setVDFScanControlButtonState(null);
         allowAutoCardRefreshFromFetchDaily = false;
         allowAutoCardRefreshFromFetchWeekly = false;
     }
@@ -1085,37 +1085,35 @@ export async function stopManualDivergenceFetchWeeklyData(): Promise<void> {
     }
 }
 
-export async function runManualHTFScan(): Promise<void> {
-    setHTFScanButtonState(true);
-    setHTFScanStatusText('Starting...');
-    allowAutoCardRefreshFromHTFScan = true;
+export async function runManualVDFScan(): Promise<void> {
+    setVDFScanButtonState(true);
+    setVDFScanStatusText('Starting...');
+    allowAutoCardRefreshFromVDFScan = true;
     allowAutoCardRefreshFromFetchDaily = false;
     allowAutoCardRefreshFromFetchWeekly = false;
     try {
-        let htfMode = 'moderate';
-        try { htfMode = window.localStorage.getItem('htf_detection_mode') || 'moderate'; } catch {}
-        const started = await startHTFScan(htfMode);
-        if (started.status === 'running') setHTFScanStatusText('Already running');
+        const started = await startVDFScan();
+        if (started.status === 'running') setVDFScanStatusText('Already running');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {
-        console.error('Failed to start HTF scan:', error);
-        setHTFScanButtonState(false);
-        setHTFScanStatusText(toStatusTextFromError(error));
+        console.error('Failed to start VDF scan:', error);
+        setVDFScanButtonState(false);
+        setVDFScanStatusText(toStatusTextFromError(error));
     }
 }
 
-export async function stopManualHTFScan(): Promise<void> {
+export async function stopManualVDFScan(): Promise<void> {
     try {
-        const result = await stopHTFScan();
+        const result = await stopVDFScan();
         if (result.status === 'stop-requested') {
-            setHTFScanStatusText('Stopping');
+            setVDFScanStatusText('Stopping');
         }
-        allowAutoCardRefreshFromHTFScan = false;
+        allowAutoCardRefreshFromVDFScan = false;
         await syncDivergenceScanUiState();
     } catch (error) {
-        console.error('Failed to stop HTF scan:', error);
-        setHTFScanStatusText(toStatusTextFromError(error));
+        console.error('Failed to stop VDF scan:', error);
+        setVDFScanStatusText(toStatusTextFromError(error));
     }
 }
 

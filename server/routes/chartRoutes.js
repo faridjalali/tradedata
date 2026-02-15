@@ -172,10 +172,10 @@ function registerChartRoutes(options = {}) {
     }
   });
 
-  app.get('/api/chart/htf-status', async (req, res) => {
+  app.get('/api/chart/vdf-status', async (req, res) => {
     try {
-      if (typeof options.getHTFStatus !== 'function') {
-        return res.status(501).json({ error: 'HTF endpoint is not enabled' });
+      if (typeof options.getVDFStatus !== 'function') {
+        return res.status(501).json({ error: 'VDF endpoint is not enabled' });
       }
       const ticker = String(req.query.ticker || '').trim().toUpperCase();
       if (!ticker) {
@@ -185,14 +185,12 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
       const force = parseBooleanQueryFlag(req.query.force);
-      const modeRaw = String(req.query.mode || 'strict').toLowerCase();
-      const mode = (modeRaw === 'moderate' || modeRaw === 'strict') ? modeRaw : 'strict';
-      const result = await options.getHTFStatus(ticker, { force, mode });
+      const result = await options.getVDFStatus(ticker, { force });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(result);
     } catch (err) {
-      console.error('HTF Status API Error:', err && err.message ? err.message : err);
-      return res.status(502).json({ error: 'Failed to fetch HTF status' });
+      console.error('VDF Status API Error:', err && err.message ? err.message : err);
+      return res.status(502).json({ error: 'Failed to fetch VDF status' });
     }
   });
 

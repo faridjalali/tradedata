@@ -19,7 +19,7 @@ export interface Alert {
         sma50?: boolean;
         sma200?: boolean;
     };
-    htf_detected?: boolean;
+    vdf_detected?: boolean;
 }
 
 export interface AppState {

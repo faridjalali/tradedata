@@ -83,24 +83,10 @@ let chartCacheHydratedFromSession = false;
 let chartCachePersistTimer: number | null = null;
 let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
-let htfButtonEl: HTMLButtonElement | null = null;
-let htfLoadingForTicker: string | null = null;
-let htfResultCache = new Map<string, { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }>();
-const HTF_CACHE_MAX_SIZE = 200;
-type HTFMode = 'moderate' | 'strict';
-const HTF_MODE_STORAGE_KEY = 'htf_detection_mode';
-
-function getHTFMode(): HTFMode {
-  try {
-    const v = window.localStorage.getItem(HTF_MODE_STORAGE_KEY);
-    if (v === 'moderate' || v === 'strict') return v;
-  } catch {}
-  return 'moderate';
-}
-
-function setHTFMode(mode: HTFMode): void {
-  try { window.localStorage.setItem(HTF_MODE_STORAGE_KEY, mode); } catch {}
-}
+let vdfButtonEl: HTMLButtonElement | null = null;
+let vdfLoadingForTicker: string | null = null;
+let vdfResultCache = new Map<string, { is_detected: boolean; composite_score: number; status: string; weeks: number }>();
+const VDF_CACHE_MAX_SIZE = 200;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
@@ -1457,7 +1443,7 @@ function syncPriceSettingsPanelValues(): void {
     if (length) length.value = String(ma.length);
     if (color) color.value = ma.color;
   }
-  applyHTFModeButtonStyles(priceSettingsPanelEl);
+  // VDF button doesn't need settings sync
 }
 
 function syncRSISettingsPanelValues(): void {
@@ -2482,16 +2468,6 @@ function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
   });
 }
 
-function applyHTFModeButtonStyles(panel: HTMLElement): void {
-  const current = getHTFMode();
-  const buttons = panel.querySelectorAll('[data-price-setting="htf-mode"]');
-  buttons.forEach((btn) => {
-    const el = btn as HTMLButtonElement;
-    const isActive = el.dataset.htfMode === current;
-    el.style.background = isActive ? '#1f6feb' : '#0d1117';
-    el.style.color = isActive ? '#ffffff' : '#8b949e';
-  });
-}
 
 function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
@@ -2541,17 +2517,6 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
       </div>
     `).join('')}
-    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; min-height:26px;">
-      <span style="min-width:32px;">HTF</span>
-      <button type="button" data-price-setting="htf-mode" data-htf-mode="moderate"
-        style="flex:1; padding:3px 0; font-size:11px; border-radius:4px; border:1px solid #30363d; cursor:pointer;">
-        Moderate
-      </button>
-      <button type="button" data-price-setting="htf-mode" data-htf-mode="strict"
-        style="flex:1; padding:3px 0; font-size:11px; border-radius:4px; border:1px solid #30363d; cursor:pointer;">
-        Strict
-      </button>
-    </div>
   `;
   applyUniformSettingsPanelTypography(panel);
 
@@ -2602,15 +2567,6 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.addEventListener('click', (event) => {
     const target = event.target as HTMLButtonElement | null;
     if (!target) return;
-    if (target.dataset.priceSetting === 'htf-mode' && target.dataset.htfMode) {
-      event.preventDefault();
-      const newMode = target.dataset.htfMode as HTFMode;
-      setHTFMode(newMode);
-      applyHTFModeButtonStyles(panel);
-      htfResultCache.clear();
-      if (currentChartTicker) runHTFDetection(currentChartTicker, true);
-      return;
-    }
     if (target.dataset.priceSetting !== 'reset') return;
     event.preventDefault();
     resetPriceSettingsToDefault();
@@ -2924,7 +2880,7 @@ function ensureSettingsUI(
   volumeDeltaContainer: HTMLElement
 ): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
-  const htfBtn = ensureHTFButton(chartContainer);
+  const vdfBtn = ensureVDFButton(chartContainer);
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
@@ -3054,13 +3010,13 @@ function ensureSettingsUI(
     rsiDivergenceBtn.dataset.bound = '1';
   }
 
-  if (!htfBtn.dataset.bound) {
-    htfBtn.addEventListener('click', (event) => {
+  if (!vdfBtn.dataset.bound) {
+    vdfBtn.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (currentChartTicker) runHTFDetection(currentChartTicker, true);
+      if (currentChartTicker) runVDFDetection(currentChartTicker, true);
     });
-    htfBtn.dataset.bound = '1';
+    vdfBtn.dataset.bound = '1';
   }
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
@@ -4243,26 +4199,25 @@ function renderVolumeDeltaDivergenceSummary(
 }
 
 // =============================================================================
-// HTF (High-Tight Flag) Detector Button
+// VDF (Volume Divergence Flag) Detector Button
 // =============================================================================
 
-const HTF_COLOR_LOADING = '#c9d1d9';
-const HTF_COLOR_DETECTED = '#26a69a';
-const HTF_COLOR_NOT_DETECTED = '#484f58';
-const HTF_COLOR_ERROR = '#ef5350';
+const VDF_COLOR_LOADING = '#c9d1d9';
+const VDF_COLOR_DETECTED = '#26a69a';
+const VDF_COLOR_NOT_DETECTED = '#484f58';
+const VDF_COLOR_ERROR = '#ef5350';
 
-function ensureHTFButton(container: HTMLElement): HTMLButtonElement {
-  if (htfButtonEl && htfButtonEl.parentElement === container) return htfButtonEl;
-  // Remove orphaned button
-  if (htfButtonEl && htfButtonEl.parentElement) {
-    htfButtonEl.parentElement.removeChild(htfButtonEl);
+function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
+  if (vdfButtonEl && vdfButtonEl.parentElement === container) return vdfButtonEl;
+  if (vdfButtonEl && vdfButtonEl.parentElement) {
+    vdfButtonEl.parentElement.removeChild(vdfButtonEl);
   }
 
   const btn = document.createElement('button');
-  btn.className = 'htf-indicator-btn';
+  btn.className = 'vdf-indicator-btn';
   btn.type = 'button';
-  btn.title = 'High-Tight Flag Detector';
-  btn.textContent = 'HTF';
+  btn.title = 'Volume Divergence Flag Detector';
+  btn.textContent = 'VDF';
   btn.style.position = 'absolute';
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
   btn.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
@@ -4274,7 +4229,7 @@ function ensureHTFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.borderRadius = '4px';
   btn.style.border = '1px solid #30363d';
   btn.style.background = '#161b22';
-  btn.style.color = HTF_COLOR_LOADING;
+  btn.style.color = VDF_COLOR_LOADING;
   btn.style.cursor = 'pointer';
   btn.style.fontSize = '9px';
   btn.style.fontWeight = '700';
@@ -4284,86 +4239,80 @@ function ensureHTFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.textAlign = 'center';
   btn.style.userSelect = 'none';
   container.appendChild(btn);
-  htfButtonEl = btn;
+  vdfButtonEl = btn;
   return btn;
 }
 
-function setHTFButtonColor(color: string, title?: string): void {
-  if (!htfButtonEl) return;
-  htfButtonEl.style.color = color;
-  if (title !== undefined) htfButtonEl.title = title;
+function setVDFButtonColor(color: string, title?: string): void {
+  if (!vdfButtonEl) return;
+  vdfButtonEl.style.color = color;
+  if (title !== undefined) vdfButtonEl.title = title;
 }
 
-function buildHTFTooltip(result: { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }): string {
-  const mode = getHTFMode();
-  let tip = `HTF (${mode[0].toUpperCase() + mode.slice(1)}): ${result.status}`;
-  if (result.is_candidate) {
-    tip += `\nComposite: ${(result.composite_score * 100).toFixed(1)}%`;
+function buildVDFTooltip(result: { is_detected: boolean; composite_score: number; status: string; weeks: number }): string {
+  let tip = `VDF: ${result.status}`;
+  if (result.composite_score > 0) {
+    tip += `\nScore: ${(result.composite_score * 100).toFixed(1)}%`;
   }
-  if (result.impulse_gain_pct != null) {
-    tip += `\nImpulse: +${result.impulse_gain_pct.toFixed(1)}%`;
+  if (result.weeks > 0) {
+    tip += `\nDuration: ${result.weeks} weeks`;
   }
   return tip;
 }
 
-async function runHTFDetection(ticker: string, force = false): Promise<void> {
+async function runVDFDetection(ticker: string, force = false): Promise<void> {
   if (!ticker) return;
-  // Prevent concurrent runs for the same ticker
-  if (htfLoadingForTicker === ticker && !force) return;
+  if (vdfLoadingForTicker === ticker && !force) return;
 
-  // Client-side cache check (same ticker, same date)
   const today = new Date().toLocaleDateString('en-CA', {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
-  const mode = getHTFMode();
-  const cacheKey = `${ticker}|${today}|${mode}`;
-  if (!force && htfResultCache.has(cacheKey)) {
-    const cached = htfResultCache.get(cacheKey)!;
-    setHTFButtonColor(
-      cached.is_detected ? HTF_COLOR_DETECTED : HTF_COLOR_NOT_DETECTED,
-      buildHTFTooltip(cached)
+  const cacheKey = `${ticker}|${today}`;
+  if (!force && vdfResultCache.has(cacheKey)) {
+    const cached = vdfResultCache.get(cacheKey)!;
+    setVDFButtonColor(
+      cached.is_detected ? VDF_COLOR_DETECTED : VDF_COLOR_NOT_DETECTED,
+      buildVDFTooltip(cached)
     );
     return;
   }
 
-  htfLoadingForTicker = ticker;
-  setHTFButtonColor(HTF_COLOR_LOADING, 'HTF: Loading...');
+  vdfLoadingForTicker = ticker;
+  setVDFButtonColor(VDF_COLOR_LOADING, 'VDF: Loading...');
 
   try {
-    const params = new URLSearchParams({ ticker, mode });
+    const params = new URLSearchParams({ ticker });
     if (force) params.set('force', '1');
-    const response = await fetch(`/api/chart/htf-status?${params}`);
+    const response = await fetch(`/api/chart/vdf-status?${params}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const result = await response.json();
 
-    // Verify we're still on the same ticker
     if (currentChartTicker !== ticker) return;
 
     const entry = {
       is_detected: result.is_detected || false,
-      is_candidate: result.is_candidate || false,
       composite_score: Number(result.composite_score) || 0,
       status: result.status || '',
-      impulse_gain_pct: result.impulse_gain_pct != null ? Number(result.impulse_gain_pct) : null,
+      weeks: Number(result.weeks) || 0,
     };
-    htfResultCache.set(cacheKey, entry);
-    if (htfResultCache.size > HTF_CACHE_MAX_SIZE) {
-      const oldest = htfResultCache.keys().next().value;
-      if (oldest !== undefined) htfResultCache.delete(oldest);
+    vdfResultCache.set(cacheKey, entry);
+    if (vdfResultCache.size > VDF_CACHE_MAX_SIZE) {
+      const oldest = vdfResultCache.keys().next().value;
+      if (oldest !== undefined) vdfResultCache.delete(oldest);
     }
-    setHTFButtonColor(
-      entry.is_detected ? HTF_COLOR_DETECTED : HTF_COLOR_NOT_DETECTED,
-      buildHTFTooltip(entry)
+    setVDFButtonColor(
+      entry.is_detected ? VDF_COLOR_DETECTED : VDF_COLOR_NOT_DETECTED,
+      buildVDFTooltip(entry)
     );
   } catch {
     if (currentChartTicker === ticker) {
-      setHTFButtonColor(HTF_COLOR_ERROR, 'HTF: Failed to load');
+      setVDFButtonColor(VDF_COLOR_ERROR, 'VDF: Failed to load');
     }
   } finally {
-    if (htfLoadingForTicker === ticker) htfLoadingForTicker = null;
+    if (vdfLoadingForTicker === ticker) vdfLoadingForTicker = null;
   }
 }
 
@@ -4866,9 +4815,9 @@ function applyChartDataToUi(
   syncChartsToPriceRange();
   scheduleChartLayoutRefresh();
 
-  // Run HTF detection after divergence table + MAs complete
+  // Run VDF detection after divergence table + MAs complete
   if (currentChartTicker) {
-    runHTFDetection(currentChartTicker);
+    runVDFDetection(currentChartTicker);
   }
 }
 
