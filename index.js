@@ -627,7 +627,8 @@ const RUN_METRICS_SAMPLE_CAP = Math.max(100, Number(process.env.RUN_METRICS_SAMP
 const RUN_METRICS_HISTORY_LIMIT = Math.max(10, Number(process.env.RUN_METRICS_HISTORY_LIMIT) || 40);
 const runMetricsByType = {
   fetchDaily: null,
-  fetchWeekly: null
+  fetchWeekly: null,
+  htfScan: null
 };
 const runMetricsHistory = [];
 
@@ -943,11 +944,13 @@ function getLogsRunMetricsPayload() {
       fetchDaily: getDivergenceFetchDailyDataStatus(),
       fetchWeekly: getDivergenceFetchWeeklyDataStatus(),
       scan: getDivergenceScanControlStatus(),
-      table: getDivergenceTableBuildStatus()
+      table: getDivergenceTableBuildStatus(),
+      htfScan: getHTFScanStatus()
     },
     runs: {
       fetchDaily: summarizeRunMetrics(runMetricsByType.fetchDaily),
-      fetchWeekly: summarizeRunMetrics(runMetricsByType.fetchWeekly)
+      fetchWeekly: summarizeRunMetrics(runMetricsByType.fetchWeekly),
+      htfScan: summarizeRunMetrics(runMetricsByType.htfScan)
     },
     history: runMetricsHistory.slice(0, RUN_METRICS_HISTORY_LIMIT)
   };
@@ -1260,6 +1263,21 @@ app.get('/api/alerts', async (req, res) => {
       console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
     }
     const neutralStates = buildNeutralDivergenceStateMap();
+    let htfDetectedSetTv = new Set();
+    try {
+      if (tickers.length > 0 && isDivergenceConfigured()) {
+        const htfTradeDate = currentEtDateString();
+        const htfRes = await divergencePool.query(
+          `SELECT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          [htfTradeDate, tickers]
+        );
+        for (const row of htfRes.rows) {
+          htfDetectedSetTv.add(String(row.ticker).toUpperCase());
+        }
+      }
+    } catch {
+      // Non-critical
+    }
     const enrichedRows = result.rows.map((row) => {
       const ticker = String(row?.ticker || '').trim().toUpperCase();
       const summary = summariesByTicker.get(ticker) || null;
@@ -1279,7 +1297,8 @@ app.get('/api/alerts', async (req, res) => {
           '7': String(states['7'] || 'neutral'),
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
-        }
+        },
+        htf_detected: htfDetectedSetTv.has(ticker)
       };
     });
     res.json(enrichedRows);
@@ -1477,6 +1496,22 @@ app.get('/api/divergence/signals', async (req, res) => {
       console.error(`Failed to enrich divergence signals with divergence summaries: ${message}`);
     }
     const neutralStates = buildNeutralDivergenceStateMap();
+    // Enrich with HTF detection results
+    let htfDetectedSet = new Set();
+    try {
+      if (tickers.length > 0) {
+        const htfTradeDate = currentEtDateString();
+        const htfRes = await divergencePool.query(
+          `SELECT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          [htfTradeDate, tickers]
+        );
+        for (const row of htfRes.rows) {
+          htfDetectedSet.add(String(row.ticker).toUpperCase());
+        }
+      }
+    } catch {
+      // Non-critical: if htf_results table doesn't exist yet or query fails, skip silently
+    }
     const enrichedRows = result.rows.map((row) => {
       const ticker = String(row?.ticker || '').trim().toUpperCase();
       const summary = summariesByTicker.get(ticker) || null;
@@ -1496,7 +1531,8 @@ app.get('/api/divergence/signals', async (req, res) => {
           '7': String(states['7'] || 'neutral'),
           '14': String(states['14'] || 'neutral'),
           '28': String(states['28'] || 'neutral')
-        }
+        },
+        htf_detected: htfDetectedSet.has(ticker)
       };
     });
     res.json(enrichedRows);
@@ -4405,6 +4441,261 @@ async function getHTFStatus(ticker, options = {}) {
     };
   } finally {
     htfRunningTickers.delete(ticker);
+  }
+}
+
+// --- HTF Scan (bulk) state ---
+let htfScanRunning = false;
+let htfScanStopRequested = false;
+let htfScanAbortController = null;
+let htfScanStatus = {
+  running: false,
+  status: 'idle',
+  totalTickers: 0,
+  processedTickers: 0,
+  errorTickers: 0,
+  detectedTickers: 0,
+  startedAt: null,
+  finishedAt: null
+};
+
+function getHTFScanStatus() {
+  return {
+    running: Boolean(htfScanRunning),
+    stop_requested: Boolean(htfScanStopRequested),
+    status: String(htfScanStatus.status || 'idle'),
+    total_tickers: Number(htfScanStatus.totalTickers || 0),
+    processed_tickers: Number(htfScanStatus.processedTickers || 0),
+    error_tickers: Number(htfScanStatus.errorTickers || 0),
+    detected_tickers: Number(htfScanStatus.detectedTickers || 0),
+    started_at: htfScanStatus.startedAt || null,
+    finished_at: htfScanStatus.finishedAt || null
+  };
+}
+
+function requestStopHTFScan() {
+  if (!htfScanRunning) return false;
+  htfScanStopRequested = true;
+  htfScanStatus = {
+    ...htfScanStatus,
+    status: 'stopping',
+    finishedAt: null
+  };
+  if (htfScanAbortController && !htfScanAbortController.signal.aborted) {
+    try {
+      htfScanAbortController.abort();
+    } catch {
+      // Ignore duplicate aborts.
+    }
+  }
+  return true;
+}
+
+async function runHTFScan(options = {}) {
+  if (!isDivergenceConfigured()) {
+    return { status: 'disabled', reason: 'Divergence database is not configured' };
+  }
+  if (htfScanRunning) {
+    return { status: 'running' };
+  }
+
+  htfScanRunning = true;
+  htfScanStopRequested = false;
+  runMetricsByType.htfScan = null;
+
+  let processedTickers = 0;
+  let errorTickers = 0;
+  let detectedTickers = 0;
+  const startedAtIso = new Date().toISOString();
+  const scanAbort = new AbortController();
+  htfScanAbortController = scanAbort;
+  htfScanStatus = {
+    running: true,
+    status: 'running',
+    totalTickers: 0,
+    processedTickers: 0,
+    errorTickers: 0,
+    detectedTickers: 0,
+    startedAt: startedAtIso,
+    finishedAt: null
+  };
+
+  const runConcurrency = resolveAdaptiveFetchConcurrency('htf-scan');
+  let runMetricsTracker = null;
+  const today = currentEtDateString();
+  const failedTickers = [];
+
+  try {
+    const tickers = await getStoredDivergenceSymbolTickers();
+    const totalTickers = tickers.length;
+    htfScanStatus.totalTickers = totalTickers;
+
+    runMetricsTracker = createRunMetricsTracker('htfScan', {
+      totalTickers,
+      concurrency: runConcurrency
+    });
+    runMetricsTracker.setPhase('core');
+
+    await mapWithConcurrency(
+      tickers,
+      runConcurrency,
+      async (ticker) => {
+        if (htfScanStopRequested || scanAbort.signal.aborted) {
+          return { ticker, skipped: true };
+        }
+        const apiStart = Date.now();
+        try {
+          const result = await getHTFStatus(ticker, { force: false });
+          const latencyMs = Date.now() - apiStart;
+          if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, false);
+          return { ticker, result, error: null };
+        } catch (err) {
+          const latencyMs = Date.now() - apiStart;
+          if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, true);
+          return { ticker, result: null, error: err };
+        }
+      },
+      (settled) => {
+        if (settled.skipped) return;
+        processedTickers++;
+        if (settled.error) {
+          errorTickers++;
+          failedTickers.push(settled.ticker);
+          if (!(htfScanStopRequested && isAbortError(settled.error))) {
+            console.error(`HTF scan error for ${settled.ticker}:`, settled.error?.message || settled.error);
+          }
+        } else if (settled.result && settled.result.is_detected) {
+          detectedTickers++;
+        }
+        htfScanStatus.processedTickers = processedTickers;
+        htfScanStatus.errorTickers = errorTickers;
+        htfScanStatus.detectedTickers = detectedTickers;
+        htfScanStatus.status = htfScanStopRequested ? 'stopping' : 'running';
+        if (runMetricsTracker) {
+          runMetricsTracker.update({
+            processedTickers,
+            errorTickers
+          });
+        }
+      },
+      () => htfScanStopRequested || scanAbort.signal.aborted
+    );
+
+    if (htfScanStopRequested) {
+      htfScanStopRequested = false;
+      htfScanStatus = {
+        running: false,
+        status: 'stopped',
+        totalTickers,
+        processedTickers,
+        errorTickers,
+        detectedTickers,
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString()
+      };
+      if (runMetricsTracker) {
+        runMetricsTracker.finish('stopped', {
+          totalTickers,
+          processedTickers,
+          errorTickers,
+          failedTickers
+        });
+      }
+      return { status: 'stopped', processedTickers, errorTickers, detectedTickers };
+    }
+
+    // Retry failed tickers once
+    if (failedTickers.length > 0 && !htfScanStopRequested && !scanAbort.signal.aborted) {
+      const retryTickers = [...failedTickers];
+      failedTickers.length = 0;
+      htfScanStatus.status = 'running-retry';
+      if (runMetricsTracker) runMetricsTracker.setPhase('retry');
+
+      await mapWithConcurrency(
+        retryTickers,
+        Math.max(1, Math.floor(runConcurrency / 2)),
+        async (ticker) => {
+          if (htfScanStopRequested || scanAbort.signal.aborted) {
+            return { ticker, skipped: true };
+          }
+          const apiStart = Date.now();
+          try {
+            const result = await getHTFStatus(ticker, { force: true });
+            const latencyMs = Date.now() - apiStart;
+            if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, false);
+            return { ticker, result, error: null };
+          } catch (err) {
+            const latencyMs = Date.now() - apiStart;
+            if (runMetricsTracker) runMetricsTracker.recordApiCall(latencyMs, true);
+            return { ticker, result: null, error: err };
+          }
+        },
+        (settled) => {
+          if (settled.skipped) return;
+          if (settled.error) {
+            failedTickers.push(settled.ticker);
+          } else {
+            errorTickers--;
+            if (settled.result && settled.result.is_detected) {
+              detectedTickers++;
+            }
+          }
+          htfScanStatus.errorTickers = errorTickers;
+          htfScanStatus.detectedTickers = detectedTickers;
+        },
+        () => htfScanStopRequested || scanAbort.signal.aborted
+      );
+    }
+
+    const finalStatus = errorTickers > 0 ? 'completed-with-errors' : 'completed';
+    htfScanStopRequested = false;
+    htfScanStatus = {
+      running: false,
+      status: finalStatus,
+      totalTickers,
+      processedTickers,
+      errorTickers,
+      detectedTickers,
+      startedAt: startedAtIso,
+      finishedAt: new Date().toISOString()
+    };
+    if (runMetricsTracker) {
+      runMetricsTracker.finish(finalStatus, {
+        totalTickers,
+        processedTickers,
+        errorTickers,
+        failedTickers
+      });
+    }
+    return { status: finalStatus, processedTickers, errorTickers, detectedTickers };
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`HTF scan failed: ${message}`);
+    htfScanStopRequested = false;
+    htfScanStatus = {
+      running: false,
+      status: 'failed',
+      totalTickers: htfScanStatus.totalTickers,
+      processedTickers,
+      errorTickers,
+      detectedTickers,
+      startedAt: startedAtIso,
+      finishedAt: new Date().toISOString()
+    };
+    if (runMetricsTracker) {
+      runMetricsTracker.finish('failed', {
+        totalTickers: htfScanStatus.totalTickers,
+        processedTickers,
+        errorTickers,
+        failedTickers
+      });
+    }
+    return { status: 'failed', error: message };
+  } finally {
+    if (htfScanAbortController === scanAbort) {
+      htfScanAbortController = null;
+    }
+    htfScanRunning = false;
   }
 }
 
@@ -8240,7 +8531,11 @@ registerDivergenceRoutes({
   canResumeFetchDailyData: () => canResumeDivergenceFetchDailyData(),
   getFetchWeeklyDataStatus: () => getDivergenceFetchWeeklyDataStatus(),
   requestStopFetchWeeklyData: () => requestStopDivergenceFetchWeeklyData(),
-  canResumeFetchWeeklyData: () => canResumeDivergenceFetchWeeklyData()
+  canResumeFetchWeeklyData: () => canResumeDivergenceFetchWeeklyData(),
+  getHTFScanStatus: () => getHTFScanStatus(),
+  requestStopHTFScan: () => requestStopHTFScan(),
+  runHTFScan,
+  getIsHTFScanRunning: () => htfScanRunning
 });
 
 app.get('/api/logs/run-metrics', (req, res) => {

@@ -95,6 +95,7 @@ export function createAlertCard(alert: Alert): string {
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>
+                    ${alert.htf_detected ? '<span class="htf-tag" title="High-Tight Flag detected">HTF</span>' : ''}
                     ${maDots}
                 </div>
             </div>

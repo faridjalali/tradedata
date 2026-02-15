@@ -35,7 +35,11 @@ function registerDivergenceRoutes(options = {}) {
     canResumeFetchDailyData,
     getFetchWeeklyDataStatus,
     requestStopFetchWeeklyData,
-    canResumeFetchWeeklyData
+    canResumeFetchWeeklyData,
+    getHTFScanStatus,
+    requestStopHTFScan,
+    runHTFScan,
+    getIsHTFScanRunning
   } = options;
 
   if (!app) {
@@ -457,13 +461,66 @@ function registerDivergenceRoutes(options = {}) {
       };
     }
 
+    const htfScan = typeof getHTFScanStatus === 'function'
+      ? getHTFScanStatus()
+      : null;
+
     return res.json({
       ...statusPayload,
       scanControl,
       tableBuild,
       fetchDailyData,
-      fetchWeeklyData
+      fetchWeeklyData,
+      htfScan
     });
+  });
+
+  app.post('/api/divergence/htf-scan/run', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (typeof getIsHTFScanRunning === 'function' && getIsHTFScanRunning()) {
+      return res.status(409).json({ status: 'running' });
+    }
+
+    if (typeof runHTFScan !== 'function') {
+      return res.status(501).json({ error: 'HTF scan endpoint is not enabled' });
+    }
+
+    runHTFScan({ trigger: 'manual-api' })
+      .then((summary) => {
+        console.log('Manual HTF scan completed:', summary);
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        console.error(`Manual HTF scan failed: ${message}`);
+      });
+
+    return res.status(202).json({ status: 'started' });
+  });
+
+  app.post('/api/divergence/htf-scan/stop', async (req, res) => {
+    if (!isDivergenceConfigured()) {
+      return res.status(503).json({ error: 'Divergence database is not configured' });
+    }
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(req.query.secret || req.headers['x-divergence-secret'] || '').trim();
+    if (configuredSecret && configuredSecret !== providedSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (typeof requestStopHTFScan !== 'function') {
+      return res.status(501).json({ error: 'HTF scan stop endpoint is not enabled' });
+    }
+    const accepted = requestStopHTFScan();
+    if (accepted) return res.status(202).json({ status: 'stop-requested' });
+    return res.status(409).json({ status: 'idle' });
   });
 }
 

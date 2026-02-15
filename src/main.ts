@@ -15,6 +15,8 @@ import {
     stopManualDivergenceFetchDailyData,
     runManualDivergenceFetchWeeklyData,
     stopManualDivergenceFetchWeeklyData,
+    runManualHTFScan,
+    stopManualHTFScan,
     syncDivergenceScanUiState,
     initializeDivergenceSortDefaults,
     setColumnFeedMode,
@@ -597,6 +599,12 @@ function bootstrapApplication(): void {
     });
     document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
         stopManualDivergenceFetchWeeklyData();
+    });
+    document.getElementById('divergence-htf-scan-btn')?.addEventListener('click', () => {
+        runManualHTFScan();
+    });
+    document.getElementById('divergence-htf-scan-stop-btn')?.addEventListener('click', () => {
+        stopManualHTFScan();
     });
 
     // Ticker View Daily Sort Buttons

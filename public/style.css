@@ -769,6 +769,20 @@ h2 {
   white-space: pre;
 }
 
+.htf-tag {
+  display: inline-block;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: #26a69a;
+  border: 1px solid #26a69a;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 4px;
+  line-height: 14px;
+  vertical-align: middle;
+}
+
 .ma-dot-row {
   display: inline-flex;
   align-items: center;

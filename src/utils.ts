@@ -146,12 +146,14 @@ export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'd
         } else if (mode === 'volume') {
             result = (b.signal_volume || 0) - (a.signal_volume || 0);
         } else if (mode === 'score') {
-            const bScore = b.divergence_states
+            let bScore = b.divergence_states
                 ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states)
                 : getTickerDivergenceScoreFromCache(b.ticker);
-            const aScore = a.divergence_states
+            let aScore = a.divergence_states
                 ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
                 : getTickerDivergenceScoreFromCache(a.ticker);
+            if (b.htf_detected) bScore += 10;
+            if (a.htf_detected) aScore += 10;
             if (bScore !== aScore) {
                 result = bScore - aScore;
             } else {
