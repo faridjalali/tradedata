@@ -4482,7 +4482,7 @@ async function getVDFStatus(ticker, options = {}) {
     const result = await detectVDF(ticker, {
       dataApiFetcher: dataApiIntradayChartHistory,
       signal,
-      lookbackDays: 130,
+      lookbackDays: 220,
     });
 
     // Store in DB

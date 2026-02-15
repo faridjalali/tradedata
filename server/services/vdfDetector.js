@@ -5,7 +5,7 @@
  * using 1-minute volume delta to reveal net buying that diverges from price.
  *
  * Features:
- *   - 7-component scoring with 3σ outlier capping
+ *   - 8-component scoring with divergence enforcement + 3σ outlier capping
  *   - Subwindow scanner (10–35 day sliding windows)
  *   - Multi-zone greedy clustering (up to 3 zones)
  *   - Distribution cluster detection (inverse: price up, delta negative)
@@ -136,7 +136,9 @@ function scoreSubwindow(dailySlice, preDaily) {
   const overallPriceChange = ((closes[n - 1] - closes[0]) / closes[0]) * 100;
 
   // === HARD GATES ===
-  if (overallPriceChange > 10 || overallPriceChange < -45) return null;
+  // Tightened: true accumulation happens during declines or flat periods, not rallies.
+  // Allow up to +3% for choppy/flat periods; reject clear rallies.
+  if (overallPriceChange > 3 || overallPriceChange < -45) return null;
 
   // Pre-context baseline
   const preAvgDelta = preDaily.length > 0
@@ -226,16 +228,45 @@ function scoreSubwindow(dailySlice, preDaily) {
     }
   }
 
-  // === 7 SCORING COMPONENTS ===
-  const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));         // Net Delta (25%)
-  const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));      // Delta Slope (22%)
-  const s3 = Math.max(0, Math.min(1, (deltaShift + 1) / 8));            // Delta Shift (15%)
-  const s4 = Math.max(0, Math.min(1, (accumWeekRatio - 0.2) / 0.6));    // Accum Week Ratio (15%)
-  const s5 = Math.max(0, Math.min(1, (largeBuyVsSell + 3) / 12));       // Large Buy vs Sell (10%)
-  const s6 = Math.max(0, Math.min(1, absorptionPct / 20));              // Absorption (8%)
-  const s7 = volDeclineScore;                                             // Vol Decline (5%)
+  // === 8 SCORING COMPONENTS (with divergence enforcement) ===
+  //
+  // The core insight: true accumulation shows DIVERGENCE — price declining or flat
+  // while delta is positive. Concordant movement (price up + delta up) is just a
+  // normal rally and should NOT score as accumulation.
+  //
+  // Weights sum to 1.00:
+  //   s1  Net Delta       20%  — is there net buying?
+  //   s2  Delta Slope     15%  — is cumulative buying stabilizing/improving?
+  //   s3  Delta Shift     10%  — did buying shift vs pre-context?
+  //   s4  Accum Ratio     10%  — what % of weeks had positive delta?
+  //   s5  Buy vs Sell      5%  — ratio of large buy vs sell days
+  //   s6  Absorption      18%  — days where price dropped but delta positive (KEY signal)
+  //   s7  Vol Decline       5%  — volume declining (supply drying up)
+  //   s8  Divergence      17%  — reward price-down + delta-up divergence (NEW)
 
-  const rawScore = s1 * 0.25 + s2 * 0.22 + s3 * 0.15 + s4 * 0.15 + s5 * 0.10 + s6 * 0.08 + s7 * 0.05;
+  const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));         // Net Delta
+  const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));      // Delta Slope
+  const s3 = Math.max(0, Math.min(1, (deltaShift + 1) / 8));            // Delta Shift
+  const s4 = Math.max(0, Math.min(1, (accumWeekRatio - 0.2) / 0.6));    // Accum Week Ratio
+  const s5 = Math.max(0, Math.min(1, (largeBuyVsSell + 3) / 12));       // Large Buy vs Sell
+  const s6 = Math.max(0, Math.min(1, absorptionPct / 15));              // Absorption (scaled tighter: 15% = max)
+  const s7 = volDeclineScore;                                             // Vol Decline
+
+  // s8: Divergence component — the heart of the algorithm
+  // Rewards zones where price declines while net delta is positive.
+  // Score = 1.0 when price <= -5% and netDelta >= +3% (ideal divergence)
+  // Score = 0.0 when price >= +3% or netDelta <= 0%
+  // Penalizes concordant movement (price and delta both positive)
+  let s8 = 0;
+  if (netDeltaPct > 0) {
+    // Price component: -5% or worse → 1.0, 0% → 0.5, +3% → 0.0
+    const priceFactor = Math.max(0, Math.min(1, (3 - overallPriceChange) / 8));
+    // Delta component: +3% → 1.0, 0% → 0.0
+    const deltaFactor = Math.max(0, Math.min(1, netDeltaPct / 3));
+    s8 = priceFactor * deltaFactor;
+  }
+
+  const rawScore = s1 * 0.20 + s2 * 0.15 + s3 * 0.10 + s4 * 0.10 + s5 * 0.05 + s6 * 0.18 + s7 * 0.05 + s8 * 0.17;
 
   // Duration scaling
   const durationMultiplier = Math.min(1.15, 0.70 + (weeks.length - 2) * 0.075);
@@ -256,7 +287,7 @@ function scoreSubwindow(dailySlice, preDaily) {
     absorptionPct,
     largeBuyVsSell,
     volDeclineScore,
-    components: { s1, s2, s3, s4, s5, s6, s7 },
+    components: { s1, s2, s3, s4, s5, s6, s7, s8 },
     durationMultiplier,
     cappedDays,
   };
@@ -576,11 +607,11 @@ function evaluateProximitySignals(allDaily, zones) {
  * @param {object} options
  * @param {function} options.dataApiFetcher — async (symbol, interval, lookbackDays, opts) => bars[]
  * @param {AbortSignal|null} options.signal
- * @param {number} options.lookbackDays — calendar days to scan (default 130)
+ * @param {number} options.lookbackDays — calendar days to fetch (default 220 = 6 months + pre-context)
  * @returns {Promise<object>} — full detection result
  */
 async function detectVDF(ticker, options) {
-  const { dataApiFetcher, signal, lookbackDays = 130 } = options;
+  const { dataApiFetcher, signal, lookbackDays = 220 } = options;
 
   try {
     const bars1m = await dataApiFetcher(ticker, '1min', lookbackDays, { signal });
@@ -595,8 +626,8 @@ async function detectVDF(ticker, options) {
 
     const sorted = bars1m.sort((a, b) => a.time - b.time);
     const latestTime = sorted[sorted.length - 1].time;
-    // Scan the last ~90 calendar days; pre-context is the 30 days before that
-    const scanCutoff = latestTime - 90 * 86400;
+    // Scan the last ~180 calendar days (~6 months); pre-context is the 30 days before that
+    const scanCutoff = latestTime - 180 * 86400;
     const preCutoff = scanCutoff - 30 * 86400;
 
     const scanBars = sorted.filter(b => b.time >= scanCutoff);

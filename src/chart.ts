@@ -91,7 +91,7 @@ interface VDFZone {
   absorptionPct?: number; netDeltaPct?: number; accumWeekRatio?: number;
   overallPriceChange?: number; accumWeeks?: number; weeks?: number;
   durationMultiplier?: number;
-  components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number };
+  components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8?: number };
 }
 interface VDFDistribution { startDate: string; endDate: string; spanDays: number; priceChangePct?: number; netDeltaPct?: number; }
 interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
@@ -4576,13 +4576,14 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
 // ─── VDF Analysis Panel ─────────────────────────────────────────────────────
 
 const VDF_COMPONENT_LABELS: Array<[string, string, string]> = [
-  ['s1', 'Net Delta', '25%'],
-  ['s2', 'Delta Slope', '22%'],
-  ['s3', 'Delta Shift', '15%'],
-  ['s4', 'Accum Ratio', '15%'],
-  ['s5', 'Buy vs Sell', '10%'],
-  ['s6', 'Absorption', '8%'],
+  ['s1', 'Net Delta', '20%'],
+  ['s2', 'Delta Slope', '15%'],
+  ['s3', 'Delta Shift', '10%'],
+  ['s4', 'Accum Ratio', '10%'],
+  ['s5', 'Buy vs Sell', '5%'],
+  ['s6', 'Absorption', '18%'],
   ['s7', 'Vol Decline', '5%'],
+  ['s8', 'Divergence', '17%'],
 ];
 
 function formatVDFDate(dateStr: string): string {
