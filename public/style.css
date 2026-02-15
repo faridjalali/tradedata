@@ -1499,3 +1499,6 @@ button:hover {
 .custom-chart-section.chart-fullscreen .pane-resize-handle {
     display: none;
 }
+.custom-chart-section.chart-fullscreen #vdf-analysis-panel {
+    display: none !important;
+}

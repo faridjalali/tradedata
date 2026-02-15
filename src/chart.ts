@@ -7,6 +7,7 @@ import {
   getTickerDivergenceSummary,
 } from './divergenceTable';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
+import { escapeHtml } from './utils';
 
 declare const Chart: any;
 
@@ -85,15 +86,23 @@ let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
-interface VDFZone { startDate: string; endDate: string; score: number; windowDays: number; absorptionPct?: number; netDeltaPct?: number; }
-interface VDFDistribution { startDate: string; endDate: string; spanDays: number; }
+interface VDFZone {
+  startDate: string; endDate: string; score: number; windowDays: number;
+  absorptionPct?: number; netDeltaPct?: number; accumWeekRatio?: number;
+  overallPriceChange?: number; accumWeeks?: number; weeks?: number;
+  durationMultiplier?: number;
+  components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number };
+}
+interface VDFDistribution { startDate: string; endDate: string; spanDays: number; priceChangePct?: number; netDeltaPct?: number; }
 interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
 interface VDFCacheEntry {
   is_detected: boolean; composite_score: number; status: string; weeks: number;
   zones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
+  details?: { metrics?: { totalDays?: number; scanStart?: string; scanEnd?: string; preDays?: number }; reason?: string };
 }
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
+let vdfAnalysisPanelEl: HTMLDivElement | null = null;
 const VDF_CACHE_MAX_SIZE = 200;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
@@ -3023,7 +3032,11 @@ function ensureSettingsUI(
     vdfBtn.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (currentChartTicker) runVDFDetection(currentChartTicker, true);
+      if (event.shiftKey) {
+        if (currentChartTicker) runVDFDetection(currentChartTicker, true);
+      } else {
+        toggleVDFAnalysisPanel();
+      }
     });
     vdfBtn.dataset.bound = '1';
   }
@@ -4399,6 +4412,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
     const cached = vdfResultCache.get(cacheKey)!;
     updateVDFButton(cached);
     renderVDZones(cached);
+    renderVDFAnalysisPanel(cached);
     return;
   }
 
@@ -4422,6 +4436,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
       zones: Array.isArray(result.zones) ? result.zones : [],
       distribution: Array.isArray(result.distribution) ? result.distribution : [],
       proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
+      details: result.details || undefined,
     };
     vdfResultCache.set(cacheKey, entry);
     if (vdfResultCache.size > VDF_CACHE_MAX_SIZE) {
@@ -4430,12 +4445,259 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
     }
     updateVDFButton(entry);
     renderVDZones(entry);
+    renderVDFAnalysisPanel(entry);
   } catch {
     if (currentChartTicker === ticker) {
       setVDFButtonColor(VDF_COLOR_ERROR, 'VDF: Failed to load');
     }
   } finally {
     if (vdfLoadingForTicker === ticker) vdfLoadingForTicker = null;
+  }
+}
+
+// ─── VDF Analysis Panel ─────────────────────────────────────────────────────
+
+const VDF_COMPONENT_LABELS: Array<[string, string, string]> = [
+  ['s1', 'Net Delta', '25%'],
+  ['s2', 'Delta Slope', '22%'],
+  ['s3', 'Delta Shift', '15%'],
+  ['s4', 'Accum Ratio', '15%'],
+  ['s5', 'Buy vs Sell', '10%'],
+  ['s6', 'Absorption', '8%'],
+  ['s7', 'Vol Decline', '5%'],
+];
+
+function formatVDFDate(dateStr: string): string {
+  const parts = dateStr.split('-');
+  if (parts.length < 3) return dateStr;
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+function vdfScoreTier(score: number): string {
+  if (score >= 80) return 'Strong';
+  if (score >= 60) return 'Moderate';
+  if (score >= 40) return 'Weak';
+  return 'Marginal';
+}
+
+function vdfScoreColor(score: number): string {
+  if (score >= 80) return '#26a69a';
+  if (score >= 60) return '#8bc34a';
+  return '#c9d1d9';
+}
+
+function vdfProximityColor(level: string): string {
+  if (level === 'imminent') return '#f44336';
+  if (level === 'high') return '#ff9800';
+  if (level === 'elevated') return '#ffc107';
+  return '#8b949e';
+}
+
+function ensureVDFAnalysisPanel(): HTMLDivElement {
+  if (vdfAnalysisPanelEl) return vdfAnalysisPanelEl;
+  const chartContent = document.getElementById('chart-content');
+  if (!chartContent) return document.createElement('div');
+  const panel = document.createElement('div');
+  panel.id = 'vdf-analysis-panel';
+  panel.style.cssText = 'width:100%;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:none;';
+  chartContent.appendChild(panel);
+  vdfAnalysisPanelEl = panel;
+  return panel;
+}
+
+function toggleVDFAnalysisPanel(): void {
+  if (!vdfAnalysisPanelEl) return;
+  const body = vdfAnalysisPanelEl.querySelector('.vdf-ap-body') as HTMLElement | null;
+  if (!body) return;
+  const isCollapsed = body.style.display === 'none';
+  body.style.display = isCollapsed ? 'block' : 'none';
+  const chevron = vdfAnalysisPanelEl.querySelector('.vdf-ap-chevron') as HTMLElement | null;
+  if (chevron) chevron.textContent = isCollapsed ? '\u25be' : '\u25b8';
+  try { localStorage.setItem('chart_vdf_panel_collapsed', isCollapsed ? '0' : '1'); } catch { /* */ }
+}
+
+function buildComponentBarsHtml(components: Record<string, number>): string {
+  return VDF_COMPONENT_LABELS.map(([key, label, weight]) => {
+    const val = Number(components[key]) || 0;
+    const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
+    const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : '#484f58';
+    return `<div style="display:grid;grid-template-columns:130px 1fr 36px;gap:6px;align-items:center;margin:2px 0;">
+      <span style="color:#8b949e;font-size:11px;white-space:nowrap;">${escapeHtml(label)} (${weight})</span>
+      <div style="height:4px;background:#21262d;border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;"></div>
+      </div>
+      <span style="color:#c9d1d9;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${val.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+}
+
+function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
+  const scoreInt = Math.round(zone.score * 100);
+  const label = isBest ? `Zone ${index + 1} (Primary)` : `Zone ${index + 1}`;
+  const color = vdfScoreColor(scoreInt);
+
+  let metricsLine = '';
+  const parts: string[] = [];
+  if (zone.overallPriceChange != null) parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
+  if (zone.netDeltaPct != null) parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
+  if (zone.absorptionPct != null) parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
+  if (parts.length) metricsLine = `<div style="margin:4px 0;color:#8b949e;font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
+
+  let detailLine = '';
+  const dParts: string[] = [];
+  if (zone.accumWeeks != null && zone.weeks) dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
+  if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
+  if (dParts.length) detailLine = `<div style="margin:2px 0;color:#8b949e;font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
+
+  let componentsHtml = '';
+  if (zone.components) {
+    componentsHtml = `<div style="margin-top:8px;"><div style="color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
+  }
+
+  return `<div style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:12px;margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <span style="font-weight:600;font-size:13px;color:#c9d1d9;">${escapeHtml(label)}</span>
+      <span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${scoreInt}</span>
+    </div>
+    <div style="color:#c9d1d9;font-size:12px;">${formatVDFDate(zone.startDate)} \u2192 ${formatVDFDate(zone.endDate)} (${zone.windowDays} trading days${zone.weeks ? `, ${zone.weeks} wk` : ''})</div>
+    ${metricsLine}
+    ${detailLine}
+    ${componentsHtml}
+  </div>`;
+}
+
+function buildDistributionHtml(dist: VDFDistribution, index: number): string {
+  let detail = '';
+  const parts: string[] = [];
+  if (dist.priceChangePct != null) parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
+  if (dist.netDeltaPct != null) parts.push(`Delta ${dist.netDeltaPct >= 0 ? '+' : ''}${dist.netDeltaPct.toFixed(1)}%`);
+  if (parts.length) detail = parts.join(' while ') + ' \u2014 selling into strength.';
+
+  return `<div style="background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:4px;padding:10px 12px;margin-bottom:8px;">
+    <div style="font-weight:600;font-size:12px;color:#ef5350;margin-bottom:2px;">Cluster ${index + 1}: ${formatVDFDate(dist.startDate)} \u2192 ${formatVDFDate(dist.endDate)} (${dist.spanDays} days)</div>
+    ${detail ? `<div style="color:#8b949e;font-size:12px;">${escapeHtml(detail)}</div>` : ''}
+  </div>`;
+}
+
+function buildProximityHtml(prox: VDFProximity): string {
+  if (prox.level === 'none' && prox.compositeScore === 0) return '';
+  const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
+  const levelColor = vdfProximityColor(prox.level);
+
+  const signalRows = prox.signals.map(sig =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;">
+      <span style="color:#c9d1d9;">\u2713 ${escapeHtml(sig.detail)}</span>
+      <span style="color:${levelColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;white-space:nowrap;margin-left:12px;">+${sig.points}</span>
+    </div>`
+  ).join('');
+
+  return `<div style="margin-top:4px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${levelColor};">${prox.compositeScore} pts</span>
+      <span style="font-size:11px;font-weight:600;color:${levelColor};border:1px solid ${levelColor};border-radius:3px;padding:0 5px;line-height:16px;">${levelLabel}</span>
+    </div>
+    ${signalRows}
+  </div>`;
+}
+
+function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
+  const panel = ensureVDFAnalysisPanel();
+  if (!entry) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+
+  const ticker = currentChartTicker || '';
+  const score = Math.round(entry.composite_score * 100);
+  const tier = vdfScoreTier(score);
+  const color = vdfScoreColor(score);
+  const metrics = entry.details?.metrics;
+
+  let collapsed = true;
+  try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
+  // Auto-expand when accumulation is detected
+  if (entry.is_detected && !localStorage.getItem('chart_vdf_panel_collapsed')) collapsed = false;
+
+  const chevron = collapsed ? '\u25b8' : '\u25be';
+  const bodyDisplay = collapsed ? 'none' : 'block';
+
+  // Header
+  const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">${chevron}</span>
+      <span style="font-weight:600;color:#c9d1d9;">VD Analysis</span>
+      <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
+    </div>
+    ${entry.is_detected
+      ? `<span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${score}</span>`
+      : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
+  </div>`;
+
+  // Body
+  let bodyHtml = '';
+
+  if (!entry.is_detected) {
+    // Not detected — brief message
+    let scanInfo = '';
+    if (metrics?.scanStart && metrics?.scanEnd) {
+      scanInfo = ` Scan: ${formatVDFDate(metrics.scanStart)} \u2192 ${formatVDFDate(metrics.scanEnd)}`;
+      if (metrics.totalDays) scanInfo += ` (${metrics.totalDays} trading days)`;
+      scanInfo += '.';
+    }
+    bodyHtml = `<div style="padding:14px;color:#8b949e;font-size:13px;">No accumulation patterns detected in the scan period.${scanInfo}</div>`;
+  } else {
+    // Assessment section
+    const zoneCount = entry.zones.length;
+    let assessParts = `Volume-delta accumulation <span style="color:${color};font-weight:600;">${tier}</span> (score: ${score}).`;
+    assessParts += ` ${zoneCount} accumulation zone${zoneCount !== 1 ? 's' : ''} detected`;
+    if (entry.weeks) assessParts += ` spanning up to ${entry.weeks} weeks`;
+    assessParts += '.';
+    if (metrics?.scanStart && metrics?.scanEnd) {
+      assessParts += ` Scan: ${formatVDFDate(metrics.scanStart)} \u2192 ${formatVDFDate(metrics.scanEnd)}`;
+      if (metrics.totalDays) assessParts += ` (${metrics.totalDays} trading days)`;
+      assessParts += '.';
+    }
+    if (entry.distribution.length > 0) {
+      assessParts += ` <span style="color:#ef5350;">${entry.distribution.length} distribution cluster${entry.distribution.length !== 1 ? 's' : ''}</span> also found.`;
+    }
+
+    const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:#c9d1d9;">${assessParts}</div>`;
+
+    // Zones section
+    const sectionStyle = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;margin:16px 0 8px;border-bottom:1px solid #21262d;padding-bottom:4px;';
+    let zonesHtml = '';
+    if (entry.zones.length > 0) {
+      zonesHtml = `<div style="${sectionStyle}">Accumulation Zones</div>`;
+      zonesHtml += entry.zones.map((z, i) => buildZoneHtml(z, i, i === 0)).join('');
+    }
+
+    // Distribution section
+    let distHtml = '';
+    if (entry.distribution.length > 0) {
+      distHtml = `<div style="${sectionStyle}">Distribution Clusters</div>`;
+      distHtml += entry.distribution.map((d, i) => buildDistributionHtml(d, i)).join('');
+    }
+
+    // Proximity section
+    let proxHtml = '';
+    const prox = entry.proximity;
+    if (prox && (prox.level !== 'none' || prox.compositeScore > 0)) {
+      const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
+      proxHtml = `<div style="${sectionStyle}">Proximity Signals (${prox.compositeScore} pts \u2014 ${levelLabel})</div>`;
+      proxHtml += buildProximityHtml(prox);
+    }
+
+    bodyHtml = `<div style="padding:14px;">${assessHtml}${zonesHtml}${distHtml}${proxHtml}</div>`;
+  }
+
+  panel.innerHTML = `${headerHtml}<div class="vdf-ap-body" style="display:${bodyDisplay};">${bodyHtml}</div>`;
+  panel.style.display = 'block';
+
+  // Bind header click for toggle
+  const header = panel.querySelector('.vdf-ap-header');
+  if (header) {
+    header.addEventListener('click', () => toggleVDFAnalysisPanel());
   }
 }
 
@@ -5028,6 +5290,7 @@ export async function renderCustomChart(
     // Re-bind chart sync on next setupChartSync call since charts may be recreated.
     isChartSyncBound = false;
     crosshairHidden = false;
+    if (vdfAnalysisPanelEl) { vdfAnalysisPanelEl.style.display = 'none'; vdfAnalysisPanelEl.innerHTML = ''; }
   }
 
   const chartContent = document.getElementById('chart-content');
@@ -5059,6 +5322,7 @@ export async function renderCustomChart(
   ensureMonthGridOverlay(rsiContainer, 'rsi');
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureVDZoneOverlay(chartContainer);
+  ensureVDFAnalysisPanel();
   ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   syncTopPaneTickerLabel();
 
@@ -5215,6 +5479,7 @@ export async function renderCustomChart(
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
       renderVDZones(null);
+      renderVDFAnalysisPanel(null);
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
       deactivateRsiDivergencePlotTool();
       deactivateVolumeDeltaRsiDivergencePlotTool();
