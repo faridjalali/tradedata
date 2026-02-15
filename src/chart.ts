@@ -4346,14 +4346,20 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
   if (!priceChart || !entry) return;
 
   const overlayWidth = vdZoneOverlayEl.clientWidth || vdZoneOverlayEl.offsetWidth;
+  const overlayHeight = vdZoneOverlayEl.clientHeight || vdZoneOverlayEl.offsetHeight;
   if (!Number.isFinite(overlayWidth) || overlayWidth <= 0) return;
 
-  // Render accumulation zones (green)
+  const dateToX = (dateStr: string): number | null => {
+    const x = priceChart!.timeScale().timeToCoordinate(dateStringToUnixSeconds(dateStr));
+    return Number.isFinite(x) ? x : null;
+  };
+
+  // --- Full-height tinted overlays ---
   if (entry.zones) {
     for (const zone of entry.zones) {
-      const x1 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(zone.startDate));
-      const x2 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(zone.endDate));
-      if (!Number.isFinite(x1) || !Number.isFinite(x2)) continue;
+      const x1 = dateToX(zone.startDate);
+      const x2 = dateToX(zone.endDate);
+      if (x1 == null || x2 == null) continue;
       const left = Math.min(x1, x2);
       const width = Math.abs(x2 - x1);
       if (left > overlayWidth || left + width < 0) continue;
@@ -4370,12 +4376,11 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
     }
   }
 
-  // Render distribution clusters (red)
   if (entry.distribution) {
     for (const dist of entry.distribution) {
-      const x1 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(dist.startDate));
-      const x2 = priceChart.timeScale().timeToCoordinate(dateStringToUnixSeconds(dist.endDate));
-      if (!Number.isFinite(x1) || !Number.isFinite(x2)) continue;
+      const x1 = dateToX(dist.startDate);
+      const x2 = dateToX(dist.endDate);
+      if (x1 == null || x2 == null) continue;
       const left = Math.min(x1, x2);
       const width = Math.abs(x2 - x1);
       if (left > overlayWidth || left + width < 0) continue;
@@ -4384,6 +4389,114 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
       rect.style.cssText = `position:absolute;left:${Math.round(left)}px;top:0;width:${Math.max(Math.round(width), 2)}px;height:100%;background:rgba(239,83,80,0.06);border-left:1px solid rgba(239,83,80,0.3);border-right:1px solid rgba(239,83,80,0.3);`;
       vdZoneOverlayEl.appendChild(rect);
     }
+  }
+
+  // --- Bottom band strip: accumulation / distribution / absorption ---
+  const BAND_H = 5;
+  const BAND_GAP = 1;
+  const STRIP_PAD = 2;
+  const hasZones = entry.zones && entry.zones.length > 0;
+  const hasDist = entry.distribution && entry.distribution.length > 0;
+
+  if (overlayHeight > 60 && (hasZones || hasDist)) {
+    // Row Y positions (from bottom): accumulation (top row), distribution (mid), absorption (bottom)
+    const absY = overlayHeight - STRIP_PAD - BAND_H;
+    const distY = absY - BAND_GAP - BAND_H;
+    const accumY = distY - BAND_GAP - BAND_H;
+
+    // Accumulation zone bands (teal)
+    if (entry.zones) {
+      for (const zone of entry.zones) {
+        const x1 = dateToX(zone.startDate);
+        const x2 = dateToX(zone.endDate);
+        if (x1 == null || x2 == null) continue;
+        const left = Math.min(x1, x2);
+        const width = Math.abs(x2 - x1);
+        if (left > overlayWidth || left + width < 0) continue;
+        const op = (0.4 + zone.score * 0.5).toFixed(2);
+        const band = document.createElement('div');
+        band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${accumY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(38,166,154,${op});border-radius:1px;`;
+        vdZoneOverlayEl.appendChild(band);
+      }
+    }
+
+    // Distribution cluster bands (red)
+    if (entry.distribution) {
+      for (const dist of entry.distribution) {
+        const x1 = dateToX(dist.startDate);
+        const x2 = dateToX(dist.endDate);
+        if (x1 == null || x2 == null) continue;
+        const left = Math.min(x1, x2);
+        const width = Math.abs(x2 - x1);
+        if (left > overlayWidth || left + width < 0) continue;
+        const band = document.createElement('div');
+        band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${distY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(239,83,80,0.65);border-radius:1px;`;
+        vdZoneOverlayEl.appendChild(band);
+      }
+    }
+
+    // Absorption bands (amber, within accumulation zone date ranges)
+    if (entry.zones) {
+      for (const zone of entry.zones) {
+        const absPct = zone.absorptionPct || 0;
+        if (absPct < 5) continue;
+        const x1 = dateToX(zone.startDate);
+        const x2 = dateToX(zone.endDate);
+        if (x1 == null || x2 == null) continue;
+        const left = Math.min(x1, x2);
+        const width = Math.abs(x2 - x1);
+        if (left > overlayWidth || left + width < 0) continue;
+        const op = Math.min(0.3 + (absPct / 100) * 0.6, 0.9).toFixed(2);
+        const band = document.createElement('div');
+        band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${absY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(255,167,38,${op});border-radius:1px;`;
+        vdZoneOverlayEl.appendChild(band);
+      }
+    }
+  }
+
+  // --- Zone boundary markers (dashed vertical lines at zone edges) ---
+  if (entry.zones) {
+    for (const zone of entry.zones) {
+      const xs = dateToX(zone.startDate);
+      const xe = dateToX(zone.endDate);
+      if (xs != null && xs >= 0 && xs <= overlayWidth) {
+        const line = document.createElement('div');
+        line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
+        vdZoneOverlayEl.appendChild(line);
+      }
+      if (xe != null && xe >= 0 && xe <= overlayWidth) {
+        const line = document.createElement('div');
+        line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
+        vdZoneOverlayEl.appendChild(line);
+      }
+    }
+  }
+  if (entry.distribution) {
+    for (const dist of entry.distribution) {
+      const xs = dateToX(dist.startDate);
+      const xe = dateToX(dist.endDate);
+      if (xs != null && xs >= 0 && xs <= overlayWidth) {
+        const line = document.createElement('div');
+        line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
+        vdZoneOverlayEl.appendChild(line);
+      }
+      if (xe != null && xe >= 0 && xe <= overlayWidth) {
+        const line = document.createElement('div');
+        line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
+        vdZoneOverlayEl.appendChild(line);
+      }
+    }
+  }
+
+  // --- Proximity glow bar at right edge ---
+  const prox = entry.proximity;
+  if (prox && prox.level !== 'none' && prox.compositeScore > 0) {
+    const proxRgb = prox.level === 'imminent' ? '244,67,54' : (prox.level === 'high' ? '255,152,0' : '255,193,7');
+    const proxOp = prox.level === 'imminent' ? 0.4 : (prox.level === 'high' ? 0.3 : 0.2);
+    const bar = document.createElement('div');
+    bar.style.cssText = `position:absolute;right:0;top:0;width:3px;height:100%;background:rgba(${proxRgb},${proxOp});box-shadow:0 0 8px rgba(${proxRgb},${(proxOp * 1.5).toFixed(2)}),0 0 16px rgba(${proxRgb},${proxOp});`;
+    if (prox.level === 'imminent') bar.className = 'vdf-prox-pulse';
+    vdZoneOverlayEl.appendChild(bar);
   }
 }
 
@@ -4664,6 +4777,27 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
 
     const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:#c9d1d9;">${assessParts}</div>`;
 
+    // Chart legend
+    const swatchStyle = 'display:inline-block;width:14px;height:5px;border-radius:1px;vertical-align:middle;margin-right:5px;';
+    const dashStyle = 'display:inline-block;width:14px;height:0;border-top:1px dashed;vertical-align:middle;margin-right:5px;';
+    const glowStyle = 'display:inline-block;width:3px;height:12px;border-radius:1px;vertical-align:middle;margin-right:5px;';
+    const legendItems: string[] = [];
+    legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(38,166,154,0.7);"></span>Accumulation</span>`);
+    if (entry.distribution.length > 0) {
+      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(239,83,80,0.65);"></span>Distribution</span>`);
+    }
+    const hasAbsorption = entry.zones.some(z => (z.absorptionPct || 0) >= 5);
+    if (hasAbsorption) {
+      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(255,167,38,0.7);"></span>Absorption</span>`);
+    }
+    legendItems.push(`<span style="white-space:nowrap;"><span style="${dashStyle}border-color:rgba(38,166,154,0.4);"></span>Zone bounds</span>`);
+    const proxLegend = entry.proximity;
+    if (proxLegend && proxLegend.level !== 'none' && proxLegend.compositeScore > 0) {
+      const plc = vdfProximityColor(proxLegend.level);
+      legendItems.push(`<span style="white-space:nowrap;"><span style="${glowStyle}background:${plc};box-shadow:0 0 4px ${plc};"></span>Proximity</span>`);
+    }
+    const legendHtml = `<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding:8px 12px;background:#161b22;border:1px solid #21262d;border-radius:4px;margin-bottom:16px;font-size:11px;color:#8b949e;">${legendItems.join('')}</div>`;
+
     // Zones section
     const sectionStyle = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;margin:16px 0 8px;border-bottom:1px solid #21262d;padding-bottom:4px;';
     let zonesHtml = '';
@@ -4688,7 +4822,7 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
       proxHtml += buildProximityHtml(prox);
     }
 
-    bodyHtml = `<div style="padding:14px;">${assessHtml}${zonesHtml}${distHtml}${proxHtml}</div>`;
+    bodyHtml = `<div style="padding:14px;">${assessHtml}${legendHtml}${zonesHtml}${distHtml}${proxHtml}</div>`;
   }
 
   panel.innerHTML = `${headerHtml}<div class="vdf-ap-body" style="display:${bodyDisplay};">${bodyHtml}</div>`;
