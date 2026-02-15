@@ -166,9 +166,12 @@ function scoreSubwindow(dailySlice, preDaily) {
   const netDelta = effectiveDeltas.reduce((s, v) => s + v, 0);
   const netDeltaPct = totalVol > 0 ? (netDelta / totalVol) * 100 : 0;
 
-  // Gate: net delta must not be deeply negative (concordant selling)
-  if (netDeltaPct < -1.5) {
-    return { score: 0, detected: false, reason: 'concordant_selling', netDeltaPct, overallPriceChange };
+  // Gate: net delta must be positive — accumulation requires net buying
+  // Previously allowed down to -1.5%, but negative net delta means no hidden buying.
+  // META 1/9→2/11 was a false positive at -0.1%: zero buying signal, yet secondary
+  // metrics (absorption, accum ratio) carried the score to 0.33.
+  if (netDeltaPct <= 0) {
+    return { score: 0, detected: false, reason: 'no_net_buying', netDeltaPct, overallPriceChange };
   }
 
   // === CONCORDANT RALLY ANALYSIS ===

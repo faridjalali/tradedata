@@ -91,6 +91,7 @@ interface VDFZone {
   absorptionPct?: number; netDeltaPct?: number; accumWeekRatio?: number;
   overallPriceChange?: number; accumWeeks?: number; weeks?: number;
   durationMultiplier?: number;
+  concordancePenalty?: number; concordantFrac?: number;
   components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8?: number };
 }
 interface VDFDistribution { startDate: string; endDate: string; spanDays: number; priceChangePct?: number; netDeltaPct?: number; }
@@ -4575,16 +4576,146 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
 
 // ─── VDF Analysis Panel ─────────────────────────────────────────────────────
 
-const VDF_COMPONENT_LABELS: Array<[string, string, string]> = [
-  ['s1', 'Net Delta', '20%'],
-  ['s2', 'Delta Slope', '15%'],
-  ['s3', 'Delta Shift', '10%'],
-  ['s4', 'Accum Ratio', '10%'],
-  ['s5', 'Buy vs Sell', '5%'],
-  ['s6', 'Absorption', '18%'],
-  ['s7', 'Vol Decline', '5%'],
-  ['s8', 'Divergence', '17%'],
+// VDF component metadata: [key, label, defaultWeight, tooltip]
+const VDF_COMPONENTS: Array<{ key: string; label: string; defaultWeight: number; tooltip: string }> = [
+  { key: 's1', label: 'Net Delta', defaultWeight: 20, tooltip: 'Total net buying as % of total volume. Higher = more buying pressure. Measures raw institutional flow.' },
+  { key: 's2', label: 'Delta Slope', defaultWeight: 15, tooltip: 'Trend of cumulative weekly delta. Rising slope = buying is building over time, not a one-off spike.' },
+  { key: 's3', label: 'Delta Shift', defaultWeight: 10, tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.' },
+  { key: 's4', label: 'Accum Ratio', defaultWeight: 10, tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks, not sporadic.' },
+  { key: 's5', label: 'Buy vs Sell', defaultWeight: 5, tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.' },
+  { key: 's6', label: 'Absorption', defaultWeight: 18, tooltip: 'Percentage of days where price fell but delta was positive. Core divergence signal: institutions buying the dip.' },
+  { key: 's7', label: 'Vol Decline', defaultWeight: 5, tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.' },
+  { key: 's8', label: 'Divergence', defaultWeight: 17, tooltip: 'Rewards price-down + delta-up divergence. Score = 0 when price is rising or delta is negative. The thesis signal.' },
 ];
+
+const VDF_DEFAULT_WEIGHTS: Record<string, number> = {};
+VDF_COMPONENTS.forEach(c => { VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight; });
+
+let vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
+let vdfSettingsPanelEl: HTMLDivElement | null = null;
+
+function loadVDFWeightsFromStorage(): void {
+  try {
+    const raw = localStorage.getItem('chart_vdf_weights');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const c of VDF_COMPONENTS) {
+          if (typeof parsed[c.key] === 'number') vdfWeights[c.key] = parsed[c.key];
+        }
+      }
+    }
+  } catch { /* */ }
+}
+
+function persistVDFWeightsToStorage(): void {
+  try { localStorage.setItem('chart_vdf_weights', JSON.stringify(vdfWeights)); } catch { /* */ }
+}
+
+function getVDFWeightTotal(): number {
+  return VDF_COMPONENTS.reduce((s, c) => s + (vdfWeights[c.key] || 0), 0);
+}
+
+function recomputeVDFZoneScore(zone: VDFZone): number {
+  if (!zone.components) return zone.score;
+  const total = getVDFWeightTotal();
+  if (total <= 0) return 0;
+  let rawScore = 0;
+  for (const c of VDF_COMPONENTS) {
+    const val = (zone.components as Record<string, number>)[c.key] || 0;
+    rawScore += val * ((vdfWeights[c.key] || 0) / total);
+  }
+  const concordancePenalty = zone.concordancePenalty ?? 1.0;
+  const durationMultiplier = zone.durationMultiplier ?? 1.0;
+  return rawScore * concordancePenalty * durationMultiplier;
+}
+
+// Backwards-compatible label array for buildComponentBarsHtml
+function getVDFComponentLabels(): Array<[string, string, string]> {
+  const total = getVDFWeightTotal();
+  return VDF_COMPONENTS.map(c => {
+    const w = vdfWeights[c.key] || 0;
+    const pct = total > 0 ? Math.round((w / total) * 100) : 0;
+    return [c.key, c.label, `${pct}%`] as [string, string, string];
+  });
+}
+
+function createVDFSettingsPanel(): HTMLDivElement {
+  const panel = document.createElement('div');
+  panel.className = 'vdf-settings-panel';
+  panel.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px 14px;margin:0 14px 12px;display:none;';
+
+  function renderPanel(): void {
+    const total = getVDFWeightTotal();
+    const rows = VDF_COMPONENTS.map(c => {
+      const w = vdfWeights[c.key] || 0;
+      const pct = total > 0 ? Math.round((w / total) * 100) : 0;
+      return `<div style="display:grid;grid-template-columns:110px 1fr 40px 36px;gap:6px;align-items:center;margin:4px 0;" title="${escapeHtml(c.tooltip)}">
+        <label style="color:#8b949e;font-size:11px;white-space:nowrap;cursor:help;border-bottom:1px dotted #484f58;" title="${escapeHtml(c.tooltip)}">${escapeHtml(c.label)}</label>
+        <input type="range" min="0" max="50" step="1" value="${w}" data-vdf-weight="${c.key}"
+          style="width:100%;height:4px;accent-color:#26a69a;cursor:pointer;" />
+        <span style="color:#c9d1d9;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${w}</span>
+        <span style="color:#484f58;font-size:10px;text-align:right;">${pct}%</span>
+      </div>`;
+    }).join('');
+
+    const isDefault = VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;">Scoring Weights</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span class="vdf-weight-total" style="font-size:10px;color:#484f58;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;">Total: ${total}</span>
+          <button type="button" data-vdf-weight-action="reset" style="background:#0d1117;color:${isDefault ? '#484f58' : '#c9d1d9'};border:1px solid #30363d;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;${isDefault ? 'opacity:0.5;' : ''}">Reset</button>
+        </div>
+      </div>
+      ${rows}
+      <div style="margin-top:8px;font-size:10px;color:#484f58;line-height:1.4;">Hover metric names for descriptions. Changing weights re-scores zones locally using server component values.</div>
+    `;
+  }
+
+  renderPanel();
+
+  panel.addEventListener('input', (e) => {
+    const target = e.target as HTMLInputElement;
+    const key = target?.dataset?.vdfWeight;
+    if (!key) return;
+    vdfWeights[key] = Math.max(0, Math.min(50, Number(target.value) || 0));
+    persistVDFWeightsToStorage();
+    renderPanel();
+    refreshVDFScoresFromWeights();
+  });
+
+  panel.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target?.dataset?.vdfWeightAction === 'reset') {
+      VDF_COMPONENTS.forEach(c => { vdfWeights[c.key] = c.defaultWeight; });
+      persistVDFWeightsToStorage();
+      renderPanel();
+      refreshVDFScoresFromWeights();
+    }
+  });
+
+  vdfSettingsPanelEl = panel;
+  return panel;
+}
+
+function toggleVDFSettingsPanel(): void {
+  if (!vdfSettingsPanelEl) return;
+  const isHidden = vdfSettingsPanelEl.style.display === 'none';
+  vdfSettingsPanelEl.style.display = isHidden ? 'block' : 'none';
+}
+
+function refreshVDFScoresFromWeights(): void {
+  // Re-render the VDF analysis panel with recomputed scores
+  if (!vdfAnalysisPanelEl) return;
+  const ticker = currentChartTicker || '';
+  const today = new Date().toISOString().split('T')[0];
+  const cacheKey = `${ticker}|${today}`;
+  const entry = vdfResultCache.get(cacheKey);
+  if (!entry) return;
+  // Re-render the panel (it will pick up the new weights via getVDFComponentLabels and recomputeVDFZoneScore)
+  renderVDFAnalysisPanel(entry);
+}
 
 function formatVDFDate(dateStr: string): string {
   const parts = dateStr.split('-');
@@ -4636,7 +4767,7 @@ function toggleVDFAnalysisPanel(): void {
 }
 
 function buildComponentBarsHtml(components: Record<string, number>): string {
-  return VDF_COMPONENT_LABELS.map(([key, label, weight]) => {
+  return getVDFComponentLabels().map(([key, label, weight]: [string, string, string]) => {
     const val = Number(components[key]) || 0;
     const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
     const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : '#484f58';
@@ -4651,7 +4782,10 @@ function buildComponentBarsHtml(components: Record<string, number>): string {
 }
 
 function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
-  const scoreInt = Math.round(zone.score * 100);
+  const recomputed = recomputeVDFZoneScore(zone);
+  const scoreInt = Math.round(recomputed * 100);
+  const serverScoreInt = Math.round(zone.score * 100);
+  const isCustomWeights = !VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
   const label = isBest ? `Zone ${index + 1} (Primary)` : `Zone ${index + 1}`;
   const color = vdfScoreColor(scoreInt);
 
@@ -4666,6 +4800,7 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
   const dParts: string[] = [];
   if (zone.accumWeeks != null && zone.weeks) dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
   if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
+  if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0) dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
   if (dParts.length) detailLine = `<div style="margin:2px 0;color:#8b949e;font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let componentsHtml = '';
@@ -4673,10 +4808,15 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
     componentsHtml = `<div style="margin-top:8px;"><div style="color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
   }
 
+  // Show server vs local score difference when custom weights are active
+  const scoreDiffHtml = isCustomWeights && serverScoreInt !== scoreInt
+    ? `<span style="font-size:10px;color:#484f58;margin-left:4px;" title="Server score with default weights">(was ${serverScoreInt})</span>`
+    : '';
+
   return `<div style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:12px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
       <span style="font-weight:600;font-size:13px;color:#c9d1d9;">${escapeHtml(label)}</span>
-      <span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${scoreInt}</span>
+      <span><span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${scoreInt}</span>${scoreDiffHtml}</span>
     </div>
     <div style="color:#c9d1d9;font-size:12px;">${formatVDFDate(zone.startDate)} \u2192 ${formatVDFDate(zone.endDate)} (${zone.windowDays} trading days${zone.weeks ? `, ${zone.weeks} wk` : ''})</div>
     ${metricsLine}
@@ -4720,6 +4860,7 @@ function buildProximityHtml(prox: VDFProximity): string {
 }
 
 function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
+  loadVDFWeightsFromStorage();
   const panel = ensureVDFAnalysisPanel();
   if (!entry) {
     panel.style.display = 'none';
@@ -4728,10 +4869,14 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   }
 
   const ticker = currentChartTicker || '';
-  const score = Math.round(entry.composite_score * 100);
+  // Use best zone recomputed score for the header
+  const bestZone = entry.zones[0];
+  const recomputedBestScore = bestZone ? Math.round(recomputeVDFZoneScore(bestZone) * 100) : 0;
+  const score = entry.is_detected ? recomputedBestScore : Math.round(entry.composite_score * 100);
   const tier = vdfScoreTier(score);
   const color = vdfScoreColor(score);
   const metrics = entry.details?.metrics;
+  const isCustomWeights = !VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
 
   let collapsed = true;
   try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
@@ -4741,6 +4886,10 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   const chevron = collapsed ? '\u25b8' : '\u25be';
   const bodyDisplay = collapsed ? 'none' : 'block';
 
+  // Gear icon for settings
+  const gearColor = isCustomWeights ? '#26a69a' : '#484f58';
+  const gearHtml = `<span class="vdf-ap-gear" style="font-size:14px;color:${gearColor};cursor:pointer;margin-right:8px;padding:2px 4px;" title="VDF scoring weights">\u2699</span>`;
+
   // Header
   const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
     <div style="display:flex;align-items:center;gap:8px;">
@@ -4748,9 +4897,12 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
       <span style="font-weight:600;color:#c9d1d9;">VD Analysis</span>
       <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
     </div>
-    ${entry.is_detected
-      ? `<span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${score}</span>`
-      : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
+    <div style="display:flex;align-items:center;">
+      ${gearHtml}
+      ${entry.is_detected
+        ? `<span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${score}</span>`
+        : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
+    </div>
   </div>`;
 
   // Body
@@ -4834,10 +4986,30 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   panel.innerHTML = `${headerHtml}<div class="vdf-ap-body" style="display:${bodyDisplay};">${bodyHtml}</div>`;
   panel.style.display = 'block';
 
-  // Bind header click for toggle
+  // Insert settings panel into body (right after the header, before content)
+  const body = panel.querySelector('.vdf-ap-body') as HTMLElement | null;
+  if (body) {
+    const settingsPanel = createVDFSettingsPanel();
+    body.insertBefore(settingsPanel, body.firstChild);
+  }
+
+  // Bind header click for toggle (but not on gear)
   const header = panel.querySelector('.vdf-ap-header');
   if (header) {
-    header.addEventListener('click', () => toggleVDFAnalysisPanel());
+    header.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.vdf-ap-gear')) return; // Don't toggle when clicking gear
+      toggleVDFAnalysisPanel();
+    });
+  }
+
+  // Bind gear click for settings toggle
+  const gear = panel.querySelector('.vdf-ap-gear');
+  if (gear) {
+    gear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleVDFSettingsPanel();
+    });
   }
 }
 

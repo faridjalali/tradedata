@@ -77,7 +77,7 @@ effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
 ### Hard Gates (Must Pass All)
 
 1. **Price Direction**: Price change must be between **-45% and +3%**. Crashes (>45%) are not consolidation. Rallies (>3%) don't need accumulation detection.
-2. **Net Delta Floor**: Net delta % must be **> -1.5%**. Deeply negative delta indicates concordant selling with no hidden accumulation.
+2. **Net Delta Positive**: Net delta % must be **> 0%**. Accumulation requires net buying — if there's no positive net delta, there's no hidden institutional accumulation. Previously allowed down to -1.5%, but META (1/9→2/11, -0.1% net delta) proved that secondary metrics (absorption, accum ratio) can carry a score above threshold even with zero buying signal.
 3. **Delta Slope Gate**: Normalized cumulative weekly delta slope must be **> -0.5**. Prevents scoring windows where delta is actively declining.
 4. **Concordant-Dominated Gate** *(standalone)*: If **concordantFrac > 70%** of all positive delta comes from concordant-up days (price↑ + delta↑) → reject. This is the **core quality gate**: true accumulation requires divergence (price↓ + delta↑), not concordance. Applied whenever `netDeltaPct > 0`, regardless of intra-window rally magnitude — even windows starting near a price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days within the decline. See [DAVE false positive case study](#dave-false-positive-case-study) below.
 
@@ -660,6 +660,7 @@ This provides a high-level "institutional weather map" — when phases transitio
 | RIVN | Oct 1 – Nov 15, 2024 | -4.4% | -2.06% | 0.00 | Concordant selling gate: delta < -1.5% |
 | DAVE | Dec 11 – Jan 21, 2026 | -8.9% | +3.44% | 0.00 | Concordant-dominated gate: 78% concordant fraction |
 | DAVE | Nov 5 – Dec 23, 2025 | -10.6% | +1.8% | 0.00 | Concordant-dominated gate: 74.3% concordant fraction |
+| META | Jan 9 – Feb 11, 2026 | +2.1% | -0.1% | 0.00 | Net delta positive gate: no net buying (-0.1%). Earnings rally + selloff = concordant cycle, not accumulation |
 
 ### DAVE False Positive Case Study
 
