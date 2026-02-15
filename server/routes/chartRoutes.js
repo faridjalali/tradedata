@@ -185,7 +185,9 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
       const force = parseBooleanQueryFlag(req.query.force);
-      const result = await options.getHTFStatus(ticker, { force });
+      const modeRaw = String(req.query.mode || 'strict').toLowerCase();
+      const mode = (modeRaw === 'moderate' || modeRaw === 'strict') ? modeRaw : 'strict';
+      const result = await options.getHTFStatus(ticker, { force, mode });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(result);
     } catch (err) {

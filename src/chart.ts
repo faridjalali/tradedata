@@ -87,6 +87,20 @@ let htfButtonEl: HTMLButtonElement | null = null;
 let htfLoadingForTicker: string | null = null;
 let htfResultCache = new Map<string, { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }>();
 const HTF_CACHE_MAX_SIZE = 200;
+type HTFMode = 'moderate' | 'strict';
+const HTF_MODE_STORAGE_KEY = 'htf_detection_mode';
+
+function getHTFMode(): HTFMode {
+  try {
+    const v = window.localStorage.getItem(HTF_MODE_STORAGE_KEY);
+    if (v === 'moderate' || v === 'strict') return v;
+  } catch {}
+  return 'moderate';
+}
+
+function setHTFMode(mode: HTFMode): void {
+  try { window.localStorage.setItem(HTF_MODE_STORAGE_KEY, mode); } catch {}
+}
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
 const DIVERGENCE_ICON = 'D';
@@ -1443,6 +1457,7 @@ function syncPriceSettingsPanelValues(): void {
     if (length) length.value = String(ma.length);
     if (color) color.value = ma.color;
   }
+  applyHTFModeButtonStyles(priceSettingsPanelEl);
 }
 
 function syncRSISettingsPanelValues(): void {
@@ -2467,6 +2482,17 @@ function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
   });
 }
 
+function applyHTFModeButtonStyles(panel: HTMLElement): void {
+  const current = getHTFMode();
+  const buttons = panel.querySelectorAll('[data-price-setting="htf-mode"]');
+  buttons.forEach((btn) => {
+    const el = btn as HTMLButtonElement;
+    const isActive = el.dataset.htfMode === current;
+    el.style.background = isActive ? '#1f6feb' : '#0d1117';
+    el.style.color = isActive ? '#ffffff' : '#8b949e';
+  });
+}
+
 function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
   panel.className = 'pane-settings-panel price-settings-panel';
@@ -2515,6 +2541,17 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
         <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
       </div>
     `).join('')}
+    <div style="display:flex; align-items:center; gap:8px; margin-top:6px; min-height:26px;">
+      <span style="min-width:32px;">HTF</span>
+      <button type="button" data-price-setting="htf-mode" data-htf-mode="moderate"
+        style="flex:1; padding:3px 0; font-size:11px; border-radius:4px; border:1px solid #30363d; cursor:pointer;">
+        Moderate
+      </button>
+      <button type="button" data-price-setting="htf-mode" data-htf-mode="strict"
+        style="flex:1; padding:3px 0; font-size:11px; border-radius:4px; border:1px solid #30363d; cursor:pointer;">
+        Strict
+      </button>
+    </div>
   `;
   applyUniformSettingsPanelTypography(panel);
 
@@ -2565,6 +2602,15 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.addEventListener('click', (event) => {
     const target = event.target as HTMLButtonElement | null;
     if (!target) return;
+    if (target.dataset.priceSetting === 'htf-mode' && target.dataset.htfMode) {
+      event.preventDefault();
+      const newMode = target.dataset.htfMode as HTFMode;
+      setHTFMode(newMode);
+      applyHTFModeButtonStyles(panel);
+      htfResultCache.clear();
+      if (currentChartTicker) runHTFDetection(currentChartTicker, true);
+      return;
+    }
     if (target.dataset.priceSetting !== 'reset') return;
     event.preventDefault();
     resetPriceSettingsToDefault();
@@ -4249,7 +4295,8 @@ function setHTFButtonColor(color: string, title?: string): void {
 }
 
 function buildHTFTooltip(result: { is_detected: boolean; is_candidate: boolean; composite_score: number; status: string; impulse_gain_pct: number | null }): string {
-  let tip = `HTF: ${result.status}`;
+  const mode = getHTFMode();
+  let tip = `HTF (${mode[0].toUpperCase() + mode.slice(1)}): ${result.status}`;
   if (result.is_candidate) {
     tip += `\nComposite: ${(result.composite_score * 100).toFixed(1)}%`;
   }
@@ -4271,7 +4318,8 @@ async function runHTFDetection(ticker: string, force = false): Promise<void> {
     month: '2-digit',
     day: '2-digit'
   });
-  const cacheKey = `${ticker}|${today}`;
+  const mode = getHTFMode();
+  const cacheKey = `${ticker}|${today}|${mode}`;
   if (!force && htfResultCache.has(cacheKey)) {
     const cached = htfResultCache.get(cacheKey)!;
     setHTFButtonColor(
@@ -4285,7 +4333,7 @@ async function runHTFDetection(ticker: string, force = false): Promise<void> {
   setHTFButtonColor(HTF_COLOR_LOADING, 'HTF: Loading...');
 
   try {
-    const params = new URLSearchParams({ ticker });
+    const params = new URLSearchParams({ ticker, mode });
     if (force) params.set('force', '1');
     const response = await fetch(`/api/chart/htf-status?${params}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

@@ -1092,7 +1092,9 @@ export async function runManualHTFScan(): Promise<void> {
     allowAutoCardRefreshFromFetchDaily = false;
     allowAutoCardRefreshFromFetchWeekly = false;
     try {
-        const started = await startHTFScan();
+        let htfMode = 'moderate';
+        try { htfMode = window.localStorage.getItem('htf_detection_mode') || 'moderate'; } catch {}
+        const started = await startHTFScan(htfMode);
         if (started.status === 'running') setHTFScanStatusText('Already running');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);

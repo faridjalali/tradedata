@@ -25,7 +25,7 @@ const {
   buildHealthPayload,
   buildReadyPayload
 } = require("./server/services/healthService");
-const { detectHTF } = require("./server/services/htfDetector");
+const { detectHTF, HTF_CONFIG, HTF_CONFIG_MODERATE } = require("./server/services/htfDetector");
 const {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
@@ -1180,6 +1180,25 @@ const initDivergenceDB = async () => {
         PRIMARY KEY (ticker, trade_date)
       );
     `);
+    // Migration: add mode column for moderate/strict HTF detection
+    await divergencePool.query(`
+      DO $$ BEGIN
+        ALTER TABLE htf_results ADD COLUMN mode VARCHAR(10) NOT NULL DEFAULT 'strict';
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
+    `);
+    await divergencePool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.key_column_usage
+          WHERE table_name = 'htf_results' AND column_name = 'mode'
+            AND constraint_name = 'htf_results_pkey'
+        ) THEN
+          ALTER TABLE htf_results DROP CONSTRAINT htf_results_pkey;
+          ALTER TABLE htf_results ADD PRIMARY KEY (ticker, trade_date, mode);
+        END IF;
+      END $$;
+    `);
     // Restore in-memory status from persisted data so the UI shows correct
     // "Ran M/D" dates even after a server restart.
     try {
@@ -1275,7 +1294,7 @@ app.get('/api/alerts', async (req, res) => {
       if (tickers.length > 0 && isDivergenceConfigured()) {
         const htfTradeDate = currentEtDateString();
         const htfRes = await divergencePool.query(
-          `SELECT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT DISTINCT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [htfTradeDate, tickers]
         );
         for (const row of htfRes.rows) {
@@ -1508,7 +1527,7 @@ app.get('/api/divergence/signals', async (req, res) => {
       if (tickers.length > 0) {
         const htfTradeDate = currentEtDateString();
         const htfRes = await divergencePool.query(
-          `SELECT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT DISTINCT ticker FROM htf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [htfTradeDate, tickers]
         );
         for (const row of htfRes.rows) {
@@ -4341,13 +4360,13 @@ async function getDivergenceSummaryForTickers(options = {}) {
 // --- HTF (High-Tight Flag) Detector helpers ---
 let htfRunningTickers = new Set();
 
-async function getStoredHTFResult(ticker, tradeDate) {
+async function getStoredHTFResult(ticker, tradeDate, mode) {
   if (!isDivergenceConfigured()) return null;
   try {
     const { rows } = await divergencePool.query(
       `SELECT is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json
-       FROM htf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
-      [ticker, tradeDate]
+       FROM htf_results WHERE ticker = $1 AND trade_date = $2 AND mode = $3 LIMIT 1`,
+      [ticker, tradeDate, mode || 'strict']
     );
     if (rows.length === 0) return null;
     const row = rows[0];
@@ -4367,8 +4386,9 @@ async function getStoredHTFResult(ticker, tradeDate) {
   }
 }
 
-async function upsertHTFResult(ticker, tradeDate, result) {
+async function upsertHTFResult(ticker, tradeDate, result, mode) {
   if (!isDivergenceConfigured()) return;
+  const modeVal = mode || 'strict';
   try {
     const resultJson = JSON.stringify({
       impulse: result.impulse || null,
@@ -4382,9 +4402,9 @@ async function upsertHTFResult(ticker, tradeDate, result) {
       breakout: result.breakout,
     });
     await divergencePool.query(
-      `INSERT INTO htf_results (ticker, trade_date, is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-       ON CONFLICT (ticker, trade_date) DO UPDATE SET
+      `INSERT INTO htf_results (ticker, trade_date, mode, is_detected, is_candidate, composite_score, status, impulse_gain_pct, result_json, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       ON CONFLICT (ticker, trade_date, mode) DO UPDATE SET
          is_detected = EXCLUDED.is_detected,
          is_candidate = EXCLUDED.is_candidate,
          composite_score = EXCLUDED.composite_score,
@@ -4393,7 +4413,7 @@ async function upsertHTFResult(ticker, tradeDate, result) {
          result_json = EXCLUDED.result_json,
          updated_at = NOW()`,
       [
-        ticker, tradeDate,
+        ticker, tradeDate, modeVal,
         result.is_detected || false,
         result.is_candidate || false,
         result.composite_score || 0,
@@ -4410,28 +4430,31 @@ async function upsertHTFResult(ticker, tradeDate, result) {
 async function getHTFStatus(ticker, options = {}) {
   const force = options.force === true;
   const signal = options.signal || null;
+  const mode = options.mode || 'strict';
   const today = currentEtDateString();
 
-  // Check DB cache (same trading day) unless force
+  // Check DB cache (same trading day + mode) unless force
   if (!force) {
-    const cached = await getStoredHTFResult(ticker, today);
-    if (cached) return { ...cached, cached: true };
+    const cached = await getStoredHTFResult(ticker, today, mode);
+    if (cached) return { ...cached, mode, cached: true };
   }
 
   // Prevent parallel detection for the same ticker
   if (htfRunningTickers.has(ticker)) {
-    return { is_detected: false, is_candidate: false, composite_score: 0, status: 'Detection in progress', cached: false };
+    return { is_detected: false, is_candidate: false, composite_score: 0, status: 'Detection in progress', mode, cached: false };
   }
   htfRunningTickers.add(ticker);
 
   try {
+    const htfConfig = mode === 'moderate' ? HTF_CONFIG_MODERATE : HTF_CONFIG;
     const result = await detectHTF(ticker, {
       dataApiFetcher: dataApiIntradayChartHistory,
-      signal
+      signal,
+      config: htfConfig
     });
 
     // Store in DB
-    await upsertHTFResult(ticker, today, result);
+    await upsertHTFResult(ticker, today, result, mode);
 
     return {
       is_detected: result.is_detected || false,
@@ -4447,6 +4470,7 @@ async function getHTFStatus(ticker, options = {}) {
         composite: result.composite,
         breakout: result.breakout,
       },
+      mode,
       cached: false
     };
   } finally {
@@ -4509,6 +4533,8 @@ async function runHTFScan(options = {}) {
     return { status: 'running' };
   }
 
+  const mode = (options.mode === 'moderate' || options.mode === 'strict') ? options.mode : 'strict';
+
   htfScanRunning = true;
   htfScanStopRequested = false;
   runMetricsByType.htfScan = null;
@@ -4556,7 +4582,7 @@ async function runHTFScan(options = {}) {
         }
         const apiStart = Date.now();
         try {
-          const result = await getHTFStatus(ticker, { force: false, signal: scanAbort.signal });
+          const result = await getHTFStatus(ticker, { force: false, signal: scanAbort.signal, mode });
           const latencyMs = Date.now() - apiStart;
           if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
           return { ticker, result, error: null };
@@ -4628,7 +4654,7 @@ async function runHTFScan(options = {}) {
           }
           const apiStart = Date.now();
           try {
-            const result = await getHTFStatus(ticker, { force: true, signal: scanAbort.signal });
+            const result = await getHTFStatus(ticker, { force: true, signal: scanAbort.signal, mode });
             const latencyMs = Date.now() - apiStart;
             if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
             return { ticker, result, error: null };

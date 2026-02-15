@@ -370,12 +370,13 @@ export async function stopDivergenceFetchWeeklyData(): Promise<{ status: string 
     return { status: String(payload?.status || 'stop-requested') };
 }
 
-export async function startHTFScan(): Promise<{ status: string }> {
+export async function startHTFScan(mode?: string): Promise<{ status: string }> {
     const response = await fetch('/api/divergence/htf-scan/run', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({ mode: mode || 'strict' })
     });
     const payload = await response.json().catch(() => ({} as { status?: string; error?: string }));
     if (!response.ok) {

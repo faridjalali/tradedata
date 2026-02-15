@@ -59,6 +59,21 @@ const HTF_CONFIG = {
   breakout_delta_surge_percentile: 90.0,
 };
 
+// Moderate config — relaxed thresholds for bull-flag patterns after a strong
+// (but not extreme) impulse.  Core metrics (vol contraction, range decay,
+// delta compression) are preserved; only gating thresholds are loosened.
+const HTF_CONFIG_MODERATE = {
+  ...HTF_CONFIG,
+  impulse_min_gain_pct: 50.0,
+  impulse_lookback_days: 90,
+  consolidation_range_shrink: 0.60,
+  consolidation_min_bars_15m: 78,
+  consolidation_max_retrace_pct: 35.0,
+  range_decay_coeff_threshold: -0.01,
+  vwap_deviation_percentile: 30.0,
+  composite_threshold: 0.55,
+};
+
 // =============================================================================
 // MATH HELPERS
 // =============================================================================
@@ -646,8 +661,8 @@ function detectBreakout(bars15m, bars1m, consolIdx, impulseHigh, config) {
  * @returns {Promise<object>} HTF result
  */
 async function detectHTF(ticker, options) {
-  const { dataApiFetcher, signal } = options;
-  const config = HTF_CONFIG;
+  const { dataApiFetcher, signal, config: configOverride } = options;
+  const config = configOverride || HTF_CONFIG;
   const result = {
     ticker,
     is_detected: false,
@@ -779,4 +794,4 @@ async function detectHTF(ticker, options) {
   }
 }
 
-module.exports = { detectHTF, HTF_CONFIG };
+module.exports = { detectHTF, HTF_CONFIG, HTF_CONFIG_MODERATE };

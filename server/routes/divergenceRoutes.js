@@ -494,7 +494,10 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(501).json({ error: 'HTF scan endpoint is not enabled' });
     }
 
-    runHTFScan({ trigger: 'manual-api' })
+    const modeRaw = String(req.body?.mode || req.query.mode || 'strict').toLowerCase();
+    const htfMode = (modeRaw === 'moderate' || modeRaw === 'strict') ? modeRaw : 'strict';
+
+    runHTFScan({ trigger: 'manual-api', mode: htfMode })
       .then((summary) => {
         console.log('Manual HTF scan completed:', summary);
       })
