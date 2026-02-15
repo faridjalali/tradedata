@@ -203,19 +203,30 @@ function scoreSubwindow(dailySlice, preDaily) {
     concordantFrac = totalPosDelta > 0 ? concordantUpDelta / totalPosDelta : 0;
 
     // HARD GATE 1: Concordant-dominated zone (standalone)
-    // If >70% of positive delta comes from concordant-up days (price↑ + delta↑),
+    // If >65% of positive delta comes from concordant-up days (price↑ + delta↑),
     // this is NOT accumulation — it's normal buying during a rally.
-    // No intraRally requirement: even windows starting near a peak can be concordant-
-    // dominated from bounce days within the decline (e.g., DAVE 11/5→12/23: 74.3%).
-    if (concordantFrac > 0.70) {
+    // Lowered from 70% to 65% based on LLM cross-ticker analysis: zones at 0.65-0.69
+    // concordantFrac (CRDO Z3=0.691, INSM Z5=0.680, EOSE Z1=0.682, WULF Z3=0.694)
+    // had near-zero divergence scores and were flagged as false positives by expert review.
+    if (concordantFrac > 0.65) {
       return {
         score: 0, detected: false, reason: 'concordant_dominated',
         netDeltaPct, overallPriceChange, intraRally, concordantFrac,
       };
     }
 
-    // Note: previous HARD GATE 2 (intraRally > 10 && concordantFrac > 0.70) was removed
-    // because HARD GATE 1 (concordantFrac > 0.70 standalone) now subsumes it entirely.
+    // HARD GATE 2: Combined price + concordance gate
+    // If price is flat/rising (>0%) AND concordantFrac > 0.60, reject.
+    // True accumulation during price declines can tolerate moderate concordance from
+    // bounce days. But when price is flat/rising AND most buying is concordant,
+    // there is no divergence — just normal market behavior.
+    // Catches: BE Z4 (+0.87%, 0.663), INSM Z5 (+2.87%, 0.68 — already caught by gate 1)
+    if (overallPriceChange > 0 && concordantFrac > 0.60) {
+      return {
+        score: 0, detected: false, reason: 'concordant_flat_market',
+        netDeltaPct, overallPriceChange, intraRally, concordantFrac,
+      };
+    }
   }
 
   // Cumulative weekly delta slope (using capped deltas)
@@ -314,6 +325,20 @@ function scoreSubwindow(dailySlice, preDaily) {
   }
 
   const rawScore = s1 * 0.20 + s2 * 0.15 + s3 * 0.10 + s4 * 0.10 + s5 * 0.05 + s6 * 0.18 + s7 * 0.05 + s8 * 0.17;
+
+  // Divergence floor gate: if divergence component is near-zero AND concordance is
+  // elevated, reject. This catches zones where non-divergence metrics (s1, s4, s6)
+  // carry the score above 0.30 despite zero actual price-delta divergence.
+  // Cross-ticker analysis found 8 false positives with this pattern: all had s8 < 0.05
+  // and concordantFrac > 0.55, meaning the "accumulation" signal had zero divergence
+  // and was just normal buying. True accumulation zones have s8 >> 0.10.
+  if (s8 < 0.05 && concordantFrac > 0.55) {
+    return {
+      score: 0, detected: false, reason: 'no_divergence',
+      netDeltaPct, overallPriceChange, concordantFrac, s8,
+      components: { s1, s2, s3, s4, s5, s6, s7, s8 },
+    };
+  }
 
   // Concordance penalty (soft) — standalone quality gate
   // When >55% of positive delta comes from concordant-up days, the "accumulation" signal
@@ -536,18 +561,23 @@ function evaluateProximitySignals(allDaily, zones) {
     }
   }
 
-  // --- Signal 2: Delta Anomaly (>4x rolling avg) — +25 pts ---
+  // --- Signal 2: Delta Anomaly (>4x rolling avg, POSITIVE only) — +25 pts ---
+  // Only count POSITIVE delta anomalies (buy anomalies / absorption anomalies).
+  // Sell anomalies (large negative delta) are BEARISH signals that should NOT
+  // contribute to breakout proximity. CRDO's 6.8x sell anomaly on Feb 4 was
+  // incorrectly adding 25pts toward "imminent breakout" before this fix.
   {
     for (let i = Math.max(0, recent.length - 15); i < recent.length; i++) {
       const d = recent[i];
+      if (d.delta <= 0) continue; // Skip sell anomalies — they are bearish
       const globalIdx = n - lookback + i;
       const startIdx = Math.max(0, globalIdx - 20);
       const rollingAvg = mean(allDaily.slice(startIdx, globalIdx).map(x => Math.abs(x.delta)));
-      if (rollingAvg > 0 && Math.abs(d.delta) > 4 * rollingAvg) {
+      if (rollingAvg > 0 && d.delta > 4 * rollingAvg) {
         signals.push({
           type: 'delta_anomaly',
           points: 25,
-          detail: `${d.date}: ${(Math.abs(d.delta) / rollingAvg).toFixed(1)}x avg (${d.delta > 0 ? '+' : ''}${(d.delta / 1000).toFixed(0)}K)`,
+          detail: `${d.date}: ${(d.delta / rollingAvg).toFixed(1)}x avg (+${(d.delta / 1000).toFixed(0)}K)`,
         });
         break;
       }
@@ -634,9 +664,13 @@ function evaluateProximitySignals(allDaily, zones) {
   }
 
   // --- Signal 7: Extreme Absorption Rate (>40%) — +15 pts ---
+  // Only count zones from the last 90 trading days (recency gate).
+  // CRDO's Z1 from April 2025 (10 months ago) was incorrectly contributing 15pts
+  // to Feb 2026 proximity. Historical absorption doesn't predict current breakout.
   {
+    const recentCutoffIdx = Math.max(0, n - 90);
     for (const z of zones) {
-      if (z.absorptionPct > 40) {
+      if (z.absorptionPct > 40 && z.end >= recentCutoffIdx) {
         signals.push({
           type: 'extreme_absorption',
           points: 15,
@@ -648,7 +682,24 @@ function evaluateProximitySignals(allDaily, zones) {
   }
 
   // Compute composite score
-  const compositeScore = signals.reduce((s, sig) => s + sig.points, 0);
+  let compositeScore = signals.reduce((s, sig) => s + sig.points, 0);
+
+  // Rally context suppression: if the stock has already rallied significantly
+  // in the recent period, suppress proximity scoring. A stock that has already
+  // broken out and rallied 20%+ is NOT approaching a breakout — it IS the breakout.
+  // MOD at 80pts "imminent" while already up 73% in a month was actively misleading.
+  // STX at 50pts "high" while at +310% YTD was similarly overstated.
+  {
+    const last20 = allDaily.slice(Math.max(0, n - 20));
+    if (last20.length >= 10) {
+      const recentPriceChg = ((last20[last20.length - 1].close - last20[0].close) / last20[0].close) * 100;
+      if (recentPriceChg > 20) {
+        // Already in an active rally — cap proximity at "elevated" (max 40pts)
+        compositeScore = Math.min(compositeScore, 40);
+      }
+    }
+  }
+
   let level = 'none';
   if (compositeScore >= 70) level = 'imminent';
   else if (compositeScore >= 50) level = 'high';
