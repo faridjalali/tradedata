@@ -76,23 +76,43 @@ effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
 
 ### Hard Gates (Must Pass All)
 
-1. **Price Direction**: Price change must be between **-45% and +10%**. Crashes (>45%) are not consolidation. Rallies (>10%) don't need accumulation detection.
+1. **Price Direction**: Price change must be between **-45% and +3%**. Crashes (>45%) are not consolidation. Rallies (>3%) don't need accumulation detection.
 2. **Net Delta Floor**: Net delta % must be **> -1.5%**. Deeply negative delta indicates concordant selling with no hidden accumulation.
 3. **Delta Slope Gate**: Normalized cumulative weekly delta slope must be **> -0.5**. Prevents scoring windows where delta is actively declining.
+4. **Concordant Rally Gate** *(new)*: If the window contains an **intra-window rally > 10%** (peak price vs start price) AND the **concordant-up delta fraction > 70%** of all positive delta AND overall price change is negative → reject. This catches windows that span a rally-then-crash where positive net delta is a byproduct of the concordant rally, not hidden accumulation. See [DAVE false positive case study](#dave-false-positive-case-study) below.
 
-### 7-Component Scoring System
+### 8-Component Scoring System
 
 | # | Metric | Weight | What It Measures | Formula |
 |---|--------|--------|-----------------|---------|
-| S1 | **Net Delta %** | 25% | Total net buying as % of total volume | `clamp((netDeltaPct + 1.5) / 5, 0, 1)` |
-| S2 | **Delta Slope** | 22% | Trend of cumulative weekly delta (rising = building) | `clamp((deltaSlopeNorm + 0.5) / 4, 0, 1)` |
-| S3 | **Delta Shift vs Pre** | 15% | Is buying stronger now than before consolidation? | `clamp((deltaShift + 1) / 8, 0, 1)` |
-| S4 | **Accum Week Ratio** | 15% | Fraction of weeks with positive delta | `clamp((ratio - 0.2) / 0.6, 0, 1)` |
-| S5 | **Large Buy vs Sell** | 10% | More big-buy days than big-sell days? | `clamp((largeBuyVsSell + 3) / 12, 0, 1)` |
-| S6 | **Absorption %** | 8% | % of days where price down but delta positive | `clamp(absorptionPct / 20, 0, 1)` |
+| S1 | **Net Delta %** | 20% | Total net buying as % of total volume | `clamp((netDeltaPct + 1.5) / 5, 0, 1)` |
+| S2 | **Delta Slope** | 15% | Trend of cumulative weekly delta (rising = building) | `clamp((deltaSlopeNorm + 0.5) / 4, 0, 1)` |
+| S3 | **Delta Shift vs Pre** | 10% | Is buying stronger now than before consolidation? | `clamp((deltaShift + 1) / 8, 0, 1)` |
+| S4 | **Accum Week Ratio** | 10% | Fraction of weeks with positive delta | `clamp((ratio - 0.2) / 0.6, 0, 1)` |
+| S5 | **Large Buy vs Sell** | 5% | More big-buy days than big-sell days? | `clamp((largeBuyVsSell + 3) / 12, 0, 1)` |
+| S6 | **Absorption %** | 18% | % of days where price down but delta positive | `clamp(absorptionPct / 15, 0, 1)` |
 | S7 | **Volume Decline** | 5% | Volume drying up (typical of late-stage consolidation) | First-third vs last-third volume ratio |
+| S8 | **Divergence** | 17% | Reward price-down + delta-up divergence | `priceFactor × deltaFactor` (see below) |
 
-**Raw Score**: `rawScore = S1×0.25 + S2×0.22 + S3×0.15 + S4×0.15 + S5×0.10 + S6×0.08 + S7×0.05`
+**S8 Divergence formula**: Only fires when `netDeltaPct > 0`. `priceFactor = clamp((3 - overallPriceChange) / 8, 0, 1)` — rewards price decline (1.0 at -5%, 0.0 at +3%). `deltaFactor = clamp(netDeltaPct / 3, 0, 1)` — rewards positive delta (1.0 at +3%). S8 = priceFactor × deltaFactor. Penalizes concordant movement (price and delta both positive).
+
+**Raw Score**: `rawScore = S1×0.20 + S2×0.15 + S3×0.10 + S4×0.10 + S5×0.05 + S6×0.18 + S7×0.05 + S8×0.17`
+
+### Concordance Penalty (Soft)
+
+After computing the raw score, apply a concordance penalty for windows that contain a moderate rally-then-crash pattern (below the hard gate threshold):
+
+```
+If intraRally > 5% AND overallPriceChange < 0 AND concordantFrac > 0.55:
+  concordancePenalty = max(0.40, 1.0 - ((intraRally - 5) / 15) × ((concordantFrac - 0.55) / 0.35))
+  rawScore *= concordancePenalty
+```
+
+Where:
+- **intraRally** = `(max_close_in_window - start_close) / start_close × 100` — how much price rallied above start before declining
+- **concordantFrac** = `concordant_up_delta / (concordant_up_delta + absorption_delta)` — fraction of all positive delta from concordant-up days (price up AND delta positive) vs true absorption days (price down AND delta positive)
+
+The penalty scales with both rally magnitude and concordance dominance. True accumulation zones during declines have concordantFrac below 0.55 and intraRally near 0%, so this penalty does not affect them.
 
 ### Duration Scaling
 
@@ -100,7 +120,7 @@ Score grows with pattern duration to reward longer, more confident accumulation:
 
 ```
 durationMultiplier = min(1.15, 0.70 + (weeks - 2) × 0.075)
-finalScore = rawScore × durationMultiplier
+finalScore = rawScore × concordancePenalty × durationMultiplier
 ```
 
 | Weeks | Multiplier | Max Final Score |
@@ -638,6 +658,30 @@ This provides a high-level "institutional weather map" — when phases transitio
 | IREN | Jan 6 – Feb 14, 2026 | -9.2% | -1.48% | 0.02 | Concordant selling |
 | SMCI | Oct 1 – Nov 15, 2024 | -46.4% | +0.34% | 0.00 | Crash gate: >45% decline |
 | RIVN | Oct 1 – Nov 15, 2024 | -4.4% | -2.06% | 0.00 | Concordant selling gate: delta < -1.5% |
+| DAVE | Dec 11 – Jan 21, 2026 | -8.9% | +3.44% | 0.00 | Concordant rally gate: 17.2% intra-rally, 78% concordant fraction |
+
+### DAVE False Positive Case Study
+
+**The Problem**: DAVE Zone 1 (12/11/25→1/21/26) scored 0.92 (Strong) before the fix. The window showed price -8.9% with net delta +3.44% — textbook divergence metrics. But the detection was a false positive.
+
+**Why it was false**: The 28-day window spanned a **rally-then-crash**:
+- **Sub-period A (12/11→1/9, 20 days)**: Price rallied from $204 to $239 (+17.2%) with positive delta (+2.84%). This is **concordant** — price up + delta positive = normal rally behavior, nothing hidden.
+- **Sub-period B (1/9→1/21, 9 days)**: Price crashed from $239 to $186 (-22.3%). Delta was mixed, with the biggest positive delta day (1/15, +131K) being a concordant bounce, not absorption.
+
+**The numbers**:
+- Concordant-up delta (price up + delta positive days): **+478K**
+- True absorption delta (price down + delta positive days): **+136K**
+- Concordant fraction: **78%** — concordant-up days contribute 78% of all positive delta
+- The single day of 12/22 (+214K, concordant UP during the rally) accounts for 59% of total net delta
+- Post-zone: DAVE crashed another $23 with -392K delta — zero institutional support
+
+**The pattern**: The algorithm sees "price down start-to-end + delta positive = divergence" but the delta positivity is a **byproduct of the rally**, not evidence of hidden buying during a decline. The window captures a price reversal (rally → crash), not accumulation during consolidation.
+
+**The fix**: Two-part concordant rally detection:
+1. **Hard gate**: If intra-window rally > 10% AND concordant fraction > 70% → reject (score = 0)
+2. **Soft penalty**: If intra-window rally > 5% AND concordant fraction > 55% → scale score down proportionally
+
+**Result after fix**: Old Zone 1 (12/11→1/21, score 0.92) correctly rejected. Algorithm now finds a different Zone 1 (11/5→12/23, score 0.86) which is a genuine decline period starting at the price peak ($245 → $219, -10.6%) with no significant intra-window rally.
 
 ---
 
@@ -869,6 +913,8 @@ Exports:
 
 18. **Highest proximity score correlates with strongest breakout**: COHR's 100-point IMMINENT proximity (2/10/26) coincided with 6/6 signals firing simultaneously — the only time all signals aligned. The subsequent breakout reached all-time highs ($238). Composite proximity scoring has predictive power for breakout magnitude, not just timing.
 
+19. **Rally-then-crash windows are the #1 false positive source**: DAVE (12/11→1/21) scored 0.92 but was a false positive. The window spanned a +17.2% rally followed by a -22.3% crash. Overall price change was -8.9% (passes gate) with +3.44% net delta (looks like divergence), but 78% of the positive delta came from concordant-up days during the rally — not from absorption during the decline. The fix: check the **intra-window rally** (peak vs start) and **concordant fraction** (concordant-up delta / total positive delta). If the rally was >10% and concordant fraction >70%, gate out the window entirely. For moderate cases (rally >5%, concordant >55%), apply a scaling penalty. True accumulation zones have near-zero intra-window rallies because price stays flat or declines throughout.
+
 ---
 
 ## Analysis Scripts
@@ -916,8 +962,10 @@ Exports:
 - [ ] Implement accumulation-in-decline detection (10-day rolling: price <-3%, delta >+3%)
 - [ ] Implement monthly phase analysis (20-day rolling institutional flow classification)
 - [ ] Implement breakout auto-detection (>8% in 5 days on volume >1.2x avg)
+- [ ] Test concordant rally gate against all confirmed true positives (verify no regressions)
 - [ ] Test with more negative controls (declining stocks that never broke out)
 - [ ] Test with false breakouts (stocks that triggered but failed)
+- [ ] Test with more rally-then-crash patterns (tickers that peaked and reversed within scan window)
 - [ ] Test macro cycle detection on more tickers with long histories
 - [ ] Test: does proximity score magnitude correlate with breakout magnitude? (COHR suggests yes)
 - [ ] Test position management framework on more multi-month tickers (need 6+ months of data)

@@ -171,6 +171,44 @@ function scoreSubwindow(dailySlice, preDaily) {
     return { score: 0, detected: false, reason: 'concordant_selling', netDeltaPct, overallPriceChange };
   }
 
+  // === CONCORDANT RALLY ANALYSIS ===
+  // Detect windows spanning a rally-then-crash where positive net delta is actually
+  // CONCORDANT (from the rally) not DIVERGENT (from hidden accumulation during decline).
+  //
+  // The problem: a window starting during a rally and ending after a crash will show
+  // negative overall price + positive delta = apparent "divergence." But the delta
+  // positivity came from the rally days (concordant: price up + delta positive),
+  // not from absorption days (divergent: price down + delta positive).
+  //
+  // Fix: classify each day's delta and check what fraction of positive delta comes
+  // from concordant-up days vs absorption days.
+  const maxClose = Math.max(...closes);
+  const intraRally = ((maxClose - closes[0]) / closes[0]) * 100;
+  let concordantFrac = 0;
+  let concordantUpDelta = 0;
+  let absorptionDelta = 0;
+
+  if (intraRally > 5 && overallPriceChange < 0 && netDeltaPct > 0) {
+    for (let i = 1; i < n; i++) {
+      const dayPriceChg = dailySlice[i].close - dailySlice[i - 1].close;
+      const dayDelta = effectiveDeltas[i];
+      if (dayPriceChg > 0 && dayDelta > 0) concordantUpDelta += dayDelta;
+      else if (dayPriceChg < 0 && dayDelta > 0) absorptionDelta += dayDelta;
+    }
+    const totalPosDelta = concordantUpDelta + absorptionDelta;
+    concordantFrac = totalPosDelta > 0 ? concordantUpDelta / totalPosDelta : 0;
+
+    // HARD GATE: extreme rally (>10%) + high concordance (>70%)
+    // The "accumulation" is just a normal rally that reversed — false positive.
+    // Example: DAVE 12/11→1/21 (intraRally 17.2%, concordantFrac 0.78)
+    if (intraRally > 10 && concordantFrac > 0.70) {
+      return {
+        score: 0, detected: false, reason: 'concordant_rally',
+        netDeltaPct, overallPriceChange, intraRally, concordantFrac,
+      };
+    }
+  }
+
   // Cumulative weekly delta slope (using capped deltas)
   const weeklyDeltas = [];
   let dayIdx = 0;
@@ -268,9 +306,17 @@ function scoreSubwindow(dailySlice, preDaily) {
 
   const rawScore = s1 * 0.20 + s2 * 0.15 + s3 * 0.10 + s4 * 0.10 + s5 * 0.05 + s6 * 0.18 + s7 * 0.05 + s8 * 0.17;
 
+  // Concordance penalty (soft) for moderate rally-then-crash patterns
+  // Fires when intra-window rally > 5%, overall price negative, and concordant delta dominates.
+  // Scales rawScore down proportionally to rally magnitude × concordance fraction.
+  let concordancePenalty = 1.0;
+  if (intraRally > 5 && overallPriceChange < 0 && concordantFrac > 0.55) {
+    concordancePenalty = Math.max(0.40, 1.0 - ((intraRally - 5) / 15) * ((concordantFrac - 0.55) / 0.35));
+  }
+
   // Duration scaling
   const durationMultiplier = Math.min(1.15, 0.70 + (weeks.length - 2) * 0.075);
-  const score = rawScore * durationMultiplier;
+  const score = rawScore * concordancePenalty * durationMultiplier;
   const detected = score >= 0.30;
 
   return {
@@ -289,6 +335,9 @@ function scoreSubwindow(dailySlice, preDaily) {
     volDeclineScore,
     components: { s1, s2, s3, s4, s5, s6, s7, s8 },
     durationMultiplier,
+    concordancePenalty,
+    intraRally,
+    concordantFrac,
     cappedDays,
   };
 }
@@ -701,6 +750,9 @@ async function detectVDF(ticker, options) {
       overallPriceChange: z.overallPriceChange,
       components: z.components,
       durationMultiplier: z.durationMultiplier,
+      concordancePenalty: z.concordancePenalty,
+      intraRally: z.intraRally,
+      concordantFrac: z.concordantFrac,
     }));
 
     // Format distribution clusters for output
