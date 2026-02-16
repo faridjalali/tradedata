@@ -220,6 +220,7 @@ function registerChartRoutes(options = {}) {
       }
 
       // 2. Batch-load from DB for cache misses
+      const apiNeeded = [];
       if (dbNeeded.length > 0 && typeof loadMiniChartBarsFromDbBatch === 'function') {
         const dbResults = await loadMiniChartBarsFromDbBatch(dbNeeded);
         for (const t of dbNeeded) {
@@ -227,6 +228,25 @@ function registerChartRoutes(options = {}) {
           if (bars.length > 0) {
             results[t] = bars;
             if (cache) cache.set(t, bars);
+          } else {
+            apiNeeded.push(t);
+          }
+        }
+      } else {
+        apiNeeded.push(...dbNeeded);
+      }
+
+      // 3. Fall back to live API fetch for tickers missing from both cache and DB.
+      //    fetchMiniChartBarsFromApi persists to DB + memory automatically.
+      if (apiNeeded.length > 0 && typeof fetchMiniChartBarsFromApi === 'function') {
+        const API_CONCURRENCY = 5;
+        for (let i = 0; i < apiNeeded.length; i += API_CONCURRENCY) {
+          const chunk = apiNeeded.slice(i, i + API_CONCURRENCY);
+          const fetched = await Promise.all(chunk.map(t => fetchMiniChartBarsFromApi(t).then(bars => ({ t, bars }))));
+          for (const { t, bars } of fetched) {
+            if (Array.isArray(bars) && bars.length > 0) {
+              results[t] = bars;
+            }
           }
         }
       }
