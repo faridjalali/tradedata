@@ -4647,15 +4647,14 @@ function createVDFSettingsPanel(): HTMLDivElement {
 
   function renderPanel(): void {
     const total = getVDFWeightTotal();
+    const totalIs100 = total === 100;
+    const totalColor = totalIs100 ? '#26a69a' : total > 100 ? '#f44336' : '#ffc107';
     const rows = VDF_COMPONENTS.map(c => {
       const w = vdfWeights[c.key] || 0;
-      const pct = total > 0 ? Math.round((w / total) * 100) : 0;
-      return `<div style="display:grid;grid-template-columns:110px 1fr 40px 36px;gap:6px;align-items:center;margin:4px 0;" title="${escapeHtml(c.tooltip)}">
+      return `<div style="display:grid;grid-template-columns:110px 48px;gap:8px;align-items:center;margin:3px 0;" title="${escapeHtml(c.tooltip)}">
         <label style="color:#8b949e;font-size:11px;white-space:nowrap;cursor:help;border-bottom:1px dotted #484f58;" title="${escapeHtml(c.tooltip)}">${escapeHtml(c.label)}</label>
-        <input type="range" min="0" max="50" step="1" value="${w}" data-vdf-weight="${c.key}"
-          style="width:100%;height:4px;accent-color:#26a69a;cursor:pointer;" />
-        <span style="color:#c9d1d9;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${w}</span>
-        <span style="color:#484f58;font-size:10px;text-align:right;">${pct}%</span>
+        <input type="text" inputmode="numeric" value="${w}" data-vdf-weight="${c.key}"
+          style="width:42px;height:22px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:3px;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:center;padding:0 2px;outline:none;" />
       </div>`;
     }).join('');
 
@@ -4664,26 +4663,41 @@ function createVDFSettingsPanel(): HTMLDivElement {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;">Scoring Weights</span>
         <div style="display:flex;gap:6px;align-items:center;">
-          <span class="vdf-weight-total" style="font-size:10px;color:#484f58;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;">Total: ${total}</span>
-          <button type="button" data-vdf-weight-action="reset" style="background:#0d1117;color:${isDefault ? '#484f58' : '#c9d1d9'};border:1px solid #30363d;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;${isDefault ? 'opacity:0.5;' : ''}">Reset</button>
+          <span class="vdf-weight-total" style="font-size:10px;color:${totalColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;">${total}%</span>
+          <button type="button" data-vdf-weight-action="reset" style="background:#0d1117;color:${isDefault ? '#484f58' : '#c9d1d9'};border:1px solid #30363d;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;${isDefault ? 'opacity:0.5;' : ''}" title="Reset to default weights">Reset</button>
+          <button type="button" data-vdf-weight-action="run" style="background:${totalIs100 ? '#26a69a' : '#21262d'};color:${totalIs100 ? '#fff' : '#484f58'};border:1px solid ${totalIs100 ? '#26a69a' : '#30363d'};border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;cursor:${totalIs100 ? 'pointer' : 'default'};${totalIs100 ? '' : 'opacity:0.5;'}" title="${totalIs100 ? 'Re-run VDF with these weights' : 'Weights must total 100% to run'}">Run</button>
         </div>
       </div>
       ${rows}
-      <div style="margin-top:8px;font-size:10px;color:#484f58;line-height:1.4;">Hover metric names for descriptions. Changing weights re-scores zones locally using server component values.</div>
+      <div style="margin-top:8px;font-size:10px;color:#484f58;line-height:1.4;">${totalIs100 ? 'Weights total 100%. Click Run to re-score, or edit values.' : `Weights must total 100% to run (currently ${total}%).`}</div>
     `;
   }
 
   renderPanel();
 
-  panel.addEventListener('input', (e) => {
+  // Handle text input changes
+  panel.addEventListener('change', (e) => {
     const target = e.target as HTMLInputElement;
     const key = target?.dataset?.vdfWeight;
     if (!key) return;
-    vdfWeights[key] = Math.max(0, Math.min(50, Number(target.value) || 0));
+    const val = Math.max(0, Math.min(100, Math.round(Number(target.value) || 0)));
+    vdfWeights[key] = val;
     persistVDFWeightsToStorage();
     renderPanel();
-    refreshVDFScoresFromWeights();
   });
+
+  // Also update on blur for immediate feedback
+  panel.addEventListener('blur', (e) => {
+    const target = e.target as HTMLInputElement;
+    const key = target?.dataset?.vdfWeight;
+    if (!key) return;
+    const val = Math.max(0, Math.min(100, Math.round(Number(target.value) || 0)));
+    if (vdfWeights[key] !== val) {
+      vdfWeights[key] = val;
+      persistVDFWeightsToStorage();
+      renderPanel();
+    }
+  }, true);
 
   panel.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
@@ -4691,6 +4705,12 @@ function createVDFSettingsPanel(): HTMLDivElement {
       VDF_COMPONENTS.forEach(c => { vdfWeights[c.key] = c.defaultWeight; });
       persistVDFWeightsToStorage();
       renderPanel();
+      refreshVDFScoresFromWeights();
+    }
+    if (target?.dataset?.vdfWeightAction === 'run') {
+      const total = getVDFWeightTotal();
+      if (total !== 100) return;
+      // Re-score locally with the new weights
       refreshVDFScoresFromWeights();
     }
   });
@@ -4706,15 +4726,16 @@ function toggleVDFSettingsPanel(): void {
 }
 
 function refreshVDFScoresFromWeights(): void {
-  // Re-render the VDF analysis panel with recomputed scores
-  if (!vdfAnalysisPanelEl) return;
+  // Re-render everything with recomputed scores from new weights
   const ticker = currentChartTicker || '';
   const today = new Date().toISOString().split('T')[0];
   const cacheKey = `${ticker}|${today}`;
   const entry = vdfResultCache.get(cacheKey);
   if (!entry) return;
-  // Re-render the panel (it will pick up the new weights via getVDFComponentLabels and recomputeVDFZoneScore)
+  // Update all VDF UI: analysis panel, button score, and zone overlays
   renderVDFAnalysisPanel(entry);
+  updateVDFButton(entry);
+  renderVDZones(entry);
 }
 
 function formatVDFDate(dateStr: string): string {
