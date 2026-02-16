@@ -63,6 +63,7 @@ let miniChartInstance: ReturnType<typeof createChart> | null = null;
 let miniChartHoverTimer: number | null = null;
 let miniChartAbortController: AbortController | null = null;
 let miniChartCurrentTicker: string | null = null;
+let miniChartHoveredCard: HTMLElement | null = null;
 const miniChartDataCache = new Map<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>>();
 
 export function getColumnFeedMode(column: 'daily' | 'weekly'): ColumnFeedMode {
@@ -1265,6 +1266,7 @@ function destroyMiniChartOverlay(): void {
         miniChartOverlayEl = null;
     }
     miniChartCurrentTicker = null;
+    miniChartHoveredCard = null;
 }
 
 async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<void> {
@@ -1494,12 +1496,20 @@ export function setupDivergenceFeedDelegation(): void {
     });
 
     // --- Mini-chart hover overlay on alert cards ---
+    // Use capture phase because mouseenter/mouseleave don't bubble.
+    // Guard with relatedTarget so moves between children within the same card
+    // don't destroy/restart the overlay.
     view.addEventListener('mouseenter', (e: Event) => {
-        const target = e.target as HTMLElement;
+        const me = e as MouseEvent;
+        const target = me.target as HTMLElement;
         const card = target.closest('.alert-card') as HTMLElement | null;
         if (!card) return;
         const ticker = card.dataset.ticker;
         if (!ticker) return;
+
+        // If we're already tracking this card (mouse moved between children), skip
+        if (miniChartHoveredCard === card) return;
+        miniChartHoveredCard = card;
 
         if (miniChartHoverTimer !== null) {
             window.clearTimeout(miniChartHoverTimer);
@@ -1508,14 +1518,20 @@ export function setupDivergenceFeedDelegation(): void {
             miniChartHoverTimer = null;
             const rect = card.getBoundingClientRect();
             showMiniChartOverlay(ticker, rect);
-        }, 2000);
-    }, true); // capture phase — mouseenter doesn't bubble
+        }, 1000);
+    }, true);
 
     view.addEventListener('mouseleave', (e: Event) => {
-        const target = e.target as HTMLElement;
-        if (!target.closest('.alert-card')) return;
+        const me = e as MouseEvent;
+        const target = me.target as HTMLElement;
+        const card = target.closest('.alert-card') as HTMLElement | null;
+        if (!card) return;
+        // If the mouse is moving to another element still within this card, ignore
+        const relatedTarget = me.relatedTarget as HTMLElement | null;
+        if (relatedTarget && card.contains(relatedTarget)) return;
+        miniChartHoveredCard = null;
         destroyMiniChartOverlay();
-    }, true); // capture phase — mouseleave doesn't bubble
+    }, true);
 
     // "Show more" pagination button
     view.addEventListener('click', (e: Event) => {

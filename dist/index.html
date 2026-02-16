@@ -26,13 +26,9 @@
     <meta name="apple-mobile-web-app-title" content="Volume Delta" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
-    <script
-      type="text/javascript"
-      src="https://s3.tradingview.com/tv.js"
-    ></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-waWCAB_3.js"></script>
+    <script type="module" crossorigin src="./assets/index-B2PssUT9.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-charts-C-3zq_q_.js">
   </head>
   <body>
@@ -71,7 +67,7 @@
       <header>
         <div class="header-left">
           <div id="global-settings-container">
-            <button id="global-settings-toggle" class="icon-btn" aria-label="Global settings" title="Settings">
+            <button id="global-settings-toggle" class="settings-icon-btn" aria-label="Global settings" title="Settings">
               <svg
                 width="16"
                 height="16"
@@ -94,21 +90,21 @@
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
                   class="tf-btn divergence-run-btn"
-                  id="divergence-fetch-all-btn"
+                  id="divergence-fetch-daily-btn"
                   data-tooltip="Fetch daily divergence data from divergence_symbols and build daily cards"
                 >
                   Fetch Daily
                 </button>
                 <button
                   class="tf-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-fetch-all-stop-btn"
+                  id="divergence-fetch-daily-stop-btn"
                   data-tooltip="Stop Fetch Daily"
                   aria-label="Stop Fetch Daily"
                   disabled
                 >
                   ⏹
                 </button>
-                <span id="divergence-fetch-all-status" class="divergence-run-status">Ran --</span>
+                <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
@@ -128,6 +124,25 @@
                   ⏹
                 </button>
                 <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="global-settings-row global-settings-table-controls-row">
+                <button
+                  class="tf-btn divergence-run-btn"
+                  id="divergence-vdf-scan-btn"
+                  data-tooltip="Run VDF (Volume Divergence Flag) detection on all tickers in divergence_symbols"
+                >
+                  VDF Scan
+                </button>
+                <button
+                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  id="divergence-vdf-scan-stop-btn"
+                  data-tooltip="Stop VDF Scan"
+                  aria-label="Stop VDF Scan"
+                  disabled
+                >
+                  ⏹
+                </button>
+                <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
               </div>
             </div>
           </div>
@@ -156,146 +171,23 @@
             />
           </div>
         </div>
-        <nav class="main-nav">
-          <button id="nav-logs" class="nav-btn">Logs</button>
-          <button id="nav-divergence" class="nav-btn active">Alerts</button>
-          <button id="nav-live" class="nav-btn" style="display: none;" aria-hidden="true">TV</button>
-          <button id="nav-leaderboard" class="nav-btn">Leaders</button>
-          <button id="nav-breadth" class="nav-btn">Breadth</button>
-        </nav>
+        <div class="header-right">
+          <div id="header-nav-container">
+            <button id="header-nav-toggle" class="settings-icon-btn" aria-label="Navigation" title="Navigation">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+                <circle cx="12" cy="19" r="2"></circle>
+              </svg>
+            </button>
+            <div id="header-nav-dropdown" class="header-dropdown-panel hidden">
+              <button class="header-nav-item active" data-view="divergence">Alerts</button>
+              <button class="header-nav-item" data-view="logs">Logs</button>
+              <button class="header-nav-item" data-view="breadth">Breadth</button>
+            </div>
+          </div>
+        </div>
       </header>
-
-      <!-- CONTROLS -->
-      <div id="controls-bar">
-        <!-- Live Feed Controls -->
-        <div id="live-controls">
-          <div class="feed-controls-group">
-            <button
-              class="tf-btn active"
-              id="btn-t"
-              data-tooltip="Alerts where signal trade date is today"
-            >
-              T
-            </button>
-            <button
-              class="tf-btn"
-              id="btn-y"
-              data-tooltip="Alerts where signal trade date is yesterday"
-            >
-              Y
-            </button>
-            <button
-              class="tf-btn"
-              id="btn-7"
-              data-tooltip="Alerts from the last 7 signal trade dates (including today)"
-            >
-              7
-            </button>
-            <button
-              class="tf-btn"
-              id="btn-30"
-              data-tooltip="Alerts from the last 30 signal trade dates (including today)"
-            >
-              30
-            </button>
-            <button
-              class="tf-btn"
-              id="btn-week"
-              data-tooltip="Alerts from selected week by signal trade date"
-            >
-              W
-            </button>
-            <button
-              class="tf-btn"
-              id="btn-month"
-              data-tooltip="Alerts from selected month by signal trade date"
-            >
-              M
-            </button>
-            <input type="week" id="history-week" class="glass-input hidden" />
-            <input type="month" id="history-month" class="glass-input hidden" />
-          </div>
-          <button id="reset-filter" class="hidden">← Back</button>
-        </div>
-        <!-- Divergence Controls -->
-        <div id="divergence-controls" class="hidden">
-          <div class="feed-controls-group">
-            <button
-              class="tf-btn active"
-              id="divergence-btn-t"
-              data-tooltip="Divergence signals where signal trade date is today"
-            >
-              T
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-y"
-              data-tooltip="Divergence signals where signal trade date is yesterday"
-            >
-              Y
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-7"
-              data-tooltip="Divergence signals from the last 7 signal trade dates (including today)"
-            >
-              7
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-30"
-              data-tooltip="Divergence signals from the last 30 signal trade dates (including today)"
-            >
-              30
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-week"
-              data-tooltip="Divergence signals from selected week by signal trade date"
-            >
-              W
-            </button>
-            <button
-              class="tf-btn"
-              id="divergence-btn-month"
-              data-tooltip="Divergence signals from selected month by signal trade date"
-            >
-              M
-            </button>
-            <input type="week" id="divergence-history-week" class="glass-input hidden" />
-            <input type="month" id="divergence-history-month" class="glass-input hidden" />
-          </div>
-        </div>
-        <!-- Leaderboard Controls -->
-        <div id="leaderboard-controls" class="hidden">
-          <div class="timeframe-buttons">
-            <button class="tf-btn" data-days="1">1</button>
-            <button class="tf-btn" data-days="7">7</button>
-            <button class="tf-btn" data-days="14">14</button>
-            <button class="tf-btn active" data-days="30">30</button>
-            <button class="tf-btn" data-days="60">60</button>
-            <button class="tf-btn" data-days="90">90</button>
-            <button class="tf-btn" data-days="0">∞</button>
-          </div>
-        </div>
-        <!-- Breadth Controls -->
-        <div id="breadth-controls" class="hidden">
-          <div class="breadth-controls-inner">
-            <div id="breadth-tf-btns" class="feed-controls-group">
-              <button class="tf-btn" data-days="1">T</button>
-              <button class="tf-btn active" data-days="5">5</button>
-              <button class="tf-btn" data-days="10">10</button>
-              <button class="tf-btn" data-days="20">20</button>
-              <button class="tf-btn" data-days="30">30</button>
-            </div>
-            <div id="breadth-metric-btns" class="feed-controls-group">
-              <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
-              <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
-              <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- LOGS VIEW -->
       <main id="view-logs" class="hidden">
@@ -323,23 +215,112 @@
       </main>
 
       <!-- LIVE FEED VIEW -->
-      <main id="view-live">
-        <!-- Ticker Detail View (Hidden by default) -->
-        <div id="ticker-view" class="hidden">
-          <div class="ticker-history-section">
+
+      <!-- DIVERGENCE VIEW -->
+      <main id="view-divergence" class="hidden">
+        <div id="divergence-dashboard-view" class="split-view">
+          <div class="column">
+            <div class="column-header">
+              <div class="header-title-group">
+                <h2>Daily</h2>
+                <div class="column-tf-controls" data-column="daily">
+                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                    <div class="column-tf-custom-row">
+                      <label>From</label>
+                      <input type="date" class="glass-input column-tf-from" />
+                    </div>
+                    <div class="column-tf-custom-row">
+                      <label>To</label>
+                      <input type="date" class="glass-input column-tf-to" />
+                    </div>
+                    <button class="tf-btn column-tf-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
+              <div class="header-sort-controls divergence-daily-sort">
+                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+              </div>
+            </div>
+            <div id="divergence-daily-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+
+          <div class="column">
+            <div class="column-header">
+              <div class="header-title-group">
+                <h2>Weekly</h2>
+                <div class="column-tf-controls" data-column="weekly">
+                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                    <div class="column-tf-custom-row">
+                      <label>From</label>
+                      <input type="date" class="glass-input column-tf-from" />
+                    </div>
+                    <div class="column-tf-custom-row">
+                      <label>To</label>
+                      <input type="date" class="glass-input column-tf-to" />
+                    </div>
+                    <button class="tf-btn column-tf-apply">Apply</button>
+                  </div>
+                </div>
+              </div>
+              <div class="header-sort-controls divergence-weekly-sort">
+                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+              </div>
+            </div>
+            <div id="divergence-weekly-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- TICKER DETAIL VIEW (Moved from Live Feed) -->
+      <div id="ticker-view" class="hidden">
+        <div class="ticker-history-section">
             <div class="split-view">
               <!-- Daily Column -->
               <div class="column">
                 <div class="column-header">
                   <div class="header-title-group">
                     <h2>Daily</h2>
-                    <div id="ticker-daily-avg" class="avg-score-inline"></div>
+                    <div class="column-tf-controls" data-column="daily">
+                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                        <div class="column-tf-custom-row">
+                          <label>From</label>
+                          <input type="date" class="glass-input column-tf-from" />
+                        </div>
+                        <div class="column-tf-custom-row">
+                          <label>To</label>
+                          <input type="date" class="glass-input column-tf-to" />
+                        </div>
+                        <button class="tf-btn column-tf-apply">Apply</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="header-sort-controls ticker-daily-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                     <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-daily-container" class="alerts-list">
@@ -352,13 +333,29 @@
                 <div class="column-header">
                   <div class="header-title-group">
                     <h2>Weekly</h2>
-                    <div id="ticker-weekly-avg" class="avg-score-inline"></div>
+                    <div class="column-tf-controls" data-column="weekly">
+                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                        <div class="column-tf-custom-row">
+                          <label>From</label>
+                          <input type="date" class="glass-input column-tf-from" />
+                        </div>
+                        <div class="column-tf-custom-row">
+                          <label>To</label>
+                          <input type="date" class="glass-input column-tf-to" />
+                        </div>
+                        <button class="tf-btn column-tf-apply">Apply</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="header-sort-controls ticker-weekly-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                    <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
+                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
                     <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
+                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-weekly-container" class="alerts-list">
@@ -367,17 +364,7 @@
               </div>
             </div>
 
-            <!-- TradingView Widget Container -->
-            <div
-              id="tv-chart-container"
-              class="tradingview-widget-container"
-              style="height: 600px; width: 100%; margin-top: 20px; display: none;"
-            >
-              <div
-                id="tradingview_chart"
-                style="height: 100%; width: 100%"
-              ></div>
-            </div>
+
 
             <!-- Custom Chart Section -->
             <div id="custom-chart-container" class="custom-chart-section">
@@ -388,19 +375,19 @@
                   <button class="tf-btn" data-interval="15min">15</button>
                   <button class="tf-btn" data-interval="30min">30</button>
                   <button class="tf-btn" data-interval="1hour">1h</button>
-                  <button class="tf-btn active" data-interval="4hour">4h</button>
-                  <button class="tf-btn" data-interval="1day">1D</button>
+                  <button class="tf-btn" data-interval="4hour">4h</button>
+                  <button class="tf-btn active" data-interval="1day">1D</button>
                   <button class="tf-btn" data-interval="1week">1W</button>
                 </div>
                 <div class="chart-navigation-group">
-                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Left Arrow)">
+                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Up Arrow)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="15 18 9 12 15 6"></polyline>
+                      <polyline points="18 15 12 9 6 15"></polyline>
                     </svg>
                   </button>
-                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Right Arrow)">
+                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Down Arrow)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="9 18 15 12 9 6"></polyline>
+                      <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
                   </button>
                 </div>
@@ -410,6 +397,12 @@
                     <polyline points="10.5 1 15 1 15 5.5"/>
                     <polyline points="10.5 15 15 15 15 10.5"/>
                     <polyline points="5.5 15 1 15 1 10.5"/>
+                  </svg>
+                </button>
+                <button id="ticker-back-btn" class="tf-btn icon-only" type="button" title="Back to overview">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
                   </svg>
                 </button>
               </div>
@@ -425,120 +418,33 @@
                 <div id="vd-rsi-chart-container" style="width: 100%; height: 400px;"></div>
               </div>
             </div>
-
           </div>
-        </div>
-
-        <!-- Main Dashboard Split View -->
-        <div id="dashboard-view" class="split-view">
-          <div class="column">
-            <div class="column-header">
-              <h2>Daily</h2>
-              <div class="header-sort-controls">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="combo" title="Sort by Score">S</button>
-              </div>
-            </div>
-            <div id="daily-container" class="alerts-list">
-              <div class="loading">Loading...</div>
-            </div>
-          </div>
-
-          <div class="column">
-            <div class="column-header">
-              <h2>Weekly</h2>
-              <div class="header-sort-controls">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="combo" title="Sort by Score">S</button>
-              </div>
-            </div>
-            <div id="weekly-container" class="alerts-list">
-              <div class="loading">Loading...</div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      <!-- DIVERGENCE VIEW -->
-      <main id="view-divergence" class="hidden">
-        <div id="divergence-dashboard-view" class="split-view">
-          <div class="column">
-            <div class="column-header">
-              <h2>Daily</h2>
-              <div class="header-sort-controls divergence-daily-sort">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
-              </div>
-            </div>
-            <div id="divergence-daily-container" class="alerts-list">
-              <div class="loading">Loading...</div>
-            </div>
-          </div>
-
-          <div class="column">
-            <div class="column-header">
-              <h2>Weekly</h2>
-              <div class="header-sort-controls divergence-weekly-sort">
-                <button class="tf-btn" data-sort="favorite" title="Sort by Favorites">★</button>
-                <button class="tf-btn active" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn" data-sort="combo" title="Sort by Score">S</button>
-              </div>
-            </div>
-            <div id="divergence-weekly-container" class="alerts-list">
-              <div class="loading">Loading...</div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      <!-- LEADERBOARD VIEW -->
-      <main id="view-leaderboard" class="hidden">
-        <div class="leaderboard-container">
-          <!-- Daily Bullish -->
-          <div class="rank-container">
-            <div class="rank-header bull-header">Daily Bullish</div>
-            <table id="lb-daily-bull"></table>
-          </div>
-
-          <!-- Daily Bearish -->
-          <div class="rank-container">
-            <div class="rank-header bear-header">Daily Bearish</div>
-            <table id="lb-daily-bear"></table>
-          </div>
-
-          <!-- Weekly Bullish -->
-          <div class="rank-container">
-            <div class="rank-header bull-header">Weekly Bullish</div>
-            <table id="lb-weekly-bull"></table>
-          </div>
-
-          <!-- Weekly Bearish -->
-          <div class="rank-container">
-            <div class="rank-header bear-header">Weekly Bearish</div>
-            <table id="lb-weekly-bear"></table>
-          </div>
-        </div>
-      </main>
+      </div>
 
       <!-- BREADTH VIEW -->
       <main id="view-breadth" class="hidden">
-        <div class="breadth-chart-container">
-          <div class="breadth-chart-header">
-            <h3>Market Breadth</h3>
-            <span id="breadth-subtitle" class="breadth-subtitle">SPY vs SVIX — Normalized</span>
+        <div class="single-page-container">
+          <div class="single-page-header">
+            <div class="single-page-controls">
+              <div id="breadth-tf-btns" class="feed-controls-group">
+                <button class="tf-btn" data-days="1">T</button>
+                <button class="tf-btn active" data-days="5">5</button>
+                <button class="tf-btn" data-days="10">10</button>
+                <button class="tf-btn" data-days="20">20</button>
+                <button class="tf-btn" data-days="30">30</button>
+              </div>
+              <div id="breadth-metric-btns" class="feed-controls-group">
+                <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
+                <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
+                <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
+              </div>
+            </div>
+            <span id="breadth-subtitle" class="single-page-subtitle">SPY vs SVIX — Normalized</span>
           </div>
-          <div class="breadth-chart-wrapper">
+          <div class="single-page-chart-wrapper">
             <canvas id="breadth-chart"></canvas>
           </div>
-
-          <div id="breadth-error" class="breadth-status" style="display:none;"></div>
+          <div id="breadth-error" class="single-page-status" style="display:none;"></div>
         </div>
       </main>
     </div>
