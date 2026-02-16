@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const { Pool } = require("pg");
 const crypto = require("crypto");
 const zlib = require("zlib");
@@ -40,23 +42,48 @@ const port = process.env.PORT || 3000;
 const gzipAsync = promisify(zlib.gzip);
 const brotliCompressAsync = promisify(zlib.brotliCompress);
 
-// NOTE: cors() allows all origins. Restrict in production if needed:
-// app.use(cors({ origin: 'https://yourdomain.com' }));
-app.use(cors());
+// CORS: restrict to configured origin(s), or allow all in dev.
+const CORS_ORIGIN = String(process.env.CORS_ORIGIN || '').trim();
+app.use(cors(CORS_ORIGIN ? { origin: CORS_ORIGIN.split(',').map(o => o.trim()), credentials: true } : undefined));
+
+// Security headers via helmet (CSP, HSTS, X-Content-Type-Options, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'self'"],
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  frameguard: { action: 'sameorigin' },
+}));
+
+// Rate limiting on API endpoints: 300 requests per 15 minutes per IP.
+const apiRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Math.max(1, Number(process.env.API_RATE_LIMIT_MAX) || 300),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+  skip: (req) => !String(req.path || '').startsWith('/api/'),
+});
+app.use(apiRateLimiter);
+
 app.use(compression());
 app.use(express.json());
-app.use((_req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
 
 const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
 const BASIC_AUTH_USERNAME = String(process.env.BASIC_AUTH_USERNAME || 'shared');
 const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '');
 const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
-const SITE_LOCK_PASSCODE = String(process.env.SITE_LOCK_PASSCODE || '46110603').trim();
+const SITE_LOCK_PASSCODE = String(process.env.SITE_LOCK_PASSCODE || '').trim();
 const SITE_LOCK_ENABLED = SITE_LOCK_PASSCODE.length > 0;
 const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
@@ -1070,20 +1097,26 @@ const initDB = async () => {
     // Create index concurrently to avoid locking table on startup
     await pool.query(`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_alerts_timestamp ON alerts (timestamp DESC)`);
     
-    // Attempt to add new columns if they don't exist
-    const columns = [
-      "timeframe VARCHAR(10)",
-      "signal_direction INTEGER",
-      "signal_volume INTEGER",
-      "intensity_score INTEGER",
-      "combo_score INTEGER",
-      "is_favorite BOOLEAN DEFAULT FALSE"
+    // Attempt to add new columns if they don't exist.
+    // Column definitions are a hardcoded allowlist — never derived from user input.
+    const columnMigrations = [
+      { name: 'timeframe',        definition: 'VARCHAR(10)' },
+      { name: 'signal_direction', definition: 'INTEGER' },
+      { name: 'signal_volume',    definition: 'INTEGER' },
+      { name: 'intensity_score',  definition: 'INTEGER' },
+      { name: 'combo_score',      definition: 'INTEGER' },
+      { name: 'is_favorite',      definition: 'BOOLEAN DEFAULT FALSE' },
     ];
-
-    await Promise.allSettled(columns.map(col =>
-      pool.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ${col}`)
-        .catch(e => console.log(`Migration note for ${col}:`, e.message))
-    ));
+    const safeIdentifier = /^[a-z_][a-z0-9_]{0,62}$/;
+    await Promise.allSettled(columnMigrations.map(({ name, definition }) => {
+      if (!safeIdentifier.test(name)) {
+        console.error(`Migration skipped: invalid column name "${name}"`);
+        return Promise.resolve();
+      }
+      const sql = `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS "${name}" ${definition}`;
+      return pool.query(sql)
+        .catch(e => console.log(`Migration note for ${name}:`, e.message));
+    }));
     await pool.query(`
       CREATE TABLE IF NOT EXISTS run_metrics_history (
         id SERIAL PRIMARY KEY,
@@ -2443,6 +2476,7 @@ const VD_RSI_RESULT_CACHE = new Map();
 const CHART_DATA_CACHE = new Map(); // Cache for provider intraday chart data
 const CHART_QUOTE_CACHE = new Map();
 const CHART_IN_FLIGHT_REQUESTS = new Map();
+const CHART_IN_FLIGHT_MAX = 500;
 const CHART_FINAL_RESULT_CACHE = new Map();
 const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 300);
 const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_MAX_AGE_SECONDS) || 15);
@@ -3855,6 +3889,11 @@ async function getOrBuildChartResult(params) {
     chartDebugMetrics.buildStarted += 1;
   }
   if (!buildPromise) {
+    if (CHART_IN_FLIGHT_REQUESTS.size >= CHART_IN_FLIGHT_MAX) {
+      const err = new Error('Server is busy processing chart requests, please retry shortly');
+      err.httpStatus = 503;
+      throw err;
+    }
     buildPromise = (async () => {
       const timer = createChartStageTimer();
       const requiredIntervals = Array.from(new Set([
