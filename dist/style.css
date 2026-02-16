@@ -659,6 +659,13 @@ h2 {
   transition: all 0.2s;
   cursor: pointer;
   overflow: hidden;
+
+  /* Disable text selection so the magnifier doesn't trigger */
+  -webkit-user-select: none;
+  user-select: none;
+  
+  /* Disable the native context menu (Copy/Look Up) on long press */
+  -webkit-touch-callout: none;
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
@@ -1570,6 +1577,17 @@ button:hover {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Inline minichart (mobile) */
+.inline-minichart {
+  width: 100%;
+  height: 120px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+}
+
 /* Pane resize handles */
 .pane-resize-handle {
     position: absolute;
@@ -1614,6 +1632,13 @@ button:hover {
     linear-gradient(180deg, #EDE8DE 0%, #F5F0E8 100%);
 }
 
+/* Site lock - claude theme */
+[data-theme="claude"] .site-lock-overlay {
+  background:
+    radial-gradient(1200px 600px at 50% 0%, rgba(218, 119, 86, 0.2), rgba(28, 27, 23, 0.96)),
+    linear-gradient(180deg, #242220 0%, #1c1b17 100%);
+}
+
 /* Theme selector buttons */
 .theme-swatch-btn {
   width: 22px;
@@ -1632,3 +1657,4 @@ button:hover {
 .theme-swatch-btn[data-theme="dark"] { background: #0d1117; }
 .theme-swatch-btn[data-theme="light"] { background: #ffffff; }
 .theme-swatch-btn[data-theme="beige"] { background: #F5F0E8; }
+.theme-swatch-btn[data-theme="claude"] { background: linear-gradient(135deg, #1c1b17 50%, #da7756 50%); }

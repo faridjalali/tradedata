@@ -326,6 +326,19 @@ function initGlobalSettingsPanel() {
             themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === name));
         });
     });
+
+    // Minichart on Mobile toggle
+    const mcBtns = panel.querySelectorAll<HTMLElement>('[data-minichart-mobile]');
+    const storedMc = localStorage.getItem('minichart_mobile') || 'off';
+    mcBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.minichartMobile === storedMc);
+        btn.addEventListener('click', () => {
+            const val = btn.dataset.minichartMobile || 'off';
+            mcBtns.forEach(b => b.classList.toggle('active', b.dataset.minichartMobile === val));
+            try { localStorage.setItem('minichart_mobile', val); } catch { /* ignore */ }
+            window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
+        });
+    });
 }
 
 async function checkServerSession(): Promise<boolean> {

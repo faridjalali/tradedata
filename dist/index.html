@@ -3,12 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      if (/Mobi|Android|iPhone|iPod/.test(navigator.userAgent)) {
-        document.querySelector('meta[name="viewport"]')
-          .setAttribute('content', 'width=device-width, initial-scale=0.85');
-      }
-    </script>
     <title>Catvue</title>
     <script>
       var link = document.createElement('link');
@@ -28,7 +22,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-BUbumlyV.js"></script>
+    <script type="module" crossorigin src="./assets/index-CRda3E19.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-charts-C-3zq_q_.js">
   </head>
   <body>
@@ -89,6 +83,14 @@
                   <button class="theme-swatch-btn active" data-theme="dark" title="Dark"></button>
                   <button class="theme-swatch-btn" data-theme="light" title="Light"></button>
                   <button class="theme-swatch-btn" data-theme="beige" title="Beige"></button>
+                  <button class="theme-swatch-btn" data-theme="claude" title="Claude"></button>
+                </div>
+              </div>
+              <div class="global-settings-row" style="justify-content:space-between;">
+                <label class="global-settings-label">Minichart on Mobile</label>
+                <div id="global-minichart-mobile-btns" style="display:flex;gap:6px;align-items:center;">
+                  <button class="tf-btn active" data-minichart-mobile="off">Off</button>
+                  <button class="tf-btn" data-minichart-mobile="on">On</button>
                 </div>
               </div>
               <div class="global-settings-row global-settings-timezone-row">
@@ -360,7 +362,7 @@
               <!-- Chart controls -->
               <div id="chart-controls" class="chart-controls-bar">
                 <div class="feed-controls-group">
-                  <button class="tf-btn" data-interval="5min">5</button>
+                  <button class="tf-btn" data-interval="5min" style="display:none;">5</button>
                   <button class="tf-btn" data-interval="15min">15</button>
                   <button class="tf-btn" data-interval="30min">30</button>
                   <button class="tf-btn" data-interval="1hour">1h</button>

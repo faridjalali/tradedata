@@ -23,7 +23,7 @@ import {
 import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { hydrateAlertCardDivergenceTables, primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
-import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './chart';
+import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading, isMobileTouch } from './chart';
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
 
@@ -68,6 +68,13 @@ let miniChartHoveredCard: HTMLElement | null = null;
 const miniChartDataCache = new Map<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>>();
 const MINI_CHART_CACHE_MAX = 400;
 let miniChartPrefetchInFlight = false;
+
+// --- Inline minichart state (mobile only) ---
+const inlineChartInstances = new Map<string, ReturnType<typeof createChart>>();
+
+function isMobileMinichartEnabled(): boolean {
+    return isMobileTouch && localStorage.getItem('minichart_mobile') === 'on';
+}
 
 function evictMiniChartCache(keepCount: number): void {
     if (miniChartDataCache.size <= keepCount) return;
@@ -1303,7 +1310,10 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
 
     // Prefetch mini-chart bars for visible cards (best-effort, non-blocking)
     const prefetchTickers = Array.from(new Set(slice.map(a => a.ticker.toUpperCase())));
-    prefetchMiniChartBars(prefetchTickers).catch(() => {});
+    prefetchMiniChartBars(prefetchTickers).then(() => {
+        // After prefetch completes, render inline minicharts if enabled
+        renderInlineMinicharts(container);
+    }).catch(() => {});
 }
 
 // --- Mini-chart hover helpers ---
@@ -1452,6 +1462,89 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     });
     candleSeries.setData(bars as any);
     chart.timeScale().fitContent();
+}
+
+// --- Inline minichart rendering (mobile only) ---
+
+function removeInlineMinicharts(container: HTMLElement): void {
+    const wrappers = container.querySelectorAll<HTMLElement>('.inline-minichart');
+    for (const wrapper of wrappers) {
+        const ticker = wrapper.dataset.ticker;
+        if (ticker) {
+            const chart = inlineChartInstances.get(ticker);
+            if (chart) { chart.remove(); inlineChartInstances.delete(ticker); }
+        }
+        wrapper.remove();
+    }
+}
+
+function createInlineChart(wrapper: HTMLElement, ticker: string, bars: Array<{ time: string | number; open: number; high: number; low: number; close: number }>): void {
+    const _tc = getThemeColors();
+    const w = wrapper.clientWidth;
+    const h = wrapper.clientHeight || 120;
+    const chart = createChart(wrapper, {
+        width: w,
+        height: h,
+        layout: {
+            background: { color: _tc.bgColor },
+            textColor: _tc.textPrimary,
+            fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+            attributionLogo: false,
+        },
+        grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+        rightPriceScale: { visible: false },
+        timeScale: { visible: false },
+        handleScroll: false,
+        handleScale: false,
+        crosshair: { vertLine: { visible: false }, horzLine: { visible: false } },
+    });
+    const series = chart.addCandlestickSeries({
+        upColor: '#26a69a', downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+        priceLineVisible: false, lastValueVisible: false,
+    });
+    series.setData(bars as any);
+    chart.timeScale().fitContent();
+    inlineChartInstances.set(ticker, chart);
+}
+
+async function renderInlineMinicharts(container: HTMLElement): Promise<void> {
+    if (!isMobileMinichartEnabled()) {
+        removeInlineMinicharts(container);
+        return;
+    }
+    const cards = container.querySelectorAll<HTMLElement>('.alert-card');
+    for (const card of cards) {
+        const ticker = card.dataset.ticker;
+        if (!ticker) continue;
+        // Skip if inline minichart already exists right after this card
+        const next = card.nextElementSibling;
+        if (next && next.classList.contains('inline-minichart') && (next as HTMLElement).dataset.ticker === ticker) continue;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'inline-minichart';
+        wrapper.dataset.ticker = ticker;
+        card.after(wrapper);
+
+        const cached = miniChartDataCache.get(ticker);
+        if (cached && cached.length > 0) {
+            createInlineChart(wrapper, ticker, cached);
+        } else {
+            // Fetch bars (same as overlay logic)
+            try {
+                const res = await fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`);
+                if (!res.ok) continue;
+                const data = await res.json();
+                const bars = Array.isArray(data?.bars) ? data.bars : [];
+                if (bars.length > 0) {
+                    miniChartDataCache.set(ticker, bars);
+                    // Guard: wrapper may have been removed during await
+                    if (wrapper.isConnected) createInlineChart(wrapper, ticker, bars);
+                }
+            } catch { /* ignore */ }
+        }
+    }
 }
 
 function handleFavoriteClick(e: Event): void {
@@ -1640,56 +1733,67 @@ export function setupDivergenceFeedDelegation(): void {
         }
     });
 
-    // --- Touch long-press for minichart overlay (touchscreen devices) ---
-    view.addEventListener('touchstart', (e: Event) => {
-        const te = e as TouchEvent;
-        if (te.touches.length !== 1) return;
-        const target = te.target as HTMLElement;
-        const card = target.closest('.alert-card') as HTMLElement | null;
-        if (!card) return;
-        const ticker = card.dataset.ticker;
-        if (!ticker) return;
-        touchLongPressFired = false;
-        if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
-        touchLongPressTimer = window.setTimeout(() => {
-            touchLongPressTimer = null;
-            touchLongPressFired = true;
-            const rect = card.getBoundingClientRect();
-            showMiniChartOverlay(ticker, rect, true);
-        }, 600);
-    }, { passive: true });
+    // --- Touch long-press for minichart overlay (desktop touchscreen only) ---
+    // On mobile, inline minicharts replace the overlay, so skip touch handlers entirely.
+    if (!isMobileTouch) {
+        view.addEventListener('touchstart', (e: Event) => {
+            const te = e as TouchEvent;
+            if (te.touches.length !== 1) return;
+            const target = te.target as HTMLElement;
+            const card = target.closest('.alert-card') as HTMLElement | null;
+            if (!card) return;
+            const ticker = card.dataset.ticker;
+            if (!ticker) return;
+            touchLongPressFired = false;
+            if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = window.setTimeout(() => {
+                touchLongPressTimer = null;
+                touchLongPressFired = true;
+                const rect = card.getBoundingClientRect();
+                showMiniChartOverlay(ticker, rect, true);
+            }, 600);
+        }, { passive: true });
 
-    view.addEventListener('touchmove', () => {
-        if (touchLongPressTimer !== null) {
-            window.clearTimeout(touchLongPressTimer);
-            touchLongPressTimer = null;
-        }
-    }, { passive: true });
+        view.addEventListener('touchmove', () => {
+            if (touchLongPressTimer !== null) {
+                window.clearTimeout(touchLongPressTimer);
+                touchLongPressTimer = null;
+            }
+        }, { passive: true });
 
-    view.addEventListener('touchend', () => {
-        if (touchLongPressTimer !== null) {
-            window.clearTimeout(touchLongPressTimer);
-            touchLongPressTimer = null;
-        }
-        lastTouchEndMs = Date.now();
-        if (touchLongPressFired) {
-            destroyMiniChartOverlay();
-            suppressNextCardClick = true;
-        }
-        touchLongPressFired = false;
-    }, { passive: true });
+        view.addEventListener('touchend', () => {
+            if (touchLongPressTimer !== null) {
+                window.clearTimeout(touchLongPressTimer);
+                touchLongPressTimer = null;
+            }
+            lastTouchEndMs = Date.now();
+            if (touchLongPressFired) {
+                destroyMiniChartOverlay();
+                suppressNextCardClick = true;
+            }
+            touchLongPressFired = false;
+        }, { passive: true });
 
-    view.addEventListener('touchcancel', () => {
-        if (touchLongPressTimer !== null) {
-            window.clearTimeout(touchLongPressTimer);
-            touchLongPressTimer = null;
-        }
-        lastTouchEndMs = Date.now();
-        if (touchLongPressFired) {
-            destroyMiniChartOverlay();
-        }
-        touchLongPressFired = false;
-    }, { passive: true });
+        view.addEventListener('touchcancel', () => {
+            if (touchLongPressTimer !== null) {
+                window.clearTimeout(touchLongPressTimer);
+                touchLongPressTimer = null;
+            }
+            lastTouchEndMs = Date.now();
+            if (touchLongPressFired) {
+                destroyMiniChartOverlay();
+            }
+            touchLongPressFired = false;
+        }, { passive: true });
+    }
+
+    // --- Minichart on Mobile setting toggle ---
+    window.addEventListener('minichartmobilechange', () => {
+        const daily = document.getElementById('divergence-daily-container');
+        const weekly = document.getElementById('divergence-weekly-container');
+        if (daily) renderInlineMinicharts(daily);
+        if (weekly) renderInlineMinicharts(weekly);
+    });
 
     // "Show more" pagination button
     view.addEventListener('click', (e: Event) => {
