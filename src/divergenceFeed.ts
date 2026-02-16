@@ -1338,9 +1338,9 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     const overlay = document.createElement('div');
     overlay.className = 'mini-chart-overlay';
 
-    // On touch/mobile: 75% screen width, right-aligned
+    // On touch/mobile: 50% screen width, right-aligned
     const isMobile = isTouch || window.innerWidth < 768;
-    const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.75) : 500;
+    const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.5) : 500;
     const OVERLAY_H = isMobile ? Math.floor(OVERLAY_W * 0.6) : 300;
 
     const _tc = getThemeColors();
@@ -1363,15 +1363,10 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     let top: number;
     if (isMobile) {
         // Right-aligned against screen edge
-        left = window.innerWidth - OVERLAY_W - GAP;
-        
-        // Bottom aligned with the card bottom (requested behavior)
-        // top = cardRect.bottom - OVERLAY_H;
-        top = cardRect.bottom - OVERLAY_H;
-
-        // If it goes off top, shift down
-        if (top < GAP) {
-             top = GAP;
+        left = window.innerWidth - OVERLAY_W;
+        top = cardRect.bottom + GAP;
+        if (top + OVERLAY_H > window.innerHeight) {
+            top = cardRect.top - OVERLAY_H - GAP;
         }
     } else {
         // Desktop: prefer right of card, fall back to left
@@ -1588,10 +1583,6 @@ export function setupDivergenceFeedDelegation(): void {
     let touchLongPressFired = false;
     let suppressNextCardClick = false;
     let lastTouchEndMs = 0;
-    let touchCardActive = false;   // true when touch started on a card (preventDefault was called)
-    let touchPrevY: number | null = null; // for programmatic scroll
-    let touchStartTarget: HTMLElement | null = null; // original target for synthetic click
-    let touchDidScroll = false; // true if touch moved enough to count as a scroll
 
     // --- Mini-chart hover overlay on alert cards ---
     // Use capture phase because mouseenter/mouseleave don't bubble.
@@ -1650,76 +1641,43 @@ export function setupDivergenceFeedDelegation(): void {
     });
 
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
-    // NON-PASSIVE touchstart: call preventDefault() on card touches to block
-    // Safari iOS compositor-level text selection that ignores CSS user-select:none.
-    // We then manually handle scrolling via window.scrollBy() in touchmove.
     view.addEventListener('touchstart', (e: Event) => {
         const te = e as TouchEvent;
-        if (te.touches.length !== 1) { touchCardActive = false; return; }
+        if (te.touches.length !== 1) return;
         const target = te.target as HTMLElement;
         const card = target.closest('.alert-card') as HTMLElement | null;
-        if (!card) { touchCardActive = false; return; }
-
-        // Block Safari's native long-press selection at the event level
-        e.preventDefault();
-        touchCardActive = true;
-        touchDidScroll = false;
-        touchStartTarget = target;
-        touchPrevY = te.touches[0].clientY;
-
+        if (!card) return;
         const ticker = card.dataset.ticker;
         if (!ticker) return;
-
         touchLongPressFired = false;
         if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
-
         touchLongPressTimer = window.setTimeout(() => {
             touchLongPressTimer = null;
             touchLongPressFired = true;
             const rect = card.getBoundingClientRect();
             showMiniChartOverlay(ticker, rect, true);
         }, 600);
-    }, { passive: false });
+    }, { passive: true });
 
-    view.addEventListener('touchmove', (e: Event) => {
-        // Programmatic scroll to replace native scroll blocked by preventDefault
-        if (touchCardActive && touchPrevY !== null) {
-            const te = e as TouchEvent;
-            const currentY = te.touches[0].clientY;
-            const deltaY = touchPrevY - currentY;
-            if (Math.abs(deltaY) > 2) {
-                window.scrollBy(0, deltaY);
-                touchPrevY = currentY;
-                touchDidScroll = true;
-            }
-        }
+    view.addEventListener('touchmove', () => {
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
     }, { passive: true });
 
-    view.addEventListener('touchend', (e: Event) => {
+    view.addEventListener('touchend', () => {
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
-            if (e.cancelable) e.preventDefault();
             destroyMiniChartOverlay();
             suppressNextCardClick = true;
-        } else if (touchCardActive && !touchDidScroll && touchStartTarget) {
-            // Quick tap with no scroll — dispatch synthetic click since
-            // preventDefault on touchstart blocked the browser's automatic one
-            touchStartTarget.click();
         }
         touchLongPressFired = false;
-        touchCardActive = false;
-        touchPrevY = null;
-        touchStartTarget = null;
-        touchDidScroll = false;
-    }, { passive: false });
+    }, { passive: true });
 
     view.addEventListener('touchcancel', () => {
         if (touchLongPressTimer !== null) {
@@ -1731,34 +1689,9 @@ export function setupDivergenceFeedDelegation(): void {
             destroyMiniChartOverlay();
         }
         touchLongPressFired = false;
-        touchCardActive = false;
-        touchPrevY = null;
-        touchStartTarget = null;
-        touchDidScroll = false;
     }, { passive: true });
 
     // "Show more" pagination button
-    // --- Safari / Mobile Long Press Fix ---
-    // Use capture phase (true) to intercept event before native handlers or bubbling
-    document.addEventListener('contextmenu', (e: Event) => {
-        const target = e.target as HTMLElement;
-        if (target && target.closest && target.closest('.alert-card')) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        }
-    }, true);
-
-    document.addEventListener('selectstart', (e: Event) => {
-         const target = e.target as HTMLElement;
-         if (target && target.closest && target.closest('.alert-card')) {
-             e.preventDefault();
-             e.stopPropagation();
-             return false;
-         }
-    }, true);
-
-    // Standard bubbling listeners for other interactions
     view.addEventListener('click', (e: Event) => {
         const btn = (e.target as HTMLElement).closest('.show-more-btn') as HTMLElement | null;
         if (!btn) return;

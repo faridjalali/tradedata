@@ -633,15 +633,6 @@ h2 {
   border-color: var(--highlight);
 }
 
-@media (max-width: 768px) {
-  html, body {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-}
-
-
 /* Alert Cards */
 /* Alert Cards - CONSTANT SINGLE LINE */
 /* Alert Cards - CSS GRID LAYOUT */
@@ -668,7 +659,6 @@ h2 {
   transition: all 0.2s;
   cursor: pointer;
   overflow: hidden;
-  position: relative;
 
   /* Disable text selection so the magnifier doesn't trigger */
   -webkit-user-select: none;
@@ -676,47 +666,6 @@ h2 {
   
   /* Disable the native context menu (Copy/Look Up) on long press */
   -webkit-touch-callout: none;
-  
-  /* Remove tap highlight color */
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Ensure children also inherit or enforce disabling selection */
-.alert-card * {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  pointer-events: none;
-}
-
-/* Make any Safari-forced selection invisible even if the OS creates one */
-.alert-card::selection,
-.alert-card *::selection {
-  background: transparent;
-  color: inherit;
-}
-
-/* Shim to block Safari text-selection on long-press.
-   Must have pointer-events:auto to intercept touches ABOVE the text,
-   overriding the pointer-events:none from .alert-card * */
-.alert-card-shim {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  background: transparent;
-  pointer-events: auto;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
-
-.alert-card .fav-icon {
-  position: relative;
-  z-index: 20; /* Above shim */
-  pointer-events: auto; /* Re-enable pointer events for the star */
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
@@ -1697,4 +1646,4 @@ button:hover {
 .theme-swatch-btn[data-theme="dark"] { background: #0d1117; }
 .theme-swatch-btn[data-theme="light"] { background: #ffffff; }
 .theme-swatch-btn[data-theme="beige"] { background: #F5F0E8; }
-.theme-swatch-btn[data-theme="claude"] { background: #1c1b17; }
+.theme-swatch-btn[data-theme="claude"] { background: linear-gradient(135deg, #1c1b17 50%, #da7756 50%); }

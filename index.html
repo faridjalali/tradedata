@@ -28,27 +28,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <style>
-      /* Ensure this loads regardless of external CSS caching */
-      .alert-card {
-        -webkit-user-select: none !important;
-        user-select: none !important;
-        -webkit-touch-callout: none !important;
-        -webkit-tap-highlight-color: transparent !important;
-      }
-      /* Hide text/elements from OS hit-testing to prevent selection */
-      .alert-card * {
-        pointer-events: none !important;
-        -webkit-user-select: none !important;
-        user-select: none !important;
-        -webkit-touch-callout: none !important;
-      }
-      /* Re-enable interaction for specific buttons */
-      .alert-card .fav-icon, .alert-card .fav-icon * {
-        pointer-events: auto !important;
-        cursor: pointer;
-      }
-    </style>
   </head>
   <body>
     <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">

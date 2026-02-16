@@ -83,14 +83,7 @@ export function createAlertCard(alert: Alert): string {
     `;
 
     return `
-        <div class="alert-card ${cardClass}" 
-             data-ticker="${escapeHtml(alert.ticker)}" 
-             data-source="${source}"
-             style="-webkit-user-select: none; user-select: none; -webkit-touch-callout: none;"
-             oncontextmenu="return false;"
-             onselectstart="return false;"
-             ondragstart="return false;">
-            <div class="alert-card-shim"></div>
+        <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
             ${starIcon}
             <h3>${escapeHtml(alert.ticker)}</h3>
             
