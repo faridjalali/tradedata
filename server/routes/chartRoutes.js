@@ -36,7 +36,8 @@ function registerChartRoutes(options = {}) {
     barsToTuples,
     pointsToTuples,
     getMiniBarsCacheByTicker,
-    loadMiniChartBarsFromDb
+    loadMiniChartBarsFromDb,
+    fetchMiniChartBarsFromApi
   } = options;
 
   if (!app) {
@@ -168,10 +169,13 @@ function registerChartRoutes(options = {}) {
       // Fall back to DB if in-memory cache is empty (e.g. after server restart).
       if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
         bars = await loadMiniChartBarsFromDb(ticker);
-        // Repopulate in-memory cache so subsequent requests are instant.
         if (bars.length > 0 && cache) {
           cache.set(ticker, bars);
         }
+      }
+      // Fall back to live API fetch if DB is also empty.
+      if (bars.length === 0 && typeof fetchMiniChartBarsFromApi === 'function') {
+        bars = await fetchMiniChartBarsFromApi(ticker);
       }
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.status(200).json({ ticker, bars });

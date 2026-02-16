@@ -27,8 +27,6 @@ const {
 } = require("./server/services/healthService");
 const { detectVDF } = require("./server/services/vdfDetector");
 const {
-  aggregate4HourBarsToDaily,
-  aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,
   barsToTuples,
   pointsToTuples,
@@ -624,6 +622,33 @@ async function loadMiniChartBarsFromDb(ticker) {
     low: Number(r.low),
     close: Number(r.close),
   }));
+}
+
+async function fetchMiniChartBarsFromApi(ticker) {
+  if (!ticker) return [];
+  try {
+    const rows = await dataApiIntradayChartHistory(ticker, '1day', CHART_INTRADAY_LOOKBACK_DAYS);
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    const dailyBars = convertToLATime(rows, '1day').sort((a, b) => Number(a.time) - Number(b.time));
+    const bars = dailyBars.map(b => ({
+      time: Number(b.time),
+      open: Number(b.open),
+      high: Number(b.high),
+      low: Number(b.low),
+      close: Number(b.close),
+    }));
+    // Persist to DB and memory for future requests.
+    if (bars.length > 0) {
+      miniBarsCacheByTicker.set(ticker.toUpperCase(), bars);
+      if (divergencePool) {
+        persistMiniChartBars(ticker.toUpperCase(), bars).catch(() => {});
+      }
+    }
+    return bars;
+  } catch (err) {
+    console.error(`fetchMiniChartBarsFromApi(${ticker}): ${err.message || err}`);
+    return [];
+  }
 }
 
 let divergenceScanRunning = false;
@@ -3620,30 +3645,7 @@ function buildChartResultFromRows(options = {}) {
 
   const convertBarsForInterval = (rows, tf) => convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time));
   const directIntervalRows = rowsByInterval.get(interval) || [];
-  const directIntervalBars = convertBarsForInterval(directIntervalRows, interval);
-  const fallback4HourRows = rowsByInterval.get('4hour') || [];
-  const fallback4HourBars = convertBarsForInterval(fallback4HourRows, '4hour');
-  const fallbackDailyRows = rowsByInterval.get('1day') || [];
-  const fallbackDailyBars = convertBarsForInterval(fallbackDailyRows, '1day');
-
-  let convertedBars = [];
-  if (interval === '1day') {
-    if (directIntervalBars.length > 0) {
-      convertedBars = directIntervalBars;
-    } else if (fallback4HourBars.length > 0) {
-      convertedBars = aggregate4HourBarsToDaily(fallback4HourBars);
-    }
-  } else if (interval === '1week') {
-    if (directIntervalBars.length > 0) {
-      convertedBars = directIntervalBars;
-    } else if (fallbackDailyBars.length > 0) {
-      convertedBars = aggregateDailyBarsToWeekly(fallbackDailyBars);
-    } else if (fallback4HourBars.length > 0) {
-      convertedBars = aggregateDailyBarsToWeekly(aggregate4HourBarsToDaily(fallback4HourBars));
-    }
-  } else {
-    convertedBars = directIntervalBars;
-  }
+  const convertedBars = convertBarsForInterval(directIntervalRows, interval);
   if (timer) timer.step('parent_bars');
 
   if (convertedBars.length === 0) {
@@ -4240,7 +4242,7 @@ async function buildDailyDivergenceSummaryInput(options = {}) {
     return { bars: [], volumeDelta: [] };
   }
 
-  const parentFetchInterval = '4hour';
+  const parentFetchInterval = '1day';
   const requiredIntervals = Array.from(new Set([parentFetchInterval, vdSourceInterval]));
   const rowsByInterval = new Map();
   await Promise.all(requiredIntervals.map(async (tf) => {
@@ -4253,9 +4255,7 @@ async function buildDailyDivergenceSummaryInput(options = {}) {
     return { bars: [], volumeDelta: [] };
   }
 
-  const dailyBars = aggregate4HourBarsToDaily(
-    convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
-  );
+  const dailyBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) {
     return { bars: [], volumeDelta: [] };
   }
@@ -4856,6 +4856,7 @@ registerChartRoutes({
   pointsToTuples,
   getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
   loadMiniChartBarsFromDb,
+  fetchMiniChartBarsFromApi,
   getVDFStatus
 });
 
@@ -5080,7 +5081,7 @@ async function getLatestWeeklySignalTradeDate(sourceInterval) {
 
 async function computeSymbolDivergenceSignals(ticker, options = {}) {
   const signal = options && options.signal ? options.signal : null;
-  const parentFetchInterval = '4hour';
+  const parentFetchInterval = '1day';
   const [parentRows, sourceRows] = await Promise.all([
     dataApiIntradayChartHistory(ticker, parentFetchInterval, DIVERGENCE_SCAN_LOOKBACK_DAYS, { signal }),
     dataApiIntradayChartHistory(ticker, DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_LOOKBACK_DAYS, { signal })
@@ -5089,9 +5090,7 @@ async function computeSymbolDivergenceSignals(ticker, options = {}) {
   if (!Array.isArray(parentRows) || parentRows.length === 0) {
     return { signals: [], latestTradeDate: '', dailyBar: null };
   }
-  const dailyBars = aggregate4HourBarsToDaily(
-    convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time))
-  );
+  const dailyBars = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) {
     return { signals: [], latestTradeDate: '', dailyBar: null };
   }
@@ -6307,20 +6306,16 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   const noCache = options && options.noCache === true;
   if (!ticker) return [];
 
-  const parentFetchInterval = options.parentInterval || '1day';
   const suppliedParentRows = Array.isArray(options.parentRows) ? options.parentRows : null;
   const suppliedSourceRows = Array.isArray(options.sourceRows) ? options.sourceRows : null;
   const historyOptions = { signal, noCache, metricsTracker: options.metricsTracker };
   const [parentRows, sourceRows] = await Promise.all([
-    suppliedParentRows || dataApiIntradayChartHistory(ticker, parentFetchInterval, lookbackDays, historyOptions),
+    suppliedParentRows || dataApiIntradayChartHistory(ticker, '1day', lookbackDays, historyOptions),
     suppliedSourceRows || dataApiIntradayChartHistory(ticker, sourceInterval, lookbackDays, historyOptions)
   ]);
 
   if (!Array.isArray(parentRows) || parentRows.length === 0) return [];
-  const sortedParent = convertToLATime(parentRows, parentFetchInterval).sort((a, b) => Number(a.time) - Number(b.time));
-  const dailyBars = parentFetchInterval === '1day'
-    ? sortedParent
-    : aggregate4HourBarsToDaily(sortedParent);
+  const dailyBars = convertToLATime(parentRows, '1day').sort((a, b) => Number(a.time) - Number(b.time));
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
 
   // Cache daily OHLC bars for the mini-chart hover overlay.
