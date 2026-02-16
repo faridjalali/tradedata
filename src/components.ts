@@ -90,6 +90,7 @@ export function createAlertCard(alert: Alert): string {
              oncontextmenu="return false;"
              onselectstart="return false;"
              ondragstart="return false;">
+            <div class="alert-card-shim"></div>
             ${starIcon}
             <h3>${escapeHtml(alert.ticker)}</h3>
             

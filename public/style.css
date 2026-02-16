@@ -689,7 +689,23 @@ h2 {
   pointer-events: none; /* Hide internal elements from OS selection interaction */
 }
 
+/* Shim to block selection */
+.alert-card-shim {
+  position: absolute;
+  top: 0; 
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .alert-card .fav-icon {
+  position: relative;
+  z-index: 20; /* Above shim */
   pointer-events: auto; /* Re-enable pointer events for the star */
 }
 
