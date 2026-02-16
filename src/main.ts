@@ -550,16 +550,8 @@ function initColumnTimeframeButtons(): void {
         // Apply button click inside custom panel
         const applyBtn = target.closest('.column-tf-apply') as HTMLElement | null;
         if (applyBtn) {
-            const controls = applyBtn.closest('.column-tf-controls') as HTMLElement | null;
-            if (!controls) return;
-            const column = controls.dataset.column as 'daily' | 'weekly';
-            const fromInput = controls.querySelector('.column-tf-from') as HTMLInputElement | null;
-            const toInput = controls.querySelector('.column-tf-to') as HTMLInputElement | null;
-            if (column && fromInput?.value && toInput?.value) {
-                setColumnCustomDates(column, fromInput.value, toInput.value);
-                setColumnFeedMode(column, 'custom');
-            }
-            closeAllColumnCustomPanels();
+            const panel = applyBtn.closest('.column-tf-custom-panel') as HTMLElement | null;
+            if (panel) applyCustomDatePanel(panel);
             return;
         }
 
@@ -571,6 +563,71 @@ function initColumnTimeframeButtons(): void {
             closeAllColumnCustomPanels();
         }
     });
+
+    // Auto-format date inputs (mm/dd/yyyy) with auto-advance
+    document.addEventListener('input', handleDateAutoFormat);
+    document.addEventListener('keydown', handleDateKeydown);
+}
+
+function parseMmDdYyyy(value: string): string | null {
+    const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+    return `${m[3]}-${m[1]}-${m[2]}`;
+}
+
+function handleDateAutoFormat(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
+
+    const raw = input.value;
+    let digits = raw.replace(/\D/g, '');
+    if (digits.length > 8) digits = digits.slice(0, 8);
+
+    let formatted = '';
+    if (digits.length <= 2) {
+        formatted = digits;
+    } else if (digits.length <= 4) {
+        formatted = digits.slice(0, 2) + '/' + digits.slice(2);
+    } else {
+        formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+    }
+
+    input.value = formatted;
+
+    if (formatted.length === 10 && input.classList.contains('column-tf-from')) {
+        const panel = input.closest('.column-tf-custom-panel');
+        const toInput = panel?.querySelector('.column-tf-to') as HTMLInputElement | null;
+        if (toInput && !toInput.value) {
+            toInput.focus();
+        }
+    }
+}
+
+function handleDateKeydown(e: KeyboardEvent): void {
+    const input = e.target as HTMLInputElement;
+    if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
+
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const panel = input.closest('.column-tf-custom-panel');
+        const applyBtn = panel?.querySelector('.column-tf-apply') as HTMLElement | null;
+        applyBtn?.click();
+    }
+}
+
+function applyCustomDatePanel(panel: HTMLElement): void {
+    const controls = panel.closest('.column-tf-controls') as HTMLElement | null;
+    if (!controls) return;
+    const column = controls.dataset.column as 'daily' | 'weekly';
+    const fromInput = panel.querySelector('.column-tf-from') as HTMLInputElement | null;
+    const toInput = panel.querySelector('.column-tf-to') as HTMLInputElement | null;
+    const fromVal = parseMmDdYyyy(fromInput?.value || '');
+    const toVal = parseMmDdYyyy(toInput?.value || '');
+    if (column && fromVal && toVal) {
+        setColumnCustomDates(column, fromVal, toVal);
+        setColumnFeedMode(column, 'custom');
+    }
+    closeAllColumnCustomPanels();
 }
 
 function closeAllColumnCustomPanels(): void {

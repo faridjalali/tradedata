@@ -380,6 +380,17 @@ function toDateKey(raw?: string | null): string | null {
     return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
+function toDateKeyAsET(raw?: string | null): string | null {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return null;
+    const parts = d.toLocaleDateString('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [mm, dd, yyyy] = parts.split('/');
+    if (!mm || !dd || !yyyy) return null;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+}
+
 function dateKeyToMmDd(dateKey: string): string {
     const parts = dateKey.split('-');
     if (parts.length !== 3) return '';
@@ -499,7 +510,7 @@ function summarizeFetchDailyStatus(status: DivergenceScanStatus): string {
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-    const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
+    const ranText = lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Fetched --';
     if (!fetchDaily) return ranText;
     const fetchDailyState = String(fetchDaily.status || '').toLowerCase();
     if (fetchDailyState === 'stopping') {
@@ -554,7 +565,7 @@ function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-    const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
+    const ranText = lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Fetched --';
     if (!fetchWeekly) return ranText;
     const fetchWeeklyState = String(fetchWeekly.status || '').toLowerCase();
     if (fetchWeeklyState === 'stopping') {
@@ -602,7 +613,7 @@ function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
     const scan = status.vdfScan;
     if (!scan) return 'Ran --';
     const state = String(scan.status || '').toLowerCase();
-    const lastRunDateKey = toDateKey(scan.finished_at || scan.started_at || null);
+    const lastRunDateKey = toDateKeyAsET(scan.finished_at || scan.started_at || null);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
     const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
     if (state === 'stopping') {
