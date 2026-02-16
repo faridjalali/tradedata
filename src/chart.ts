@@ -4175,8 +4175,29 @@ const VDF_COLOR_LOADING = '#c9d1d9';
 const VDF_COLOR_NOT_DETECTED = '#484f58';
 const VDF_COLOR_ERROR = '#ef5350';
 
+function ensureVDFToolbar(container: HTMLElement): HTMLDivElement {
+  if (vdfToolbarEl && vdfToolbarEl.parentElement === container) return vdfToolbarEl;
+  if (vdfToolbarEl?.parentElement) vdfToolbarEl.parentElement.removeChild(vdfToolbarEl);
+
+  const el = document.createElement('div');
+  el.className = 'vdf-toolbar';
+  el.style.position = 'absolute';
+  el.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
+  el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
+  el.style.zIndex = '34';
+  el.style.display = 'flex';
+  el.style.flexDirection = 'row';
+  el.style.alignItems = 'center';
+  el.style.gap = `${PANE_TOOL_BUTTON_GAP_PX}px`;
+  el.style.pointerEvents = 'auto';
+  container.appendChild(el);
+  vdfToolbarEl = el;
+  return el;
+}
+
 function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
-  if (vdfButtonEl && vdfButtonEl.parentElement === container) return vdfButtonEl;
+  const toolbar = ensureVDFToolbar(container);
+  if (vdfButtonEl && vdfButtonEl.parentElement === toolbar) return vdfButtonEl;
   if (vdfButtonEl && vdfButtonEl.parentElement) {
     vdfButtonEl.parentElement.removeChild(vdfButtonEl);
   }
@@ -4186,10 +4207,6 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.type = 'button';
   btn.title = 'Volume Divergence Flag Detector';
   btn.textContent = 'VDF';
-  btn.style.position = 'absolute';
-  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
-  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
-  btn.style.zIndex = '34';
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
@@ -4207,13 +4224,14 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.textAlign = 'center';
   btn.style.userSelect = 'none';
-  container.appendChild(btn);
+  toolbar.appendChild(btn);
   vdfButtonEl = btn;
   return btn;
 }
 
 function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
-  if (vdfRefreshButtonEl && vdfRefreshButtonEl.parentElement === container) return vdfRefreshButtonEl;
+  const toolbar = ensureVDFToolbar(container);
+  if (vdfRefreshButtonEl && vdfRefreshButtonEl.parentElement === toolbar) return vdfRefreshButtonEl;
   if (vdfRefreshButtonEl && vdfRefreshButtonEl.parentElement) {
     vdfRefreshButtonEl.parentElement.removeChild(vdfRefreshButtonEl);
   }
@@ -4222,15 +4240,14 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   btn.className = 'settings-icon-btn vdf-refresh-btn';
   btn.type = 'button';
   btn.title = 'Refresh Analysis';
-  btn.style.position = 'absolute';
-  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
-  // Position to the left of the VDF button: VDF is at right = SCALE_MIN_WIDTH_PX + 8,
-  // VDF button is ~36px wide, gap matches PANE_TOOL_BUTTON_GAP_PX (same as divergence summary)
-  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8 + 36 + PANE_TOOL_BUTTON_GAP_PX}px`;
-  btn.style.zIndex = '34';
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  container.appendChild(btn);
+  // Insert before VDF button so refresh appears on the left
+  if (vdfButtonEl && vdfButtonEl.parentElement === toolbar) {
+    toolbar.insertBefore(btn, vdfButtonEl);
+  } else {
+    toolbar.appendChild(btn);
+  }
   vdfRefreshButtonEl = btn;
   renderVDFRefreshIcon(false);
   return btn;
