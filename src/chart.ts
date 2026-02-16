@@ -3284,6 +3284,32 @@ function addVolumeDeltaTrendlineCrossLabel(anchorTime: string | number, anchorVa
   refreshVolumeDeltaTrendlineCrossLabels();
 }
 
+function projectFutureTradingUnixSeconds(lastTimeSeconds: number, futureBars: number, stepSeconds: number): number {
+  // For daily/weekly intervals, skip weekends when projecting
+  if (stepSeconds >= 86400) {
+    const wholeBars = Math.floor(futureBars);
+    const fraction = futureBars - wholeBars;
+    const d = new Date(lastTimeSeconds * 1000);
+    let remaining = wholeBars;
+    while (remaining > 0) {
+      d.setUTCDate(d.getUTCDate() + 1);
+      const dow = d.getUTCDay();
+      if (dow !== 0 && dow !== 6) remaining--;
+    }
+    const wholeTime = Math.floor(d.getTime() / 1000);
+    if (fraction > 0) {
+      // Interpolate toward next trading day
+      const nextD = new Date(d);
+      do { nextD.setUTCDate(nextD.getUTCDate() + 1); } while (nextD.getUTCDay() === 0 || nextD.getUTCDay() === 6);
+      const nextTime = Math.floor(nextD.getTime() / 1000);
+      return wholeTime + fraction * (nextTime - wholeTime);
+    }
+    return wholeTime;
+  }
+  // Intraday: simple linear projection (step already accounts for bar spacing)
+  return lastTimeSeconds + (futureBars * stepSeconds);
+}
+
 function volumeDeltaIndexToUnixSeconds(
   index: number,
   lastHistoricalIndex: number,
@@ -3295,7 +3321,7 @@ function volumeDeltaIndexToUnixSeconds(
 
   if (index > lastHistoricalIndex) {
     if (lastHistoricalTimeSeconds === null) return null;
-    return lastHistoricalTimeSeconds + ((index - lastHistoricalIndex) * stepSeconds);
+    return projectFutureTradingUnixSeconds(lastHistoricalTimeSeconds, index - lastHistoricalIndex, stepSeconds);
   }
 
   if (index < 0) {
@@ -4097,22 +4123,15 @@ function renderVolumeDeltaDivergenceSummary(
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
+    refreshButton.className = 'tf-btn icon-only';
     refreshButton.title = loading ? 'Refreshing divergence table...' : 'Refresh divergence table';
-    refreshButton.style.display = 'inline-flex';
-    refreshButton.style.alignItems = 'center';
-    refreshButton.style.justifyContent = 'center';
     refreshButton.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    refreshButton.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.padding = '0';
-    refreshButton.style.borderRadius = '4px';
-    refreshButton.style.border = 'none';
-    refreshButton.style.background = 'transparent';
-    refreshButton.style.color = '#c9d1d9';
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
     refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
-    refreshButton.style.userSelect = 'none';
     refreshButton.style.flex = '0 0 auto';
-    refreshButton.style.verticalAlign = 'middle';
     refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
     refreshButton.disabled = false;
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -4274,7 +4293,7 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   }
 
   const btn = document.createElement('button');
-  btn.className = 'vdf-refresh-btn';
+  btn.className = 'tf-btn icon-only vdf-refresh-btn';
   btn.type = 'button';
   btn.title = 'Refresh VD Analysis';
   btn.style.position = 'absolute';
@@ -4283,18 +4302,10 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   // VDF button is ~36px wide, gap matches PANE_TOOL_BUTTON_GAP_PX (same as divergence summary)
   btn.style.right = `${SCALE_MIN_WIDTH_PX + 8 + 36 + PANE_TOOL_BUTTON_GAP_PX}px`;
   btn.style.zIndex = '34';
-  btn.style.display = 'inline-flex';
-  btn.style.alignItems = 'center';
-  btn.style.justifyContent = 'center';
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.padding = '0';
-  btn.style.borderRadius = '4px';
-  btn.style.border = 'none';
-  btn.style.background = 'transparent';
-  btn.style.color = '#c9d1d9';
-  btn.style.cursor = 'pointer';
-  btn.style.userSelect = 'none';
   container.appendChild(btn);
   vdfRefreshButtonEl = btn;
   renderVDFRefreshIcon(false);
@@ -4749,7 +4760,7 @@ function ensureVDFAnalysisPanel(): HTMLDivElement {
   const panel = document.createElement('div');
   panel.id = 'vdf-analysis-panel';
   panel.style.cssText = 'width:100%;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:none;';
-  chartContent.appendChild(panel);
+  chartContent.insertBefore(panel, chartContent.firstChild);
   vdfAnalysisPanelEl = panel;
   return panel;
 }
@@ -4893,7 +4904,7 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
     </div>
     <div style="display:flex;align-items:center;">
       ${entry.is_detected
-        ? `<span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${score}</span>`
+        ? `<span style="font-size:11px;color:#484f58;">${escapeHtml(tier)}</span>`
         : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
     </div>
   </div>`;
@@ -5860,8 +5871,13 @@ function applyWeeklyInitialVisibleRange(): void {
 }
 
 function getNearestMappedValueAtOrBefore(time: string | number, valuesByTime: Map<string, number>): number | null {
+  const result = getNearestMappedEntryAtOrBefore(time, valuesByTime);
+  return result ? result.value : null;
+}
+
+function getNearestMappedEntryAtOrBefore(time: string | number, valuesByTime: Map<string, number>): { time: string | number; value: number } | null {
   const direct = Number(valuesByTime.get(timeKey(time)));
-  if (Number.isFinite(direct)) return direct;
+  if (Number.isFinite(direct)) return { time, value: direct };
   if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
 
   const targetUnix = toUnixSeconds(time);
@@ -5874,7 +5890,7 @@ function getNearestMappedValueAtOrBefore(time: string | number, valuesByTime: Ma
       if (barUnix !== null && barUnix > targetUnix) continue;
     }
     const candidate = Number(valuesByTime.get(timeKey(barTime)));
-    if (Number.isFinite(candidate)) return candidate;
+    if (Number.isFinite(candidate)) return { time: barTime, value: candidate };
   }
   return null;
 }
@@ -5978,10 +5994,10 @@ function setupChartSync() {
   });
 
   const setCrosshairOnPrice = (time: string | number) => {
-    const mappedPrice = getNearestMappedValueAtOrBefore(time, priceByTime);
-    if (Number.isFinite(mappedPrice) && candleSeries) {
+    const entry = getNearestMappedEntryAtOrBefore(time, priceByTime);
+    if (entry && candleSeries) {
       try {
-        priceChart.setCrosshairPosition(Number(mappedPrice), time, candleSeries);
+        priceChart.setCrosshairPosition(entry.value, entry.time, candleSeries);
       } catch {
         priceChart.clearCrosshairPosition();
       }
@@ -5991,10 +6007,10 @@ function setupChartSync() {
   };
 
   const setCrosshairOnVolumeDeltaRsi = (time: string | number) => {
-    const mappedVdRsi = getNearestMappedValueAtOrBefore(time, volumeDeltaRsiByTime);
-    if (Number.isFinite(mappedVdRsi)) {
+    const entry = getNearestMappedEntryAtOrBefore(time, volumeDeltaRsiByTime);
+    if (entry) {
       try {
-        volumeDeltaRsiChartInstance.setCrosshairPosition(Number(mappedVdRsi), time, volumeDeltaRsiSeries);
+        volumeDeltaRsiChartInstance.setCrosshairPosition(entry.value, entry.time, volumeDeltaRsiSeries);
       } catch {
         volumeDeltaRsiChartInstance.clearCrosshairPosition();
       }
@@ -6004,11 +6020,11 @@ function setupChartSync() {
   };
 
   const setCrosshairOnRsi = (time: string | number) => {
-    const mappedRsi = getNearestMappedValueAtOrBefore(time, rsiByTime);
+    const entry = getNearestMappedEntryAtOrBefore(time, rsiByTime);
     const rsiSeries = rsiChart?.getSeries();
-    if (Number.isFinite(mappedRsi) && rsiSeries) {
+    if (entry && rsiSeries) {
       try {
-        rsiChartInstance.setCrosshairPosition(Number(mappedRsi), time, rsiSeries);
+        rsiChartInstance.setCrosshairPosition(entry.value, entry.time, rsiSeries);
       } catch {
         rsiChartInstance.clearCrosshairPosition();
       }
@@ -6018,10 +6034,10 @@ function setupChartSync() {
   };
 
   const setCrosshairOnVolumeDelta = (time: string | number) => {
-    const mappedVd = getNearestMappedValueAtOrBefore(time, volumeDeltaByTime);
-    if (Number.isFinite(mappedVd)) {
+    const entry = getNearestMappedEntryAtOrBefore(time, volumeDeltaByTime);
+    if (entry) {
       try {
-        volumeDeltaChartInstance.setCrosshairPosition(Number(mappedVd), time, volumeDeltaHistogramSeries);
+        volumeDeltaChartInstance.setCrosshairPosition(entry.value, entry.time, volumeDeltaHistogramSeries);
       } catch {
         volumeDeltaChartInstance.clearCrosshairPosition();
       }
@@ -6163,6 +6179,32 @@ export function initChartControls() {
 
   // Fullscreen toggle
   initChartFullscreen();
+
+  // Prevent long-press text selection on touch devices within the chart area
+  const chartSection = document.getElementById('custom-chart-container');
+  if (chartSection) {
+    chartSection.style.webkitUserSelect = 'none';
+    chartSection.style.userSelect = 'none';
+    (chartSection.style as any).webkitTouchCallout = 'none';
+    chartSection.addEventListener('contextmenu', (e) => {
+      if (isMobileTouch) e.preventDefault();
+    });
+
+    // Double-tap anywhere in the chart container (including axes/gaps) toggles crosshair
+    if (isMobileTouch) {
+      let containerLastTapTime = 0;
+      chartSection.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - containerLastTapTime < 300) {
+          e.preventDefault();
+          toggleCrosshairVisibility();
+          containerLastTapTime = 0;
+        } else {
+          containerLastTapTime = now;
+        }
+      });
+    }
+  }
 }
 
 const FULLSCREEN_ENTER_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

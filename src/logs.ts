@@ -254,9 +254,11 @@ function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
 
 function renderHistoryPage(): void {
     const host = document.getElementById('logs-history-container');
+    const paginationHost = document.getElementById('logs-history-pagination');
     if (!host) return;
     if (historyEntries.length === 0) {
         host.innerHTML = '<div class="loading">No run history yet</div>';
+        if (paginationHost) paginationHost.innerHTML = '';
         return;
     }
 
@@ -271,14 +273,13 @@ function renderHistoryPage(): void {
     const nextDisabled = historyPage >= totalPages - 1;
 
     const entriesHtml = pageItems.map(buildHistoryEntryHtml).join('');
-    const paginationHtml = totalPages > 1 ? `
-      <div class="log-history-pagination">
-        <button class="tf-btn log-history-prev${prevDisabled ? ' disabled' : ''}" title="Previous page"${prevDisabled ? ' disabled' : ''}>&#x2039;</button>
-        <button class="tf-btn log-history-next${nextDisabled ? ' disabled' : ''}" title="Next page"${nextDisabled ? ' disabled' : ''}>&#x203A;</button>
-      </div>
-    ` : '';
+    const paginationHtml = totalPages > 1 ?
+        `<button class="tf-btn log-history-prev${prevDisabled ? ' disabled' : ''}" title="Previous page"${prevDisabled ? ' disabled' : ''}>&#x2039;</button>` +
+        `<button class="tf-btn log-history-next${nextDisabled ? ' disabled' : ''}" title="Next page"${nextDisabled ? ' disabled' : ''}>&#x203A;</button>`
+      : '';
 
-    host.innerHTML = entriesHtml + paginationHtml;
+    host.innerHTML = entriesHtml;
+    if (paginationHost) paginationHost.innerHTML = paginationHtml;
 }
 
 function renderHistory(payload: RunMetricsPayload): void {

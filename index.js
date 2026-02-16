@@ -652,6 +652,32 @@ async function loadMiniChartBarsFromDb(ticker) {
   }));
 }
 
+async function loadMiniChartBarsFromDbBatch(tickers) {
+  if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) return {};
+  const upper = tickers.map(t => t.toUpperCase());
+  const placeholders = upper.map((_, i) => `$${i + 1}`).join(',');
+  const result = await divergencePool.query(`
+    SELECT ticker, bar_time AS time, open_price AS open, high_price AS high,
+           low_price AS low, close_price AS close
+    FROM mini_chart_bars
+    WHERE ticker IN (${placeholders})
+    ORDER BY ticker, trade_date ASC
+  `, upper);
+  const grouped = {};
+  for (const r of result.rows) {
+    const t = r.ticker;
+    if (!grouped[t]) grouped[t] = [];
+    grouped[t].push({
+      time: Number(r.time),
+      open: Number(r.open),
+      high: Number(r.high),
+      low: Number(r.low),
+      close: Number(r.close),
+    });
+  }
+  return grouped;
+}
+
 async function fetchMiniChartBarsFromApi(ticker) {
   if (!ticker) return [];
   try {
@@ -4896,6 +4922,7 @@ registerChartRoutes({
   pointsToTuples,
   getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
   loadMiniChartBarsFromDb,
+  loadMiniChartBarsFromDbBatch,
   fetchMiniChartBarsFromApi,
   getVDFStatus
 });

@@ -569,7 +569,11 @@ function initColumnTimeframeButtons(): void {
     document.addEventListener('keydown', handleDateKeydown);
 }
 
-function parseMmDdYyyy(value: string): string | null {
+function parseDateInputValue(value: string): string | null {
+    // Native date inputs return yyyy-mm-dd
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) return value;
+    // Legacy mm/dd/yyyy fallback
     const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) return null;
     return `${m[3]}-${m[1]}-${m[2]}`;
@@ -621,8 +625,8 @@ function applyCustomDatePanel(panel: HTMLElement): void {
     const column = controls.dataset.column as 'daily' | 'weekly';
     const fromInput = panel.querySelector('.column-tf-from') as HTMLInputElement | null;
     const toInput = panel.querySelector('.column-tf-to') as HTMLInputElement | null;
-    const fromVal = parseMmDdYyyy(fromInput?.value || '');
-    const toVal = parseMmDdYyyy(toInput?.value || '');
+    const fromVal = parseDateInputValue(fromInput?.value || '');
+    const toVal = parseDateInputValue(toInput?.value || '');
     if (column && fromVal && toVal) {
         setColumnCustomDates(column, fromVal, toVal);
         setColumnFeedMode(column, 'custom');

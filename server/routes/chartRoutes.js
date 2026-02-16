@@ -37,6 +37,7 @@ function registerChartRoutes(options = {}) {
     pointsToTuples,
     getMiniBarsCacheByTicker,
     loadMiniChartBarsFromDb,
+    loadMiniChartBarsFromDbBatch,
     fetchMiniChartBarsFromApi
   } = options;
 
@@ -182,6 +183,59 @@ function registerChartRoutes(options = {}) {
     } catch (err) {
       console.error('Mini Bars API Error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Failed to fetch mini bars' });
+    }
+  });
+
+  // Batch endpoint: returns cached daily OHLC bars for multiple tickers (memory + DB only, no API fallback).
+  app.get('/api/chart/mini-bars/batch', async (req, res) => {
+    try {
+      const tickers = parseTickerListFromQuery(req);
+      if (tickers.length === 0) {
+        return res.status(400).json({ error: 'Provide ticker or tickers query parameter' });
+      }
+      const maxTickers = 200;
+      if (tickers.length > maxTickers) {
+        return res.status(400).json({ error: `Too many tickers (max ${maxTickers})` });
+      }
+      if (typeof isValidTickerSymbol === 'function') {
+        for (const t of tickers) {
+          if (!isValidTickerSymbol(t)) {
+            return res.status(400).json({ error: `Invalid ticker format: ${t}` });
+          }
+        }
+      }
+
+      const results = {};
+      const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
+      const dbNeeded = [];
+
+      // 1. Check in-memory cache first
+      for (const t of tickers) {
+        const cached = cache ? (cache.get(t) || []) : [];
+        if (cached.length > 0) {
+          results[t] = cached;
+        } else {
+          dbNeeded.push(t);
+        }
+      }
+
+      // 2. Batch-load from DB for cache misses
+      if (dbNeeded.length > 0 && typeof loadMiniChartBarsFromDbBatch === 'function') {
+        const dbResults = await loadMiniChartBarsFromDbBatch(dbNeeded);
+        for (const t of dbNeeded) {
+          const bars = dbResults[t] || [];
+          if (bars.length > 0) {
+            results[t] = bars;
+            if (cache) cache.set(t, bars);
+          }
+        }
+      }
+
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.status(200).json({ results });
+    } catch (err) {
+      console.error('Mini Bars Batch API Error:', err && err.message ? err.message : err);
+      return res.status(500).json({ error: 'Failed to fetch mini bars batch' });
     }
   });
 

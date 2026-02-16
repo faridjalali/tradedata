@@ -65,6 +65,42 @@ let miniChartAbortController: AbortController | null = null;
 let miniChartCurrentTicker: string | null = null;
 let miniChartHoveredCard: HTMLElement | null = null;
 const miniChartDataCache = new Map<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>>();
+const MINI_CHART_CACHE_MAX = 400;
+let miniChartPrefetchInFlight = false;
+
+function evictMiniChartCache(keepCount: number): void {
+    if (miniChartDataCache.size <= keepCount) return;
+    const excess = miniChartDataCache.size - keepCount;
+    const iter = miniChartDataCache.keys();
+    for (let i = 0; i < excess; i++) {
+        const key = iter.next().value;
+        if (key !== undefined) miniChartDataCache.delete(key);
+    }
+}
+
+async function prefetchMiniChartBars(tickers: string[]): Promise<void> {
+    if (miniChartPrefetchInFlight || tickers.length === 0) return;
+    const needed = tickers.filter(t => !miniChartDataCache.has(t.toUpperCase()));
+    if (needed.length === 0) return;
+
+    miniChartPrefetchInFlight = true;
+    try {
+        const res = await fetch(`/api/chart/mini-bars/batch?tickers=${encodeURIComponent(needed.join(','))}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const results: Record<string, Array<{ time: string | number; open: number; high: number; low: number; close: number }>> = data?.results || {};
+        for (const [ticker, bars] of Object.entries(results)) {
+            if (Array.isArray(bars) && bars.length > 0) {
+                miniChartDataCache.set(ticker.toUpperCase(), bars);
+            }
+        }
+        evictMiniChartCache(MINI_CHART_CACHE_MAX);
+    } catch {
+        // silent — prefetch is best-effort
+    } finally {
+        miniChartPrefetchInFlight = false;
+    }
+}
 
 export function getColumnFeedMode(column: 'daily' | 'weekly'): ColumnFeedMode {
     return column === 'daily' ? dailyFeedMode : weeklyFeedMode;
@@ -1198,6 +1234,14 @@ export function renderDivergenceOverview(): void {
         + showMoreButtonHtml(weeklySlice.length, weekly.length, '1w');
     renderAlertCardDivergenceTablesFromCache(dailyContainer);
     renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+
+    // Prefetch mini-chart bars for visible cards (best-effort, non-blocking)
+    const prefetchTickers = [
+        ...dailySlice.map(a => a.ticker),
+        ...weeklySlice.map(a => a.ticker),
+    ];
+    const unique = Array.from(new Set(prefetchTickers.map(t => t.toUpperCase())));
+    prefetchMiniChartBars(unique).catch(() => {});
 }
 
 /**
@@ -1255,6 +1299,10 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
     container.innerHTML = slice.map(createAlertCard).join('')
         + showMoreButtonHtml(slice.length, signals.length, timeframe);
     renderAlertCardDivergenceTablesFromCache(container);
+
+    // Prefetch mini-chart bars for visible cards (best-effort, non-blocking)
+    const prefetchTickers = Array.from(new Set(slice.map(a => a.ticker.toUpperCase())));
+    prefetchMiniChartBars(prefetchTickers).catch(() => {});
 }
 
 // --- Mini-chart hover helpers ---
@@ -1543,6 +1591,59 @@ export function setupDivergenceFeedDelegation(): void {
         miniChartHoveredCard = null;
         destroyMiniChartOverlay();
     }, true);
+
+    // --- Touch long-press for minichart overlay (touchscreen devices) ---
+    let touchLongPressTimer: number | null = null;
+    let touchLongPressFired = false;
+
+    view.addEventListener('touchstart', (e: Event) => {
+        const te = e as TouchEvent;
+        if (te.touches.length !== 1) return;
+        const target = te.target as HTMLElement;
+        const card = target.closest('.alert-card') as HTMLElement | null;
+        if (!card) return;
+        const ticker = card.dataset.ticker;
+        if (!ticker) return;
+        touchLongPressFired = false;
+        if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
+        touchLongPressTimer = window.setTimeout(() => {
+            touchLongPressTimer = null;
+            touchLongPressFired = true;
+            const rect = card.getBoundingClientRect();
+            showMiniChartOverlay(ticker, rect);
+        }, 600);
+    }, { passive: true });
+
+    view.addEventListener('touchmove', () => {
+        if (touchLongPressTimer !== null) {
+            window.clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = null;
+        }
+    }, { passive: true });
+
+    view.addEventListener('touchend', () => {
+        if (touchLongPressTimer !== null) {
+            window.clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = null;
+        }
+        if (touchLongPressFired) {
+            destroyMiniChartOverlay();
+            touchLongPressFired = false;
+        }
+        touchLongPressFired = false;
+    }, { passive: true });
+
+    view.addEventListener('touchcancel', () => {
+        if (touchLongPressTimer !== null) {
+            window.clearTimeout(touchLongPressTimer);
+            touchLongPressTimer = null;
+        }
+        if (touchLongPressFired) {
+            destroyMiniChartOverlay();
+            touchLongPressFired = false;
+        }
+        touchLongPressFired = false;
+    }, { passive: true });
 
     // "Show more" pagination button
     view.addEventListener('click', (e: Event) => {
