@@ -1657,4 +1657,4 @@ button:hover {
 .theme-swatch-btn[data-theme="dark"] { background: #0d1117; }
 .theme-swatch-btn[data-theme="light"] { background: #ffffff; }
 .theme-swatch-btn[data-theme="beige"] { background: #F5F0E8; }
-.theme-swatch-btn[data-theme="claude"] { background: linear-gradient(135deg, #1c1b17 50%, #da7756 50%); }
+.theme-swatch-btn[data-theme="claude"] { background: #1c1b17; }
