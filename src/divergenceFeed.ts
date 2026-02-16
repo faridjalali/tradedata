@@ -1363,13 +1363,15 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     let top: number;
     if (isMobile) {
         // Right-aligned against screen edge
-        // Top aligned with the card top (requested behavior)
-        left = window.innerWidth - OVERLAY_W - GAP; 
-        top = cardRect.top;
+        left = window.innerWidth - OVERLAY_W - GAP;
         
-        // If it goes off bottom, shift up
-        if (top + OVERLAY_H > window.innerHeight) {
-             top = window.innerHeight - OVERLAY_H - GAP;
+        // Bottom aligned with the card bottom (requested behavior)
+        // top = cardRect.bottom - OVERLAY_H;
+        top = cardRect.bottom - OVERLAY_H;
+
+        // If it goes off top, shift down
+        if (top < GAP) {
+             top = GAP;
         }
     } else {
         // Desktop: prefer right of card, fall back to left
