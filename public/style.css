@@ -1443,6 +1443,13 @@ button:hover {
     -webkit-user-select: none;
     user-select: none;
   }
+
+  .alert-card,
+  .alert-card * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 #price-chart-container,
