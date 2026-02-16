@@ -292,18 +292,20 @@ export class RSIChart {
 
     const diffs: number[] = [];
     for (let i = 1; i < this.data.length; i++) {
-      const prev = this.data[i - 1]?.time;
-      const curr = this.data[i]?.time;
-      if (typeof prev !== 'number' || typeof curr !== 'number') continue;
-      const diff = curr - prev;
-      if (Number.isFinite(diff) && diff > 0 && diff <= (8 * 3600)) {
+      const prevSec = this.toUnixSeconds(this.data[i - 1]?.time);
+      const currSec = this.toUnixSeconds(this.data[i]?.time);
+      if (prevSec === null || currSec === null) continue;
+      const diff = currSec - prevSec;
+      if (Number.isFinite(diff) && diff > 0) {
         diffs.push(diff);
       }
     }
 
     if (diffs.length === 0) return 1800;
     diffs.sort((a, b) => a - b);
-    return diffs[Math.floor(diffs.length / 2)];
+    // Use the 25th-percentile diff to filter out weekend/holiday gaps
+    // while still capturing the true bar interval for daily/weekly data.
+    return diffs[Math.floor(diffs.length * 0.25)];
   }
 
   private barsPerTradingDayFromStep(stepSeconds: number): number {
@@ -824,6 +826,29 @@ export class RSIChart {
     this.refreshTrendlineCrossLabels();
   }
 
+  private projectFutureTradingUnixSeconds(lastTimeSeconds: number, futureBars: number, stepSeconds: number): number {
+    if (stepSeconds >= 86400) {
+      const wholeBars = Math.floor(futureBars);
+      const fraction = futureBars - wholeBars;
+      const d = new Date(lastTimeSeconds * 1000);
+      let remaining = wholeBars;
+      while (remaining > 0) {
+        d.setUTCDate(d.getUTCDate() + 1);
+        const dow = d.getUTCDay();
+        if (dow !== 0 && dow !== 6) remaining--;
+      }
+      const wholeTime = Math.floor(d.getTime() / 1000);
+      if (fraction > 0) {
+        const nextD = new Date(d);
+        do { nextD.setUTCDate(nextD.getUTCDate() + 1); } while (nextD.getUTCDay() === 0 || nextD.getUTCDay() === 6);
+        const nextTime = Math.floor(nextD.getTime() / 1000);
+        return wholeTime + fraction * (nextTime - wholeTime);
+      }
+      return wholeTime;
+    }
+    return lastTimeSeconds + (futureBars * stepSeconds);
+  }
+
   private indexToUnixSeconds(
     index: number,
     lastHistoricalIndex: number,
@@ -835,7 +860,7 @@ export class RSIChart {
 
     if (index > lastHistoricalIndex) {
       if (lastHistoricalTimeSeconds === null) return null;
-      return lastHistoricalTimeSeconds + ((index - lastHistoricalIndex) * stepSeconds);
+      return this.projectFutureTradingUnixSeconds(lastHistoricalTimeSeconds, index - lastHistoricalIndex, stepSeconds);
     }
 
     if (index < 0) {
@@ -924,7 +949,7 @@ export class RSIChart {
       if (i <= lastHistoricalIndex) {
         pointTime = this.data[i]?.time ?? null;
       } else if (lastHistoricalTimeSeconds !== null) {
-        pointTime = lastHistoricalTimeSeconds + ((i - lastHistoricalIndex) * stepSeconds);
+        pointTime = this.projectFutureTradingUnixSeconds(lastHistoricalTimeSeconds, i - lastHistoricalIndex, stepSeconds);
       }
       if (pointTime === null || pointTime === undefined) continue;
       trendLineData.push({

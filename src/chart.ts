@@ -3452,7 +3452,7 @@ function drawVolumeDeltaTrendLine(
       if (i <= lastHistoricalIndex) {
         pointTime = volumeDeltaRsiPoints[i]?.time ?? null;
       } else if (lastTimeSeconds !== null) {
-        pointTime = lastTimeSeconds + ((i - lastHistoricalIndex) * stepSeconds);
+        pointTime = projectFutureTradingUnixSeconds(lastTimeSeconds, i - lastHistoricalIndex, stepSeconds);
       }
       if (pointTime === null || pointTime === undefined) continue;
       trendLineData.push({
