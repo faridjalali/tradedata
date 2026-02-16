@@ -1621,6 +1621,13 @@ button:hover {
     linear-gradient(180deg, #EDE8DE 0%, #F5F0E8 100%);
 }
 
+/* Site lock - claude theme */
+[data-theme="claude"] .site-lock-overlay {
+  background:
+    radial-gradient(1200px 600px at 50% 0%, rgba(218, 119, 86, 0.2), rgba(28, 27, 23, 0.96)),
+    linear-gradient(180deg, #242220 0%, #1c1b17 100%);
+}
+
 /* Theme selector buttons */
 .theme-swatch-btn {
   width: 22px;
@@ -1639,3 +1646,4 @@ button:hover {
 .theme-swatch-btn[data-theme="dark"] { background: #0d1117; }
 .theme-swatch-btn[data-theme="light"] { background: #ffffff; }
 .theme-swatch-btn[data-theme="beige"] { background: #F5F0E8; }
+.theme-swatch-btn[data-theme="claude"] { background: linear-gradient(135deg, #1c1b17 50%, #da7756 50%); }

@@ -1,4 +1,4 @@
-export type ThemeName = 'dark' | 'light' | 'beige';
+export type ThemeName = 'dark' | 'light' | 'beige' | 'claude';
 
 export interface ThemeColors {
   bgColor: string;
@@ -90,6 +90,28 @@ const THEMES: Record<ThemeName, ThemeColors> = {
     monthGridlineColor: '#E8E2D8',
     spinnerColor: '#D97706',
   },
+  claude: {
+    bgColor: '#1c1b17',
+    cardBg: '#272521',
+    surfaceElevated: '#33312c',
+    surfaceOverlay: 'rgba(39, 37, 33, 0.98)',
+    textPrimary: '#d5d3cc',
+    textSecondary: '#9b9990',
+    textMuted: '#5f5d56',
+    borderColor: '#3d3b36',
+    highlight: '#da7756',
+    bgOverlay95: 'rgba(28, 27, 23, 0.95)',
+    cardBgOverlay95: 'rgba(39, 37, 33, 0.95)',
+    cardBgOverlay60: 'rgba(39, 37, 33, 0.6)',
+    cardBgOverlay50: 'rgba(39, 37, 33, 0.5)',
+    borderOverlay22: 'rgba(61, 59, 54, 0.22)',
+    borderOverlay30: 'rgba(61, 59, 54, 0.3)',
+    highlightOverlay10: 'rgba(218, 119, 86, 0.1)',
+    dividerColor: 'rgba(255, 255, 255, 0.09)',
+    shadowColor: 'rgba(0, 0, 0, 0.45)',
+    monthGridlineColor: '#33312c',
+    spinnerColor: '#da7756',
+  },
 };
 
 const THEME_STORAGE_KEY = 'app_theme';
@@ -140,7 +162,7 @@ function applyThemeToDOM(): void {
 export function initTheme(): void {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === 'light' || stored === 'beige' || stored === 'dark') {
+    if (stored === 'light' || stored === 'beige' || stored === 'dark' || stored === 'claude') {
       currentTheme = stored;
     }
   } catch { /* ignore */ }
