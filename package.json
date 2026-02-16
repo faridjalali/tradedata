@@ -20,8 +20,11 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "lightweight-charts": "^4.2.1",
+    "lru-cache": "^11.2.6",
     "pg": "^8.11.3",
-    "undici": "^7.22.0"
+    "pino": "^10.3.1",
+    "undici": "^7.22.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

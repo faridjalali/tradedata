@@ -8,6 +8,8 @@ const zlib = require("zlib");
 const { promisify } = require("util");
 const compression = require("compression");
 const { setGlobalDispatcher, Agent } = require("undici");
+const { LRUCache } = require("lru-cache");
+const logger = require("./server/logger");
 
 // setGlobalDispatcher(new Agent({
 //   keepAliveTimeout: 10000,
@@ -35,6 +37,7 @@ const {
   formatDateUTC,
   dayKeyInLA,
 } = require("./server/chartMath");
+const schemas = require("./server/schemas");
 require("dotenv").config();
 
 const app = express();
@@ -269,20 +272,8 @@ function validateStartupEnvironment() {
 validateStartupEnvironment();
 
 function logStructured(level, event, fields = {}) {
-  const payload = {
-    ts: new Date().toISOString(),
-    level,
-    event,
-    ...fields
-  };
-  const line = JSON.stringify(payload);
-  if (level === 'error') {
-    console.error(line);
-  } else if (level === 'warn') {
-    console.warn(line);
-  } else {
-    console.log(line);
-  }
+  const pinoLevel = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
+  logger[pinoLevel]({ event, ...fields });
 }
 
 function createRequestId() {
@@ -315,104 +306,33 @@ function extractSafeRequestMeta(req) {
 }
 
 function isValidTickerSymbol(value) {
-  const ticker = String(value || '').trim().toUpperCase();
-  if (!ticker) return false;
-  return /^[A-Z][A-Z0-9.\-]{0,19}$/.test(ticker);
+  return schemas.tickerSymbol.safeParse(value).success;
 }
 
 function parseEtDateInput(value) {
   if (value === undefined || value === null || value === '') return null;
-  const text = String(value).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
-  const dt = new Date(`${text}T00:00:00Z`);
-  if (Number.isNaN(dt.getTime())) return null;
-  const normalized = dt.toISOString().slice(0, 10);
-  return normalized === text ? text : null;
+  const result = schemas.etDate.safeParse(value);
+  return result.success ? result.data : null;
 }
 
 function parseBooleanInput(value, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
-  }
-  return fallback;
-}
-
-function isValidScaleTime(value) {
-  if (typeof value === 'number') return Number.isFinite(value);
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function isValidCandleLike(value) {
-  if (!value || typeof value !== 'object') return false;
-  return isValidScaleTime(value.time)
-    && Number.isFinite(Number(value.open))
-    && Number.isFinite(Number(value.high))
-    && Number.isFinite(Number(value.low))
-    && Number.isFinite(Number(value.close))
-    && Number.isFinite(Number(value.volume));
-}
-
-function isValidPointLike(value, field = 'value') {
-  if (!value || typeof value !== 'object') return false;
-  return isValidScaleTime(value.time) && Number.isFinite(Number(value[field]));
+  if (value === undefined || value === null || value === '') return fallback;
+  const result = schemas.booleanInput.safeParse(value);
+  return result.success ? result.data : fallback;
 }
 
 function validateChartPayloadShape(payload) {
-  if (!payload || typeof payload !== 'object') return { ok: false, error: 'Chart payload is not an object' };
-  if (!Array.isArray(payload.bars) || payload.bars.length === 0) {
-    return { ok: false, error: 'Chart payload bars are missing' };
-  }
-  const firstBar = payload.bars[0];
-  const lastBar = payload.bars[payload.bars.length - 1];
-  if (!isValidCandleLike(firstBar) || !isValidCandleLike(lastBar)) {
-    return { ok: false, error: 'Chart payload bars are invalid' };
-  }
-  const rsi = Array.isArray(payload.rsi) ? payload.rsi : [];
-  if (rsi.length > 0) {
-    const firstRsi = rsi[0];
-    const lastRsi = rsi[rsi.length - 1];
-    if (!isValidPointLike(firstRsi) || !isValidPointLike(lastRsi)) {
-      return { ok: false, error: 'Chart payload RSI points are invalid' };
-    }
-  }
-  const vdRsi = Array.isArray(payload?.volumeDeltaRsi?.rsi) ? payload.volumeDeltaRsi.rsi : [];
-  if (vdRsi.length > 0) {
-    const firstVdRsi = vdRsi[0];
-    const lastVdRsi = vdRsi[vdRsi.length - 1];
-    if (!isValidPointLike(firstVdRsi) || !isValidPointLike(lastVdRsi)) {
-      return { ok: false, error: 'Chart payload Volume Delta RSI points are invalid' };
-    }
-  }
-  const volumeDelta = Array.isArray(payload.volumeDelta) ? payload.volumeDelta : [];
-  if (volumeDelta.length > 0) {
-    const firstDelta = volumeDelta[0];
-    const lastDelta = volumeDelta[volumeDelta.length - 1];
-    if (!isValidPointLike(firstDelta, 'delta') || !isValidPointLike(lastDelta, 'delta')) {
-      return { ok: false, error: 'Chart payload Volume Delta points are invalid' };
-    }
-  }
-  return { ok: true };
+  const result = schemas.chartPayload.safeParse(payload);
+  if (result.success) return { ok: true };
+  const firstIssue = result.error.issues[0];
+  return { ok: false, error: firstIssue ? firstIssue.message : 'Invalid chart payload shape' };
 }
 
 function validateChartLatestPayloadShape(payload) {
-  if (!payload || typeof payload !== 'object') return { ok: false, error: 'Latest payload is not an object' };
-  if (payload.latestBar !== null && !isValidCandleLike(payload.latestBar)) {
-    return { ok: false, error: 'Latest payload latestBar is invalid' };
-  }
-  if (payload.latestRsi !== null && payload.latestRsi !== undefined && !isValidPointLike(payload.latestRsi)) {
-    return { ok: false, error: 'Latest payload latestRsi is invalid' };
-  }
-  if (payload.latestVolumeDeltaRsi !== null && payload.latestVolumeDeltaRsi !== undefined && !isValidPointLike(payload.latestVolumeDeltaRsi)) {
-    return { ok: false, error: 'Latest payload latestVolumeDeltaRsi is invalid' };
-  }
-  if (payload.latestVolumeDelta !== null && payload.latestVolumeDelta !== undefined && !isValidPointLike(payload.latestVolumeDelta, 'delta')) {
-    return { ok: false, error: 'Latest payload latestVolumeDelta is invalid' };
-  }
-  return { ok: true };
+  const result = schemas.chartLatestPayload.safeParse(payload);
+  if (result.success) return { ok: true };
+  const firstIssue = result.error.issues[0];
+  return { ok: false, error: firstIssue ? firstIssue.message : 'Invalid latest payload shape' };
 }
 
 function timingSafeStringEqual(left, right) {
@@ -601,8 +521,8 @@ const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.D
 
 // In-memory cache of daily OHLC bars populated during daily/weekly scans.
 // Key: uppercase ticker, Value: array of { time, open, high, low, close }.
-const miniBarsCacheByTicker = new Map();
 const MINI_BARS_CACHE_MAX_TICKERS = 2000;
+const miniBarsCacheByTicker = new LRUCache({ max: MINI_BARS_CACHE_MAX_TICKERS });
 
 async function persistMiniChartBars(ticker, bars) {
   if (!divergencePool || !ticker || !Array.isArray(bars) || bars.length === 0) return;
@@ -2498,13 +2418,8 @@ function isDataApiSubscriptionRestrictedError(err) {
 }
 
 const VD_RSI_REGULAR_HOURS_CACHE_MS = 2 * 60 * 60 * 1000;
-const VD_RSI_LOWER_TF_CACHE = new Map();
-const VD_RSI_RESULT_CACHE = new Map();
-const CHART_DATA_CACHE = new Map(); // Cache for provider intraday chart data
-const CHART_QUOTE_CACHE = new Map();
 const CHART_IN_FLIGHT_REQUESTS = new Map();
 const CHART_IN_FLIGHT_MAX = 500;
-const CHART_FINAL_RESULT_CACHE = new Map();
 const CHART_RESULT_CACHE_TTL_SECONDS = Math.max(0, Number(process.env.CHART_RESULT_CACHE_TTL_SECONDS) || 300);
 const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_MAX_AGE_SECONDS) || 15);
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
@@ -2516,6 +2431,11 @@ const VD_RSI_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_RE
 const CHART_DATA_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_DATA_CACHE_MAX_ENTRIES) || 6000);
 const CHART_QUOTE_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_QUOTE_CACHE_MAX_ENTRIES) || 4000);
 const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_FINAL_RESULT_CACHE_MAX_ENTRIES) || 4000);
+const VD_RSI_LOWER_TF_CACHE = new LRUCache({ max: VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES });
+const VD_RSI_RESULT_CACHE = new LRUCache({ max: VD_RSI_RESULT_CACHE_MAX_ENTRIES });
+const CHART_DATA_CACHE = new LRUCache({ max: CHART_DATA_CACHE_MAX_ENTRIES });
+const CHART_QUOTE_CACHE = new LRUCache({ max: CHART_QUOTE_CACHE_MAX_ENTRIES });
+const CHART_FINAL_RESULT_CACHE = new LRUCache({ max: CHART_FINAL_RESULT_CACHE_MAX_ENTRIES });
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
 const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
@@ -2694,40 +2614,13 @@ function getTimedCacheValue(cacheMap, key) {
     return { status: 'miss', value: null };
   }
 
-  // Refresh insertion order so capped caches behave as LRU.
-  cacheMap.delete(key);
-  cacheMap.set(key, entry);
-
   if (now <= entry.freshUntil) {
     return { status: 'fresh', value: entry.value };
   }
   return { status: 'stale', value: entry.value };
 }
 
-function getTimedCacheMaxEntries(cacheMap) {
-  if (cacheMap === VD_RSI_LOWER_TF_CACHE) return VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES;
-  if (cacheMap === VD_RSI_RESULT_CACHE) return VD_RSI_RESULT_CACHE_MAX_ENTRIES;
-  if (cacheMap === CHART_DATA_CACHE) return CHART_DATA_CACHE_MAX_ENTRIES;
-  if (cacheMap === CHART_QUOTE_CACHE) return CHART_QUOTE_CACHE_MAX_ENTRIES;
-  if (cacheMap === CHART_FINAL_RESULT_CACHE) return CHART_FINAL_RESULT_CACHE_MAX_ENTRIES;
-  return 0;
-}
-
-function enforceTimedCacheMaxEntries(cacheMap) {
-  const maxEntries = getTimedCacheMaxEntries(cacheMap);
-  if (!Number.isFinite(maxEntries) || maxEntries <= 0) return;
-  while (cacheMap.size > maxEntries) {
-    const oldestKey = cacheMap.keys().next().value;
-    if (typeof oldestKey === 'undefined') break;
-    cacheMap.delete(oldestKey);
-  }
-}
-
 function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
-  if (cacheMap.has(key)) {
-    cacheMap.delete(key);
-  }
-  
   // Default fallback if not provided
   const now = Date.now();
   const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : (now + 60000); // 1 min default
@@ -2738,7 +2631,6 @@ function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
     freshUntil: safeFreshUntil,
     staleUntil: safeStaleUntil
   });
-  enforceTimedCacheMaxEntries(cacheMap);
 }
 
 function sweepExpiredTimedCache(cacheMap) {
@@ -6387,25 +6279,17 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
 
   // Cache daily OHLC bars for the mini-chart hover overlay.
   if (ticker && dailyBars.length > 0) {
-    miniBarsCacheByTicker.set(ticker, dailyBars.map(b => ({
+    const mappedBars = dailyBars.map(b => ({
       time: Number(b.time),
       open: Number(b.open),
       high: Number(b.high),
       low: Number(b.low),
       close: Number(b.close),
-    })));
-    // Evict oldest entries when cache exceeds limit.
-    if (miniBarsCacheByTicker.size > MINI_BARS_CACHE_MAX_TICKERS) {
-      const excess = miniBarsCacheByTicker.size - MINI_BARS_CACHE_MAX_TICKERS;
-      const iter = miniBarsCacheByTicker.keys();
-      for (let n = 0; n < excess; n++) {
-        const key = iter.next().value;
-        if (key !== undefined) miniBarsCacheByTicker.delete(key);
-      }
-    }
+    }));
+    miniBarsCacheByTicker.set(ticker, mappedBars);
     // Persist to DB so mini-bars survive server restarts (fire-and-forget).
     if (divergencePool) {
-      persistMiniChartBars(ticker, miniBarsCacheByTicker.get(ticker)).catch(() => {});
+      persistMiniChartBars(ticker, mappedBars).catch(() => {});
     }
   }
 
