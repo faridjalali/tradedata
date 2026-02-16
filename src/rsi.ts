@@ -41,7 +41,7 @@ export class RSIChart {
   private lineTools: any;
   private displayMode: RSIDisplayMode;
   private lineColor: string = '#58a6ff';
-  private midlineColor: string = '#ffffff';
+  private midlineColor: string = getThemeColors().textPrimary;
   private midlineStyle: 'dotted' | 'solid' = 'dotted';
   private data: RSIPoint[];
   private seriesData: any[] = [];
@@ -1063,6 +1063,8 @@ export class RSIChart {
       rightPriceScale: { borderColor: c.surfaceElevated },
       timeScale: { borderColor: c.surfaceElevated },
     });
+    // Update midline to match theme text color
+    this.setMidlineOptions(c.textPrimary, this.midlineStyle);
     for (const label of this.trendlineCrossLabels) {
       label.element.style.background = c.cardBg;
       label.element.style.border = `1px solid ${c.borderColor}`;

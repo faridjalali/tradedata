@@ -10,6 +10,7 @@ export interface ThemeColors {
   textMuted: string;
   borderColor: string;
   highlight: string;
+  highlightText: string;
   bgOverlay95: string;
   cardBgOverlay95: string;
   cardBgOverlay60: string;
@@ -34,6 +35,7 @@ const THEMES: Record<ThemeName, ThemeColors> = {
     textMuted: '#484f58',
     borderColor: '#30363d',
     highlight: '#58a6ff',
+    highlightText: '#ffffff',
     bgOverlay95: 'rgba(13, 17, 23, 0.95)',
     cardBgOverlay95: 'rgba(22, 27, 34, 0.95)',
     cardBgOverlay60: 'rgba(22, 27, 34, 0.6)',
@@ -56,6 +58,7 @@ const THEMES: Record<ThemeName, ThemeColors> = {
     textMuted: '#959da5',
     borderColor: '#d0d7de',
     highlight: '#0969da',
+    highlightText: '#ffffff',
     bgOverlay95: 'rgba(255, 255, 255, 0.95)',
     cardBgOverlay95: 'rgba(246, 248, 250, 0.95)',
     cardBgOverlay60: 'rgba(246, 248, 250, 0.6)',
@@ -78,6 +81,7 @@ const THEMES: Record<ThemeName, ThemeColors> = {
     textMuted: '#A39E90',
     borderColor: '#DDD6C8',
     highlight: '#D97706',
+    highlightText: '#ffffff',
     bgOverlay95: 'rgba(245, 240, 232, 0.95)',
     cardBgOverlay95: 'rgba(255, 255, 255, 0.95)',
     cardBgOverlay60: 'rgba(255, 255, 255, 0.6)',
@@ -100,6 +104,7 @@ const THEMES: Record<ThemeName, ThemeColors> = {
     textMuted: '#5f5d56',
     borderColor: '#3d3b36',
     highlight: '#da7756',
+    highlightText: '#ffffff',
     bgOverlay95: 'rgba(28, 27, 23, 0.95)',
     cardBgOverlay95: 'rgba(39, 37, 33, 0.95)',
     cardBgOverlay60: 'rgba(39, 37, 33, 0.6)',
@@ -146,6 +151,7 @@ function applyThemeToDOM(): void {
   root.style.setProperty('--text-muted', t.textMuted);
   root.style.setProperty('--border-color', t.borderColor);
   root.style.setProperty('--highlight', t.highlight);
+  root.style.setProperty('--highlight-text', t.highlightText);
   root.style.setProperty('--bg-overlay-95', t.bgOverlay95);
   root.style.setProperty('--card-bg-overlay-95', t.cardBgOverlay95);
   root.style.setProperty('--card-bg-overlay-60', t.cardBgOverlay60);

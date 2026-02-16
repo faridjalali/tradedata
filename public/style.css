@@ -401,7 +401,7 @@ h2 {
 }
 .tf-btn.active {
   background: var(--highlight);
-  color: white;
+  color: var(--highlight-text);
   border-color: var(--highlight);
 }
 
@@ -629,7 +629,7 @@ h2 {
 }
 .icon-btn.active {
   background: var(--highlight);
-  color: white;
+  color: var(--highlight-text);
   border-color: var(--highlight);
 }
 
@@ -1103,7 +1103,7 @@ body.site-locked {
 
 button {
   background: var(--highlight);
-  color: white;
+  color: var(--highlight-text);
   border: none;
   padding: 8px 16px;
   border-radius: 4px;
@@ -1175,7 +1175,7 @@ button:hover {
 .header-sort-controls .tf-btn.active,
 #chart-controls .tf-btn.active {
   background: var(--highlight);
-  color: #ffffff;
+  color: var(--highlight-text);
   border-color: var(--highlight);
 }
 
@@ -1207,7 +1207,7 @@ button:hover {
 
 .column-tf-controls .tf-btn.active {
   background: var(--highlight);
-  color: #ffffff;
+  color: var(--highlight-text);
   border-color: var(--highlight);
 }
 
@@ -1314,7 +1314,7 @@ button:hover {
 
 .single-page-controls .tf-btn.active {
   background: var(--highlight);
-  color: #ffffff;
+  color: var(--highlight-text);
   border-color: var(--highlight);
 }
 

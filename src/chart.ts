@@ -236,14 +236,14 @@ interface PersistedChartSettings {
 const DEFAULT_RSI_SETTINGS: RSISettings = {
   length: 14,
   lineColor: '#58a6ff',
-  midlineColor: '#ffffff',
+  midlineColor: '#c9d1d9',
   midlineStyle: 'dotted'
 };
 
 const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
   length: 14,
   lineColor: VOLUME_DELTA_RSI_COLOR,
-  midlineColor: '#ffffff',
+  midlineColor: '#c9d1d9',
   midlineStyle: 'dotted',
   sourceInterval: '1min'
 };
@@ -1953,7 +1953,7 @@ function setPaneToolButtonActive(pane: TrendToolPane, action: 'trend' | 'diverge
   if (!btn) return;
   btn.classList.toggle('active', active);
   btn.style.background = active ? tc().highlight : tc().cardBg;
-  btn.style.color = '#ffffff';
+  btn.style.color = active ? tc().highlightText : tc().textPrimary;
   btn.textContent = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
 }
 
@@ -6056,6 +6056,11 @@ window.addEventListener('themechange', () => {
   if (volumeDeltaChart) volumeDeltaChart.applyOptions(chartOpts);
   if (volumeDeltaRsiChart) volumeDeltaRsiChart.applyOptions(chartOpts);
   if (rsiChart) rsiChart.applyTheme();
+  // Update VD RSI midline to match new theme text color
+  if (volumeDeltaRsiMidlineLine) {
+    volumeDeltaRsiSettings.midlineColor = c.textPrimary;
+    volumeDeltaRsiMidlineLine.applyOptions({ color: c.textPrimary });
+  }
   // Re-render month gridlines and VD zones
   refreshMonthGridLines();
   refreshVDZones();
