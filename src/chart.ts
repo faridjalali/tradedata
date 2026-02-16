@@ -4117,8 +4117,8 @@ function renderVolumeDeltaDivergenceSummary(
     refreshButton.disabled = false;
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
+    svg.setAttribute('width', '11');
+    svg.setAttribute('height', '11');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
@@ -4126,12 +4126,10 @@ function renderVolumeDeltaDivergenceSummary(
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
     svg.style.display = 'block';
-    // Top arrow: arc from right curving down-left, with arrowhead
     const path1 = document.createElementNS(svgNS, 'path');
     path1.setAttribute('d', 'M21.5 2v6h-6');
     const path2 = document.createElementNS(svgNS, 'path');
     path2.setAttribute('d', 'M21.5 8A10 10 0 0 0 5.6 5.6');
-    // Bottom arrow: arc from left curving up-right, with arrowhead
     const path3 = document.createElementNS(svgNS, 'path');
     path3.setAttribute('d', 'M2.5 22v-6h6');
     const path4 = document.createElementNS(svgNS, 'path');
@@ -4282,8 +4280,8 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   btn.style.position = 'absolute';
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
   // Position to the left of the VDF button: VDF is at right = SCALE_MIN_WIDTH_PX + 8,
-  // VDF button is ~36px wide (minWidth 24 + padding 10), so place refresh at right = SCALE_MIN_WIDTH_PX + 8 + 36 + 4
-  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8 + 40 + 4}px`;
+  // VDF button is ~36px wide, gap matches PANE_TOOL_BUTTON_GAP_PX (same as divergence summary)
+  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8 + 36 + PANE_TOOL_BUTTON_GAP_PX}px`;
   btn.style.zIndex = '34';
   btn.style.display = 'inline-flex';
   btn.style.alignItems = 'center';
@@ -4312,8 +4310,8 @@ function renderVDFRefreshIcon(loading: boolean): void {
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('width', '14');
-  svg.setAttribute('height', '14');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('stroke', 'currentColor');
