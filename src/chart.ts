@@ -3311,13 +3311,15 @@ function inferVolumeDeltaBarStepSeconds(): number {
     const curr = toUnixSeconds(volumeDeltaRsiPoints[i].time);
     if (prev === null || curr === null) continue;
     const diff = curr - prev;
-    if (Number.isFinite(diff) && diff > 0 && diff <= (8 * 3600)) {
+    if (Number.isFinite(diff) && diff > 0) {
       diffs.push(diff);
     }
   }
   if (diffs.length === 0) return 1800;
   diffs.sort((a, b) => a - b);
-  return diffs[Math.floor(diffs.length / 2)];
+  // Use the 25th-percentile diff to filter out weekend/holiday gaps
+  // while still capturing the true bar interval for daily/weekly data.
+  return diffs[Math.floor(diffs.length * 0.25)];
 }
 
 function barsPerTradingDayFromStep(stepSeconds: number): number {
