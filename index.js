@@ -1767,7 +1767,7 @@ const DATA_API_TIMEOUT_MS = 15000;
 const DATA_API_REQUESTS_PAUSED = String(process.env.DATA_API_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
 const DATA_API_MAX_REQUESTS_PER_SECOND = Math.max(
   1,
-  Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 95
+  Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99
 );
 const DATA_API_RATE_BUCKET_CAPACITY = Math.max(
   1,
