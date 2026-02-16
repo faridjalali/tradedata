@@ -160,7 +160,7 @@ test('GET /api/divergence/scan/status returns running state and fallback trade d
   assert.equal(res.body.latestJob.scanned_trade_date, '2026-02-11');
 });
 
-test('GET /api/divergence/scan/status returns 500 on query error', async () => {
+test('GET /api/divergence/scan/status falls back to in-memory status on query error', async () => {
   const options = buildOptions({
     divergencePool: {
       query: async () => {
@@ -172,6 +172,6 @@ test('GET /api/divergence/scan/status returns 500 on query error', async () => {
   const handler = options.app.routes.get.get('/api/divergence/scan/status');
   const res = createMockRes();
   await handler({ query: {}, headers: {}, body: {} }, res);
-  assert.equal(res.statusCode, 500);
-  assert.deepEqual(res.body, { error: 'Failed to fetch scan status' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.latestJob, null);
 });
