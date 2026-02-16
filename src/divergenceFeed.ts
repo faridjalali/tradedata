@@ -1338,9 +1338,9 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     const overlay = document.createElement('div');
     overlay.className = 'mini-chart-overlay';
 
-    // On touch/mobile: 50% screen width, right-aligned
+    // On touch/mobile: 75% screen width, right-aligned
     const isMobile = isTouch || window.innerWidth < 768;
-    const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.5) : 500;
+    const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.75) : 500;
     const OVERLAY_H = isMobile ? Math.floor(OVERLAY_W * 0.6) : 300;
 
     const _tc = getThemeColors();
@@ -1363,10 +1363,13 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     let top: number;
     if (isMobile) {
         // Right-aligned against screen edge
-        left = window.innerWidth - OVERLAY_W;
-        top = cardRect.bottom + GAP;
+        // Top aligned with the card top (requested behavior)
+        left = window.innerWidth - OVERLAY_W - GAP; 
+        top = cardRect.top;
+        
+        // If it goes off bottom, shift up
         if (top + OVERLAY_H > window.innerHeight) {
-            top = cardRect.top - OVERLAY_H - GAP;
+             top = window.innerHeight - OVERLAY_H - GAP;
         }
     } else {
         // Desktop: prefer right of card, fall back to left
@@ -1698,6 +1701,25 @@ export function setupDivergenceFeedDelegation(): void {
     }, { passive: true });
 
     // "Show more" pagination button
+    // --- Safari / Mobile Long Press Fix ---
+    // Use capture phase (true) to intercept event before native handlers or bubbling
+    window.addEventListener('contextmenu', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target && target.closest('.alert-card')) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
+
+    window.addEventListener('selectstart', (e: Event) => {
+         const target = e.target as HTMLElement;
+         if (target && target.closest('.alert-card')) {
+             e.preventDefault();
+             e.stopPropagation();
+         }
+    }, true);
+
+    // Standard bubbling listeners for other interactions
     view.addEventListener('click', (e: Event) => {
         const btn = (e.target as HTMLElement).closest('.show-more-btn') as HTMLElement | null;
         if (!btn) return;
