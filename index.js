@@ -38,6 +38,7 @@ const {
 require("dotenv").config();
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.) for accurate IP in rate limiter
 const port = process.env.PORT || 3000;
 const gzipAsync = promisify(zlib.gzip);
 const brotliCompressAsync = promisify(zlib.brotliCompress);
