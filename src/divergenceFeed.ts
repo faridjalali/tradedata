@@ -1587,8 +1587,9 @@ export function setupDivergenceFeedDelegation(): void {
     let touchLongPressTimer: number | null = null;
     let touchLongPressFired = false;
     let suppressNextCardClick = false;
-    let selectionClearInterval: number | null = null;
     let lastTouchEndMs = 0;
+    let touchCardActive = false;   // true when touch started on a card (preventDefault was called)
+    let touchPrevY: number | null = null; // for programmatic scroll
 
     // --- Mini-chart hover overlay on alert cards ---
     // Use capture phase because mouseenter/mouseleave don't bubble.
@@ -1647,45 +1648,49 @@ export function setupDivergenceFeedDelegation(): void {
     });
 
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
-    // Use passive: false to allow preventDefault() if we need to block scrolling/menu
+    // NON-PASSIVE touchstart: call preventDefault() on card touches to block
+    // Safari iOS compositor-level text selection that ignores CSS user-select:none.
+    // We then manually handle scrolling via window.scrollBy() in touchmove.
     view.addEventListener('touchstart', (e: Event) => {
-        // Immediately clear any selection to prevent "Copy" menu
-        window.getSelection()?.removeAllRanges();
-
         const te = e as TouchEvent;
-        if (te.touches.length !== 1) return;
+        if (te.touches.length !== 1) { touchCardActive = false; return; }
         const target = te.target as HTMLElement;
         const card = target.closest('.alert-card') as HTMLElement | null;
-        if (!card) return;
+        if (!card) { touchCardActive = false; return; }
+
+        // Block Safari's native long-press selection at the event level
+        e.preventDefault();
+        touchCardActive = true;
+        touchPrevY = te.touches[0].clientY;
+
         const ticker = card.dataset.ticker;
         if (!ticker) return;
 
         touchLongPressFired = false;
         if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
-        if (selectionClearInterval !== null) window.clearInterval(selectionClearInterval);
-
-        // Continuously clear any selection Safari creates during the hold
-        selectionClearInterval = window.setInterval(() => {
-            window.getSelection()?.removeAllRanges();
-        }, 30);
 
         touchLongPressTimer = window.setTimeout(() => {
             touchLongPressTimer = null;
             touchLongPressFired = true;
-            window.getSelection()?.removeAllRanges();
             const rect = card.getBoundingClientRect();
             showMiniChartOverlay(ticker, rect, true);
         }, 600);
-    }, { passive: true });
+    }, { passive: false });
 
-    view.addEventListener('touchmove', () => {
+    view.addEventListener('touchmove', (e: Event) => {
+        // Programmatic scroll to replace native scroll blocked by preventDefault
+        if (touchCardActive && touchPrevY !== null) {
+            const te = e as TouchEvent;
+            const currentY = te.touches[0].clientY;
+            const deltaY = touchPrevY - currentY;
+            if (Math.abs(deltaY) > 2) {
+                window.scrollBy(0, deltaY);
+                touchPrevY = currentY;
+            }
+        }
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
-        }
-        if (selectionClearInterval !== null) {
-            window.clearInterval(selectionClearInterval);
-            selectionClearInterval = null;
         }
     }, { passive: true });
 
@@ -1694,12 +1699,6 @@ export function setupDivergenceFeedDelegation(): void {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
-        if (selectionClearInterval !== null) {
-            window.clearInterval(selectionClearInterval);
-            selectionClearInterval = null;
-        }
-        // Final clear after Safari's selection gesture completes
-        window.getSelection()?.removeAllRanges();
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
             if (e.cancelable) e.preventDefault();
@@ -1707,6 +1706,8 @@ export function setupDivergenceFeedDelegation(): void {
             suppressNextCardClick = true;
         }
         touchLongPressFired = false;
+        touchCardActive = false;
+        touchPrevY = null;
     }, { passive: false });
 
     view.addEventListener('touchcancel', () => {
@@ -1714,16 +1715,13 @@ export function setupDivergenceFeedDelegation(): void {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
-        if (selectionClearInterval !== null) {
-            window.clearInterval(selectionClearInterval);
-            selectionClearInterval = null;
-        }
-        window.getSelection()?.removeAllRanges();
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
             destroyMiniChartOverlay();
         }
         touchLongPressFired = false;
+        touchCardActive = false;
+        touchPrevY = null;
     }, { passive: true });
 
     // "Show more" pagination button
