@@ -666,6 +666,17 @@ h2 {
   
   /* Disable the native context menu (Copy/Look Up) on long press */
   -webkit-touch-callout: none;
+  
+  /* Remove tap highlight color */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure children also inherit or enforce disabling selection */
+.alert-card * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: auto; /* Ensure events still bubble */
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */

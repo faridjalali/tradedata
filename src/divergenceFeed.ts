@@ -1641,6 +1641,7 @@ export function setupDivergenceFeedDelegation(): void {
     });
 
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
+    // Use passive: false to allow preventDefault() if we need to block scrolling/menu
     view.addEventListener('touchstart', (e: Event) => {
         const te = e as TouchEvent;
         if (te.touches.length !== 1) return;
@@ -1649,15 +1650,17 @@ export function setupDivergenceFeedDelegation(): void {
         if (!card) return;
         const ticker = card.dataset.ticker;
         if (!ticker) return;
+
         touchLongPressFired = false;
         if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
+        
         touchLongPressTimer = window.setTimeout(() => {
             touchLongPressTimer = null;
             touchLongPressFired = true;
             const rect = card.getBoundingClientRect();
             showMiniChartOverlay(ticker, rect, true);
         }, 600);
-    }, { passive: true });
+    }, { passive: true }); // Keep passive: true for scroll performance, handle menu via CSS/contextmenu
 
     view.addEventListener('touchmove', () => {
         if (touchLongPressTimer !== null) {
@@ -1666,18 +1669,21 @@ export function setupDivergenceFeedDelegation(): void {
         }
     }, { passive: true });
 
-    view.addEventListener('touchend', () => {
+    view.addEventListener('touchend', (e: Event) => {
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
+             // If the long-press fired, we want to prevent any subsequent click
+             // from triggering navigation.
+            if (e.cancelable) e.preventDefault();
             destroyMiniChartOverlay();
             suppressNextCardClick = true;
         }
         touchLongPressFired = false;
-    }, { passive: true });
+    }, { passive: false }); // passive: false to allow preventDefault
 
     view.addEventListener('touchcancel', () => {
         if (touchLongPressTimer !== null) {
