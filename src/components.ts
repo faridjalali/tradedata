@@ -70,11 +70,8 @@ export function createAlertCard(alert: Alert): string {
         })
         .join('');
 
-    const divergenceTitle = alert.divergence_trade_date
-        ? `Daily divergence as of ${escapeHtml(alert.divergence_trade_date)} (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`
-        : `Daily divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     const maDots = `
-        <span class="ma-dot-row" title="8 EMA, 21 EMA, 50 SMA, 200 SMA">
+        <span class="ma-dot-row" title="8 EMA - 21 EMA - 50 SMA - 200 SMA">
             <span class="ma-dot ${maStates.ema8 ? 'is-up' : 'is-down'}"></span>
             <span class="ma-dot ${maStates.ema21 ? 'is-up' : 'is-down'}"></span>
             <span class="ma-dot ${maStates.sma50 ? 'is-up' : 'is-down'}"></span>
@@ -88,16 +85,16 @@ export function createAlertCard(alert: Alert): string {
             <h3>${escapeHtml(alert.ticker)}</h3>
             
             <div class="metrics-container">
-                <div class="metric-item" title="Daily divergence summary">
-                    <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="${divergenceTitle}">
+                <div class="metric-item">
+                    <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)">
                         ${divergenceDots}
                     </span>
                 </div>
-                <div class="metric-item" title="Signal Volume">
+                <div class="metric-item" title="Volume">
                     <span class="volume-text">${volStr}</span>
                     ${alert.vdf_detected && alert.vdf_score
-                        ? `<span class="vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}" title="VD Accumulation Score: ${alert.vdf_score}">${alert.vdf_score}</span>`
-                        : (alert.vdf_detected ? '<span class="vdf-tag" title="VD Accumulation detected">VDF</span>' : '<span class="vdf-score-placeholder"></span>')}
+                        ? `<span class="vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}" title="Score">${alert.vdf_score}</span>`
+                        : (alert.vdf_detected ? '<span class="vdf-tag">VDF</span>' : '<span class="vdf-score-placeholder"></span>')}
                     ${maDots}
                 </div>
             </div>

@@ -162,7 +162,7 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
   }
 
   const scoreDiffHtml = isCustomWeights && serverScoreInt !== scoreInt
-    ? `<span style="font-size:10px;color:${c.textMuted};margin-left:4px;" title="Server score with default weights">(was ${serverScoreInt})</span>`
+    ? `<span style="font-size:10px;color:${c.textMuted};margin-left:4px;">(was ${serverScoreInt})</span>`
     : '';
 
   return `<div style="background:${c.cardBg};border:1px solid ${c.surfaceElevated};border-radius:4px;padding:12px;margin-bottom:8px;">

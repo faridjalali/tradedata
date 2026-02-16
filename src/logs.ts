@@ -274,8 +274,8 @@ function renderHistoryPage(): void {
 
     const entriesHtml = pageItems.map(buildHistoryEntryHtml).join('');
     const paginationHtml = totalPages > 1 ?
-        `<button class="tf-btn log-history-prev${prevDisabled ? ' disabled' : ''}" title="Previous page"${prevDisabled ? ' disabled' : ''}>&#x2039;</button>` +
-        `<button class="tf-btn log-history-next${nextDisabled ? ' disabled' : ''}" title="Next page"${nextDisabled ? ' disabled' : ''}>&#x203A;</button>`
+        `<button class="tf-btn log-history-prev${prevDisabled ? ' disabled' : ''}"${prevDisabled ? ' disabled' : ''}>&#x2039;</button>` +
+        `<button class="tf-btn log-history-next${nextDisabled ? ' disabled' : ''}"${nextDisabled ? ' disabled' : ''}>&#x203A;</button>`
       : '';
 
     host.innerHTML = entriesHtml;

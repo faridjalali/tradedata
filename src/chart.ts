@@ -1550,7 +1550,7 @@ function syncTopPaneTickerLabel(): void {
     label.style.textOverflow = 'ellipsis';
     label.style.pointerEvents = 'auto';
     label.style.cursor = 'pointer';
-    label.title = 'Open on TradingView';
+    label.removeAttribute('title');
     label.setAttribute('role', 'link');
     label.tabIndex = 0;
     if (!label.dataset.clickBound) {
@@ -1673,7 +1673,7 @@ function ensurePaneReorderHandle(
     handle = document.createElement('button');
     handle.type = 'button';
     handle.className = 'pane-order-handle';
-    handle.title = 'Drag to reorder panes';
+    handle.removeAttribute('title');
     handle.textContent = '';
     handle.setAttribute('aria-label', 'Reorder pane');
     pane.appendChild(handle);
@@ -1847,13 +1847,7 @@ function createSettingsButton(container: HTMLElement, pane: PaneControlType): HT
   btn.className = 'pane-settings-btn settings-icon-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.title = pane === 'price'
-    ? 'Price settings'
-    : pane === 'volumeDelta'
-      ? 'Volume Delta settings'
-      : pane === 'volumeDeltaRsi'
-        ? 'Volume Delta RSI settings'
-        : 'RSI settings';
+  btn.removeAttribute('title');
   btn.textContent = SETTINGS_ICON;
   btn.style.position = 'absolute';
   btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
@@ -1922,7 +1916,7 @@ function createPaneTrendlineButton(
     ? 'Draw Trendline'
     : action === 'erase'
       ? 'Erase Trendline'
-      : 'Divergence';
+      : '';
   btn.textContent = action === 'trend'
     ? TREND_ICON
     : action === 'erase'
@@ -4067,7 +4061,7 @@ function renderVolumeDeltaDivergenceSummary(
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
     refreshButton.className = 'settings-icon-btn';
-    refreshButton.title = loading ? 'Refreshing divergence table...' : 'Refresh divergence table';
+    refreshButton.removeAttribute('title');
     refreshButton.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
@@ -4219,7 +4213,7 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.className = 'vdf-indicator-btn';
   btn.type = 'button';
-  btn.title = 'Volume Divergence Flag Detector';
+  btn.removeAttribute('title');
   btn.textContent = 'VDF';
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
@@ -4253,7 +4247,7 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.className = 'settings-icon-btn vdf-refresh-btn';
   btn.type = 'button';
-  btn.title = 'Refresh Analysis';
+  btn.removeAttribute('title');
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   // Insert before VDF button so refresh appears on the left
@@ -4270,7 +4264,7 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
 function renderVDFRefreshIcon(loading: boolean): void {
   if (!vdfRefreshButtonEl) return;
   vdfRefreshButtonEl.innerHTML = '';
-  vdfRefreshButtonEl.title = loading ? 'Refreshing VD Analysis...' : 'Refresh VD Analysis';
+  vdfRefreshButtonEl.removeAttribute('title');
   vdfRefreshButtonEl.style.cursor = loading ? 'wait' : 'pointer';
   vdfRefreshButtonEl.style.pointerEvents = loading ? 'none' : 'auto';
 
@@ -4312,31 +4306,6 @@ function setVDFButtonColor(color: string, title?: string): void {
   if (title !== undefined) vdfButtonEl.title = title;
 }
 
-function buildVDFTooltip(entry: VDFCacheEntry): string {
-  if (!entry.is_detected) return `VD Accumulation: Not detected`;
-  const score = Math.round(entry.composite_score * 100);
-  let tip = `VD Accumulation Score: ${score}`;
-  const bestZone = entry.zones?.[0];
-  if (bestZone) {
-    const startParts = bestZone.startDate.split('-');
-    const endParts = bestZone.endDate.split('-');
-    const startLabel = startParts.length >= 3 ? `${Number(startParts[1])}/${Number(startParts[2])}` : bestZone.startDate;
-    const endLabel = endParts.length >= 3 ? `${Number(endParts[1])}/${Number(endParts[2])}` : bestZone.endDate;
-    tip += `\nZone: ${startLabel}→${endLabel} (${bestZone.windowDays}d)`;
-    if (bestZone.absorptionPct != null) tip += `\nAbsorption: ${(bestZone.absorptionPct * 100).toFixed(1)}%`;
-  }
-  if (entry.zones?.length > 1) tip += `\n+${entry.zones.length - 1} more zone(s)`;
-  if (entry.distribution?.length > 0) tip += `\nDistribution: ${entry.distribution.length} cluster(s)`;
-  const prox = entry.proximity;
-  if (prox && prox.level !== 'none') {
-    tip += `\nProximity: ${prox.level.charAt(0).toUpperCase() + prox.level.slice(1)} (${prox.compositeScore} pts)`;
-    for (const sig of prox.signals) {
-      tip += `\n  ✓ ${sig.detail} +${sig.points}`;
-    }
-  }
-  return tip;
-}
-
 function updateVDFButton(entry: VDFCacheEntry): void {
   if (!vdfButtonEl) return;
   if (entry.is_detected) {
@@ -4356,7 +4325,7 @@ function updateVDFButton(entry: VDFCacheEntry): void {
     vdfButtonEl.style.color = VDF_COLOR_NOT_DETECTED();
     vdfButtonEl.style.borderColor = tc().borderColor;
   }
-  vdfButtonEl.title = buildVDFTooltip(entry);
+  vdfButtonEl.removeAttribute('title');
 }
 
 function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
@@ -5857,7 +5826,7 @@ function initChartFullscreen(): void {
   const updateIcon = (): void => {
     const isActive = container.classList.contains('chart-fullscreen');
     btn.innerHTML = isActive ? FULLSCREEN_EXIT_SVG : FULLSCREEN_ENTER_SVG;
-    btn.title = isActive ? 'Exit fullscreen (Space)' : 'Fullscreen (Space)';
+    btn.title = 'Fullscreen';
     // Re-apply scale visibility — shouldShowPaneScale already accounts
     // for fullscreen state, so this handles both enter and exit.
     applyPaneScaleVisibilityByPosition();

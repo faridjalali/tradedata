@@ -1,0 +1,93 @@
+#,Page/Section,Element,Current Tooltip,New Tooltip,Source
+1,Settings,Settings gear button,Settings,(remove),index.html:62
+2,Settings,Dark theme swatch,Dark,Dark,index.html:72
+3,Settings,Light theme swatch,Light,Light,index.html:73
+4,Settings,Beige theme swatch,Beige,Beige,index.html:74
+5,Settings,Claude theme swatch,Claude,Brown,index.html:75
+6,Settings,Fetch Daily button,(removed),,index.html:91
+7,Settings,Fetch Daily stop button,(removed),,index.html:97
+8,Settings,Fetch Weekly button,(removed),,index.html:109
+9,Settings,Fetch Weekly stop button,(removed),,index.html:116
+10,Settings,Analyze button,(removed),,index.html:128
+11,Settings,Analyze stop button,(removed),,index.html:135
+12,Settings,Pause/Resume Run Fetch button,Resume Run Fetch / Pause Run Fetch,,divergenceFeed.ts:392
+13,Settings,Stop Run Fetch button,Stop Run Fetch,,divergenceFeed.ts:399
+14,Settings,Pause/Resume Run Table button,Resume Run Table / Pause Run Table,,divergenceFeed.ts:416
+15,Settings,Stop Run Table button,Stop Run Table,,divergenceFeed.ts:423
+
+
+16,Header,Navigation hamburger button,Navigation,(remove),index.html:169
+
+
+17,Logs,Refresh metrics button,Refresh metrics,(remove),index.html:192
+18,Logs,Previous page button,Previous page,(remove),logs.ts:277
+19,Logs,Next page button,Next page,(remove),logs.ts:278
+
+
+20,Overview Daily Column,Date filter 1,Last fetch day,,index.html:221
+21,Overview Daily Column,Date filter 2,Last 2 fetch days,,index.html:222
+22,Overview Daily Column,Date filter 5,Last 5 fetch days,,index.html:223
+23,Overview Daily Column,Date filter C,Custom date range,,index.html:224
+24,Overview Daily Column,Apply date range button,Apply date range,(remove),index.html:229
+25,Overview Daily Column,Favorites star,Favorites only,,index.html:234
+26,Overview Daily Column,Sort D,Sort by Date,,index.html:235
+27,Overview Daily Column,Sort V,Sort by Volume,,index.html:236
+28,Overview Daily Column,Sort S,Sort by Score,,index.html:237
+29,Overview Weekly Column,Date filter 1,Last fetch day,,index.html:250
+30,Overview Weekly Column,Date filter 2,Last 2 fetch days,,index.html:251
+31,Overview Weekly Column,Date filter 5,Last 5 fetch days,,index.html:252
+32,Overview Weekly Column,Date filter C,Custom date range,,index.html:253
+33,Overview Weekly Column,Apply date range button,Apply date range,(remove),index.html:258
+34,Overview Weekly Column,Favorites star,Favorites only,,index.html:263
+35,Overview Weekly Column,Sort D,Sort by Date,,index.html:264
+36,Overview Weekly Column,Sort V,Sort by Volume,,index.html:265
+37,Overview Weekly Column,Sort S,Sort by Score,,index.html:266
+
+
+38,Ticker Daily Column,Date filter 1,Last fetch day,,index.html:286
+39,Ticker Daily Column,Date filter 2,Last 2 fetch days,,index.html:287
+40,Ticker Daily Column,Date filter 5,Last 5 fetch days,,index.html:288
+41,Ticker Daily Column,Date filter C,Custom date range,,index.html:289
+42,Ticker Daily Column,Apply date range button,Apply date range,(remove),index.html:294
+43,Ticker Daily Column,Favorites star,Favorites only,,index.html:299
+44,Ticker Daily Column,Sort D,Sort by Date,,index.html:300
+45,Ticker Daily Column,Sort V,Sort by Volume,,index.html:301
+46,Ticker Daily Column,Sort S,Sort by Score,,index.html:302
+47,Ticker Weekly Column,Date filter 1,Last fetch day,,index.html:316
+48,Ticker Weekly Column,Date filter 2,Last 2 fetch days,,index.html:317
+49,Ticker Weekly Column,Date filter 5,Last 5 fetch days,,index.html:318
+50,Ticker Weekly Column,Date filter C,Custom date range,,index.html:319
+51,Ticker Weekly Column,Apply date range button,Apply date range,(remove),index.html:324
+52,Ticker Weekly Column,Favorites star,Favorites only,,index.html:329
+53,Ticker Weekly Column,Sort D,Sort by Date,,index.html:330
+54,Ticker Weekly Column,Sort V,Sort by Volume,,index.html:331
+55,Ticker Weekly Column,Sort S,Sort by Score,,index.html:332
+
+
+56,Chart,Previous ticker button,Previous Ticker (Up Arrow),Previous Ticker,index.html:357
+57,Chart,Next ticker button,Next Ticker (Down Arrow),Next Ticker,index.html:362
+58,Chart,Fullscreen button,Fullscreen (Space) / Exit fullscreen (Space),Fullscreen,index.html:368 + chart.ts:5860
+59,Chart,Back to overview button,Back to overview,Back,index.html:376
+60,Chart,TradingView link label,Open on TradingView,(remove),chart.ts:1553
+61,Chart,Pane reorder handle,Drag to reorder panes,(remove),chart.ts:1676
+62,Chart,Price pane settings button,Price settings,(remove),chart.ts:1850
+63,Chart,Volume Delta pane settings button,Volume Delta settings,(remove),chart.ts:1852
+64,Chart,Volume Delta RSI pane settings button,Volume Delta RSI settings,(remove),chart.ts:1854
+65,Chart,RSI pane settings button,RSI settings,(remove),chart.ts:1856
+66,Chart,Trendline tool button,Draw Trendline,,chart.ts:1921
+67,Chart,Erase trendline button,Erase Trendline,,chart.ts:1923
+68,Chart,Divergence tool button,Divergence,(remove),chart.ts:1925
+69,Chart,Divergence table refresh button,Refresh divergence table / Refreshing...,(remove),chart.ts:4070
+
+70,Chart,VDF indicator button,Volume Divergence Flag Detector,(remove),chart.ts:4222
+71,Chart,VDF refresh button,Refresh Analysis / Refreshing VD Analysis...,(remove),chart.ts:4256 + chart.ts:4273
+72,Chart,VDF button (with data),(dynamic — score + zone + absorption + signal details),(remove),chart.ts:4359
+
+
+73,Card,MA dot row,8 EMA 21 EMA 50 SMA 200 SMA,8 EMA - 21 EMA - 50 SMA - 200 SMA,components.ts:77
+74,Card,Divergence summary container,Daily divergence summary,(remove),components.ts:91
+75,Card,Divergence dot row,Daily divergence as of {date} ({lookback}d),Divergence ({lookback}d),components.ts:92 + divergenceTable.ts:223
+76,Card,Signal Volume container,Signal Volume,Volume,components.ts:96
+77,Card,VDF score badge,VD Accumulation Score: {score},Score,components.ts:99
+78,Card,VDF tag (no score),VD Accumulation detected,(remove),components.ts:100
+79,VDF Analysis Panel,Server score diff indicator,Server score with default weights,(remove),vdfAnalysisPanel.ts:165

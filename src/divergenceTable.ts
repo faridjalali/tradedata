@@ -220,10 +220,10 @@ export function renderMiniDivergenceRow(
   if (parent instanceof HTMLElement) {
     if (summary?.tradeDate) {
       parent.dataset.tradeDate = summary.tradeDate;
-      parent.title = `Daily divergence as of ${summary.tradeDate} (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
+      parent.title = `Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     } else {
       parent.removeAttribute('data-trade-date');
-      parent.title = `Daily divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
+      parent.title = `Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     }
   }
 }
