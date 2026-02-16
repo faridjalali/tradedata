@@ -681,11 +681,16 @@ h2 {
 }
 
 /* Ensure children also inherit or enforce disabling selection */
+/* Ensure children also inherit or enforce disabling selection */
 .alert-card * {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
-  pointer-events: auto; /* Ensure events still bubble */
+  pointer-events: none; /* Hide internal elements from OS selection interaction */
+}
+
+.alert-card .fav-icon {
+  pointer-events: auto; /* Re-enable pointer events for the star */
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
