@@ -35,7 +35,8 @@ function registerChartRoutes(options = {}) {
     getDivergenceSummaryForTickers,
     barsToTuples,
     pointsToTuples,
-    getMiniBarsCacheByTicker
+    getMiniBarsCacheByTicker,
+    loadMiniChartBarsFromDb
   } = options;
 
   if (!app) {
@@ -153,7 +154,7 @@ function registerChartRoutes(options = {}) {
   });
 
   // Lightweight endpoint: returns cached daily OHLC bars from the last scan.
-  app.get('/api/chart/mini-bars', (req, res) => {
+  app.get('/api/chart/mini-bars', async (req, res) => {
     try {
       const ticker = String(req.query.ticker || '').trim().toUpperCase();
       if (!ticker) {
@@ -163,7 +164,15 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
-      const bars = cache ? (cache.get(ticker) || []) : [];
+      let bars = cache ? (cache.get(ticker) || []) : [];
+      // Fall back to DB if in-memory cache is empty (e.g. after server restart).
+      if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
+        bars = await loadMiniChartBarsFromDb(ticker);
+        // Repopulate in-memory cache so subsequent requests are instant.
+        if (bars.length > 0 && cache) {
+          cache.set(ticker, bars);
+        }
+      }
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.status(200).json({ ticker, bars });
     } catch (err) {

@@ -578,6 +578,54 @@ const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.D
 const miniBarsCacheByTicker = new Map();
 const MINI_BARS_CACHE_MAX_TICKERS = 2000;
 
+async function persistMiniChartBars(ticker, bars) {
+  if (!divergencePool || !ticker || !Array.isArray(bars) || bars.length === 0) return;
+  try {
+    const values = [];
+    const placeholders = [];
+    let idx = 1;
+    for (const b of bars) {
+      const tradeDate = etDateStringFromUnixSeconds(Number(b.time));
+      if (!tradeDate) continue;
+      placeholders.push(`($${idx},$${idx+1},$${idx+2},$${idx+3},$${idx+4},$${idx+5},$${idx+6})`);
+      values.push(ticker, tradeDate, Number(b.open), Number(b.high), Number(b.low), Number(b.close), Number(b.time));
+      idx += 7;
+    }
+    if (placeholders.length === 0) return;
+    await divergencePool.query(`
+      INSERT INTO mini_chart_bars(ticker, trade_date, open_price, high_price, low_price, close_price, bar_time)
+      VALUES ${placeholders.join(',')}
+      ON CONFLICT (ticker, trade_date) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price,
+        bar_time = EXCLUDED.bar_time,
+        updated_at = NOW()
+    `, values);
+  } catch (err) {
+    console.error(`persistMiniChartBars(${ticker}): ${err.message}`);
+  }
+}
+
+async function loadMiniChartBarsFromDb(ticker) {
+  if (!divergencePool || !ticker) return [];
+  const result = await divergencePool.query(`
+    SELECT bar_time AS time, open_price AS open, high_price AS high,
+           low_price AS low, close_price AS close
+    FROM mini_chart_bars
+    WHERE ticker = $1
+    ORDER BY trade_date ASC
+  `, [ticker.toUpperCase()]);
+  return result.rows.map(r => ({
+    time: Number(r.time),
+    open: Number(r.open),
+    high: Number(r.high),
+    low: Number(r.low),
+    close: Number(r.close),
+  }));
+}
+
 let divergenceScanRunning = false;
 let divergenceSchedulerTimer = null;
 let divergenceLastScanDateEt = '';
@@ -1176,6 +1224,19 @@ const initDivergenceDB = async () => {
         weeks INTEGER DEFAULT 0,
         result_json TEXT,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (ticker, trade_date)
+      );
+    `);
+    await divergencePool.query(`
+      CREATE TABLE IF NOT EXISTS mini_chart_bars (
+        ticker VARCHAR(20) NOT NULL,
+        trade_date DATE NOT NULL,
+        open_price DOUBLE PRECISION NOT NULL,
+        high_price DOUBLE PRECISION NOT NULL,
+        low_price DOUBLE PRECISION NOT NULL,
+        close_price DOUBLE PRECISION NOT NULL,
+        bar_time BIGINT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (ticker, trade_date)
       );
     `);
@@ -4794,6 +4855,7 @@ registerChartRoutes({
   barsToTuples,
   pointsToTuples,
   getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
+  loadMiniChartBarsFromDb,
   getVDFStatus
 });
 
@@ -6278,6 +6340,10 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
         const key = iter.next().value;
         if (key !== undefined) miniBarsCacheByTicker.delete(key);
       }
+    }
+    // Persist to DB so mini-bars survive server restarts (fire-and-forget).
+    if (divergencePool) {
+      persistMiniChartBars(ticker, miniBarsCacheByTicker.get(ticker)).catch(() => {});
     }
   }
 
