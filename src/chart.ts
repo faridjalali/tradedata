@@ -4123,15 +4123,12 @@ function renderVolumeDeltaDivergenceSummary(
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
-    refreshButton.className = 'tf-btn icon-only';
+    refreshButton.className = 'settings-icon-btn';
     refreshButton.title = loading ? 'Refreshing divergence table...' : 'Refresh divergence table';
     refreshButton.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     refreshButton.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    refreshButton.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    refreshButton.style.padding = '0';
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
     refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
-    refreshButton.style.flex = '0 0 auto';
     refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
     refreshButton.disabled = false;
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -4293,9 +4290,9 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   }
 
   const btn = document.createElement('button');
-  btn.className = 'tf-btn icon-only vdf-refresh-btn';
+  btn.className = 'settings-icon-btn vdf-refresh-btn';
   btn.type = 'button';
-  btn.title = 'Refresh VD Analysis';
+  btn.title = 'Refresh Analysis';
   btn.style.position = 'absolute';
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
   // Position to the left of the VDF button: VDF is at right = SCALE_MIN_WIDTH_PX + 8,
@@ -4304,8 +4301,6 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   btn.style.zIndex = '34';
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.padding = '0';
   container.appendChild(btn);
   vdfRefreshButtonEl = btn;
   renderVDFRefreshIcon(false);
@@ -4872,13 +4867,21 @@ function buildProximityHtml(prox: VDFProximity): string {
 function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   loadVDFWeightsFromStorage();
   const panel = ensureVDFAnalysisPanel();
+  const ticker = currentChartTicker || '';
+
   if (!entry) {
-    panel.style.display = 'none';
-    panel.innerHTML = '';
+    // Show panel in grayed-out placeholder state (visible like other panes before data arrives)
+    panel.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid #21262d;opacity:0.45;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">\u25b8</span>
+        <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
+        <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
+      </div>
+    </div>`;
+    panel.style.display = 'block';
     return;
   }
 
-  const ticker = currentChartTicker || '';
   // Use best zone recomputed score for the header
   const bestZone = entry.zones[0];
   const recomputedBestScore = bestZone ? Math.round(recomputeVDFZoneScore(bestZone) * 100) : 0;
@@ -4889,8 +4892,6 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
 
   let collapsed = true;
   try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
-  // Auto-expand when accumulation is detected
-  if (entry.is_detected && !localStorage.getItem('chart_vdf_panel_collapsed')) collapsed = false;
 
   const chevron = collapsed ? '\u25b8' : '\u25be';
   const bodyDisplay = collapsed ? 'none' : 'block';
@@ -4899,7 +4900,7 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
     <div style="display:flex;align-items:center;gap:8px;">
       <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">${chevron}</span>
-      <span style="font-weight:600;color:#c9d1d9;">VD Analysis</span>
+      <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
       <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
     </div>
     <div style="display:flex;align-items:center;">
@@ -5621,6 +5622,7 @@ export async function renderCustomChart(
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureVDZoneOverlay(chartContainer);
   ensureVDFAnalysisPanel();
+  renderVDFAnalysisPanel(null);
   ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   syncTopPaneTickerLabel();
 
@@ -5777,7 +5779,16 @@ export async function renderCustomChart(
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
       renderVDZones(null);
-      renderVDFAnalysisPanel(null);
+      // Show grayed-out non-expandable Analysis header (no ticker, no body)
+      if (vdfAnalysisPanelEl) {
+        vdfAnalysisPanelEl.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid #21262d;opacity:0.45;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">\u25b8</span>
+            <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
+          </div>
+        </div>`;
+        vdfAnalysisPanelEl.style.display = 'block';
+      }
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
       deactivateRsiDivergencePlotTool();
       deactivateVolumeDeltaRsiDivergencePlotTool();

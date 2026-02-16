@@ -1344,10 +1344,11 @@ button:hover {
 }
 
 .tf-btn.icon-only {
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   padding: 0;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
