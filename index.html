@@ -81,6 +81,14 @@
               </svg>
             </button>
             <div id="global-settings-panel" class="global-settings-panel hidden">
+              <div class="global-settings-row" style="justify-content:space-between;">
+                <label class="global-settings-label">Theme</label>
+                <div id="global-theme-btns" style="display:flex;gap:6px;align-items:center;">
+                  <button class="theme-swatch-btn active" data-theme="dark" title="Dark"></button>
+                  <button class="theme-swatch-btn" data-theme="light" title="Light"></button>
+                  <button class="theme-swatch-btn" data-theme="beige" title="Beige"></button>
+                </div>
+              </div>
               <div class="global-settings-row global-settings-timezone-row">
                 <label for="global-timezone-select" class="global-settings-label">Timezone</label>
                 <select id="global-timezone-select" class="glass-input global-settings-select" aria-label="Timezone"></select>

@@ -1,4 +1,5 @@
 import { getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
+import { getThemeColors } from './theme';
 import {
     fetchDivergenceSignalsFromApi,
     toggleDivergenceFavorite,
@@ -1342,17 +1343,18 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
     const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.5) : 500;
     const OVERLAY_H = isMobile ? Math.floor(OVERLAY_W * 0.6) : 300;
 
+    const _tc = getThemeColors();
     overlay.style.cssText = `
         position: fixed;
         width: ${OVERLAY_W}px;
         height: ${OVERLAY_H}px;
-        background: #0d1117;
-        border: 1px solid #30363d;
+        background: ${_tc.bgColor};
+        border: 1px solid ${_tc.borderColor};
         border-radius: 6px;
         z-index: 1000;
         pointer-events: none;
         overflow: hidden;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 8px 24px ${_tc.shadowColor};
     `;
 
     // Position
@@ -1421,8 +1423,8 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
         width: OVERLAY_W,
         height: OVERLAY_H,
         layout: {
-            background: { color: '#0d1117' },
-            textColor: '#d1d4dc',
+            background: { color: _tc.bgColor },
+            textColor: _tc.textPrimary,
             fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
             attributionLogo: false,
         },

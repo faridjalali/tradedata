@@ -3,6 +3,7 @@
 import { RSIPoint, RSIDisplayMode } from './chartApi';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import { isMobileTouch } from './chart';
+import { getThemeColors } from './theme';
 
 // Declare Lightweight Charts global
 declare const LightweightCharts: any;
@@ -76,11 +77,12 @@ export class RSIChart {
     this.onTrendLineDrawn = options.onTrendLineDrawn;
 
     // Create RSI chart
+    const themeColors = getThemeColors();
     this.chart = LightweightCharts.createChart(options.container, {
       height: 400,
       layout: {
-        background: { color: '#0d1117' },
-        textColor: '#c9d1d9',
+        background: { color: themeColors.bgColor },
+        textColor: themeColors.textPrimary,
         fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
         attributionLogo: false
       },
@@ -98,10 +100,10 @@ export class RSIChart {
         rightBarStaysOnScroll: false,
         rightOffset: 10,
         tickMarkFormatter: (time: any, tickMarkType: number) => this.formatTickMark(time, tickMarkType),
-        borderColor: '#21262d'  // Show time scale at bottom of RSI chart
+        borderColor: themeColors.surfaceElevated  // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
-        borderColor: '#21262d',
+        borderColor: themeColors.surfaceElevated,
         minimumWidth: RSIChart.SCALE_MIN_WIDTH_PX,
         entireTextOnly: true,
         // Default view: 20-80 range (20% margin top + 20% margin bottom)
@@ -784,9 +786,10 @@ export class RSIChart {
     label.style.alignItems = 'center';
     label.style.padding = '0 8px';
     label.style.borderRadius = '4px';
-    label.style.border = '1px solid #30363d';
-    label.style.background = '#161b22';
-    label.style.color = '#c9d1d9';
+    const c = getThemeColors();
+    label.style.border = `1px solid ${c.borderColor}`;
+    label.style.background = c.cardBg;
+    label.style.color = c.textPrimary;
     label.style.fontSize = '12px';
     label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
     label.style.pointerEvents = 'none';
@@ -1049,6 +1052,21 @@ export class RSIChart {
     if (this.chart) {
       this.chart.resize(this.chart.options().width, 400);
       this.refreshTrendlineCrossLabels();
+    }
+  }
+
+  applyTheme(): void {
+    if (!this.chart) return;
+    const c = getThemeColors();
+    this.chart.applyOptions({
+      layout: { background: { color: c.bgColor }, textColor: c.textPrimary },
+      rightPriceScale: { borderColor: c.surfaceElevated },
+      timeScale: { borderColor: c.surfaceElevated },
+    });
+    for (const label of this.trendlineCrossLabels) {
+      label.element.style.background = c.cardBg;
+      label.element.style.border = `1px solid ${c.borderColor}`;
+      label.element.style.color = c.textPrimary;
     }
   }
 

@@ -1,4 +1,5 @@
 import { getAppTimeZone } from './timezone';
+import { getThemeColors } from './theme';
 
 // Chart.js is loaded globally via CDN in index.html
 declare const Chart: any;
@@ -44,6 +45,7 @@ function normalize(values: number[]): number[] {
 function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intraday: boolean): void {
     const canvas = document.getElementById('breadth-chart') as HTMLCanvasElement;
     if (!canvas) return;
+    const c = getThemeColors();
     const appTimeZone = getAppTimeZone();
 
     // Destroy previous chart
@@ -140,18 +142,18 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
             plugins: {
                 legend: {
                     labels: {
-                        color: '#c9d1d9',
+                        color: c.textPrimary,
                         font: { size: 12 },
                         usePointStyle: true,
                         pointStyle: 'line',
                     },
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(22, 27, 34, 0.95)',
-                    borderColor: '#30363d',
+                    backgroundColor: c.cardBgOverlay95,
+                    borderColor: c.borderColor,
                     borderWidth: 1,
-                    titleColor: '#c9d1d9',
-                    bodyColor: '#8b949e',
+                    titleColor: c.textPrimary,
+                    bodyColor: c.textSecondary,
                     padding: 12,
                     callbacks: {
                         label: function(context: any) {
@@ -167,26 +169,26 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
             scales: {
                 x: {
                     ticks: {
-                        color: '#8b949e',
+                        color: c.textSecondary,
                         maxRotation: 0,
                         autoSkip: true,
                         maxTicksLimit: 10,
                         font: { size: 11 },
                     },
                     grid: {
-                        color: 'rgba(48, 54, 61, 0.3)',
+                        color: c.borderOverlay30,
                     },
                 },
                 y: {
                     ticks: {
-                        color: '#8b949e',
+                        color: c.textSecondary,
                         font: { size: 11 },
                         callback: function(value: number | string) {
                             return (value as number).toFixed(1);
                         },
                     },
                     grid: {
-                        color: 'rgba(48, 54, 61, 0.3)',
+                        color: c.borderOverlay30,
                     },
                 },
             },
@@ -248,3 +250,9 @@ export function setBreadthMetric(metric: 'SVIX' | 'RSP' | 'MAGS'): void {
 export function initBreadth(): void {
     loadBreadth();
 }
+
+window.addEventListener('themechange', () => {
+    if (breadthChart) {
+        loadBreadth();
+    }
+});

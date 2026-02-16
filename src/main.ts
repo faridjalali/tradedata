@@ -30,6 +30,7 @@ import {
     onAppTimeZoneChange,
     setAppTimeZone
 } from './timezone';
+import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 
 let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence'; 
 let divergenceDashboardScrollY = 0;
@@ -314,6 +315,17 @@ function initGlobalSettingsPanel() {
         closePanel();
     });
 
+    // Theme buttons
+    const themeBtns = panel.querySelectorAll<HTMLElement>('.theme-swatch-btn');
+    const currentThemeName = getTheme();
+    themeBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.theme === currentThemeName);
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.theme as ThemeName;
+            setTheme(name);
+            themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === name));
+        });
+    });
 }
 
 async function checkServerSession(): Promise<boolean> {
@@ -746,6 +758,7 @@ function bootstrapApplication(): void {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
     initializeSiteLock(() => {
         bootstrapApplication();
     });

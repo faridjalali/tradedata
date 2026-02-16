@@ -15,6 +15,7 @@ import {
   loadTrendlineStorage, saveTrendlineStorage,
   buildTrendlineContextKey, loadPersistedTrendlinesForContext
 } from './trendlineStorage';
+import { getThemeColors } from './theme';
 
 declare const Chart: any;
 
@@ -113,7 +114,8 @@ const FUTURE_TIMELINE_TRADING_DAYS = 252;
 const SCALE_LABEL_CHARS = 4;
 const SCALE_MIN_WIDTH_PX = 56;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
-const MONTH_GRIDLINE_COLOR = '#21262d';
+function tc() { return getThemeColors(); }
+function getMonthGridlineColor(): string { return tc().monthGridlineColor; }
 const SETTINGS_ICON = '⚙';
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 
@@ -1336,7 +1338,7 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
     line.style.bottom = '0';
     line.style.left = `${Math.round(x)}px`;
     line.style.width = '1px';
-    line.style.background = MONTH_GRIDLINE_COLOR;
+    line.style.background = getMonthGridlineColor();
     overlayEl.appendChild(line);
   }
 }
@@ -1365,7 +1367,7 @@ function applyPriceGridOptions(): void {
       vertLines: { visible: false },
       horzLines: {
         visible: priceChartSettings.horizontalGridlines,
-        color: MONTH_GRIDLINE_COLOR
+        color: getMonthGridlineColor()
       }
     }
   });
@@ -1537,9 +1539,9 @@ function syncTopPaneTickerLabel(): void {
     label.style.alignItems = 'center';
     label.style.padding = '0 8px';
     label.style.borderRadius = '4px';
-    label.style.border = '1px solid #30363d';
-    label.style.background = '#161b22';
-    label.style.color = '#c9d1d9';
+    label.style.border = `1px solid ${tc().borderColor}`;
+    label.style.background = tc().cardBg;
+    label.style.color = tc().textPrimary;
     label.style.fontSize = '12px';
     label.style.fontWeight = '600';
     label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
@@ -1887,9 +1889,9 @@ function createPaneNameBadge(container: HTMLElement, pane: PaneControlType): HTM
   badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   badge.style.padding = '0 8px';
   badge.style.borderRadius = '4px';
-  badge.style.border = '1px solid #30363d';
-  badge.style.background = '#161b22';
-  badge.style.color = '#c9d1d9';
+  badge.style.border = `1px solid ${tc().borderColor}`;
+  badge.style.background = tc().cardBg;
+  badge.style.color = tc().textPrimary;
   badge.style.display = 'inline-flex';
   badge.style.alignItems = 'center';
   badge.style.justifyContent = 'center';
@@ -1933,9 +1935,9 @@ function createPaneTrendlineButton(
   btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.borderRadius = '4px';
-  btn.style.border = '1px solid #30363d';
-  btn.style.background = '#161b22';
-  btn.style.color = '#c9d1d9';
+  btn.style.border = `1px solid ${tc().borderColor}`;
+  btn.style.background = tc().cardBg;
+  btn.style.color = tc().textPrimary;
   btn.style.cursor = 'pointer';
   btn.style.padding = '0';
   container.appendChild(btn);
@@ -1950,7 +1952,7 @@ function setPaneToolButtonActive(pane: TrendToolPane, action: 'trend' | 'diverge
   const btn = getPaneToolButton(pane, action);
   if (!btn) return;
   btn.classList.toggle('active', active);
-  btn.style.background = active ? '#1f6feb' : '#161b22';
+  btn.style.background = active ? tc().highlight : tc().cardBg;
   btn.style.color = '#ffffff';
   btn.textContent = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
 }
@@ -2098,9 +2100,9 @@ function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): H
   overlay.style.width = '468px';
   overlay.style.maxWidth = '100%';
   overlay.style.height = '286px';
-  overlay.style.border = '1px solid #30363d';
+  overlay.style.border = `1px solid ${tc().borderColor}`;
   overlay.style.borderRadius = '6px';
-  overlay.style.background = 'rgba(13, 17, 23, 0.95)';
+  overlay.style.background = tc().bgOverlay95;
   overlay.style.backdropFilter = 'blur(4px)';
   overlay.style.zIndex = '35';
   overlay.style.pointerEvents = 'none';
@@ -2258,34 +2260,34 @@ function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number)
           display: false
         },
         tooltip: {
-          backgroundColor: 'rgba(22, 27, 34, 0.95)',
-          borderColor: '#30363d',
+          backgroundColor: tc().cardBgOverlay95,
+          borderColor: tc().borderColor,
           borderWidth: 1,
-          titleColor: '#c9d1d9',
-          bodyColor: '#8b949e'
+          titleColor: tc().textPrimary,
+          bodyColor: tc().textSecondary
         }
       },
       scales: {
         x: {
           display: false,
           ticks: {
-            color: '#8b949e',
+            color: tc().textSecondary,
             maxRotation: 0,
             autoSkip: true,
             maxTicksLimit: 6,
             font: { size: 10 }
           },
-          grid: { color: 'rgba(48, 54, 61, 0.22)' }
+          grid: { color: tc().borderOverlay22 }
         },
         y: {
           display: false,
           min: 0,
           max: 100,
           ticks: {
-            color: '#8b949e',
+            color: tc().textSecondary,
             font: { size: 10 }
           },
-          grid: { color: 'rgba(48, 54, 61, 0.22)' }
+          grid: { color: tc().borderOverlay22 }
         }
       }
     }
@@ -2427,18 +2429,18 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.zIndex = '31';
   panel.style.width = '280px';
   panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = 'rgba(22, 27, 34, 0.95)';
-  panel.style.border = '1px solid #30363d';
+  panel.style.background = tc().cardBgOverlay95;
+  panel.style.border = `1px solid ${tc().borderColor}`;
   panel.style.borderRadius = '6px';
   panel.style.padding = '10px';
   panel.style.display = 'none';
-  panel.style.color = '#c9d1d9';
+  panel.style.color = tc().textPrimary;
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Chart</div>
-      <button type="button" data-price-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" data-price-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Vertical gridlines</span>
@@ -2450,7 +2452,7 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     </label>
     <label style="margin-bottom:4px;">
       <span>MA source</span>
-      <select data-price-setting="ma-source" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+      <select data-price-setting="ma-source" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
         <option value="daily">Daily</option>
         <option value="timeframe">Chart</option>
       </select>
@@ -2458,11 +2460,11 @@ function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
     ${priceChartSettings.ma.map((_, i) => `
       <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; min-height:26px; margin-bottom:6px;">
         <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
-        <select data-price-setting="ma-type-${i}" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+        <select data-price-setting="ma-type-${i}" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
           <option value="SMA">SMA</option>
           <option value="EMA">EMA</option>
         </select>
-        <input data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" style="width:58px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+        <input data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" style="width:58px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
         <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
       </div>
     `).join('')}
@@ -2534,22 +2536,22 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.zIndex = '31';
   panel.style.width = '230px';
   panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = 'rgba(22, 27, 34, 0.95)';
-  panel.style.border = '1px solid #30363d';
+  panel.style.background = tc().cardBgOverlay95;
+  panel.style.border = `1px solid ${tc().borderColor}`;
   panel.style.borderRadius = '6px';
   panel.style.padding = '10px';
   panel.style.display = 'none';
-  panel.style.color = '#c9d1d9';
+  panel.style.color = tc().textPrimary;
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">RSI</div>
-      <button type="button" data-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" data-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Length</span>
-      <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+      <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
     </label>
     <label style="margin-bottom:6px;">
       <span>Line color</span>
@@ -2561,7 +2563,7 @@ function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
     </label>
     <label style="margin-bottom:6px;">
       <span>Midline style</span>
-      <select data-rsi-setting="midline-style" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+      <select data-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
         <option value="dotted">Dotted</option>
         <option value="solid">Solid</option>
       </select>
@@ -2620,22 +2622,22 @@ function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement 
   panel.style.zIndex = '31';
   panel.style.width = '230px';
   panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = 'rgba(22, 27, 34, 0.95)';
-  panel.style.border = '1px solid #30363d';
+  panel.style.background = tc().cardBgOverlay95;
+  panel.style.border = `1px solid ${tc().borderColor}`;
   panel.style.borderRadius = '6px';
   panel.style.padding = '10px';
   panel.style.display = 'none';
-  panel.style.color = '#c9d1d9';
+  panel.style.color = tc().textPrimary;
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Volume Delta</div>
-      <button type="button" data-vd-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" data-vd-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Source</span>
-      <select data-vd-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+      <select data-vd-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
         ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
       </select>
     </label>
@@ -2731,26 +2733,26 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
   panel.style.zIndex = '31';
   panel.style.width = '230px';
   panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = 'rgba(22, 27, 34, 0.95)';
-  panel.style.border = '1px solid #30363d';
+  panel.style.background = tc().cardBgOverlay95;
+  panel.style.border = `1px solid ${tc().borderColor}`;
   panel.style.borderRadius = '6px';
   panel.style.padding = '10px';
   panel.style.display = 'none';
-  panel.style.color = '#c9d1d9';
+  panel.style.color = tc().textPrimary;
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Volume Delta RSI</div>
-      <button type="button" data-vd-rsi-setting="reset" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" data-vd-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Length</span>
-      <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;" />
+      <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
     </label>
     <label style="margin-bottom:6px;">
       <span>Source</span>
-      <select data-vd-rsi-setting="source-interval" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+      <select data-vd-rsi-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
         ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
       </select>
     </label>
@@ -2764,7 +2766,7 @@ function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivEleme
     </label>
     <label style="margin-bottom:6px;">
       <span>Midline style</span>
-      <select data-vd-rsi-setting="midline-style" style="background:#0d1117; color:#c9d1d9; border:1px solid #30363d; border-radius:4px; padding:2px 4px;">
+      <select data-vd-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
         <option value="dotted">Dotted</option>
         <option value="solid">Solid</option>
       </select>
@@ -3011,9 +3013,9 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   changeEl.style.alignItems = 'center';
   changeEl.style.padding = '0 8px';
   changeEl.style.borderRadius = '4px';
-  changeEl.style.border = '1px solid #30363d';
-  changeEl.style.background = '#161b22';
-  changeEl.style.color = '#c9d1d9';
+  changeEl.style.border = `1px solid ${tc().borderColor}`;
+  changeEl.style.background = tc().cardBg;
+  changeEl.style.color = tc().textPrimary;
   changeEl.style.fontSize = '12px';
   changeEl.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   changeEl.style.pointerEvents = 'none';
@@ -3056,7 +3058,7 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
 
   const sign = deltaValue > 0 ? '+' : '';
   changeEl.textContent = `${sign}${deltaValue.toFixed(2)}%`;
-  changeEl.style.color = deltaValue > 0 ? '#26a69a' : deltaValue < 0 ? '#ef5350' : '#c9d1d9';
+  changeEl.style.color = deltaValue > 0 ? '#26a69a' : deltaValue < 0 ? '#ef5350' : tc().textPrimary;
   changeEl.style.display = 'inline-flex';
   layoutTopPaneBadges(container);
 }
@@ -3071,7 +3073,7 @@ function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
   messageEl.style.top = '50%';
   messageEl.style.left = '50%';
   messageEl.style.transform = 'translate(-50%, -50%)';
-  messageEl.style.color = '#8b949e';
+  messageEl.style.color = tc().textSecondary;
   messageEl.style.fontSize = '1rem';
   messageEl.style.fontWeight = '600';
   messageEl.style.pointerEvents = 'none';
@@ -3163,9 +3165,9 @@ function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
   label.style.alignItems = 'center';
   label.style.padding = '0 8px';
   label.style.borderRadius = '4px';
-  label.style.border = '1px solid #30363d';
-  label.style.background = '#161b22';
-  label.style.color = '#c9d1d9';
+  label.style.border = `1px solid ${tc().borderColor}`;
+  label.style.background = tc().cardBg;
+  label.style.color = tc().textPrimary;
   label.style.fontSize = '12px';
   label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   label.style.pointerEvents = 'none';
@@ -3587,8 +3589,8 @@ function sameLogicalRange(a: any, b: any): boolean {
 function createPriceChart(container: HTMLElement) {
   const chart = createChart(container, {
     layout: {
-      background: { color: '#0d1117' },
-      textColor: '#d1d4dc',
+      background: { color: tc().bgColor },
+      textColor: tc().textPrimary,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       attributionLogo: false,
     },
@@ -3616,7 +3618,7 @@ function createPriceChart(container: HTMLElement) {
       axisDoubleClickReset: true,
     },
     rightPriceScale: {
-      borderColor: '#2b2b43',
+      borderColor: tc().surfaceElevated,
       minimumWidth: SCALE_MIN_WIDTH_PX,
       entireTextOnly: true,
     },
@@ -3662,8 +3664,8 @@ function createPriceChart(container: HTMLElement) {
 function createVolumeDeltaRsiChart(container: HTMLElement) {
   const chart = createChart(container, {
     layout: {
-      background: { color: '#0d1117' },
-      textColor: '#c9d1d9',
+      background: { color: tc().bgColor },
+      textColor: tc().textPrimary,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       attributionLogo: false,
     },
@@ -3697,7 +3699,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       },
     },
     rightPriceScale: {
-      borderColor: '#21262d',
+      borderColor: tc().surfaceElevated,
       minimumWidth: SCALE_MIN_WIDTH_PX,
       entireTextOnly: true,
       // Default view: 20-80 range (20% margin top + 20% margin bottom)
@@ -3767,8 +3769,8 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
 function createVolumeDeltaChart(container: HTMLElement) {
   const chart = createChart(container, {
     layout: {
-      background: { color: '#0d1117' },
-      textColor: '#c9d1d9',
+      background: { color: tc().bgColor },
+      textColor: tc().textPrimary,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       attributionLogo: false,
     },
@@ -3802,7 +3804,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
       },
     },
     rightPriceScale: {
-      borderColor: '#21262d',
+      borderColor: tc().surfaceElevated,
       minimumWidth: SCALE_MIN_WIDTH_PX,
       entireTextOnly: true,
     },
@@ -3840,7 +3842,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
 
   histogramSeries.createPriceLine({
     price: 0,
-    color: '#8b949e',
+    color: tc().textSecondary,
     lineWidth: 1,
     lineStyle: 2,
     axisLabelVisible: false,
@@ -4021,8 +4023,8 @@ function renderVolumeDeltaDivergenceSummary(
     badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
     badge.style.padding = '0';
     badge.style.borderRadius = '4px';
-    badge.style.border = '1px solid #30363d';
-    badge.style.background = '#161b22';
+    badge.style.border = `1px solid ${tc().borderColor}`;
+    badge.style.background = tc().cardBg;
     badge.style.fontSize = '12px';
     badge.style.fontWeight = '600';
     badge.style.lineHeight = '1';
@@ -4183,8 +4185,8 @@ function renderVolumeDeltaDivergenceSummary(
 // VDF (Volume Divergence Flag) Detector Button
 // =============================================================================
 
-const VDF_COLOR_LOADING = '#c9d1d9';
-const VDF_COLOR_NOT_DETECTED = '#484f58';
+function VDF_COLOR_LOADING() { return tc().textPrimary; }
+function VDF_COLOR_NOT_DETECTED() { return tc().textMuted; }
 const VDF_COLOR_ERROR = '#ef5350';
 
 function ensureVDFToolbar(container: HTMLElement): HTMLDivElement {
@@ -4224,9 +4226,9 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.padding = '0 5px';
   btn.style.borderRadius = '4px';
-  btn.style.border = '1px solid #30363d';
-  btn.style.background = '#161b22';
-  btn.style.color = VDF_COLOR_LOADING;
+  btn.style.border = `1px solid ${tc().borderColor}`;
+  btn.style.background = tc().cardBg;
+  btn.style.color = VDF_COLOR_LOADING();
   btn.style.cursor = 'default';
   btn.style.pointerEvents = 'none';
   btn.style.fontSize = '9px';
@@ -4340,19 +4342,19 @@ function updateVDFButton(entry: VDFCacheEntry): void {
   if (entry.is_detected) {
     const score = Math.round(entry.composite_score * 100);
     vdfButtonEl.textContent = String(score);
-    vdfButtonEl.style.color = score >= 80 ? '#26a69a' : score >= 60 ? '#8bc34a' : '#c9d1d9';
+    vdfButtonEl.style.color = score >= 80 ? '#26a69a' : score >= 60 ? '#8bc34a' : tc().textPrimary;
     const proxLevel = entry.proximity?.level || 'none';
     if (proxLevel === 'imminent' || proxLevel === 'high') {
       vdfButtonEl.style.borderColor = '#ff9800';
     } else if (proxLevel === 'elevated') {
       vdfButtonEl.style.borderColor = '#ffc107';
     } else {
-      vdfButtonEl.style.borderColor = '#30363d';
+      vdfButtonEl.style.borderColor = tc().borderColor;
     }
   } else {
     vdfButtonEl.textContent = 'VDF';
-    vdfButtonEl.style.color = VDF_COLOR_NOT_DETECTED;
-    vdfButtonEl.style.borderColor = '#30363d';
+    vdfButtonEl.style.color = VDF_COLOR_NOT_DETECTED();
+    vdfButtonEl.style.borderColor = tc().borderColor;
   }
   vdfButtonEl.title = buildVDFTooltip(entry);
 }
@@ -4580,7 +4582,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
   }
 
   vdfLoadingForTicker = ticker;
-  setVDFButtonColor(VDF_COLOR_LOADING, 'VDF: Loading...');
+  setVDFButtonColor(VDF_COLOR_LOADING(), 'VDF: Loading...');
 
   try {
     const params = new URLSearchParams({ ticker, mode: 'chart' });
@@ -4634,7 +4636,7 @@ function applyPricePaneDivergentBarColors(): void {
   const bullishColor = volumeDeltaSettings.bullishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
   const bearishColor = volumeDeltaSettings.bearishDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
   const configuredNeutral = String(volumeDeltaSettings.neutralDivergentColor || '').trim().toLowerCase();
-  const convergentColor = configuredNeutral === '#c9d1d9'
+  const convergentColor = configuredNeutral === tc().textPrimary
     ? DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor
     : (volumeDeltaSettings.neutralDivergentColor || DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor);
 
@@ -4823,7 +4825,7 @@ function showLoadingOverlay(container: HTMLElement): void {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(13, 17, 23, 0.95);
+    background: ${tc().bgOverlay95};
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4835,7 +4837,7 @@ function showLoadingOverlay(container: HTMLElement): void {
   const spinner = document.createElement('div');
   spinner.innerHTML = `
     <svg width="40" height="40" viewBox="0 0 40 40" style="animation: spin 1s linear infinite;">
-      <circle cx="20" cy="20" r="16" fill="none" stroke="#58a6ff" stroke-width="3"
+      <circle cx="20" cy="20" r="16" fill="none" stroke="${tc().spinnerColor}" stroke-width="3"
               stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" opacity="0.8"/>
     </svg>
     <style>
@@ -4864,7 +4866,7 @@ function showRetryOverlay(container: HTMLElement, onRetry: () => void): void {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(13, 17, 23, 0.95);
+    background: ${tc().bgOverlay95};
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4875,9 +4877,9 @@ function showRetryOverlay(container: HTMLElement, onRetry: () => void): void {
   const retryBtn = document.createElement('button');
   retryBtn.type = 'button';
   retryBtn.textContent = 'Try Refreshing';
-  retryBtn.style.background = '#161b22';
-  retryBtn.style.color = '#c9d1d9';
-  retryBtn.style.border = '1px solid #30363d';
+  retryBtn.style.background = tc().cardBg;
+  retryBtn.style.color = tc().textPrimary;
+  retryBtn.style.border = `1px solid ${tc().borderColor}`;
   retryBtn.style.borderRadius = '6px';
   retryBtn.style.padding = '8px 12px';
   retryBtn.style.fontSize = '12px';
@@ -6025,6 +6027,41 @@ async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSi
     if (nextTicker) await fetchForTicker(nextTicker);
     if (prevTicker) await fetchForTicker(prevTicker);
 }
+
+function reapplyInlineThemeStyles(): void {
+  const c = tc();
+  // Update trendline cross labels
+  document.querySelectorAll('.trendline-cross-label').forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    htmlEl.style.border = `1px solid ${c.borderColor}`;
+    htmlEl.style.background = c.cardBg;
+    htmlEl.style.color = c.textPrimary;
+  });
+  // Update VDF button
+  if (typeof vdfButtonEl !== 'undefined' && vdfButtonEl) {
+    vdfButtonEl.style.border = `1px solid ${c.borderColor}`;
+    vdfButtonEl.style.background = c.cardBg;
+  }
+}
+
+window.addEventListener('themechange', () => {
+  const c = tc();
+  const chartOpts = {
+    layout: { background: { color: c.bgColor }, textColor: c.textPrimary },
+    rightPriceScale: { borderColor: c.surfaceElevated },
+    timeScale: { borderColor: c.surfaceElevated },
+    grid: { horzLines: { color: c.monthGridlineColor } },
+  };
+  if (priceChart) priceChart.applyOptions(chartOpts);
+  if (volumeDeltaChart) volumeDeltaChart.applyOptions(chartOpts);
+  if (volumeDeltaRsiChart) volumeDeltaRsiChart.applyOptions(chartOpts);
+  if (rsiChart) rsiChart.applyTheme();
+  // Re-render month gridlines and VD zones
+  refreshMonthGridLines();
+  refreshVDZones();
+  // Update existing DOM elements with new theme colors
+  reapplyInlineThemeStyles();
+});
 
 export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {
   if (!volumeDeltaPaneContainerEl) return;

@@ -1,4 +1,5 @@
 import { escapeHtml } from './utils';
+import { getThemeColors } from './theme';
 
 // ─── VDF Types ──────────────────────────────────────────────────────────────
 
@@ -100,38 +101,42 @@ function vdfScoreTier(score: number): string {
 function vdfScoreColor(score: number): string {
   if (score >= 80) return '#26a69a';
   if (score >= 60) return '#8bc34a';
-  return '#c9d1d9';
+  const c = getThemeColors();
+  return c.textPrimary;
 }
 
 function vdfProximityColor(level: string): string {
   if (level === 'imminent') return '#f44336';
   if (level === 'high') return '#ff9800';
   if (level === 'elevated') return '#ffc107';
-  return '#8b949e';
+  const c = getThemeColors();
+  return c.textSecondary;
 }
 
 // ─── HTML Builders ──────────────────────────────────────────────────────────
 
 function buildComponentBarsHtml(components: Record<string, number>): string {
+  const c = getThemeColors();
   return getVDFComponentLabels().map(([key, label, weight]: [string, string, string]) => {
     const val = Number(components[key]) || 0;
     const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
-    const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : '#484f58';
+    const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : c.textMuted;
     return `<div style="display:grid;grid-template-columns:130px 1fr 36px;gap:6px;align-items:center;margin:2px 0;">
-      <span style="color:#8b949e;font-size:11px;white-space:nowrap;">${escapeHtml(label)} (${weight})</span>
-      <div style="height:4px;background:#21262d;border-radius:2px;overflow:hidden;">
+      <span style="color:${c.textSecondary};font-size:11px;white-space:nowrap;">${escapeHtml(label)} (${weight})</span>
+      <div style="height:4px;background:${c.surfaceElevated};border-radius:2px;overflow:hidden;">
         <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;"></div>
       </div>
-      <span style="color:#c9d1d9;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${val.toFixed(2)}</span>
+      <span style="color:${c.textPrimary};font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${val.toFixed(2)}</span>
     </div>`;
   }).join('');
 }
 
 function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
+  const c = getThemeColors();
   const recomputed = recomputeVDFZoneScore(zone);
   const scoreInt = Math.round(recomputed * 100);
   const serverScoreInt = Math.round(zone.score * 100);
-  const isCustomWeights = !VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
+  const isCustomWeights = !VDF_COMPONENTS.every(comp => vdfWeights[comp.key] === comp.defaultWeight);
   const label = isBest ? `Zone ${index + 1} (Primary)` : `Zone ${index + 1}`;
   const color = vdfScoreColor(scoreInt);
 
@@ -140,30 +145,30 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
   if (zone.overallPriceChange != null) parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
   if (zone.netDeltaPct != null) parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
   if (zone.absorptionPct != null) parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
-  if (parts.length) metricsLine = `<div style="margin:4px 0;color:#8b949e;font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
+  if (parts.length) metricsLine = `<div style="margin:4px 0;color:${c.textSecondary};font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let detailLine = '';
   const dParts: string[] = [];
   if (zone.accumWeeks != null && zone.weeks) dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
   if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
   if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0) dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
-  if (dParts.length) detailLine = `<div style="margin:2px 0;color:#8b949e;font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
+  if (dParts.length) detailLine = `<div style="margin:2px 0;color:${c.textSecondary};font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let componentsHtml = '';
   if (zone.components) {
-    componentsHtml = `<div style="margin-top:8px;"><div style="color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
+    componentsHtml = `<div style="margin-top:8px;"><div style="color:${c.textSecondary};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
   }
 
   const scoreDiffHtml = isCustomWeights && serverScoreInt !== scoreInt
-    ? `<span style="font-size:10px;color:#484f58;margin-left:4px;" title="Server score with default weights">(was ${serverScoreInt})</span>`
+    ? `<span style="font-size:10px;color:${c.textMuted};margin-left:4px;" title="Server score with default weights">(was ${serverScoreInt})</span>`
     : '';
 
-  return `<div style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:12px;margin-bottom:8px;">
+  return `<div style="background:${c.cardBg};border:1px solid ${c.surfaceElevated};border-radius:4px;padding:12px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <span style="font-weight:600;font-size:13px;color:#c9d1d9;">${escapeHtml(label)}</span>
+      <span style="font-weight:600;font-size:13px;color:${c.textPrimary};">${escapeHtml(label)}</span>
       <span><span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${scoreInt}</span>${scoreDiffHtml}</span>
     </div>
-    <div style="color:#c9d1d9;font-size:12px;">${formatVDFDate(zone.startDate)} \u2192 ${formatVDFDate(zone.endDate)} (${zone.windowDays} trading days${zone.weeks ? `, ${zone.weeks} wk` : ''})</div>
+    <div style="color:${c.textPrimary};font-size:12px;">${formatVDFDate(zone.startDate)} \u2192 ${formatVDFDate(zone.endDate)} (${zone.windowDays} trading days${zone.weeks ? `, ${zone.weeks} wk` : ''})</div>
     ${metricsLine}
     ${detailLine}
     ${componentsHtml}
@@ -171,6 +176,7 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
 }
 
 function buildDistributionHtml(dist: VDFDistribution, index: number): string {
+  const c = getThemeColors();
   let detail = '';
   const parts: string[] = [];
   if (dist.priceChangePct != null) parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
@@ -179,18 +185,19 @@ function buildDistributionHtml(dist: VDFDistribution, index: number): string {
 
   return `<div style="background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:4px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-weight:600;font-size:12px;color:#ef5350;margin-bottom:2px;">Cluster ${index + 1}: ${formatVDFDate(dist.startDate)} \u2192 ${formatVDFDate(dist.endDate)} (${dist.spanDays} days)</div>
-    ${detail ? `<div style="color:#8b949e;font-size:12px;">${escapeHtml(detail)}</div>` : ''}
+    ${detail ? `<div style="color:${c.textSecondary};font-size:12px;">${escapeHtml(detail)}</div>` : ''}
   </div>`;
 }
 
 function buildProximityHtml(prox: VDFProximity): string {
   if (prox.level === 'none' && prox.compositeScore === 0) return '';
+  const c = getThemeColors();
   const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
   const levelColor = vdfProximityColor(prox.level);
 
   const signalRows = prox.signals.map(sig =>
     `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;">
-      <span style="color:#c9d1d9;">\u2713 ${escapeHtml(sig.detail)}</span>
+      <span style="color:${c.textPrimary};">\u2713 ${escapeHtml(sig.detail)}</span>
       <span style="color:${levelColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;white-space:nowrap;margin-left:12px;">+${sig.points}</span>
     </div>`
   ).join('');
@@ -208,11 +215,12 @@ function buildProximityHtml(prox: VDFProximity): string {
 
 export function ensureVDFAnalysisPanel(): HTMLDivElement {
   if (vdfAnalysisPanelEl) return vdfAnalysisPanelEl;
+  const c = getThemeColors();
   const chartContent = document.getElementById('chart-content');
   if (!chartContent) return document.createElement('div');
   const panel = document.createElement('div');
   panel.id = 'vdf-analysis-panel';
-  panel.style.cssText = 'width:100%;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:none;';
+  panel.style.cssText = `width:100%;border-radius:6px;border:1px solid ${c.borderColor};background:${c.bgColor};color:${c.textPrimary};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:none;`;
   chartContent.insertBefore(panel, chartContent.firstChild);
   vdfAnalysisPanelEl = panel;
   return panel;
@@ -238,14 +246,15 @@ export function clearVDFAnalysisPanel(): void {
 export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: string): void {
   loadVDFWeightsFromStorage();
   const panel = ensureVDFAnalysisPanel();
+  const c = getThemeColors();
 
   if (!entry) {
     // Show panel in grayed-out placeholder state (visible like other panes before data arrives)
-    panel.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid #21262d;opacity:0.45;">
+    panel.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid ${c.surfaceElevated};opacity:0.45;">
       <div style="display:flex;align-items:center;gap:8px;">
-        <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">\u25b8</span>
-        <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
-        ${ticker ? `<span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>` : ''}
+        <span class="vdf-ap-chevron" style="font-size:12px;color:${c.textSecondary};width:12px;">\u25b8</span>
+        <span style="font-weight:600;color:${c.textPrimary};">Analysis</span>
+        ${ticker ? `<span style="color:${c.textSecondary};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>` : ''}
       </div>
     </div>`;
     panel.style.display = 'block';
@@ -267,16 +276,16 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
   const bodyDisplay = collapsed ? 'none' : 'block';
 
   // Header
-  const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
+  const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid ${c.surfaceElevated};">
     <div style="display:flex;align-items:center;gap:8px;">
-      <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">${chevron}</span>
-      <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
-      <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
+      <span class="vdf-ap-chevron" style="font-size:12px;color:${c.textSecondary};width:12px;">${chevron}</span>
+      <span style="font-weight:600;color:${c.textPrimary};">Analysis</span>
+      <span style="color:${c.textSecondary};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
     </div>
     <div style="display:flex;align-items:center;">
       ${entry.is_detected
-        ? `<span style="font-size:11px;color:#484f58;">${escapeHtml(tier)}</span>`
-        : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
+        ? `<span style="font-size:11px;color:${c.textMuted};">${escapeHtml(tier)}</span>`
+        : `<span style="font-size:11px;color:${c.textMuted};">Not detected</span>`}
     </div>
   </div>`;
 
@@ -290,7 +299,7 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
       if (metrics.totalDays) scanInfo += ` (${metrics.totalDays} trading days)`;
       scanInfo += '.';
     }
-    bodyHtml = `<div style="padding:14px;color:#8b949e;font-size:13px;">No accumulation patterns detected in the scan period.${scanInfo}</div>`;
+    bodyHtml = `<div style="padding:14px;color:${c.textSecondary};font-size:13px;">No accumulation patterns detected in the scan period.${scanInfo}</div>`;
   } else {
     const zoneCount = entry.zones.length;
     let assessParts = `Volume-delta accumulation <span style="color:${color};font-weight:600;">${tier}</span> (score: ${score}).`;
@@ -306,7 +315,7 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
       assessParts += ` <span style="color:#ef5350;">${entry.distribution.length} distribution cluster${entry.distribution.length !== 1 ? 's' : ''}</span> also found.`;
     }
 
-    const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:#c9d1d9;">${assessParts}</div>`;
+    const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:${c.textPrimary};">${assessParts}</div>`;
 
     // Chart legend
     const swatchStyle = 'display:inline-block;width:14px;height:5px;border-radius:1px;vertical-align:middle;margin-right:5px;';
@@ -327,10 +336,10 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
       const plc = vdfProximityColor(proxLegend.level);
       legendItems.push(`<span style="white-space:nowrap;"><span style="${glowStyle}background:${plc};box-shadow:0 0 4px ${plc};"></span>Proximity</span>`);
     }
-    const legendHtml = `<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding:8px 12px;background:#161b22;border:1px solid #21262d;border-radius:4px;margin-bottom:16px;font-size:11px;color:#8b949e;">${legendItems.join('')}</div>`;
+    const legendHtml = `<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding:8px 12px;background:${c.cardBg};border:1px solid ${c.surfaceElevated};border-radius:4px;margin-bottom:16px;font-size:11px;color:${c.textSecondary};">${legendItems.join('')}</div>`;
 
     // Zones section
-    const sectionStyle = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;margin:16px 0 8px;border-bottom:1px solid #21262d;padding-bottom:4px;';
+    const sectionStyle = `font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${c.textSecondary};margin:16px 0 8px;border-bottom:1px solid ${c.surfaceElevated};padding-bottom:4px;`;
     let zonesHtml = '';
     if (entry.zones.length > 0) {
       zonesHtml = `<div style="${sectionStyle}">Accumulation Zones</div>`;
