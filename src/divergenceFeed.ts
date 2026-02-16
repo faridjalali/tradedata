@@ -1623,6 +1623,21 @@ export function setupDivergenceFeedDelegation(): void {
         destroyMiniChartOverlay();
     }, true);
 
+    // --- Prevent iOS Safari copy/find-selection on long-press ---
+    // CSS user-select:none is insufficient on iOS; JS event prevention required.
+    view.addEventListener('contextmenu', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.alert-card')) {
+            e.preventDefault();
+        }
+    });
+    view.addEventListener('selectstart', (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.alert-card')) {
+            e.preventDefault();
+        }
+    });
+
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
     view.addEventListener('touchstart', (e: Event) => {
         const te = e as TouchEvent;
