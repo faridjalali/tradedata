@@ -1646,6 +1646,11 @@ export function setupDivergenceFeedDelegation(): void {
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
     // Use passive: false to allow preventDefault() if we need to block scrolling/menu
     view.addEventListener('touchstart', (e: Event) => {
+        // Immediately clear any selection to prevent "Copy" menu
+        if (typeof window.getSelection === 'function') {
+            window.getSelection()?.removeAllRanges();
+        }
+
         const te = e as TouchEvent;
         if (te.touches.length !== 1) return;
         const target = te.target as HTMLElement;
