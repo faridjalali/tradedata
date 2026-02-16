@@ -3235,8 +3235,18 @@ function projectFutureTradingUnixSeconds(lastTimeSeconds: number, futureBars: nu
     }
     return wholeTime;
   }
-  // Intraday: simple linear projection (step already accounts for bar spacing)
-  return lastTimeSeconds + (futureBars * stepSeconds);
+  // Intraday: spread bars across trading days, skipping weekends.
+  const barsPerDay = barsPerTradingDayFromStep(stepSeconds);
+  const tradingDaysAhead = Math.floor(futureBars / barsPerDay);
+  const intraDayBars = futureBars - (tradingDaysAhead * barsPerDay);
+  const d = new Date(lastTimeSeconds * 1000);
+  let remaining = tradingDaysAhead;
+  while (remaining > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return Math.floor(d.getTime() / 1000) + (intraDayBars * stepSeconds);
 }
 
 function volumeDeltaIndexToUnixSeconds(
