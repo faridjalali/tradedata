@@ -659,6 +659,13 @@ h2 {
   transition: all 0.2s;
   cursor: pointer;
   overflow: hidden;
+
+  /* Disable text selection so the magnifier doesn't trigger */
+  -webkit-user-select: none;
+  user-select: none;
+  
+  /* Disable the native context menu (Copy/Look Up) on long press */
+  -webkit-touch-callout: none;
 }
 
 /* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
