@@ -286,21 +286,21 @@ function scoreSubwindow(dailySlice, preDaily) {
     }
   }
 
-  // === 8 SCORING COMPONENTS (with divergence enforcement) ===
+  // === 8 SCORING COMPONENTS (divergence-dominant weighting) ===
   //
-  // The core insight: true accumulation shows DIVERGENCE — price declining or flat
-  // while delta is positive. Concordant movement (price up + delta up) is just a
-  // normal rally and should NOT score as accumulation.
+  // The core thesis: true accumulation shows DIVERGENCE — price declining while
+  // delta (from 1-min data) is positive. This is the PRIMARY signal. Supporting
+  // metrics (net buying, slope, persistence) are secondary confirmation.
   //
-  // Weights sum to 1.00:
-  //   s1  Net Delta       20%  — is there net buying?
-  //   s2  Delta Slope     15%  — is cumulative buying stabilizing/improving?
-  //   s3  Delta Shift     10%  — did buying shift vs pre-context?
-  //   s4  Accum Ratio     10%  — what % of weeks had positive delta?
-  //   s5  Buy vs Sell      5%  — ratio of large buy vs sell days
-  //   s6  Absorption      18%  — days where price dropped but delta positive (KEY signal)
-  //   s7  Vol Decline       5%  — volume declining (supply drying up)
-  //   s8  Divergence      17%  — reward price-down + delta-up divergence (NEW)
+  // Weights sum to 1.00 — divergence signals (s6+s8) = 60%:
+  //   s8  Divergence      35%  — overall price-down + delta-up divergence (PRIMARY)
+  //   s6  Absorption      25%  — day-by-day price↓ + delta↑ (PRIMARY confirmation)
+  //   s1  Net Delta       15%  — is there net buying? (supporting)
+  //   s2  Delta Slope     10%  — is cumulative buying building? (supporting)
+  //   s3  Delta Shift      5%  — did buying shift vs pre-context? (minor)
+  //   s4  Accum Ratio      5%  — what % of weeks had positive delta? (minor)
+  //   s5  Buy vs Sell      3%  — ratio of large buy vs sell days (minor)
+  //   s7  Vol Decline       2%  — volume declining (minor)
 
   const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));         // Net Delta
   const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));      // Delta Slope
@@ -324,7 +324,7 @@ function scoreSubwindow(dailySlice, preDaily) {
     s8 = priceFactor * deltaFactor;
   }
 
-  const rawScore = s1 * 0.20 + s2 * 0.15 + s3 * 0.10 + s4 * 0.10 + s5 * 0.05 + s6 * 0.18 + s7 * 0.05 + s8 * 0.17;
+  const rawScore = s1 * 0.15 + s2 * 0.10 + s3 * 0.05 + s4 * 0.05 + s5 * 0.03 + s6 * 0.25 + s7 * 0.02 + s8 * 0.35;
 
   // Divergence floor gate: if divergence component is near-zero AND concordance is
   // elevated, reject. This catches zones where non-divergence metrics (s1, s4, s6)
@@ -723,35 +723,39 @@ function evaluateProximitySignals(allDaily, zones) {
  * @returns {Promise<object>} — full detection result
  */
 async function detectVDF(ticker, options) {
-  const { dataApiFetcher, signal, lookbackDays = 220 } = options;
+  const { dataApiFetcher, signal, mode = 'scan' } = options;
+  // mode = 'chart': fetch 1yr, return allZones (for overlays) + recentZones (3mo for scoring)
+  // mode = 'scan':  fetch ~4mo, analyze last 3mo only (lighter for bulk scans)
+  const RECENT_DAYS = 90;  // 90 calendar days ≈ 3 months for scoring
+
+  const emptyResult = (reason, status) => ({
+    detected: false, bestScore: 0, bestZoneWeeks: 0, reason, status,
+    zones: [], allZones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+    metrics: {},
+  });
 
   try {
-    const bars1m = await dataApiFetcher(ticker, '1min', lookbackDays, { signal });
+    const fetchDays = mode === 'chart' ? 365 : 150; // chart: 1yr, scan: ~5mo (3mo scan + pre-context buffer)
+    const bars1m = await dataApiFetcher(ticker, '1min', fetchDays, { signal });
     if (!bars1m || bars1m.length < 500) {
-      return {
-        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_1m_data',
-        status: 'Insufficient 1m data',
-        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
-        metrics: {},
-      };
+      return emptyResult('insufficient_1m_data', 'Insufficient 1m data');
     }
 
     const sorted = bars1m.sort((a, b) => a.time - b.time);
     const latestTime = sorted[sorted.length - 1].time;
-    // Scan the last ~180 calendar days (~6 months); pre-context is the 30 days before that
-    const scanCutoff = latestTime - 180 * 86400;
-    const preCutoff = scanCutoff - 30 * 86400;
+
+    // For chart mode: scan full available data for overlays
+    // For scan mode: scan last ~90 calendar days only
+    const scanCutoff = mode === 'chart'
+      ? sorted[0].time  // use all available bars
+      : latestTime - RECENT_DAYS * 86400;
+    const preCutoff = (mode === 'chart' ? sorted[0].time : scanCutoff) - 30 * 86400;
 
     const scanBars = sorted.filter(b => b.time >= scanCutoff);
     const preBars = sorted.filter(b => b.time >= preCutoff && b.time < scanCutoff);
 
     if (scanBars.length < 200) {
-      return {
-        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_scan_data',
-        status: 'Insufficient scan data',
-        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
-        metrics: {},
-      };
+      return emptyResult('insufficient_scan_data', 'Insufficient scan data');
     }
 
     // Build daily aggregates
@@ -759,35 +763,41 @@ async function detectVDF(ticker, options) {
     const preDaily = vdAggregateDaily(preBars);
 
     if (allDaily.length < 10) {
-      return {
-        detected: false, bestScore: 0, bestZoneWeeks: 0, reason: 'insufficient_daily_data',
-        status: 'Insufficient daily data',
-        zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
-        metrics: {},
-      };
+      return emptyResult('insufficient_daily_data', 'Insufficient daily data');
     }
 
-    // Phase 1: Find accumulation zones
-    const zones = findAccumulationZones(allDaily, preDaily, 3);
+    // Phase 1: Find accumulation zones across full scan period
+    const zones = findAccumulationZones(allDaily, preDaily, 5);
 
-    // Phase 2: Find distribution clusters
+    // Phase 2: Find distribution clusters across full scan period
     const { distClusters } = findDistributionClusters(allDaily);
 
-    // Phase 3: Evaluate proximity signals
-    const proximity = evaluateProximitySignals(allDaily, zones);
+    // For chart mode: separate zones into allZones (overlays) and recentZones (scoring)
+    // The recent cutoff is the last RECENT_DAYS calendar days
+    const recentCutoffDate = new Date(latestTime * 1000);
+    recentCutoffDate.setDate(recentCutoffDate.getDate() - RECENT_DAYS);
+    const recentCutoffStr = recentCutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
-    // Determine best zone
-    const bestZone = zones.length > 0
-      ? zones.reduce((best, z) => z.score > best.score ? z : best, zones[0])
+    // recentZones: zones whose endDate falls within the last 3 months
+    const recentZones = zones.filter(z => z.endDate >= recentCutoffStr);
+    // For scoring, use recentZones only
+    const scoringZones = recentZones;
+
+    // Phase 3: Evaluate proximity signals (always based on recent data + recent zones)
+    const proximity = evaluateProximitySignals(allDaily, scoringZones);
+
+    // Determine best zone from scoring zones (recent 3 months)
+    const bestZone = scoringZones.length > 0
+      ? scoringZones.reduce((best, z) => z.score > best.score ? z : best, scoringZones[0])
       : null;
     const bestScore = bestZone ? bestZone.score : 0;
     const bestZoneWeeks = bestZone ? bestZone.weeks : 0;
-    const detected = zones.length > 0;
+    const detected = scoringZones.length > 0;
 
     // Build status string
     let status;
     if (detected) {
-      status = `VD Accumulation detected: ${zones.length} zone${zones.length > 1 ? 's' : ''}, best ${bestScore.toFixed(2)} (${bestZoneWeeks}wk)`;
+      status = `VD Accumulation detected: ${scoringZones.length} zone${scoringZones.length > 1 ? 's' : ''}, best ${bestScore.toFixed(2)} (${bestZoneWeeks}wk)`;
       if (proximity.level !== 'none') {
         status += ` | Proximity: ${proximity.level} (${proximity.compositeScore}pts)`;
       }
@@ -798,8 +808,8 @@ async function detectVDF(ticker, options) {
       status = 'No accumulation zones detected';
     }
 
-    // Format zones for output (strip internal indices)
-    const formattedZones = zones.map(z => ({
+    // Format zone helper
+    const formatZone = (z) => ({
       rank: z.rank,
       startDate: z.startDate,
       endDate: z.endDate,
@@ -816,7 +826,11 @@ async function detectVDF(ticker, options) {
       concordancePenalty: z.concordancePenalty,
       intraRally: z.intraRally,
       concordantFrac: z.concordantFrac,
-    }));
+    });
+
+    // Format zones: "zones" = recent (for scoring/panel), "allZones" = full period (for overlays)
+    const formattedZones = scoringZones.map(formatZone);
+    const formattedAllZones = zones.map(formatZone);
 
     // Format distribution clusters for output
     const formattedDist = distClusters.map(c => ({
@@ -834,6 +848,7 @@ async function detectVDF(ticker, options) {
       status,
       reason: detected ? 'accumulation_divergence' : 'below_threshold',
       zones: formattedZones,
+      allZones: formattedAllZones,
       distribution: formattedDist,
       proximity,
       metrics: {
@@ -841,6 +856,7 @@ async function detectVDF(ticker, options) {
         scanStart: allDaily[0]?.date,
         scanEnd: allDaily[allDaily.length - 1]?.date,
         preDays: preDaily.length,
+        recentCutoff: recentCutoffStr,
       },
     };
   } catch (err) {
@@ -848,7 +864,7 @@ async function detectVDF(ticker, options) {
     return {
       detected: false, bestScore: 0, bestZoneWeeks: 0,
       reason: `error: ${err.message || err}`, status: `Error: ${err.message || err}`,
-      zones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
+      zones: [], allZones: [], distribution: [], proximity: { compositeScore: 0, level: 'none', signals: [] },
       metrics: {},
     };
   }

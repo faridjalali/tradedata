@@ -4460,6 +4460,7 @@ async function getVDFStatus(ticker, options = {}) {
   const force = options.force === true;
   const signal = options.signal || null;
   const noCache = options.noCache === true;
+  const mode = options.mode || 'scan'; // 'chart' = 1yr overlays + 3mo scoring, 'scan' = 3mo only
   const today = currentEtDateString();
 
   // Check DB cache (same trading day) unless force
@@ -4486,7 +4487,7 @@ async function getVDFStatus(ticker, options = {}) {
     const result = await detectVDF(ticker, {
       dataApiFetcher: fetcher,
       signal,
-      lookbackDays: 220,
+      mode,
     });
 
     // Store in DB
@@ -4503,6 +4504,7 @@ async function getVDFStatus(ticker, options = {}) {
       num_zones: result.zones?.length || 0,
       has_distribution: (result.distribution?.length || 0) > 0,
       zones: result.zones || [],
+      allZones: result.allZones || result.zones || [],
       distribution: result.distribution || [],
       proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
       details: { metrics: result.metrics, reason: result.reason },

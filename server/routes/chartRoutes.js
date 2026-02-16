@@ -185,7 +185,8 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
       const force = parseBooleanQueryFlag(req.query.force);
-      const result = await options.getVDFStatus(ticker, { force });
+      const mode = req.query.mode === 'chart' ? 'chart' : 'scan';
+      const result = await options.getVDFStatus(ticker, { force, mode });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(result);
     } catch (err) {

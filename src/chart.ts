@@ -85,6 +85,7 @@ let chartCachePersistTimer: number | null = null;
 let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
+let vdfRefreshButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
 interface VDFZone {
   startDate: string; endDate: string; score: number; windowDays: number;
@@ -98,8 +99,8 @@ interface VDFDistribution { startDate: string; endDate: string; spanDays: number
 interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
 interface VDFCacheEntry {
   is_detected: boolean; composite_score: number; status: string; weeks: number;
-  zones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
-  details?: { metrics?: { totalDays?: number; scanStart?: string; scanEnd?: string; preDays?: number }; reason?: string };
+  zones: VDFZone[]; allZones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
+  details?: { metrics?: { totalDays?: number; scanStart?: string; scanEnd?: string; preDays?: number; recentCutoff?: string }; reason?: string };
 }
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
@@ -2899,7 +2900,8 @@ function ensureSettingsUI(
   volumeDeltaContainer: HTMLElement
 ): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
-  const vdfBtn = ensureVDFButton(chartContainer);
+  ensureVDFButton(chartContainer);
+  const vdfRefBtn = ensureVDFRefreshButton(chartContainer);
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
   const volumeDeltaBtn = createSettingsButton(volumeDeltaContainer, 'volumeDelta');
@@ -3029,13 +3031,18 @@ function ensureSettingsUI(
     rsiDivergenceBtn.dataset.bound = '1';
   }
 
-  if (!vdfBtn.dataset.bound) {
-    vdfBtn.addEventListener('click', (event: MouseEvent) => {
+  if (!vdfRefBtn.dataset.bound) {
+    vdfRefBtn.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (currentChartTicker) runVDFDetection(currentChartTicker, true);
+      if (currentChartTicker) {
+        renderVDFRefreshIcon(true);
+        runVDFDetection(currentChartTicker, true).finally(() => {
+          renderVDFRefreshIcon(false);
+        });
+      }
     });
-    vdfBtn.dataset.bound = '1';
+    vdfRefBtn.dataset.bound = '1';
   }
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
@@ -4248,7 +4255,8 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.border = '1px solid #30363d';
   btn.style.background = '#161b22';
   btn.style.color = VDF_COLOR_LOADING;
-  btn.style.cursor = 'pointer';
+  btn.style.cursor = 'default';
+  btn.style.pointerEvents = 'none';
   btn.style.fontSize = '9px';
   btn.style.fontWeight = '700';
   btn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
@@ -4259,6 +4267,79 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   container.appendChild(btn);
   vdfButtonEl = btn;
   return btn;
+}
+
+function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
+  if (vdfRefreshButtonEl && vdfRefreshButtonEl.parentElement === container) return vdfRefreshButtonEl;
+  if (vdfRefreshButtonEl && vdfRefreshButtonEl.parentElement) {
+    vdfRefreshButtonEl.parentElement.removeChild(vdfRefreshButtonEl);
+  }
+
+  const btn = document.createElement('button');
+  btn.className = 'vdf-refresh-btn';
+  btn.type = 'button';
+  btn.title = 'Refresh VD Analysis';
+  btn.style.position = 'absolute';
+  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
+  // Position to the left of the VDF button: VDF is at right = SCALE_MIN_WIDTH_PX + 8,
+  // VDF button is ~36px wide (minWidth 24 + padding 10), so place refresh at right = SCALE_MIN_WIDTH_PX + 8 + 36 + 4
+  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8 + 40 + 4}px`;
+  btn.style.zIndex = '34';
+  btn.style.display = 'inline-flex';
+  btn.style.alignItems = 'center';
+  btn.style.justifyContent = 'center';
+  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.padding = '0';
+  btn.style.borderRadius = '4px';
+  btn.style.border = 'none';
+  btn.style.background = 'transparent';
+  btn.style.color = '#c9d1d9';
+  btn.style.cursor = 'pointer';
+  btn.style.userSelect = 'none';
+  container.appendChild(btn);
+  vdfRefreshButtonEl = btn;
+  renderVDFRefreshIcon(false);
+  return btn;
+}
+
+function renderVDFRefreshIcon(loading: boolean): void {
+  if (!vdfRefreshButtonEl) return;
+  vdfRefreshButtonEl.innerHTML = '';
+  vdfRefreshButtonEl.title = loading ? 'Refreshing VD Analysis...' : 'Refresh VD Analysis';
+  vdfRefreshButtonEl.style.cursor = loading ? 'wait' : 'pointer';
+  vdfRefreshButtonEl.style.pointerEvents = loading ? 'none' : 'auto';
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.5');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.style.display = 'block';
+  const path1 = document.createElementNS(svgNS, 'path');
+  path1.setAttribute('d', 'M21.5 2v6h-6');
+  const path2 = document.createElementNS(svgNS, 'path');
+  path2.setAttribute('d', 'M21.5 8A10 10 0 0 0 5.6 5.6');
+  const path3 = document.createElementNS(svgNS, 'path');
+  path3.setAttribute('d', 'M2.5 22v-6h6');
+  const path4 = document.createElementNS(svgNS, 'path');
+  path4.setAttribute('d', 'M2.5 16A10 10 0 0 0 18.4 18.4');
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  svg.appendChild(path3);
+  svg.appendChild(path4);
+  if (loading) {
+    svg.animate(
+      [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+      { duration: 800, iterations: Infinity, easing: 'linear' }
+    );
+  }
+  vdfRefreshButtonEl.appendChild(svg);
 }
 
 function setVDFButtonColor(color: string, title?: string): void {
@@ -4360,9 +4441,10 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
     return Number.isFinite(x) ? x : null;
   };
 
-  // --- Full-height tinted overlays ---
-  if (entry.zones) {
-    for (const zone of entry.zones) {
+  // --- Full-height tinted overlays (use allZones for 1yr visual coverage) ---
+  const overlayZones = entry.allZones && entry.allZones.length > 0 ? entry.allZones : entry.zones;
+  if (overlayZones) {
+    for (const zone of overlayZones) {
       const x1 = dateToX(zone.startDate);
       const x2 = dateToX(zone.endDate);
       if (x1 == null || x2 == null) continue;
@@ -4401,7 +4483,7 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
   const BAND_H = 5;
   const BAND_GAP = 1;
   const STRIP_PAD = 2;
-  const hasZones = entry.zones && entry.zones.length > 0;
+  const hasZones = overlayZones && overlayZones.length > 0;
   const hasDist = entry.distribution && entry.distribution.length > 0;
 
   if (overlayHeight > 60 && (hasZones || hasDist)) {
@@ -4410,9 +4492,9 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
     const distY = absY - BAND_GAP - BAND_H;
     const accumY = distY - BAND_GAP - BAND_H;
 
-    // Accumulation zone bands (teal)
-    if (entry.zones) {
-      for (const zone of entry.zones) {
+    // Accumulation zone bands (teal) — use allZones for 1yr visual
+    if (overlayZones) {
+      for (const zone of overlayZones) {
         const x1 = dateToX(zone.startDate);
         const x2 = dateToX(zone.endDate);
         if (x1 == null || x2 == null) continue;
@@ -4441,9 +4523,9 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
       }
     }
 
-    // Absorption bands (amber, within accumulation zone date ranges)
-    if (entry.zones) {
-      for (const zone of entry.zones) {
+    // Absorption bands (amber, within accumulation zone date ranges) — use allZones for 1yr visual
+    if (overlayZones) {
+      for (const zone of overlayZones) {
         const absPct = zone.absorptionPct || 0;
         if (absPct < 5) continue;
         const x1 = dateToX(zone.startDate);
@@ -4461,8 +4543,8 @@ function renderVDZones(entry?: VDFCacheEntry | null): void {
   }
 
   // --- Zone boundary markers (dashed vertical lines at zone edges) ---
-  if (entry.zones) {
-    for (const zone of entry.zones) {
+  if (overlayZones) {
+    for (const zone of overlayZones) {
       const xs = dateToX(zone.startDate);
       const xe = dateToX(zone.endDate);
       if (xs != null && xs >= 0 && xs <= overlayWidth) {
@@ -4539,7 +4621,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
   setVDFButtonColor(VDF_COLOR_LOADING, 'VDF: Loading...');
 
   try {
-    const params = new URLSearchParams({ ticker });
+    const params = new URLSearchParams({ ticker, mode: 'chart' });
     if (force) params.set('force', '1');
     const response = await fetch(`/api/chart/vdf-status?${params}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -4553,6 +4635,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
       status: result.status || '',
       weeks: Number(result.weeks) || 0,
       zones: Array.isArray(result.zones) ? result.zones : [],
+      allZones: Array.isArray(result.allZones) ? result.allZones : (Array.isArray(result.zones) ? result.zones : []),
       distribution: Array.isArray(result.distribution) ? result.distribution : [],
       proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
       details: result.details || undefined,
@@ -4578,21 +4661,20 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
 
 // VDF component metadata: [key, label, defaultWeight, tooltip]
 const VDF_COMPONENTS: Array<{ key: string; label: string; defaultWeight: number; tooltip: string }> = [
-  { key: 's1', label: 'Net Delta', defaultWeight: 20, tooltip: 'Total net buying as % of total volume. Higher = more buying pressure. Measures raw institutional flow.' },
-  { key: 's2', label: 'Delta Slope', defaultWeight: 15, tooltip: 'Trend of cumulative weekly delta. Rising slope = buying is building over time, not a one-off spike.' },
-  { key: 's3', label: 'Delta Shift', defaultWeight: 10, tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.' },
-  { key: 's4', label: 'Accum Ratio', defaultWeight: 10, tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks, not sporadic.' },
-  { key: 's5', label: 'Buy vs Sell', defaultWeight: 5, tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.' },
-  { key: 's6', label: 'Absorption', defaultWeight: 18, tooltip: 'Percentage of days where price fell but delta was positive. Core divergence signal: institutions buying the dip.' },
-  { key: 's7', label: 'Vol Decline', defaultWeight: 5, tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.' },
-  { key: 's8', label: 'Divergence', defaultWeight: 17, tooltip: 'Rewards price-down + delta-up divergence. Score = 0 when price is rising or delta is negative. The thesis signal.' },
+  { key: 's8', label: 'Divergence', defaultWeight: 35, tooltip: 'Overall price-down + delta-up divergence. The PRIMARY thesis signal. Score = 0 when price is rising or delta is negative.' },
+  { key: 's6', label: 'Absorption', defaultWeight: 25, tooltip: 'Percentage of days where price fell but delta was positive. Day-by-day divergence confirmation: institutions buying the dip.' },
+  { key: 's1', label: 'Net Delta', defaultWeight: 15, tooltip: 'Total net buying as % of total volume. Supporting signal: is there net buying?' },
+  { key: 's2', label: 'Delta Slope', defaultWeight: 10, tooltip: 'Trend of cumulative weekly delta. Supporting signal: is buying building over time?' },
+  { key: 's3', label: 'Delta Shift', defaultWeight: 5, tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.' },
+  { key: 's4', label: 'Accum Ratio', defaultWeight: 5, tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks.' },
+  { key: 's5', label: 'Buy vs Sell', defaultWeight: 3, tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.' },
+  { key: 's7', label: 'Vol Decline', defaultWeight: 2, tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.' },
 ];
 
 const VDF_DEFAULT_WEIGHTS: Record<string, number> = {};
 VDF_COMPONENTS.forEach(c => { VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight; });
 
 let vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
-let vdfSettingsPanelEl: HTMLDivElement | null = null;
 
 function loadVDFWeightsFromStorage(): void {
   try {
@@ -4606,10 +4688,6 @@ function loadVDFWeightsFromStorage(): void {
       }
     }
   } catch { /* */ }
-}
-
-function persistVDFWeightsToStorage(): void {
-  try { localStorage.setItem('chart_vdf_weights', JSON.stringify(vdfWeights)); } catch { /* */ }
 }
 
 function getVDFWeightTotal(): number {
@@ -4638,104 +4716,6 @@ function getVDFComponentLabels(): Array<[string, string, string]> {
     const pct = total > 0 ? Math.round((w / total) * 100) : 0;
     return [c.key, c.label, `${pct}%`] as [string, string, string];
   });
-}
-
-function createVDFSettingsPanel(): HTMLDivElement {
-  const panel = document.createElement('div');
-  panel.className = 'vdf-settings-panel';
-  panel.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px 14px;margin:0 14px 12px;display:none;';
-
-  function renderPanel(): void {
-    const total = getVDFWeightTotal();
-    const totalIs100 = total === 100;
-    const totalColor = totalIs100 ? '#26a69a' : total > 100 ? '#f44336' : '#ffc107';
-    const rows = VDF_COMPONENTS.map(c => {
-      const w = vdfWeights[c.key] || 0;
-      return `<div style="display:grid;grid-template-columns:110px 48px;gap:8px;align-items:center;margin:3px 0;" title="${escapeHtml(c.tooltip)}">
-        <label style="color:#8b949e;font-size:11px;white-space:nowrap;cursor:help;border-bottom:1px dotted #484f58;" title="${escapeHtml(c.tooltip)}">${escapeHtml(c.label)}</label>
-        <input type="text" inputmode="numeric" value="${w}" data-vdf-weight="${c.key}"
-          style="width:42px;height:22px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:3px;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:center;padding:0 2px;outline:none;" />
-      </div>`;
-    }).join('');
-
-    const isDefault = VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
-    panel.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;">Scoring Weights</span>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <span class="vdf-weight-total" style="font-size:10px;color:${totalColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;">${total}%</span>
-          <button type="button" data-vdf-weight-action="reset" style="background:#0d1117;color:${isDefault ? '#484f58' : '#c9d1d9'};border:1px solid #30363d;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;${isDefault ? 'opacity:0.5;' : ''}" title="Reset to default weights">Reset</button>
-          <button type="button" data-vdf-weight-action="run" style="background:${totalIs100 ? '#26a69a' : '#21262d'};color:${totalIs100 ? '#fff' : '#484f58'};border:1px solid ${totalIs100 ? '#26a69a' : '#30363d'};border-radius:4px;padding:2px 8px;font-size:10px;font-weight:600;cursor:${totalIs100 ? 'pointer' : 'default'};${totalIs100 ? '' : 'opacity:0.5;'}" title="${totalIs100 ? 'Re-run VDF with these weights' : 'Weights must total 100% to run'}">Run</button>
-        </div>
-      </div>
-      ${rows}
-      <div style="margin-top:8px;font-size:10px;color:#484f58;line-height:1.4;">${totalIs100 ? 'Weights total 100%. Click Run to re-score, or edit values.' : `Weights must total 100% to run (currently ${total}%).`}</div>
-    `;
-  }
-
-  renderPanel();
-
-  // Handle text input changes
-  panel.addEventListener('change', (e) => {
-    const target = e.target as HTMLInputElement;
-    const key = target?.dataset?.vdfWeight;
-    if (!key) return;
-    const val = Math.max(0, Math.min(100, Math.round(Number(target.value) || 0)));
-    vdfWeights[key] = val;
-    persistVDFWeightsToStorage();
-    renderPanel();
-  });
-
-  // Also update on blur for immediate feedback
-  panel.addEventListener('blur', (e) => {
-    const target = e.target as HTMLInputElement;
-    const key = target?.dataset?.vdfWeight;
-    if (!key) return;
-    const val = Math.max(0, Math.min(100, Math.round(Number(target.value) || 0)));
-    if (vdfWeights[key] !== val) {
-      vdfWeights[key] = val;
-      persistVDFWeightsToStorage();
-      renderPanel();
-    }
-  }, true);
-
-  panel.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    if (target?.dataset?.vdfWeightAction === 'reset') {
-      VDF_COMPONENTS.forEach(c => { vdfWeights[c.key] = c.defaultWeight; });
-      persistVDFWeightsToStorage();
-      renderPanel();
-      refreshVDFScoresFromWeights();
-    }
-    if (target?.dataset?.vdfWeightAction === 'run') {
-      const total = getVDFWeightTotal();
-      if (total !== 100) return;
-      // Re-score locally with the new weights
-      refreshVDFScoresFromWeights();
-    }
-  });
-
-  vdfSettingsPanelEl = panel;
-  return panel;
-}
-
-function toggleVDFSettingsPanel(): void {
-  if (!vdfSettingsPanelEl) return;
-  const isHidden = vdfSettingsPanelEl.style.display === 'none';
-  vdfSettingsPanelEl.style.display = isHidden ? 'block' : 'none';
-}
-
-function refreshVDFScoresFromWeights(): void {
-  // Re-render everything with recomputed scores from new weights
-  const ticker = currentChartTicker || '';
-  const today = new Date().toISOString().split('T')[0];
-  const cacheKey = `${ticker}|${today}`;
-  const entry = vdfResultCache.get(cacheKey);
-  if (!entry) return;
-  // Update all VDF UI: analysis panel, button score, and zone overlays
-  renderVDFAnalysisPanel(entry);
-  updateVDFButton(entry);
-  renderVDZones(entry);
 }
 
 function formatVDFDate(dateStr: string): string {
@@ -4897,7 +4877,6 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   const tier = vdfScoreTier(score);
   const color = vdfScoreColor(score);
   const metrics = entry.details?.metrics;
-  const isCustomWeights = !VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
 
   let collapsed = true;
   try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
@@ -4907,10 +4886,6 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   const chevron = collapsed ? '\u25b8' : '\u25be';
   const bodyDisplay = collapsed ? 'none' : 'block';
 
-  // Gear icon for settings
-  const gearColor = isCustomWeights ? '#26a69a' : '#484f58';
-  const gearHtml = `<span class="vdf-ap-gear" style="font-size:14px;color:${gearColor};cursor:pointer;margin-right:8px;padding:2px 4px;" title="VDF scoring weights">\u2699</span>`;
-
   // Header
   const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
     <div style="display:flex;align-items:center;gap:8px;">
@@ -4919,7 +4894,6 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
       <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
     </div>
     <div style="display:flex;align-items:center;">
-      ${gearHtml}
       ${entry.is_detected
         ? `<span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${score}</span>`
         : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
@@ -5007,29 +4981,11 @@ function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
   panel.innerHTML = `${headerHtml}<div class="vdf-ap-body" style="display:${bodyDisplay};">${bodyHtml}</div>`;
   panel.style.display = 'block';
 
-  // Insert settings panel into body (right after the header, before content)
-  const body = panel.querySelector('.vdf-ap-body') as HTMLElement | null;
-  if (body) {
-    const settingsPanel = createVDFSettingsPanel();
-    body.insertBefore(settingsPanel, body.firstChild);
-  }
-
-  // Bind header click for toggle (but not on gear)
+  // Bind header click for toggle
   const header = panel.querySelector('.vdf-ap-header');
   if (header) {
-    header.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.vdf-ap-gear')) return; // Don't toggle when clicking gear
+    header.addEventListener('click', () => {
       toggleVDFAnalysisPanel();
-    });
-  }
-
-  // Bind gear click for settings toggle
-  const gear = panel.querySelector('.vdf-ap-gear');
-  if (gear) {
-    gear.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleVDFSettingsPanel();
     });
   }
 }
