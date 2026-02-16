@@ -374,7 +374,6 @@ function setVDFScanControlButtonState(status: DivergenceScanStatus | null): void
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop VDF Scan');
-        stopButton.title = 'Stop VDF Scan';
     }
 }
 
@@ -438,7 +437,6 @@ function setFetchDailyControlButtonState(status: DivergenceScanStatus | null): v
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Fetch Daily');
-        stopButton.title = 'Stop Fetch Daily';
     }
 }
 
@@ -452,7 +450,6 @@ function setFetchWeeklyControlButtonState(status: DivergenceScanStatus | null): 
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Fetch Weekly');
-        stopButton.title = 'Stop Fetch Weekly';
     }
 }
 
