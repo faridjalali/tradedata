@@ -834,6 +834,7 @@ h2 {
 
 .vdf-score-badge {
   display: inline-block;
+  box-sizing: border-box;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-size: 9px;
   font-weight: 700;
@@ -844,18 +845,19 @@ h2 {
   margin-left: 4px;
   line-height: 14px;
   vertical-align: middle;
-  width: 4ch;
+  width: 5ch;
   text-align: center;
 }
 .vdf-score-placeholder {
   display: inline-block;
+  box-sizing: border-box;
   font-size: 9px;
   padding: 0 3px;
   margin-left: 4px;
   line-height: 14px;
   vertical-align: middle;
   border: 1px solid transparent;
-  width: 4ch;
+  width: 5ch;
 }
 .vdf-score-badge.vdf-high { border-color: #ff9800; color: #ff9800; }
 .vdf-score-badge.vdf-imminent { border-color: #f44336; color: #f44336; animation: vdf-pulse 1.5s infinite; }
