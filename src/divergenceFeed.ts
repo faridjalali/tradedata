@@ -1328,7 +1328,7 @@ function destroyMiniChartOverlay(): void {
     miniChartHoveredCard = null;
 }
 
-async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<void> {
+async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch = false): Promise<void> {
     if (miniChartCurrentTicker === ticker && miniChartOverlayEl) return;
     destroyMiniChartOverlay();
     miniChartCurrentTicker = ticker;
@@ -1336,10 +1336,16 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
     // Create overlay element
     const overlay = document.createElement('div');
     overlay.className = 'mini-chart-overlay';
+
+    // On touch/mobile: 50% screen width, right-aligned
+    const isMobile = isTouch || window.innerWidth < 768;
+    const OVERLAY_W = isMobile ? Math.floor(window.innerWidth * 0.5) : 500;
+    const OVERLAY_H = isMobile ? Math.floor(OVERLAY_W * 0.6) : 300;
+
     overlay.style.cssText = `
         position: fixed;
-        width: 500px;
-        height: 300px;
+        width: ${OVERLAY_W}px;
+        height: ${OVERLAY_H}px;
         background: #0d1117;
         border: 1px solid #30363d;
         border-radius: 6px;
@@ -1349,16 +1355,26 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     `;
 
-    // Position: prefer right of card, fall back to left
-    const OVERLAY_W = 500;
-    const OVERLAY_H = 300;
+    // Position
     const GAP = 8;
-    let left = cardRect.right + GAP;
-    let top = cardRect.top;
-    if (left + OVERLAY_W > window.innerWidth) {
-        left = cardRect.left - OVERLAY_W - GAP;
+    let left: number;
+    let top: number;
+    if (isMobile) {
+        // Right-aligned against screen edge
+        left = window.innerWidth - OVERLAY_W;
+        top = cardRect.bottom + GAP;
+        if (top + OVERLAY_H > window.innerHeight) {
+            top = cardRect.top - OVERLAY_H - GAP;
+        }
+    } else {
+        // Desktop: prefer right of card, fall back to left
+        left = cardRect.right + GAP;
+        top = cardRect.top;
+        if (left + OVERLAY_W > window.innerWidth) {
+            left = cardRect.left - OVERLAY_W - GAP;
+        }
     }
-    if (left < 0) left = GAP;
+    if (left < 0) left = 0;
     if (top + OVERLAY_H > window.innerHeight) {
         top = window.innerHeight - OVERLAY_H - GAP;
     }
@@ -1402,8 +1418,8 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect): Promise<
 
     // Create lightweight-charts instance
     const chart = createChart(overlay, {
-        width: 500,
-        height: 300,
+        width: OVERLAY_W,
+        height: OVERLAY_H,
         layout: {
             background: { color: '#0d1117' },
             textColor: '#d1d4dc',
@@ -1523,6 +1539,12 @@ export function setupDivergenceFeedDelegation(): void {
         const target = e.target as HTMLElement;
         if (target.closest('.fav-icon')) return; // Already handled above
 
+        // After a touch long-press, suppress the subsequent click to prevent navigation
+        if (suppressNextCardClick) {
+            suppressNextCardClick = false;
+            return;
+        }
+
         const card = target.closest('.alert-card');
         if (card) {
             const ticker = (card as HTMLElement).dataset.ticker;
@@ -1554,11 +1576,20 @@ export function setupDivergenceFeedDelegation(): void {
         });
     });
 
+    // --- Mini-chart overlay state (shared between mouse + touch handlers) ---
+    let touchLongPressTimer: number | null = null;
+    let touchLongPressFired = false;
+    let suppressNextCardClick = false;
+    let lastTouchEndMs = 0;
+
     // --- Mini-chart hover overlay on alert cards ---
     // Use capture phase because mouseenter/mouseleave don't bubble.
     // Guard with relatedTarget so moves between children within the same card
     // don't destroy/restart the overlay.
     view.addEventListener('mouseenter', (e: Event) => {
+        // Suppress synthetic mouse events generated after touch interactions
+        if (Date.now() - lastTouchEndMs < 1000) return;
+
         const me = e as MouseEvent;
         const target = me.target as HTMLElement;
         const card = target.closest('.alert-card') as HTMLElement | null;
@@ -1593,9 +1624,6 @@ export function setupDivergenceFeedDelegation(): void {
     }, true);
 
     // --- Touch long-press for minichart overlay (touchscreen devices) ---
-    let touchLongPressTimer: number | null = null;
-    let touchLongPressFired = false;
-
     view.addEventListener('touchstart', (e: Event) => {
         const te = e as TouchEvent;
         if (te.touches.length !== 1) return;
@@ -1610,7 +1638,7 @@ export function setupDivergenceFeedDelegation(): void {
             touchLongPressTimer = null;
             touchLongPressFired = true;
             const rect = card.getBoundingClientRect();
-            showMiniChartOverlay(ticker, rect);
+            showMiniChartOverlay(ticker, rect, true);
         }, 600);
     }, { passive: true });
 
@@ -1626,9 +1654,10 @@ export function setupDivergenceFeedDelegation(): void {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
+        lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
             destroyMiniChartOverlay();
-            touchLongPressFired = false;
+            suppressNextCardClick = true;
         }
         touchLongPressFired = false;
     }, { passive: true });
@@ -1638,9 +1667,9 @@ export function setupDivergenceFeedDelegation(): void {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
+        lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
             destroyMiniChartOverlay();
-            touchLongPressFired = false;
         }
         touchLongPressFired = false;
     }, { passive: true });
