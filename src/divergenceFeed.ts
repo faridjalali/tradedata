@@ -1590,6 +1590,8 @@ export function setupDivergenceFeedDelegation(): void {
     let lastTouchEndMs = 0;
     let touchCardActive = false;   // true when touch started on a card (preventDefault was called)
     let touchPrevY: number | null = null; // for programmatic scroll
+    let touchStartTarget: HTMLElement | null = null; // original target for synthetic click
+    let touchDidScroll = false; // true if touch moved enough to count as a scroll
 
     // --- Mini-chart hover overlay on alert cards ---
     // Use capture phase because mouseenter/mouseleave don't bubble.
@@ -1661,6 +1663,8 @@ export function setupDivergenceFeedDelegation(): void {
         // Block Safari's native long-press selection at the event level
         e.preventDefault();
         touchCardActive = true;
+        touchDidScroll = false;
+        touchStartTarget = target;
         touchPrevY = te.touches[0].clientY;
 
         const ticker = card.dataset.ticker;
@@ -1686,6 +1690,7 @@ export function setupDivergenceFeedDelegation(): void {
             if (Math.abs(deltaY) > 2) {
                 window.scrollBy(0, deltaY);
                 touchPrevY = currentY;
+                touchDidScroll = true;
             }
         }
         if (touchLongPressTimer !== null) {
@@ -1704,10 +1709,16 @@ export function setupDivergenceFeedDelegation(): void {
             if (e.cancelable) e.preventDefault();
             destroyMiniChartOverlay();
             suppressNextCardClick = true;
+        } else if (touchCardActive && !touchDidScroll && touchStartTarget) {
+            // Quick tap with no scroll — dispatch synthetic click since
+            // preventDefault on touchstart blocked the browser's automatic one
+            touchStartTarget.click();
         }
         touchLongPressFired = false;
         touchCardActive = false;
         touchPrevY = null;
+        touchStartTarget = null;
+        touchDidScroll = false;
     }, { passive: false });
 
     view.addEventListener('touchcancel', () => {
@@ -1722,6 +1733,8 @@ export function setupDivergenceFeedDelegation(): void {
         touchLongPressFired = false;
         touchCardActive = false;
         touchPrevY = null;
+        touchStartTarget = null;
+        touchDidScroll = false;
     }, { passive: true });
 
     // "Show more" pagination button
