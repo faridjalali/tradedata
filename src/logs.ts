@@ -303,8 +303,9 @@ export async function refreshLogsView(): Promise<void> {
         renderRunCards(payload);
         renderHistory(payload);
     } catch (error) {
+        // Only show error message if no existing content — avoids wiping good data on transient failures
         const host = document.getElementById('logs-history-container');
-        if (host) host.innerHTML = '<div class="loading">Failed to load logs</div>';
+        if (host && !host.children.length) host.innerHTML = '<div class="loading">Failed to load logs</div>';
         console.error('Failed to refresh logs view:', error);
     } finally {
         logsRefreshInFlight = false;

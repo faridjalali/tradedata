@@ -4703,7 +4703,8 @@ async function runVDFScan(options = {}) {
       return { status: 'stopped', processedTickers, errorTickers, detectedTickers };
     }
 
-    // Retry failed tickers once
+    // Retry failed tickers (first pass — concurrency / 2)
+    const stillFailedTickers = [];
     if (failedTickers.length > 0 && !vdfScanStopRequested && !scanAbort.signal.aborted) {
       const retryTickers = [...failedTickers];
       failedTickers.length = 0;
@@ -4732,12 +4733,57 @@ async function runVDFScan(options = {}) {
         (settled) => {
           if (settled.skipped) return;
           if (settled.error) {
+            stillFailedTickers.push(settled.ticker);
+          } else {
+            errorTickers--;
+            if (settled.result && settled.result.is_detected) {
+              detectedTickers++;
+            }
+            if (runMetricsTracker) runMetricsTracker.recordRetryRecovered(settled.ticker);
+          }
+          vdfScanStatus.errorTickers = errorTickers;
+          vdfScanStatus.detectedTickers = detectedTickers;
+        },
+        () => vdfScanStopRequested || scanAbort.signal.aborted
+      );
+    }
+
+    // Retry failed tickers (second pass — concurrency / 4)
+    if (stillFailedTickers.length > 0 && !vdfScanStopRequested && !scanAbort.signal.aborted) {
+      const retry2Tickers = [...stillFailedTickers];
+      stillFailedTickers.length = 0;
+      vdfScanStatus.status = 'running-retry';
+      if (runMetricsTracker) runMetricsTracker.setPhase('retry-2');
+
+      await mapWithConcurrency(
+        retry2Tickers,
+        Math.max(1, Math.floor(runConcurrency / 4)),
+        async (ticker) => {
+          if (vdfScanStopRequested || scanAbort.signal.aborted) {
+            return { ticker, skipped: true };
+          }
+          const apiStart = Date.now();
+          try {
+            const result = await getVDFStatus(ticker, { force: true, noCache: true, signal: scanAbort.signal });
+            const latencyMs = Date.now() - apiStart;
+            if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
+            return { ticker, result, error: null };
+          } catch (err) {
+            const latencyMs = Date.now() - apiStart;
+            if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: false });
+            return { ticker, result: null, error: err };
+          }
+        },
+        (settled) => {
+          if (settled.skipped) return;
+          if (settled.error) {
             failedTickers.push(settled.ticker);
           } else {
             errorTickers--;
             if (settled.result && settled.result.is_detected) {
               detectedTickers++;
             }
+            if (runMetricsTracker) runMetricsTracker.recordRetryRecovered(settled.ticker);
           }
           vdfScanStatus.errorTickers = errorTickers;
           vdfScanStatus.detectedTickers = detectedTickers;

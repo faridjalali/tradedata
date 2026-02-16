@@ -39,6 +39,8 @@ VDF_COMPONENTS.forEach(c => { VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight; });
 
 let vdfAnalysisPanelEl: HTMLDivElement | null = null;
 let vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
+let lastRenderedVDFEntry: VDFCacheEntry | null = null;
+let lastRenderedVDFTicker = '';
 
 // ─── Weight Management ──────────────────────────────────────────────────────
 
@@ -244,6 +246,8 @@ export function clearVDFAnalysisPanel(): void {
 }
 
 export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: string): void {
+  lastRenderedVDFEntry = entry;
+  lastRenderedVDFTicker = ticker;
   loadVDFWeightsFromStorage();
   const panel = ensureVDFAnalysisPanel();
   const c = getThemeColors();
@@ -376,3 +380,15 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
     });
   }
 }
+
+// Re-render VDF panel when theme changes so inline colors update
+window.addEventListener('themechange', () => {
+  if (!vdfAnalysisPanelEl || vdfAnalysisPanelEl.style.display === 'none') return;
+  // Update the outer panel container styles immediately
+  const c = getThemeColors();
+  vdfAnalysisPanelEl.style.cssText = `width:100%;border-radius:6px;border:1px solid ${c.borderColor};background:${c.bgColor};color:${c.textPrimary};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:block;`;
+  // Re-render content with new theme colors
+  if (lastRenderedVDFTicker) {
+    renderVDFAnalysisPanel(lastRenderedVDFEntry, lastRenderedVDFTicker);
+  }
+});

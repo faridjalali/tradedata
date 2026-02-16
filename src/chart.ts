@@ -3796,11 +3796,11 @@ function createVolumeDeltaChart(container: HTMLElement) {
       pinch: true,
       axisPressedMouseMove: {
         time: true,
-        price: true,
+        price: false,
       },
       axisDoubleClickReset: {
         time: true,
-        price: true,
+        price: false,
       },
     },
     rightPriceScale: {

@@ -40,6 +40,7 @@ let weeklySortMode: SortMode = 'score';
 let dailySortDirection: 'asc' | 'desc' = 'desc';
 let weeklySortDirection: 'asc' | 'desc' = 'desc';
 const ALERTS_PAGE_SIZE = 100;
+const STOP_ICON_SVG = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>';
 let dailyVisibleCount = ALERTS_PAGE_SIZE;
 let weeklyVisibleCount = ALERTS_PAGE_SIZE;
 let divergenceScanPollTimer: number | null = null;
@@ -354,7 +355,7 @@ function setVDFScanButtonState(running: boolean): void {
     if (!button) return;
     button.disabled = running;
     button.classList.toggle('active', running);
-    button.textContent = 'VDF Scan';
+    button.textContent = 'Analyze';
 }
 
 function setVDFScanStatusText(text: string): void {
@@ -369,7 +370,7 @@ function setVDFScanControlButtonState(status: DivergenceScanStatus | null): void
     const running = Boolean(vdfScan?.running);
     const stopRequested = Boolean(vdfScan?.stop_requested);
     if (stopButton) {
-        stopButton.textContent = '\u23F9';
+        stopButton.innerHTML = STOP_ICON_SVG;
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop VDF Scan');
@@ -392,7 +393,7 @@ function setRunControlButtonState(status: DivergenceScanStatus | null): void {
         pauseResumeButton.title = canResume && !running ? 'Resume Run Fetch' : 'Pause Run Fetch';
     }
     if (stopButton) {
-        stopButton.textContent = '⏹';
+        stopButton.innerHTML = STOP_ICON_SVG;
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Run Fetch');
@@ -416,7 +417,7 @@ function setTableControlButtonState(status: DivergenceScanStatus | null): void {
         pauseResumeButton.title = canResume && !running ? 'Resume Run Table' : 'Pause Run Table';
     }
     if (stopButton) {
-        stopButton.textContent = '⏹';
+        stopButton.innerHTML = STOP_ICON_SVG;
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Run Table');
@@ -433,7 +434,7 @@ function setFetchDailyControlButtonState(status: DivergenceScanStatus | null): v
     const running = Boolean(fetchDaily?.running);
     const stopRequested = Boolean(fetchDaily?.stop_requested);
     if (stopButton) {
-        stopButton.textContent = '⏹';
+        stopButton.innerHTML = STOP_ICON_SVG;
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Fetch Daily');
@@ -447,7 +448,7 @@ function setFetchWeeklyControlButtonState(status: DivergenceScanStatus | null): 
     const running = Boolean(fetchWeekly?.running);
     const stopRequested = Boolean(fetchWeekly?.stop_requested);
     if (stopButton) {
-        stopButton.textContent = '⏹';
+        stopButton.innerHTML = STOP_ICON_SVG;
         stopButton.disabled = !running || stopRequested;
         stopButton.classList.toggle('active', running);
         stopButton.setAttribute('aria-label', 'Stop Fetch Weekly');
@@ -717,18 +718,16 @@ function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
     if (scan.running) {
         const processed = Number(scan.processed_tickers || 0);
         const total = Number(scan.total_tickers || 0);
-        const detected = Number(scan.detected_tickers || 0);
         if (scan.stop_requested) {
             return 'Stopping';
         }
         if (state === 'running-retry') {
             return `Retrying (${processed}/${total})`;
         }
-        return `${processed}/${total} (${detected} VDF)`;
+        return `${processed}/${total}`;
     }
     if (state === 'completed' || state === 'completed-with-errors') {
-        const detected = Number(scan.detected_tickers || 0);
-        return detected > 0 ? `${ranText} (${detected} VDF)` : ranText;
+        return ranText;
     }
     if (state === 'failed') {
         return ranText;
@@ -1297,7 +1296,10 @@ export function renderDivergenceOverview(): void {
         ...weeklySlice.map(a => a.ticker),
     ];
     const unique = Array.from(new Set(prefetchTickers.map(t => t.toUpperCase())));
-    prefetchMiniChartBars(unique).catch(() => {});
+    prefetchMiniChartBars(unique).then(() => {
+        renderInlineMinicharts(dailyContainer);
+        renderInlineMinicharts(weeklyContainer);
+    }).catch(() => {});
 }
 
 /**
