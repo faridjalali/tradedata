@@ -7,7 +7,14 @@ import {
   getTickerDivergenceSummary,
 } from './divergenceTable';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
-import { escapeHtml } from './utils';
+import {
+  VDFCacheEntry,
+  ensureVDFAnalysisPanel, clearVDFAnalysisPanel, renderVDFAnalysisPanel
+} from './vdfAnalysisPanel';
+import {
+  loadTrendlineStorage, saveTrendlineStorage,
+  buildTrendlineContextKey, loadPersistedTrendlinesForContext
+} from './trendlineStorage';
 
 declare const Chart: any;
 
@@ -87,24 +94,8 @@ let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
 let vdfRefreshButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
-interface VDFZone {
-  startDate: string; endDate: string; score: number; windowDays: number;
-  absorptionPct?: number; netDeltaPct?: number; accumWeekRatio?: number;
-  overallPriceChange?: number; accumWeeks?: number; weeks?: number;
-  durationMultiplier?: number;
-  concordancePenalty?: number; concordantFrac?: number;
-  components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8?: number };
-}
-interface VDFDistribution { startDate: string; endDate: string; spanDays: number; priceChangePct?: number; netDeltaPct?: number; }
-interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
-interface VDFCacheEntry {
-  is_detected: boolean; composite_score: number; status: string; weeks: number;
-  zones: VDFZone[]; allZones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
-  details?: { metrics?: { totalDays?: number; scanStart?: string; scanEnd?: string; preDays?: number; recentCutoff?: string }; reason?: string };
-}
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
-let vdfAnalysisPanelEl: HTMLDivElement | null = null;
 const VDF_CACHE_MAX_SIZE = 200;
 const TREND_ICON = '✎';
 const ERASE_ICON = '⌫';
@@ -131,7 +122,6 @@ export const isMobileTouch: boolean =
   (window.matchMedia('(max-width: 768px)').matches ||
    'ontouchstart' in window ||
    navigator.maxTouchPoints > 0);
-const TRENDLINES_STORAGE_KEY = 'custom_chart_trendlines_v1';
 const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
 const TOP_PANE_BADGE_START_LEFT_PX = 38;
@@ -239,10 +229,6 @@ interface PersistedChartSettings {
   paneHeights?: Record<string, number>;
 }
 
-interface PersistedTrendlineBundle {
-  rsi: RSIPersistedTrendline[];
-  volumeDeltaRsi: RSIPersistedTrendline[];
-}
 
 const DEFAULT_RSI_SETTINGS: RSISettings = {
   length: 14,
@@ -937,64 +923,6 @@ function formatVolumeDeltaHistogramScaleLabel(value: number): string {
   }
 
   return sign ? `${sign}0`.padEnd(SCALE_LABEL_CHARS, ' ') : '0'.padEnd(SCALE_LABEL_CHARS, ' ');
-}
-
-function normalizePersistedTrendlines(lines: unknown): RSIPersistedTrendline[] {
-  if (!Array.isArray(lines)) return [];
-  const out: RSIPersistedTrendline[] = [];
-  for (const line of lines) {
-    if (!line || typeof line !== 'object') continue;
-    const candidate = line as RSIPersistedTrendline;
-    const time1 = candidate.time1;
-    const time2 = candidate.time2;
-    const value1 = Number(candidate.value1);
-    const value2 = Number(candidate.value2);
-    if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
-    if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
-    out.push({ time1, value1, time2, value2 });
-  }
-  return out;
-}
-
-function buildTrendlineContextKey(ticker: string, interval: ChartInterval): string {
-  return `${ticker.toUpperCase()}|${interval}`;
-}
-
-function loadTrendlineStorage(): Record<string, PersistedTrendlineBundle> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(TRENDLINES_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, Partial<PersistedTrendlineBundle>>;
-    const normalized: Record<string, PersistedTrendlineBundle> = {};
-    for (const [key, bundle] of Object.entries(parsed || {})) {
-      normalized[key] = {
-        rsi: normalizePersistedTrendlines(bundle?.rsi),
-        volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
-      };
-    }
-    return normalized;
-  } catch {
-    return {};
-  }
-}
-
-function saveTrendlineStorage(store: Record<string, PersistedTrendlineBundle>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(TRENDLINES_STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    // Ignore storage errors (private mode/quota/etc.)
-  }
-}
-
-function loadPersistedTrendlinesForContext(ticker: string, interval: ChartInterval): PersistedTrendlineBundle {
-  const storage = loadTrendlineStorage();
-  const bundle = storage[buildTrendlineContextKey(ticker, interval)];
-  return {
-    rsi: normalizePersistedTrendlines(bundle?.rsi),
-    volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
-  };
 }
 
 function persistTrendlinesForCurrentContext(): void {
@@ -4617,7 +4545,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
     const cached = vdfResultCache.get(cacheKey)!;
     updateVDFButton(cached);
     renderVDZones(cached);
-    renderVDFAnalysisPanel(cached);
+    renderVDFAnalysisPanel(cached, ticker);
     return;
   }
 
@@ -4651,352 +4579,13 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
     }
     updateVDFButton(entry);
     renderVDZones(entry);
-    renderVDFAnalysisPanel(entry);
+    renderVDFAnalysisPanel(entry, ticker);
   } catch {
     if (currentChartTicker === ticker) {
       setVDFButtonColor(VDF_COLOR_ERROR, 'VDF: Failed to load');
     }
   } finally {
     if (vdfLoadingForTicker === ticker) vdfLoadingForTicker = null;
-  }
-}
-
-// ─── VDF Analysis Panel ─────────────────────────────────────────────────────
-
-// VDF component metadata: [key, label, defaultWeight, tooltip]
-const VDF_COMPONENTS: Array<{ key: string; label: string; defaultWeight: number; tooltip: string }> = [
-  { key: 's8', label: 'Divergence', defaultWeight: 35, tooltip: 'Overall price-down + delta-up divergence. The PRIMARY thesis signal. Score = 0 when price is rising or delta is negative.' },
-  { key: 's6', label: 'Absorption', defaultWeight: 25, tooltip: 'Percentage of days where price fell but delta was positive. Day-by-day divergence confirmation: institutions buying the dip.' },
-  { key: 's1', label: 'Net Delta', defaultWeight: 15, tooltip: 'Total net buying as % of total volume. Supporting signal: is there net buying?' },
-  { key: 's2', label: 'Delta Slope', defaultWeight: 10, tooltip: 'Trend of cumulative weekly delta. Supporting signal: is buying building over time?' },
-  { key: 's3', label: 'Delta Shift', defaultWeight: 5, tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.' },
-  { key: 's4', label: 'Accum Ratio', defaultWeight: 5, tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks.' },
-  { key: 's5', label: 'Buy vs Sell', defaultWeight: 3, tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.' },
-  { key: 's7', label: 'Vol Decline', defaultWeight: 2, tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.' },
-];
-
-const VDF_DEFAULT_WEIGHTS: Record<string, number> = {};
-VDF_COMPONENTS.forEach(c => { VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight; });
-
-let vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
-
-function loadVDFWeightsFromStorage(): void {
-  try {
-    const raw = localStorage.getItem('chart_vdf_weights');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        for (const c of VDF_COMPONENTS) {
-          if (typeof parsed[c.key] === 'number') vdfWeights[c.key] = parsed[c.key];
-        }
-      }
-    }
-  } catch { /* */ }
-}
-
-function getVDFWeightTotal(): number {
-  return VDF_COMPONENTS.reduce((s, c) => s + (vdfWeights[c.key] || 0), 0);
-}
-
-function recomputeVDFZoneScore(zone: VDFZone): number {
-  if (!zone.components) return zone.score;
-  const total = getVDFWeightTotal();
-  if (total <= 0) return 0;
-  let rawScore = 0;
-  for (const c of VDF_COMPONENTS) {
-    const val = (zone.components as Record<string, number>)[c.key] || 0;
-    rawScore += val * ((vdfWeights[c.key] || 0) / total);
-  }
-  const concordancePenalty = zone.concordancePenalty ?? 1.0;
-  const durationMultiplier = zone.durationMultiplier ?? 1.0;
-  return rawScore * concordancePenalty * durationMultiplier;
-}
-
-// Backwards-compatible label array for buildComponentBarsHtml
-function getVDFComponentLabels(): Array<[string, string, string]> {
-  const total = getVDFWeightTotal();
-  return VDF_COMPONENTS.map(c => {
-    const w = vdfWeights[c.key] || 0;
-    const pct = total > 0 ? Math.round((w / total) * 100) : 0;
-    return [c.key, c.label, `${pct}%`] as [string, string, string];
-  });
-}
-
-function formatVDFDate(dateStr: string): string {
-  const parts = dateStr.split('-');
-  if (parts.length < 3) return dateStr;
-  return `${Number(parts[1])}/${Number(parts[2])}`;
-}
-
-function vdfScoreTier(score: number): string {
-  if (score >= 80) return 'Strong';
-  if (score >= 60) return 'Moderate';
-  if (score >= 40) return 'Weak';
-  return 'Marginal';
-}
-
-function vdfScoreColor(score: number): string {
-  if (score >= 80) return '#26a69a';
-  if (score >= 60) return '#8bc34a';
-  return '#c9d1d9';
-}
-
-function vdfProximityColor(level: string): string {
-  if (level === 'imminent') return '#f44336';
-  if (level === 'high') return '#ff9800';
-  if (level === 'elevated') return '#ffc107';
-  return '#8b949e';
-}
-
-function ensureVDFAnalysisPanel(): HTMLDivElement {
-  if (vdfAnalysisPanelEl) return vdfAnalysisPanelEl;
-  const chartContent = document.getElementById('chart-content');
-  if (!chartContent) return document.createElement('div');
-  const panel = document.createElement('div');
-  panel.id = 'vdf-analysis-panel';
-  panel.style.cssText = 'width:100%;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;overflow:hidden;display:none;';
-  chartContent.insertBefore(panel, chartContent.firstChild);
-  vdfAnalysisPanelEl = panel;
-  return panel;
-}
-
-function toggleVDFAnalysisPanel(): void {
-  if (!vdfAnalysisPanelEl) return;
-  const body = vdfAnalysisPanelEl.querySelector('.vdf-ap-body') as HTMLElement | null;
-  if (!body) return;
-  const isCollapsed = body.style.display === 'none';
-  body.style.display = isCollapsed ? 'block' : 'none';
-  const chevron = vdfAnalysisPanelEl.querySelector('.vdf-ap-chevron') as HTMLElement | null;
-  if (chevron) chevron.textContent = isCollapsed ? '\u25be' : '\u25b8';
-  try { localStorage.setItem('chart_vdf_panel_collapsed', isCollapsed ? '0' : '1'); } catch { /* */ }
-}
-
-function buildComponentBarsHtml(components: Record<string, number>): string {
-  return getVDFComponentLabels().map(([key, label, weight]: [string, string, string]) => {
-    const val = Number(components[key]) || 0;
-    const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
-    const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : '#484f58';
-    return `<div style="display:grid;grid-template-columns:130px 1fr 36px;gap:6px;align-items:center;margin:2px 0;">
-      <span style="color:#8b949e;font-size:11px;white-space:nowrap;">${escapeHtml(label)} (${weight})</span>
-      <div style="height:4px;background:#21262d;border-radius:2px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;"></div>
-      </div>
-      <span style="color:#c9d1d9;font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${val.toFixed(2)}</span>
-    </div>`;
-  }).join('');
-}
-
-function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
-  const recomputed = recomputeVDFZoneScore(zone);
-  const scoreInt = Math.round(recomputed * 100);
-  const serverScoreInt = Math.round(zone.score * 100);
-  const isCustomWeights = !VDF_COMPONENTS.every(c => vdfWeights[c.key] === c.defaultWeight);
-  const label = isBest ? `Zone ${index + 1} (Primary)` : `Zone ${index + 1}`;
-  const color = vdfScoreColor(scoreInt);
-
-  let metricsLine = '';
-  const parts: string[] = [];
-  if (zone.overallPriceChange != null) parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
-  if (zone.netDeltaPct != null) parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
-  if (zone.absorptionPct != null) parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
-  if (parts.length) metricsLine = `<div style="margin:4px 0;color:#8b949e;font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
-
-  let detailLine = '';
-  const dParts: string[] = [];
-  if (zone.accumWeeks != null && zone.weeks) dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
-  if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
-  if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0) dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
-  if (dParts.length) detailLine = `<div style="margin:2px 0;color:#8b949e;font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
-
-  let componentsHtml = '';
-  if (zone.components) {
-    componentsHtml = `<div style="margin-top:8px;"><div style="color:#8b949e;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
-  }
-
-  // Show server vs local score difference when custom weights are active
-  const scoreDiffHtml = isCustomWeights && serverScoreInt !== scoreInt
-    ? `<span style="font-size:10px;color:#484f58;margin-left:4px;" title="Server score with default weights">(was ${serverScoreInt})</span>`
-    : '';
-
-  return `<div style="background:#161b22;border:1px solid #21262d;border-radius:4px;padding:12px;margin-bottom:8px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <span style="font-weight:600;font-size:13px;color:#c9d1d9;">${escapeHtml(label)}</span>
-      <span><span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${color};">${scoreInt}</span>${scoreDiffHtml}</span>
-    </div>
-    <div style="color:#c9d1d9;font-size:12px;">${formatVDFDate(zone.startDate)} \u2192 ${formatVDFDate(zone.endDate)} (${zone.windowDays} trading days${zone.weeks ? `, ${zone.weeks} wk` : ''})</div>
-    ${metricsLine}
-    ${detailLine}
-    ${componentsHtml}
-  </div>`;
-}
-
-function buildDistributionHtml(dist: VDFDistribution, index: number): string {
-  let detail = '';
-  const parts: string[] = [];
-  if (dist.priceChangePct != null) parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
-  if (dist.netDeltaPct != null) parts.push(`Delta ${dist.netDeltaPct >= 0 ? '+' : ''}${dist.netDeltaPct.toFixed(1)}%`);
-  if (parts.length) detail = parts.join(' while ') + ' \u2014 selling into strength.';
-
-  return `<div style="background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:4px;padding:10px 12px;margin-bottom:8px;">
-    <div style="font-weight:600;font-size:12px;color:#ef5350;margin-bottom:2px;">Cluster ${index + 1}: ${formatVDFDate(dist.startDate)} \u2192 ${formatVDFDate(dist.endDate)} (${dist.spanDays} days)</div>
-    ${detail ? `<div style="color:#8b949e;font-size:12px;">${escapeHtml(detail)}</div>` : ''}
-  </div>`;
-}
-
-function buildProximityHtml(prox: VDFProximity): string {
-  if (prox.level === 'none' && prox.compositeScore === 0) return '';
-  const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
-  const levelColor = vdfProximityColor(prox.level);
-
-  const signalRows = prox.signals.map(sig =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;">
-      <span style="color:#c9d1d9;">\u2713 ${escapeHtml(sig.detail)}</span>
-      <span style="color:${levelColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;white-space:nowrap;margin-left:12px;">+${sig.points}</span>
-    </div>`
-  ).join('');
-
-  return `<div style="margin-top:4px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <span style="font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:13px;font-weight:700;color:${levelColor};">${prox.compositeScore} pts</span>
-      <span style="font-size:11px;font-weight:600;color:${levelColor};border:1px solid ${levelColor};border-radius:3px;padding:0 5px;line-height:16px;">${levelLabel}</span>
-    </div>
-    ${signalRows}
-  </div>`;
-}
-
-function renderVDFAnalysisPanel(entry: VDFCacheEntry | null): void {
-  loadVDFWeightsFromStorage();
-  const panel = ensureVDFAnalysisPanel();
-  const ticker = currentChartTicker || '';
-
-  if (!entry) {
-    // Show panel in grayed-out placeholder state (visible like other panes before data arrives)
-    panel.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid #21262d;opacity:0.45;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">\u25b8</span>
-        <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
-        <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
-      </div>
-    </div>`;
-    panel.style.display = 'block';
-    return;
-  }
-
-  // Use best zone recomputed score for the header
-  const bestZone = entry.zones[0];
-  const recomputedBestScore = bestZone ? Math.round(recomputeVDFZoneScore(bestZone) * 100) : 0;
-  const score = entry.is_detected ? recomputedBestScore : Math.round(entry.composite_score * 100);
-  const tier = vdfScoreTier(score);
-  const color = vdfScoreColor(score);
-  const metrics = entry.details?.metrics;
-
-  let collapsed = true;
-  try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
-
-  const chevron = collapsed ? '\u25b8' : '\u25be';
-  const bodyDisplay = collapsed ? 'none' : 'block';
-
-  // Header
-  const headerHtml = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;user-select:none;border-bottom:1px solid #21262d;">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">${chevron}</span>
-      <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
-      <span style="color:#8b949e;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
-    </div>
-    <div style="display:flex;align-items:center;">
-      ${entry.is_detected
-        ? `<span style="font-size:11px;color:#484f58;">${escapeHtml(tier)}</span>`
-        : `<span style="font-size:11px;color:#484f58;">Not detected</span>`}
-    </div>
-  </div>`;
-
-  // Body
-  let bodyHtml = '';
-
-  if (!entry.is_detected) {
-    // Not detected — brief message
-    let scanInfo = '';
-    if (metrics?.scanStart && metrics?.scanEnd) {
-      scanInfo = ` Scan: ${formatVDFDate(metrics.scanStart)} \u2192 ${formatVDFDate(metrics.scanEnd)}`;
-      if (metrics.totalDays) scanInfo += ` (${metrics.totalDays} trading days)`;
-      scanInfo += '.';
-    }
-    bodyHtml = `<div style="padding:14px;color:#8b949e;font-size:13px;">No accumulation patterns detected in the scan period.${scanInfo}</div>`;
-  } else {
-    // Assessment section
-    const zoneCount = entry.zones.length;
-    let assessParts = `Volume-delta accumulation <span style="color:${color};font-weight:600;">${tier}</span> (score: ${score}).`;
-    assessParts += ` ${zoneCount} accumulation zone${zoneCount !== 1 ? 's' : ''} detected`;
-    if (entry.weeks) assessParts += ` spanning up to ${entry.weeks} weeks`;
-    assessParts += '.';
-    if (metrics?.scanStart && metrics?.scanEnd) {
-      assessParts += ` Scan: ${formatVDFDate(metrics.scanStart)} \u2192 ${formatVDFDate(metrics.scanEnd)}`;
-      if (metrics.totalDays) assessParts += ` (${metrics.totalDays} trading days)`;
-      assessParts += '.';
-    }
-    if (entry.distribution.length > 0) {
-      assessParts += ` <span style="color:#ef5350;">${entry.distribution.length} distribution cluster${entry.distribution.length !== 1 ? 's' : ''}</span> also found.`;
-    }
-
-    const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:#c9d1d9;">${assessParts}</div>`;
-
-    // Chart legend
-    const swatchStyle = 'display:inline-block;width:14px;height:5px;border-radius:1px;vertical-align:middle;margin-right:5px;';
-    const dashStyle = 'display:inline-block;width:14px;height:0;border-top:1px dashed;vertical-align:middle;margin-right:5px;';
-    const glowStyle = 'display:inline-block;width:3px;height:12px;border-radius:1px;vertical-align:middle;margin-right:5px;';
-    const legendItems: string[] = [];
-    legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(38,166,154,0.7);"></span>Accumulation</span>`);
-    if (entry.distribution.length > 0) {
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(239,83,80,0.65);"></span>Distribution</span>`);
-    }
-    const hasAbsorption = entry.zones.some(z => (z.absorptionPct || 0) >= 5);
-    if (hasAbsorption) {
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(255,167,38,0.7);"></span>Absorption</span>`);
-    }
-    legendItems.push(`<span style="white-space:nowrap;"><span style="${dashStyle}border-color:rgba(38,166,154,0.4);"></span>Zone bounds</span>`);
-    const proxLegend = entry.proximity;
-    if (proxLegend && proxLegend.level !== 'none' && proxLegend.compositeScore > 0) {
-      const plc = vdfProximityColor(proxLegend.level);
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${glowStyle}background:${plc};box-shadow:0 0 4px ${plc};"></span>Proximity</span>`);
-    }
-    const legendHtml = `<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding:8px 12px;background:#161b22;border:1px solid #21262d;border-radius:4px;margin-bottom:16px;font-size:11px;color:#8b949e;">${legendItems.join('')}</div>`;
-
-    // Zones section
-    const sectionStyle = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;margin:16px 0 8px;border-bottom:1px solid #21262d;padding-bottom:4px;';
-    let zonesHtml = '';
-    if (entry.zones.length > 0) {
-      zonesHtml = `<div style="${sectionStyle}">Accumulation Zones</div>`;
-      zonesHtml += entry.zones.map((z, i) => buildZoneHtml(z, i, i === 0)).join('');
-    }
-
-    // Distribution section
-    let distHtml = '';
-    if (entry.distribution.length > 0) {
-      distHtml = `<div style="${sectionStyle}">Distribution Clusters</div>`;
-      distHtml += entry.distribution.map((d, i) => buildDistributionHtml(d, i)).join('');
-    }
-
-    // Proximity section
-    let proxHtml = '';
-    const prox = entry.proximity;
-    if (prox && (prox.level !== 'none' || prox.compositeScore > 0)) {
-      const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
-      proxHtml = `<div style="${sectionStyle}">Proximity Signals (${prox.compositeScore} pts \u2014 ${levelLabel})</div>`;
-      proxHtml += buildProximityHtml(prox);
-    }
-
-    bodyHtml = `<div style="padding:14px;">${assessHtml}${legendHtml}${zonesHtml}${distHtml}${proxHtml}</div>`;
-  }
-
-  panel.innerHTML = `${headerHtml}<div class="vdf-ap-body" style="display:${bodyDisplay};">${bodyHtml}</div>`;
-  panel.style.display = 'block';
-
-  // Bind header click for toggle
-  const header = panel.querySelector('.vdf-ap-header');
-  if (header) {
-    header.addEventListener('click', () => {
-      toggleVDFAnalysisPanel();
-    });
   }
 }
 
@@ -5589,7 +5178,7 @@ export async function renderCustomChart(
     // Re-bind chart sync on next setupChartSync call since charts may be recreated.
     isChartSyncBound = false;
     crosshairHidden = false;
-    if (vdfAnalysisPanelEl) { vdfAnalysisPanelEl.style.display = 'none'; vdfAnalysisPanelEl.innerHTML = ''; }
+    clearVDFAnalysisPanel();
   }
 
   const chartContent = document.getElementById('chart-content');
@@ -5622,7 +5211,7 @@ export async function renderCustomChart(
   ensureMonthGridOverlay(volumeDeltaContainer, 'volumeDelta');
   ensureVDZoneOverlay(chartContainer);
   ensureVDFAnalysisPanel();
-  renderVDFAnalysisPanel(null);
+  renderVDFAnalysisPanel(null, currentChartTicker || '');
   ensureSettingsUI(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   syncTopPaneTickerLabel();
 
@@ -5779,16 +5368,7 @@ export async function renderCustomChart(
       clearMonthGridOverlay(volumeDeltaMonthGridOverlayEl);
       clearMonthGridOverlay(rsiMonthGridOverlayEl);
       renderVDZones(null);
-      // Show grayed-out non-expandable Analysis header (no ticker, no body)
-      if (vdfAnalysisPanelEl) {
-        vdfAnalysisPanelEl.innerHTML = `<div class="vdf-ap-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;user-select:none;border-bottom:1px solid #21262d;opacity:0.45;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="vdf-ap-chevron" style="font-size:12px;color:#8b949e;width:12px;">\u25b8</span>
-            <span style="font-weight:600;color:#c9d1d9;">Analysis</span>
-          </div>
-        </div>`;
-        vdfAnalysisPanelEl.style.display = 'block';
-      }
+      renderVDFAnalysisPanel(null, '');
       setPricePaneMessage(chartContainer, INVALID_SYMBOL_MESSAGE);
       deactivateRsiDivergencePlotTool();
       deactivateVolumeDeltaRsiDivergencePlotTool();

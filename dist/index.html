@@ -28,7 +28,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-CrLPov8S.js"></script>
+    <script type="module" crossorigin src="./assets/index-DXPVpHlv.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-charts-C-3zq_q_.js">
   </head>
   <body>
@@ -206,6 +206,7 @@
           <div class="column logs-column">
             <div class="column-header">
               <h2>Recent Runs</h2>
+              <div id="logs-history-pagination" class="log-history-pagination"></div>
             </div>
             <div id="logs-history-container" class="alerts-list">
               <div class="loading">Loading...</div>
@@ -229,9 +230,9 @@
                   <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
                   <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                    <input type="text" class="glass-input column-tf-from" placeholder="mm/dd/yyyy" maxlength="10" />
+                    <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
-                    <input type="text" class="glass-input column-tf-to" placeholder="mm/dd/yyyy" maxlength="10" />
+                    <input type="date" class="glass-input column-tf-to" />
                     <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
                   </div>
                 </div>
@@ -258,9 +259,9 @@
                   <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
                   <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                    <input type="text" class="glass-input column-tf-from" placeholder="mm/dd/yyyy" maxlength="10" />
+                    <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
-                    <input type="text" class="glass-input column-tf-to" placeholder="mm/dd/yyyy" maxlength="10" />
+                    <input type="date" class="glass-input column-tf-to" />
                     <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
                   </div>
                 </div>
@@ -294,9 +295,9 @@
                       <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
                       <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
                       <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                        <input type="text" class="glass-input column-tf-from" placeholder="mm/dd/yyyy" maxlength="10" />
+                        <input type="date" class="glass-input column-tf-from" />
                         <span class="column-tf-sep">to</span>
-                        <input type="text" class="glass-input column-tf-to" placeholder="mm/dd/yyyy" maxlength="10" />
+                        <input type="date" class="glass-input column-tf-to" />
                         <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
                       </div>
                     </div>
@@ -324,9 +325,9 @@
                       <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
                       <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
                       <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                        <input type="text" class="glass-input column-tf-from" placeholder="mm/dd/yyyy" maxlength="10" />
+                        <input type="date" class="glass-input column-tf-from" />
                         <span class="column-tf-sep">to</span>
-                        <input type="text" class="glass-input column-tf-to" placeholder="mm/dd/yyyy" maxlength="10" />
+                        <input type="date" class="glass-input column-tf-to" />
                         <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
                       </div>
                     </div>
