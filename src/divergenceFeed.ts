@@ -71,9 +71,57 @@ let miniChartPrefetchInFlight = false;
 
 // --- Inline minichart state (mobile only) ---
 const inlineChartInstances = new Map<string, ReturnType<typeof createChart>>();
+let inlineChartObserver: IntersectionObserver | null = null;
 
 function isMobileMinichartEnabled(): boolean {
     return isMobileTouch && localStorage.getItem('minichart_mobile') === 'on';
+}
+
+function getInlineChartObserver(): IntersectionObserver {
+    if (inlineChartObserver) return inlineChartObserver;
+    inlineChartObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            const wrapper = entry.target as HTMLElement;
+            const ticker = wrapper.dataset.ticker;
+            if (!ticker) continue;
+
+            if (entry.isIntersecting) {
+                // Entering viewport zone — create chart if not already created
+                if (inlineChartInstances.has(ticker)) continue;
+                const cached = miniChartDataCache.get(ticker);
+                if (cached && cached.length > 0) {
+                    createInlineChart(wrapper, ticker, cached);
+                } else {
+                    // Fetch bars on demand
+                    fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(data => {
+                            const bars = Array.isArray(data?.bars) ? data.bars : [];
+                            if (bars.length > 0) {
+                                miniChartDataCache.set(ticker, bars);
+                                if (wrapper.isConnected && !inlineChartInstances.has(ticker)) {
+                                    createInlineChart(wrapper, ticker, bars);
+                                }
+                            }
+                        })
+                        .catch(() => {});
+                }
+            } else {
+                // Left viewport zone — destroy chart to free memory
+                const chart = inlineChartInstances.get(ticker);
+                if (chart) {
+                    chart.remove();
+                    inlineChartInstances.delete(ticker);
+                    wrapper.innerHTML = '';
+                }
+            }
+        }
+    }, {
+        // Create charts 300px before they scroll into view, destroy 300px after leaving
+        rootMargin: '300px 0px 300px 0px',
+        threshold: 0,
+    });
+    return inlineChartObserver;
 }
 
 function evictMiniChartCache(keepCount: number): void {
@@ -1467,8 +1515,10 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
 // --- Inline minichart rendering (mobile only) ---
 
 function removeInlineMinicharts(container: HTMLElement): void {
+    const observer = inlineChartObserver;
     const wrappers = container.querySelectorAll<HTMLElement>('.inline-minichart');
     for (const wrapper of wrappers) {
+        if (observer) observer.unobserve(wrapper);
         const ticker = wrapper.dataset.ticker;
         if (ticker) {
             const chart = inlineChartInstances.get(ticker);
@@ -1509,11 +1559,12 @@ function createInlineChart(wrapper: HTMLElement, ticker: string, bars: Array<{ t
     inlineChartInstances.set(ticker, chart);
 }
 
-async function renderInlineMinicharts(container: HTMLElement): Promise<void> {
+function renderInlineMinicharts(container: HTMLElement): void {
     if (!isMobileMinichartEnabled()) {
         removeInlineMinicharts(container);
         return;
     }
+    const observer = getInlineChartObserver();
     const cards = container.querySelectorAll<HTMLElement>('.alert-card');
     for (const card of cards) {
         const ticker = card.dataset.ticker;
@@ -1526,24 +1577,8 @@ async function renderInlineMinicharts(container: HTMLElement): Promise<void> {
         wrapper.className = 'inline-minichart';
         wrapper.dataset.ticker = ticker;
         card.after(wrapper);
-
-        const cached = miniChartDataCache.get(ticker);
-        if (cached && cached.length > 0) {
-            createInlineChart(wrapper, ticker, cached);
-        } else {
-            // Fetch bars (same as overlay logic)
-            try {
-                const res = await fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`);
-                if (!res.ok) continue;
-                const data = await res.json();
-                const bars = Array.isArray(data?.bars) ? data.bars : [];
-                if (bars.length > 0) {
-                    miniChartDataCache.set(ticker, bars);
-                    // Guard: wrapper may have been removed during await
-                    if (wrapper.isConnected) createInlineChart(wrapper, ticker, bars);
-                }
-            } catch { /* ignore */ }
-        }
+        // Let IntersectionObserver handle chart creation when wrapper scrolls into view
+        observer.observe(wrapper);
     }
 }
 
