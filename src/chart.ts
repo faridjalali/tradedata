@@ -93,6 +93,7 @@ let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
 let vdfRefreshButtonEl: HTMLButtonElement | null = null;
+let vdfToolbarEl: HTMLDivElement | null = null;
 let vdfLoadingForTicker: string | null = null;
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
