@@ -38,6 +38,7 @@ function registerDivergenceRoutes(options = {}) {
     canResumeFetchWeeklyData,
     getVDFScanStatus,
     requestStopVDFScan,
+    canResumeVDFScan,
     runVDFScan,
     getIsVDFScanRunning
   } = options;
@@ -494,16 +495,18 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(501).json({ error: 'VDF scan endpoint is not enabled' });
     }
 
-    runVDFScan({ trigger: 'manual-api' })
+    const shouldResume = typeof canResumeVDFScan === 'function' && canResumeVDFScan();
+
+    runVDFScan({ trigger: 'manual-api', resume: shouldResume })
       .then((summary) => {
-        console.log('Manual VDF scan completed:', summary);
+        console.log(`Manual VDF scan ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
       .catch((err) => {
         const message = err && err.message ? err.message : String(err);
         console.error(`Manual VDF scan failed: ${message}`);
       });
 
-    return res.status(202).json({ status: 'started' });
+    return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
   app.post('/api/divergence/vdf-scan/stop', async (req, res) => {

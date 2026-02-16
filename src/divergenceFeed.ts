@@ -603,48 +603,42 @@ function summarizeFetchDailyStatus(status: DivergenceScanStatus): string {
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-    const ranText = lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Fetched --';
-    if (!fetchDaily) return ranText;
+    if (!fetchDaily) return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
     const fetchDailyState = String(fetchDaily.status || '').toLowerCase();
     if (fetchDailyState === 'stopping') {
         return 'Stopping';
     }
     if (fetchDailyState === 'stopped') {
-        if (fetchDaily.can_resume) {
-            const processed = Number(fetchDaily.processed_tickers || 0);
-            const total = Number(fetchDaily.total_tickers || 0);
-            return total > 0 ? `Stopped ${processed}/${total} (resumable)` : 'Stopped (resumable)';
-        }
+        if (fetchDaily.can_resume) return 'Resumable Stop';
         return 'Stopped';
     }
     if (fetchDaily.running) {
         const processed = Number(fetchDaily.processed_tickers || 0);
         const total = Number(fetchDaily.total_tickers || 0);
-        const errors = Number(fetchDaily.error_tickers || 0);
         if (fetchDaily.stop_requested) {
             return 'Stopping';
         }
         if (fetchDailyState === 'running-retry') {
-            return `Retrying ${errors} failed (${processed}/${total})`;
+            return `${processed} / ${total} (Retrying)`;
         }
         if (fetchDailyState === 'running-ma') {
-            return `MA ${processed}/${total}`;
+            return `MA ${processed} / ${total}`;
         }
         if (fetchDailyState === 'running-ma-retry') {
-            return `Retrying failed MA (${processed}/${total})`;
+            return `MA ${processed} / ${total} (Retrying)`;
         }
         return `${processed} / ${total}`;
     }
     if (fetchDailyState === 'completed') {
-        return ranText;
+        return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
     }
     if (fetchDailyState === 'completed-with-errors') {
-        return ranText;
+        return lastRunMmDd ? `Fetched (E) ${lastRunMmDd}` : 'Due for Fetch';
     }
     if (fetchDailyState === 'failed') {
-        return ranText;
+        return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
     }
-    return ranText;
+    return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
 }
 
 function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
@@ -658,61 +652,55 @@ function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
         || toDateKey(latest?.finished_at)
         || toDateKey(latest?.started_at);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-    const ranText = lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Fetched --';
-    if (!fetchWeekly) return ranText;
+    if (!fetchWeekly) return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
     const fetchWeeklyState = String(fetchWeekly.status || '').toLowerCase();
     if (fetchWeeklyState === 'stopping') {
         return 'Stopping';
     }
     if (fetchWeeklyState === 'stopped') {
-        if (fetchWeekly.can_resume) {
-            const processed = Number(fetchWeekly.processed_tickers || 0);
-            const total = Number(fetchWeekly.total_tickers || 0);
-            return total > 0 ? `Stopped ${processed}/${total} (resumable)` : 'Stopped (resumable)';
-        }
+        if (fetchWeekly.can_resume) return 'Resumable Stop';
         return 'Stopped';
     }
     if (fetchWeekly.running) {
         const processed = Number(fetchWeekly.processed_tickers || 0);
         const total = Number(fetchWeekly.total_tickers || 0);
-        const errors = Number(fetchWeekly.error_tickers || 0);
         if (fetchWeekly.stop_requested) {
             return 'Stopping';
         }
         if (fetchWeeklyState === 'running-retry') {
-            return `Retrying ${errors} failed (${processed}/${total})`;
+            return `${processed} / ${total} (Retrying)`;
         }
         if (fetchWeeklyState === 'running-ma') {
-            return `MA ${processed}/${total}`;
+            return `MA ${processed} / ${total}`;
         }
         if (fetchWeeklyState === 'running-ma-retry') {
-            return `Retrying failed MA (${processed}/${total})`;
+            return `MA ${processed} / ${total} (Retrying)`;
         }
         return `${processed} / ${total}`;
     }
     if (fetchWeeklyState === 'completed') {
-        return ranText;
+        return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
     }
     if (fetchWeeklyState === 'completed-with-errors') {
-        return ranText;
+        return lastRunMmDd ? `Fetched (E) ${lastRunMmDd}` : 'Due for Fetch';
     }
     if (fetchWeeklyState === 'failed') {
-        return ranText;
+        return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
     }
-    return ranText;
+    return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
 }
 
 function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
     const scan = status.vdfScan;
-    if (!scan) return 'Ran --';
+    if (!scan) return 'Due for Fetch';
     const state = String(scan.status || '').toLowerCase();
     const lastRunDateKey = toDateKeyAsET(scan.finished_at || scan.started_at || null);
     const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-    const ranText = lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
     if (state === 'stopping') {
         return 'Stopping';
     }
     if (state === 'stopped') {
+        if (scan.can_resume) return 'Resumable Stop';
         return 'Stopped';
     }
     if (scan.running) {
@@ -722,17 +710,20 @@ function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
             return 'Stopping';
         }
         if (state === 'running-retry') {
-            return `Retrying (${processed}/${total})`;
+            return `${processed} / ${total} (Retrying)`;
         }
-        return `${processed}/${total}`;
+        return `${processed} / ${total}`;
     }
-    if (state === 'completed' || state === 'completed-with-errors') {
-        return ranText;
+    if (state === 'completed') {
+        return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
+    }
+    if (state === 'completed-with-errors') {
+        return lastRunMmDd ? `Ran (E) ${lastRunMmDd}` : 'Due for Fetch';
     }
     if (state === 'failed') {
-        return ranText;
+        return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
     }
-    return ranText;
+    return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
 }
 
 function clearDivergenceScanPolling(): void {
@@ -1040,13 +1031,13 @@ export async function runManualDivergenceTableBuild(): Promise<void> {
 
 export async function runManualDivergenceFetchDailyData(): Promise<void> {
     setFetchDailyButtonState(true);
-    setFetchDailyStatusText('Starting...');
+    setFetchDailyStatusText('Starting');
     allowAutoCardRefreshFromFetchDaily = true;
     allowAutoCardRefreshFromFetchWeekly = false;
     try {
         const started = await startDivergenceFetchDailyData();
         if (started.status === 'running') setFetchDailyStatusText('Already running');
-        else if (started.status === 'resumed') setFetchDailyStatusText('Resuming...');
+        else if (started.status === 'resumed') setFetchDailyStatusText('Resuming');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {
@@ -1058,13 +1049,13 @@ export async function runManualDivergenceFetchDailyData(): Promise<void> {
 
 export async function runManualDivergenceFetchWeeklyData(): Promise<void> {
     setFetchWeeklyButtonState(true);
-    setFetchWeeklyStatusText('Starting...');
+    setFetchWeeklyStatusText('Starting');
     allowAutoCardRefreshFromFetchWeekly = true;
     allowAutoCardRefreshFromFetchDaily = false;
     try {
         const started = await startDivergenceFetchWeeklyData();
         if (started.status === 'running') setFetchWeeklyStatusText('Already running');
-        else if (started.status === 'resumed') setFetchWeeklyStatusText('Resuming...');
+        else if (started.status === 'resumed') setFetchWeeklyStatusText('Resuming');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {
@@ -1190,13 +1181,14 @@ export async function stopManualDivergenceFetchWeeklyData(): Promise<void> {
 
 export async function runManualVDFScan(): Promise<void> {
     setVDFScanButtonState(true);
-    setVDFScanStatusText('Starting...');
+    setVDFScanStatusText('Starting');
     allowAutoCardRefreshFromVDFScan = true;
     allowAutoCardRefreshFromFetchDaily = false;
     allowAutoCardRefreshFromFetchWeekly = false;
     try {
         const started = await startVDFScan();
         if (started.status === 'running') setVDFScanStatusText('Already running');
+        else if (started.status === 'resumed') setVDFScanStatusText('Resuming');
         ensureDivergenceScanPolling(true);
         await pollDivergenceScanStatus(false);
     } catch (error) {

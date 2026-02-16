@@ -4538,6 +4538,7 @@ async function getVDFStatus(ticker, options = {}) {
 let vdfScanRunning = false;
 let vdfScanStopRequested = false;
 let vdfScanAbortController = null;
+let vdfScanResumeState = null;  // { tickers, nextIndex, processedTickers, errorTickers, detectedTickers }
 let vdfScanStatus = {
   running: false,
   status: 'idle',
@@ -4549,10 +4550,18 @@ let vdfScanStatus = {
   finishedAt: null
 };
 
+function canResumeVDFScan() {
+  if (vdfScanRunning) return false;
+  if (!vdfScanResumeState) return false;
+  const rs = vdfScanResumeState;
+  return Array.isArray(rs.tickers) && rs.tickers.length > 0 && rs.nextIndex < rs.tickers.length;
+}
+
 function getVDFScanStatus() {
   return {
     running: Boolean(vdfScanRunning),
     stop_requested: Boolean(vdfScanStopRequested),
+    can_resume: canResumeVDFScan(),
     status: String(vdfScanStatus.status || 'idle'),
     total_tickers: Number(vdfScanStatus.totalTickers || 0),
     processed_tickers: Number(vdfScanStatus.processedTickers || 0),
@@ -4589,23 +4598,33 @@ async function runVDFScan(options = {}) {
     return { status: 'running' };
   }
 
+  const resumeRequested = options.resume === true;
+  const resumeState = resumeRequested ? vdfScanResumeState : null;
+  if (resumeRequested && (!resumeState || !Array.isArray(resumeState.tickers) || resumeState.tickers.length === 0 || resumeState.nextIndex >= resumeState.tickers.length)) {
+    return { status: 'no-resume' };
+  }
+
   vdfScanRunning = true;
   vdfScanStopRequested = false;
   runMetricsByType.vdfScan = null;
+  if (!resumeRequested) {
+    vdfScanResumeState = null;
+  }
 
-  let processedTickers = 0;
-  let errorTickers = 0;
-  let detectedTickers = 0;
+  let processedTickers = Math.max(0, Number(resumeState?.processedTickers || 0));
+  let errorTickers = Math.max(0, Number(resumeState?.errorTickers || 0));
+  let detectedTickers = Math.max(0, Number(resumeState?.detectedTickers || 0));
+  let totalTickers = Math.max(0, Number(resumeState?.totalTickers || 0));
   const startedAtIso = new Date().toISOString();
   const scanAbort = new AbortController();
   vdfScanAbortController = scanAbort;
   vdfScanStatus = {
     running: true,
     status: 'running',
-    totalTickers: 0,
-    processedTickers: 0,
-    errorTickers: 0,
-    detectedTickers: 0,
+    totalTickers,
+    processedTickers,
+    errorTickers,
+    detectedTickers,
     startedAt: startedAtIso,
     finishedAt: null
   };
@@ -4618,14 +4637,26 @@ async function runVDFScan(options = {}) {
   const today = currentEtDateString();
   const failedTickers = [];
 
+  let tickers = resumeState?.tickers || [];
+  let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
+
   try {
     // Sweep stale chart data cache before starting to free memory for the scan
     sweepExpiredTimedCache(CHART_DATA_CACHE);
 
-    const tickers = await getStoredDivergenceSymbolTickers();
-    const totalTickers = tickers.length;
+    if (!resumeRequested) {
+      tickers = await getStoredDivergenceSymbolTickers();
+      startIndex = 0;
+      processedTickers = 0;
+      errorTickers = 0;
+      detectedTickers = 0;
+    }
+
+    totalTickers = tickers.length;
     vdfScanStatus.totalTickers = totalTickers;
-    console.log(`VDF scan: ${totalTickers} tickers, concurrency=${runConcurrency}, noCache=true`);
+    const tickerSlice = tickers.slice(startIndex);
+    let settledCount = 0;
+    console.log(`VDF scan${resumeRequested ? ' (resumed)' : ''}: ${totalTickers} tickers (starting at ${startIndex}), concurrency=${runConcurrency}, noCache=true`);
 
     runMetricsTracker = createRunMetricsTracker('vdfScan', {
       totalTickers,
@@ -4635,7 +4666,7 @@ async function runVDFScan(options = {}) {
     runMetricsTracker.setPhase('core');
 
     await mapWithConcurrency(
-      tickers,
+      tickerSlice,
       runConcurrency,
       async (ticker) => {
         if (vdfScanStopRequested || scanAbort.signal.aborted) {
@@ -4655,7 +4686,8 @@ async function runVDFScan(options = {}) {
       },
       (settled) => {
         if (settled.skipped) return;
-        processedTickers++;
+        settledCount++;
+        processedTickers = startIndex + settledCount;
         if (settled.error) {
           errorTickers++;
           failedTickers.push(settled.ticker);
@@ -4681,12 +4713,22 @@ async function runVDFScan(options = {}) {
     );
 
     if (vdfScanStopRequested) {
+      // Rewind by concurrency level so in-flight aborted tickers are re-scanned on resume
+      const safeNextIndex = Math.max(0, Math.min(totalTickers, processedTickers - runConcurrency));
+      vdfScanResumeState = {
+        tickers,
+        totalTickers,
+        nextIndex: safeNextIndex,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        detectedTickers
+      };
       vdfScanStopRequested = false;
       vdfScanStatus = {
         running: false,
         status: 'stopped',
         totalTickers,
-        processedTickers,
+        processedTickers: safeNextIndex,
         errorTickers,
         detectedTickers,
         startedAt: startedAtIso,
@@ -4695,12 +4737,12 @@ async function runVDFScan(options = {}) {
       if (runMetricsTracker) {
         runMetricsTracker.finish('stopped', {
           totalTickers,
-          processedTickers,
+          processedTickers: safeNextIndex,
           errorTickers,
           failedTickers
         });
       }
-      return { status: 'stopped', processedTickers, errorTickers, detectedTickers };
+      return { status: 'stopped', processedTickers: safeNextIndex, errorTickers, detectedTickers };
     }
 
     // Retry failed tickers (first pass — concurrency / 2)
@@ -4793,6 +4835,8 @@ async function runVDFScan(options = {}) {
     }
 
     const finalStatus = errorTickers > 0 ? 'completed-with-errors' : 'completed';
+    // Completed successfully — clear resume state
+    vdfScanResumeState = null;
     vdfScanStopRequested = false;
     vdfScanStatus = {
       running: false,
@@ -4816,6 +4860,41 @@ async function runVDFScan(options = {}) {
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     console.error(`VDF scan failed: ${message}`);
+
+    if (vdfScanStopRequested || isAbortError(err)) {
+      // Preserve resume state on stop/abort — rewind by concurrency level
+      const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
+      vdfScanResumeState = {
+        tickers,
+        totalTickers,
+        nextIndex: safeNextIndex,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        detectedTickers
+      };
+      vdfScanStopRequested = false;
+      vdfScanStatus = {
+        running: false,
+        status: 'stopped',
+        totalTickers,
+        processedTickers: safeNextIndex,
+        errorTickers,
+        detectedTickers,
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString()
+      };
+      if (runMetricsTracker) {
+        runMetricsTracker.finish('stopped', {
+          totalTickers,
+          processedTickers: safeNextIndex,
+          errorTickers,
+          failedTickers
+        });
+      }
+      return { status: 'stopped', processedTickers: safeNextIndex, errorTickers, detectedTickers };
+    }
+
+    vdfScanResumeState = null;
     vdfScanStopRequested = false;
     vdfScanStatus = {
       running: false,
@@ -8672,6 +8751,7 @@ registerDivergenceRoutes({
   canResumeFetchWeeklyData: () => canResumeDivergenceFetchWeeklyData(),
   getVDFScanStatus: () => getVDFScanStatus(),
   requestStopVDFScan: () => requestStopVDFScan(),
+  canResumeVDFScan: () => canResumeVDFScan(),
   runVDFScan,
   getIsVDFScanRunning: () => vdfScanRunning
 });
