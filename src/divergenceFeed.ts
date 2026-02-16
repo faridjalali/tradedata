@@ -1717,6 +1717,8 @@ export function setupDivergenceFeedDelegation(): void {
     // Guard with relatedTarget so moves between children within the same card
     // don't destroy/restart the overlay.
     view.addEventListener('mouseenter', (e: Event) => {
+        // On mobile, never show hover overlay — inline minicharts replace it
+        if (isMobileTouch) return;
         // Suppress synthetic mouse events generated after touch interactions
         if (Date.now() - lastTouchEndMs < 1000) return;
 
