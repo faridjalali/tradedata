@@ -15025,6 +15025,9 @@ Proximity: ${prox.level.charAt(0).toUpperCase() + prox.level.slice(1)} (${prox.c
   // src/logs.ts
   var logsPollTimer = null;
   var logsRefreshInFlight = false;
+  var HISTORY_PAGE_SIZE = 8;
+  var historyPage = 0;
+  var historyEntries = [];
   function escapeHtml2(value) {
     return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
@@ -15143,56 +15146,74 @@ Proximity: ${prox.level.charAt(0).toUpperCase() + prox.level.slice(1)} (${prox.c
     ];
     host.innerHTML = cards.join("");
   }
-  function renderHistory(payload) {
+  function buildHistoryEntryHtml(run) {
+    const processed = Number(run?.tickers?.processed || 0);
+    const total = Number(run?.tickers?.total || 0);
+    const errors = Number(run?.tickers?.errors || 0);
+    const calls = Number(run?.api?.calls || 0);
+    const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
+    const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
+    const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
+    const failedCount = failedList.length;
+    const recoveredCount = recoveredList.length;
+    let failedSection = "";
+    if (failedCount > 0 || recoveredCount > 0) {
+      const failedItems = failedList.map((t) => `<span class="log-failed-ticker">${escapeHtml2(t)}</span>`).join("");
+      const recoveredItems = recoveredList.map((t) => `<span class="log-recovered-ticker">${escapeHtml2(t)}</span>`).join("");
+      failedSection = `
+          <details class="log-failed-details">
+            <summary class="log-failed-summary">
+              ${failedCount > 0 ? `${failedCount} failed` : ""}${failedCount > 0 && recoveredCount > 0 ? ", " : ""}${recoveredCount > 0 ? `${recoveredCount} recovered` : ""}
+            </summary>
+            <div class="log-failed-body">
+              ${failedCount > 0 ? `<div class="log-failed-label">Failed:</div><div class="log-failed-list">${failedItems}</div>` : ""}
+              ${recoveredCount > 0 ? `<div class="log-recovered-label">Recovered:</div><div class="log-failed-list">${recoveredItems}</div>` : ""}
+            </div>
+          </details>
+        `;
+    }
+    return `
+      <article class="log-history-entry">
+        <div class="log-history-header">
+          <span>${escapeHtml2(String(run?.runType || "run"))}</span>
+          <span>${escapeHtml2(fmtStatus(run?.status))}</span>
+        </div>
+        <div class="log-history-sub">
+          ${escapeHtml2(fmtIsoToLocal(run?.startedAt))} |
+          tickers ${processed}/${total}${errors > 0 ? ` (${errors} err)` : ""} |
+          api ${calls} |
+          p95 ${p95}ms
+        </div>
+        ${failedSection}
+      </article>
+    `;
+  }
+  function renderHistoryPage() {
     const host = document.getElementById("logs-history-container");
     if (!host) return;
-    const history = Array.isArray(payload.history) ? payload.history : [];
-    if (history.length === 0) {
+    if (historyEntries.length === 0) {
       host.innerHTML = '<div class="loading">No run history yet</div>';
       return;
     }
-    host.innerHTML = history.slice(0, 15).map((run) => {
-      const processed = Number(run?.tickers?.processed || 0);
-      const total = Number(run?.tickers?.total || 0);
-      const errors = Number(run?.tickers?.errors || 0);
-      const calls = Number(run?.api?.calls || 0);
-      const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
-      const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
-      const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
-      const failedCount = failedList.length;
-      const recoveredCount = recoveredList.length;
-      let failedSection = "";
-      if (failedCount > 0 || recoveredCount > 0) {
-        const failedItems = failedList.map((t) => `<span class="log-failed-ticker">${escapeHtml2(t)}</span>`).join("");
-        const recoveredItems = recoveredList.map((t) => `<span class="log-recovered-ticker">${escapeHtml2(t)}</span>`).join("");
-        failedSection = `
-              <details class="log-failed-details">
-                <summary class="log-failed-summary">
-                  ${failedCount > 0 ? `${failedCount} failed` : ""}${failedCount > 0 && recoveredCount > 0 ? ", " : ""}${recoveredCount > 0 ? `${recoveredCount} recovered` : ""}
-                </summary>
-                <div class="log-failed-body">
-                  ${failedCount > 0 ? `<div class="log-failed-label">Failed:</div><div class="log-failed-list">${failedItems}</div>` : ""}
-                  ${recoveredCount > 0 ? `<div class="log-recovered-label">Recovered:</div><div class="log-failed-list">${recoveredItems}</div>` : ""}
-                </div>
-              </details>
-            `;
-      }
-      return `
-          <article class="log-history-entry">
-            <div class="log-history-header">
-              <span>${escapeHtml2(String(run?.runType || "run"))}</span>
-              <span>${escapeHtml2(fmtStatus(run?.status))}</span>
-            </div>
-            <div class="log-history-sub">
-              ${escapeHtml2(fmtIsoToLocal(run?.startedAt))} |
-              tickers ${processed}/${total}${errors > 0 ? ` (${errors} err)` : ""} |
-              api ${calls} |
-              p95 ${p95}ms
-            </div>
-            ${failedSection}
-          </article>
-        `;
-    }).join("");
+    const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
+    if (historyPage >= totalPages) historyPage = totalPages - 1;
+    if (historyPage < 0) historyPage = 0;
+    const start = historyPage * HISTORY_PAGE_SIZE;
+    const pageItems = historyEntries.slice(start, start + HISTORY_PAGE_SIZE);
+    const prevDisabled = historyPage === 0;
+    const nextDisabled = historyPage >= totalPages - 1;
+    const entriesHtml = pageItems.map(buildHistoryEntryHtml).join("");
+    const paginationHtml = totalPages > 1 ? `
+      <div class="log-history-pagination">
+        <button class="tf-btn log-history-prev${prevDisabled ? " disabled" : ""}" title="Previous page"${prevDisabled ? " disabled" : ""}>&#x2039;</button>
+        <button class="tf-btn log-history-next${nextDisabled ? " disabled" : ""}" title="Next page"${nextDisabled ? " disabled" : ""}>&#x203A;</button>
+      </div>
+    ` : "";
+    host.innerHTML = entriesHtml + paginationHtml;
+  }
+  function renderHistory(payload) {
+    historyEntries = Array.isArray(payload.history) ? payload.history : [];
+    renderHistoryPage();
   }
   async function fetchRunMetricsPayload() {
     const response = await fetch("/api/logs/run-metrics", { cache: "no-store" });
@@ -15233,6 +15254,21 @@ Proximity: ${prox.level.charAt(0).toUpperCase() + prox.level.slice(1)} (${prox.c
     refreshBtn?.addEventListener("click", () => {
       refreshLogsView().catch(() => {
       });
+    });
+    document.addEventListener("click", (e2) => {
+      const target = e2.target;
+      if (target.closest(".log-history-prev")) {
+        if (historyPage > 0) {
+          historyPage--;
+          renderHistoryPage();
+        }
+      } else if (target.closest(".log-history-next")) {
+        const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
+        if (historyPage < totalPages - 1) {
+          historyPage++;
+          renderHistoryPage();
+        }
+      }
     });
   }
 
