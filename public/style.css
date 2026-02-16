@@ -682,12 +682,18 @@ h2 {
 }
 
 /* Ensure children also inherit or enforce disabling selection */
-/* Ensure children also inherit or enforce disabling selection */
 .alert-card * {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
-  pointer-events: none; /* Hide internal elements from OS selection interaction */
+  pointer-events: none;
+}
+
+/* Make any Safari-forced selection invisible even if the OS creates one */
+.alert-card::selection,
+.alert-card *::selection {
+  background: transparent;
+  color: inherit;
 }
 
 /* Shim to block Safari text-selection on long-press.

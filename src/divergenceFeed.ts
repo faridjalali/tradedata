@@ -1587,6 +1587,7 @@ export function setupDivergenceFeedDelegation(): void {
     let touchLongPressTimer: number | null = null;
     let touchLongPressFired = false;
     let suppressNextCardClick = false;
+    let selectionClearInterval: number | null = null;
     let lastTouchEndMs = 0;
 
     // --- Mini-chart hover overlay on alert cards ---
@@ -1649,9 +1650,7 @@ export function setupDivergenceFeedDelegation(): void {
     // Use passive: false to allow preventDefault() if we need to block scrolling/menu
     view.addEventListener('touchstart', (e: Event) => {
         // Immediately clear any selection to prevent "Copy" menu
-        if (typeof window.getSelection === 'function') {
-            window.getSelection()?.removeAllRanges();
-        }
+        window.getSelection()?.removeAllRanges();
 
         const te = e as TouchEvent;
         if (te.touches.length !== 1) return;
@@ -1663,19 +1662,30 @@ export function setupDivergenceFeedDelegation(): void {
 
         touchLongPressFired = false;
         if (touchLongPressTimer !== null) window.clearTimeout(touchLongPressTimer);
-        
+        if (selectionClearInterval !== null) window.clearInterval(selectionClearInterval);
+
+        // Continuously clear any selection Safari creates during the hold
+        selectionClearInterval = window.setInterval(() => {
+            window.getSelection()?.removeAllRanges();
+        }, 30);
+
         touchLongPressTimer = window.setTimeout(() => {
             touchLongPressTimer = null;
             touchLongPressFired = true;
+            window.getSelection()?.removeAllRanges();
             const rect = card.getBoundingClientRect();
             showMiniChartOverlay(ticker, rect, true);
         }, 600);
-    }, { passive: true }); // Keep passive: true for scroll performance, handle menu via CSS/contextmenu
+    }, { passive: true });
 
     view.addEventListener('touchmove', () => {
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
+        }
+        if (selectionClearInterval !== null) {
+            window.clearInterval(selectionClearInterval);
+            selectionClearInterval = null;
         }
     }, { passive: true });
 
@@ -1684,22 +1694,31 @@ export function setupDivergenceFeedDelegation(): void {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
+        if (selectionClearInterval !== null) {
+            window.clearInterval(selectionClearInterval);
+            selectionClearInterval = null;
+        }
+        // Final clear after Safari's selection gesture completes
+        window.getSelection()?.removeAllRanges();
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
-             // If the long-press fired, we want to prevent any subsequent click
-             // from triggering navigation.
             if (e.cancelable) e.preventDefault();
             destroyMiniChartOverlay();
             suppressNextCardClick = true;
         }
         touchLongPressFired = false;
-    }, { passive: false }); // passive: false to allow preventDefault
+    }, { passive: false });
 
     view.addEventListener('touchcancel', () => {
         if (touchLongPressTimer !== null) {
             window.clearTimeout(touchLongPressTimer);
             touchLongPressTimer = null;
         }
+        if (selectionClearInterval !== null) {
+            window.clearInterval(selectionClearInterval);
+            selectionClearInterval = null;
+        }
+        window.getSelection()?.removeAllRanges();
         lastTouchEndMs = Date.now();
         if (touchLongPressFired) {
             destroyMiniChartOverlay();
