@@ -1710,19 +1710,21 @@ export function setupDivergenceFeedDelegation(): void {
     // "Show more" pagination button
     // --- Safari / Mobile Long Press Fix ---
     // Use capture phase (true) to intercept event before native handlers or bubbling
-    window.addEventListener('contextmenu', (e: Event) => {
+    document.addEventListener('contextmenu', (e: Event) => {
         const target = e.target as HTMLElement;
-        if (target && target.closest('.alert-card')) {
+        if (target && target.closest && target.closest('.alert-card')) {
             e.preventDefault();
             e.stopPropagation();
+            return false;
         }
     }, true);
 
-    window.addEventListener('selectstart', (e: Event) => {
+    document.addEventListener('selectstart', (e: Event) => {
          const target = e.target as HTMLElement;
-         if (target && target.closest('.alert-card')) {
+         if (target && target.closest && target.closest('.alert-card')) {
              e.preventDefault();
              e.stopPropagation();
+             return false;
          }
     }, true);
 
