@@ -4459,6 +4459,7 @@ async function upsertVDFResult(ticker, tradeDate, result) {
 async function getVDFStatus(ticker, options = {}) {
   const force = options.force === true;
   const signal = options.signal || null;
+  const noCache = options.noCache === true;
   const today = currentEtDateString();
 
   // Check DB cache (same trading day) unless force
@@ -4479,8 +4480,11 @@ async function getVDFStatus(ticker, options = {}) {
   vdfRunningTickers.add(ticker);
 
   try {
+    const fetcher = noCache
+      ? (sym, intv, days, opts) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
+      : dataApiIntradayChartHistory;
     const result = await detectVDF(ticker, {
-      dataApiFetcher: dataApiIntradayChartHistory,
+      dataApiFetcher: fetcher,
       signal,
       lookbackDays: 220,
     });
@@ -4585,15 +4589,22 @@ async function runVDFScan(options = {}) {
     finishedAt: null
   };
 
-  const runConcurrency = resolveAdaptiveFetchConcurrency('vdf-scan');
+  // VDF scan: each ticker fetches 220 days of 1-min data (~8 API slices each),
+  // creating massive memory pressure. Cap concurrency at 3 to prevent OOM.
+  // The adaptive calculator was producing 11+ which caused ~9GB cache buildup.
+  const runConcurrency = Math.min(3, resolveAdaptiveFetchConcurrency('vdf-scan'));
   let runMetricsTracker = null;
   const today = currentEtDateString();
   const failedTickers = [];
 
   try {
+    // Sweep stale chart data cache before starting to free memory for the scan
+    sweepExpiredTimedCache(CHART_DATA_CACHE);
+
     const tickers = await getStoredDivergenceSymbolTickers();
     const totalTickers = tickers.length;
     vdfScanStatus.totalTickers = totalTickers;
+    console.log(`VDF scan: ${totalTickers} tickers, concurrency=${runConcurrency}, noCache=true`);
 
     runMetricsTracker = createRunMetricsTracker('vdfScan', {
       totalTickers,
@@ -4611,7 +4622,7 @@ async function runVDFScan(options = {}) {
         }
         const apiStart = Date.now();
         try {
-          const result = await getVDFStatus(ticker, { force: true, signal: scanAbort.signal });
+          const result = await getVDFStatus(ticker, { force: true, noCache: true, signal: scanAbort.signal });
           const latencyMs = Date.now() - apiStart;
           if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
           return { ticker, result, error: null };
@@ -4637,6 +4648,10 @@ async function runVDFScan(options = {}) {
         vdfScanStatus.errorTickers = errorTickers;
         vdfScanStatus.detectedTickers = detectedTickers;
         vdfScanStatus.status = vdfScanStopRequested ? 'stopping' : 'running';
+        // Periodic cache sweep every 100 tickers to prevent memory buildup
+        if (processedTickers % 100 === 0) {
+          sweepExpiredTimedCache(CHART_DATA_CACHE);
+        }
         if (runMetricsTracker) {
           runMetricsTracker.setProgress(processedTickers, errorTickers);
         }
@@ -4683,7 +4698,7 @@ async function runVDFScan(options = {}) {
           }
           const apiStart = Date.now();
           try {
-            const result = await getVDFStatus(ticker, { force: true, signal: scanAbort.signal });
+            const result = await getVDFStatus(ticker, { force: true, noCache: true, signal: scanAbort.signal });
             const latencyMs = Date.now() - apiStart;
             if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
             return { ticker, result, error: null };
