@@ -59,20 +59,20 @@ export function createAlertCard(alert: Alert): string {
         </svg>
     `;
 
-    const divergenceMiniCells = DIVERGENCE_LOOKBACK_DAYS
+    const divergenceDots = DIVERGENCE_LOOKBACK_DAYS
         .map((days) => {
             const key = String(days);
             const state = String(alert.divergence_states?.[key] || 'neutral').toLowerCase();
             const cls = state === 'bullish'
                 ? 'is-bullish'
                 : (state === 'bearish' ? 'is-bearish' : 'is-neutral');
-            return `<span class="divergence-mini-cell ${cls}" data-days="${days}">${days}</span>`;
+            return `<span class="div-dot ${cls}" data-days="${days}"></span>`;
         })
         .join('');
 
     const divergenceTitle = alert.divergence_trade_date
-        ? `Daily divergence as of ${escapeHtml(alert.divergence_trade_date)}`
-        : 'Daily divergence';
+        ? `Daily divergence as of ${escapeHtml(alert.divergence_trade_date)} (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`
+        : `Daily divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     const maDots = `
         <span class="ma-dot-row" title="8 EMA, 21 EMA, 50 SMA, 200 SMA">
             <span class="ma-dot ${maStates.ema8 ? 'is-up' : 'is-down'}"></span>
@@ -89,9 +89,9 @@ export function createAlertCard(alert: Alert): string {
             
             <div class="metrics-container">
                 <div class="metric-item" title="Daily divergence summary">
-                    <div class="divergence-mini" data-ticker="${escapeHtml(alert.ticker)}" title="${divergenceTitle}">
-                        ${divergenceMiniCells}
-                    </div>
+                    <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="${divergenceTitle}">
+                        ${divergenceDots}
+                    </span>
                 </div>
                 <div class="metric-item" title="Signal Volume">
                     <span class="volume-text">${volStr}</span>

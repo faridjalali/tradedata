@@ -201,7 +201,7 @@ export function renderMiniDivergenceRow(
   root: ParentNode,
   summary: DivergenceSummaryEntry | null
 ): void {
-  const nodes = root.querySelectorAll<HTMLElement>('.divergence-mini-cell');
+  const nodes = root.querySelectorAll<HTMLElement>('.div-dot, .divergence-mini-cell');
   nodes.forEach((node) => {
     const dayKey = String(node.dataset.days || '').trim();
     const state = summary?.states?.[dayKey] || 'neutral';
@@ -220,16 +220,16 @@ export function renderMiniDivergenceRow(
   if (parent instanceof HTMLElement) {
     if (summary?.tradeDate) {
       parent.dataset.tradeDate = summary.tradeDate;
-      parent.title = `Daily divergence as of ${summary.tradeDate}`;
+      parent.title = `Daily divergence as of ${summary.tradeDate} (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     } else {
       parent.removeAttribute('data-trade-date');
-      parent.title = 'Daily divergence';
+      parent.title = `Daily divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`;
     }
   }
 }
 
 export function renderMiniDivergencePlaceholders(root: ParentNode): void {
-  const nodes = root.querySelectorAll<HTMLElement>('.divergence-mini-cell');
+  const nodes = root.querySelectorAll<HTMLElement>('.div-dot, .divergence-mini-cell');
   nodes.forEach((node) => {
     node.classList.remove('is-bullish', 'is-bearish');
     node.classList.add('is-neutral');
@@ -288,7 +288,7 @@ export function renderAlertCardDivergenceTablesFromCache(
   container: ParentNode
 ): void {
   const normalizedSource = getPreferredDivergenceSourceInterval();
-  const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
+  const cells = Array.from(container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'));
   for (const cell of cells) {
     const ticker = normalizeTicker(cell.dataset.ticker);
     if (!ticker) continue;
@@ -338,7 +338,7 @@ export async function hydrateAlertCardDivergenceTables(
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
-  const cells = Array.from(container.querySelectorAll<HTMLElement>('.divergence-mini[data-ticker]'));
+  const cells = Array.from(container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'));
   if (!cells.length) return;
 
   if (resetPlaceholders) {

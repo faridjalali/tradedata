@@ -763,6 +763,32 @@ h2 {
   color: #ffffff;
 }
 
+.div-dot-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.div-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(13, 17, 23, 0.75);
+}
+
+.div-dot.is-bullish {
+  background: #26a69a;
+}
+
+.div-dot.is-bearish {
+  background: #ef5350;
+}
+
+.div-dot.is-neutral {
+  background: #ffffff;
+}
+
 .volume-text {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-weight: 500;
