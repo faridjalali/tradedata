@@ -153,9 +153,7 @@ export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'd
                 ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
                 : getTickerDivergenceScoreFromCache(a.ticker);
             if (b.vdf_score) bScore += Math.round(b.vdf_score / 10);
-            else if (b.vdf_detected) bScore += 10;
             if (a.vdf_score) aScore += Math.round(a.vdf_score / 10);
-            else if (a.vdf_detected) aScore += 10;
             if (bScore !== aScore) {
                 result = bScore - aScore;
             } else {
