@@ -3,12 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      if (/Mobi|Android|iPhone|iPod/.test(navigator.userAgent)) {
-        document.querySelector('meta[name="viewport"]')
-          .setAttribute('content', 'width=device-width, initial-scale=0.85');
-      }
-    </script>
     <title>Catvue</title>
     <script>
       var link = document.createElement('link');
@@ -359,7 +353,7 @@
               <!-- Chart controls -->
               <div id="chart-controls" class="chart-controls-bar">
                 <div class="feed-controls-group">
-                  <button class="tf-btn" data-interval="5min">5</button>
+                  <button class="tf-btn" data-interval="5min" style="display:none;">5</button>
                   <button class="tf-btn" data-interval="15min">15</button>
                   <button class="tf-btn" data-interval="30min">30</button>
                   <button class="tf-btn" data-interval="1hour">1h</button>
