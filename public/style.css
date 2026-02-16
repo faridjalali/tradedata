@@ -844,7 +844,7 @@ h2 {
   margin-left: 4px;
   line-height: 14px;
   vertical-align: middle;
-  min-width: 3ch;
+  min-width: 4ch;
   text-align: center;
 }
 .vdf-score-placeholder {
@@ -855,7 +855,7 @@ h2 {
   line-height: 14px;
   vertical-align: middle;
   border: 1px solid transparent;
-  min-width: 3ch;
+  min-width: 4ch;
 }
 .vdf-score-badge.vdf-high { border-color: #ff9800; color: #ff9800; }
 .vdf-score-badge.vdf-imminent { border-color: #f44336; color: #f44336; animation: vdf-pulse 1.5s infinite; }
