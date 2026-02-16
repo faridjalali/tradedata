@@ -845,6 +845,16 @@ h2 {
   line-height: 14px;
   vertical-align: middle;
 }
+.vdf-score-placeholder {
+  display: inline-block;
+  font-size: 9px;
+  padding: 0 3px;
+  margin-left: 4px;
+  line-height: 14px;
+  vertical-align: middle;
+  border: 1px solid transparent;
+  min-width: 2ch;
+}
 .vdf-score-badge.vdf-high { border-color: #ff9800; color: #ff9800; }
 .vdf-score-badge.vdf-imminent { border-color: #f44336; color: #f44336; animation: vdf-pulse 1.5s infinite; }
 @keyframes vdf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }

@@ -97,7 +97,7 @@ export function createAlertCard(alert: Alert): string {
                     <span class="volume-text">${volStr}</span>
                     ${alert.vdf_detected && alert.vdf_score
                         ? `<span class="vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}" title="VD Accumulation Score: ${alert.vdf_score}">${alert.vdf_score}</span>`
-                        : (alert.vdf_detected ? '<span class="vdf-tag" title="VD Accumulation detected">VDF</span>' : '')}
+                        : (alert.vdf_detected ? '<span class="vdf-tag" title="VD Accumulation detected">VDF</span>' : '<span class="vdf-score-placeholder"></span>')}
                     ${maDots}
                 </div>
             </div>
