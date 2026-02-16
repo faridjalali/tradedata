@@ -1,6 +1,6 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
-import { initChartControls, cancelChartLoading } from './chart';
+import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import {
     initLogsView,
     refreshLogsView,
@@ -644,6 +644,16 @@ function closeAllColumnCustomPanels(): void {
 function bootstrapApplication(): void {
     if (appInitialized) return;
     appInitialized = true;
+
+    // Prevent long-press text selection / callout on touch devices globally
+    if (isMobileTouch) {
+        document.documentElement.style.webkitUserSelect = 'none';
+        document.documentElement.style.userSelect = 'none';
+        (document.documentElement.style as any).webkitTouchCallout = 'none';
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+    }
 
     // Back button (in chart controls bar)
     document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);

@@ -6180,30 +6180,20 @@ export function initChartControls() {
   // Fullscreen toggle
   initChartFullscreen();
 
-  // Prevent long-press text selection on touch devices within the chart area
+  // Double-tap anywhere in the chart container (including axes/gaps) toggles crosshair
   const chartSection = document.getElementById('custom-chart-container');
-  if (chartSection) {
-    chartSection.style.webkitUserSelect = 'none';
-    chartSection.style.userSelect = 'none';
-    (chartSection.style as any).webkitTouchCallout = 'none';
-    chartSection.addEventListener('contextmenu', (e) => {
-      if (isMobileTouch) e.preventDefault();
+  if (chartSection && isMobileTouch) {
+    let containerLastTapTime = 0;
+    chartSection.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - containerLastTapTime < 300) {
+        e.preventDefault();
+        toggleCrosshairVisibility();
+        containerLastTapTime = 0;
+      } else {
+        containerLastTapTime = now;
+      }
     });
-
-    // Double-tap anywhere in the chart container (including axes/gaps) toggles crosshair
-    if (isMobileTouch) {
-      let containerLastTapTime = 0;
-      chartSection.addEventListener('touchend', (e) => {
-        const now = Date.now();
-        if (now - containerLastTapTime < 300) {
-          e.preventDefault();
-          toggleCrosshairVisibility();
-          containerLastTapTime = 0;
-        } else {
-          containerLastTapTime = now;
-        }
-      });
-    }
   }
 }
 
