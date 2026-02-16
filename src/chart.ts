@@ -4125,7 +4125,7 @@ function renderVolumeDeltaDivergenceSummary(
         ? '#26a69a'
         : state === 'bearish'
           ? '#ef5350'
-          : '#ffffff';
+          : tc().textPrimary;
       const badge = buildBadge(
         String(days),
         badgeColor,
@@ -6061,6 +6061,10 @@ window.addEventListener('themechange', () => {
   refreshVDZones();
   // Update existing DOM elements with new theme colors
   reapplyInlineThemeStyles();
+  // Re-render divergence summary badges with new theme colors
+  if (volumeDeltaPaneContainerEl && Array.isArray(currentBars) && currentBars.length >= 2) {
+    renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
+  }
 });
 
 export function refreshActiveTickerDivergenceSummary(options?: { noCache?: boolean }): void {
