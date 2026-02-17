@@ -211,8 +211,8 @@ function renderHistoryPage(): void {
     const nextDisabled = historyPage >= totalPages - 1;
 
     const entriesHtml = pageItems.map(buildHistoryEntryHtml).join('');
-    const prevSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
-    const nextSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const prevSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+    const nextSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const paginationHtml = totalPages > 1 ?
         `<button class="pane-btn log-history-prev${prevDisabled ? ' disabled' : ''}"${prevDisabled ? ' disabled' : ''}>${prevSvg}</button>` +
         `<button class="pane-btn log-history-next${nextDisabled ? ' disabled' : ''}"${nextDisabled ? ' disabled' : ''}>${nextSvg}</button>`
