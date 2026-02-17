@@ -99,9 +99,9 @@ let vdfLoadingForTicker: string | null = null;
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
 const VDF_CACHE_MAX_SIZE = 200;
-const TREND_ICON = '✎';
-const ERASE_ICON = '⌫';
-const DIVERGENCE_ICON = 'D';
+const TREND_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/><polyline points="15 4 20 4 20 9"/></svg>`;
+const ERASE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21h10"/><path d="M5.5 13.5 9 17l8.5-8.5a2.12 2.12 0 0 0-3-3L6 14"/><path d="m2 22 3-3"/></svg>`;
+const DIVERGENCE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 12 6 20 18"/></svg>`;
 const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
 const CHART_LIVE_REFRESH_MS = 15 * 60 * 1000;
 const CHART_CLIENT_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -116,7 +116,7 @@ const SCALE_MIN_WIDTH_PX = 56;
 const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 function tc() { return getThemeColors(); }
 function getMonthGridlineColor(): string { return tc().monthGridlineColor; }
-const SETTINGS_ICON = '⚙';
+const SETTINGS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 
 /** Detect touch-capable device — shared with rsi.ts */
@@ -1847,7 +1847,7 @@ function createSettingsButton(container: HTMLElement, pane: PaneControlType): HT
   btn.className = 'pane-btn pane-overlay pane-settings-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.textContent = SETTINGS_ICON;
+  btn.innerHTML = SETTINGS_ICON;
   btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
   container.appendChild(btn);
@@ -1894,7 +1894,7 @@ function createPaneTrendlineButton(
     : action === 'erase'
       ? 'Erase Trendline'
       : '';
-  btn.textContent = action === 'trend'
+  btn.innerHTML = action === 'trend'
     ? TREND_ICON
     : action === 'erase'
       ? ERASE_ICON
@@ -1913,7 +1913,7 @@ function setPaneToolButtonActive(pane: TrendToolPane, action: 'trend' | 'diverge
   const btn = getPaneToolButton(pane, action);
   if (!btn) return;
   btn.classList.toggle('active', active);
-  btn.textContent = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
+  btn.innerHTML = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
 }
 
 function setPaneTrendlineToolActive(pane: TrendToolPane, active: boolean): void {
