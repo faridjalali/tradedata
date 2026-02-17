@@ -5999,17 +5999,90 @@ async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSi
 
 function reapplyInlineThemeStyles(): void {
   const c = tc();
-  // Update trendline cross labels
-  document.querySelectorAll('.trendline-cross-label').forEach((el) => {
-    const htmlEl = el as HTMLElement;
-    htmlEl.style.border = `1px solid ${c.borderColor}`;
-    htmlEl.style.background = c.cardBg;
-    htmlEl.style.color = c.textPrimary;
+  const setBorderBgColor = (el: HTMLElement) => {
+    el.style.border = `1px solid ${c.borderColor}`;
+    el.style.background = c.cardBg;
+    el.style.color = c.textPrimary;
+  };
+
+  // Trendline cross labels
+  document.querySelectorAll<HTMLElement>('.trendline-cross-label').forEach(setBorderBgColor);
+
+  // Pane trendline / divergence tool buttons
+  document.querySelectorAll<HTMLElement>('.pane-trendline-btn').forEach((btn) => {
+    const isActive = btn.classList.contains('active');
+    btn.style.border = `1px solid ${isActive ? c.highlight : c.borderColor}`;
+    btn.style.background = isActive ? c.highlight : c.cardBg;
+    btn.style.color = isActive ? c.highlightText : c.textPrimary;
   });
-  // Update VDF button
-  if (typeof vdfButtonEl !== 'undefined' && vdfButtonEl) {
+
+  // Top-pane badges (ticker label, price change)
+  document.querySelectorAll<HTMLElement>('.top-pane-badge').forEach((el) => {
+    el.style.border = `1px solid ${c.borderColor}`;
+    el.style.background = c.cardBg;
+    // Price-change badge keeps its semantic green/red color
+    if (!el.classList.contains('price-pane-change')) {
+      el.style.color = c.textPrimary;
+    }
+  });
+
+  // VDF indicator button
+  if (vdfButtonEl) {
     vdfButtonEl.style.border = `1px solid ${c.borderColor}`;
     vdfButtonEl.style.background = c.cardBg;
+  }
+
+  // Divergence plot overlays
+  document.querySelectorAll<HTMLElement>('.divergence-plot-overlay').forEach((el) => {
+    el.style.border = `1px solid ${c.borderColor}`;
+    el.style.background = c.bgOverlay95;
+  });
+
+  // Settings panels (price, rsi, volume-delta, volume-delta-rsi)
+  document.querySelectorAll<HTMLElement>('.pane-settings-panel').forEach((panel) => {
+    panel.style.background = c.cardBgOverlay95;
+    panel.style.border = `1px solid ${c.borderColor}`;
+    panel.style.color = c.textPrimary;
+    // Inner form elements: buttons, selects, inputs
+    panel.querySelectorAll<HTMLElement>('button, select, input[type="number"]').forEach((el) => {
+      el.style.background = c.bgColor;
+      el.style.color = c.textPrimary;
+      el.style.borderColor = c.borderColor;
+    });
+  });
+
+  // Price pane message
+  document.querySelectorAll<HTMLElement>('.price-pane-message').forEach((el) => {
+    el.style.color = c.textSecondary;
+  });
+
+  // Loading / retry overlays
+  document.querySelectorAll<HTMLElement>('.chart-loading-overlay').forEach((el) => {
+    el.style.background = c.bgOverlay95;
+    const btn = el.querySelector('button') as HTMLElement | null;
+    if (btn) {
+      btn.style.background = c.cardBg;
+      btn.style.color = c.textPrimary;
+      btn.style.borderColor = c.borderColor;
+    }
+  });
+
+  // Divergence plot overlay Chart.js instances
+  for (const pane of ['rsi', 'volumeDeltaRsi'] as TrendToolPane[]) {
+    const chart = getDivergenceOverlayChart(pane);
+    if (chart) {
+      try {
+        chart.options.plugins.tooltip.backgroundColor = c.cardBgOverlay95;
+        chart.options.plugins.tooltip.borderColor = c.borderColor;
+        chart.options.plugins.tooltip.titleColor = c.textPrimary;
+        chart.options.plugins.tooltip.bodyColor = c.textSecondary;
+        chart.options.scales.x.ticks.color = c.textSecondary;
+        chart.options.scales.x.grid.color = c.borderOverlay22;
+        chart.options.scales.y.ticks.color = c.textSecondary;
+        chart.options.scales.y.grid.color = c.borderOverlay22;
+        chart.update('none');
+      } catch { /* chart may not be fully initialized */ }
+    }
   }
 }
 
