@@ -31,8 +31,7 @@ const DATA_API_RATE_BUCKET_CAPACITY = Math.max(
 let dataApiRateTokens = DATA_API_RATE_BUCKET_CAPACITY;
 let dataApiRateLastRefillMs = Date.now();
 
-/** @param {number} [nowMs] */
-function refillDataApiRateTokens(nowMs) {
+function refillDataApiRateTokens(nowMs?: number): void {
   const now = Number(nowMs) || Date.now();
   const elapsedMs = Math.max(0, now - dataApiRateLastRefillMs);
   if (elapsedMs <= 0) return;
@@ -56,11 +55,7 @@ const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERG
 // URL building
 // ---------------------------------------------------------------------------
 
-/**
- * @param {string} path
- * @param {Record<string, any>} [params]
- */
-function buildDataApiUrl(path, params = {}) {
+function buildDataApiUrl(path: string, params: Record<string, any> = {}): string {
   const normalizedBase = DATA_API_BASE.replace(/\/+$/, '');
   const normalizedPath = String(path || '').replace(/^\/+/, '');
   const url = new URL(`${normalizedBase}/${normalizedPath}`);
@@ -72,8 +67,7 @@ function buildDataApiUrl(path, params = {}) {
   return url.toString();
 }
 
-/** @param {string} url */
-function sanitizeDataApiUrl(url) {
+function sanitizeDataApiUrl(url: string): string {
   try {
     const parsed = new URL(url);
     if (parsed.searchParams.has('apiKey')) parsed.searchParams.set('apiKey', '***');
@@ -88,8 +82,7 @@ function sanitizeDataApiUrl(url) {
 // JSON / payload helpers
 // ---------------------------------------------------------------------------
 
-/** @param {any} text */
-function parseJsonSafe(text) {
+function parseJsonSafe(text: any): any {
   if (typeof text !== 'string' || !text.trim()) return null;
   try {
     return JSON.parse(text);
@@ -98,8 +91,7 @@ function parseJsonSafe(text) {
   }
 }
 
-/** @param {any} payload */
-function extractDataApiError(payload) {
+function extractDataApiError(payload: any): string | null {
   if (!payload || typeof payload !== 'object') return null;
   if (String(payload.status || '').toUpperCase() === 'ERROR') {
     return String(payload.error || payload.message || 'DataAPI returned ERROR status').trim();
@@ -111,14 +103,12 @@ function extractDataApiError(payload) {
   return null;
 }
 
-/** @param {any} value */
-function toNumberOrNull(value) {
+function toNumberOrNull(value: any): number | null {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
 
-/** @param {any} payload */
-function toArrayPayload(payload) {
+function toArrayPayload(payload: any): any[] | null {
   if (Array.isArray(payload)) return payload;
   if (payload && Array.isArray(payload.results)) return payload.results;
   if (payload && Array.isArray(payload.historical)) return payload.historical;
@@ -129,19 +119,16 @@ function toArrayPayload(payload) {
 // Symbol normalization
 // ---------------------------------------------------------------------------
 
-/** @param {any} rawSymbol */
-function normalizeTickerSymbol(rawSymbol) {
+function normalizeTickerSymbol(rawSymbol: any): string {
   return String(rawSymbol || '')
     .trim()
     .toUpperCase();
 }
 
-/** @param {any} rawSymbol */
-function getDataApiSymbolCandidates(rawSymbol) {
+function getDataApiSymbolCandidates(rawSymbol: any): string[] {
   const symbol = normalizeTickerSymbol(rawSymbol);
-  /** @type {string[]} */
-  const candidates = [];
-  const pushUnique = (/** @type {string} */ value) => {
+  const candidates: string[] = [];
+  const pushUnique = (value: string): void => {
     const next = normalizeTickerSymbol(value);
     if (!next || candidates.includes(next)) return;
     candidates.push(next);
@@ -162,58 +149,49 @@ function getDataApiSymbolCandidates(rawSymbol) {
 // Error classification helpers
 // ---------------------------------------------------------------------------
 
-function assertDataApiKey() {
+function assertDataApiKey(): void {
   if (!DATA_API_KEY) {
     throw new Error('DATA_API_KEY is not configured on the server');
   }
 }
 
-function isDataApiRequestsPaused() {
+function isDataApiRequestsPaused(): boolean {
   return DATA_API_REQUESTS_PAUSED;
 }
 
-/** @param {string} [message] */
-function buildDataApiPausedError(message) {
-  const err = /** @type {any} */ (new Error(message || 'Market-data requests are paused by server configuration'));
+function buildDataApiPausedError(message?: string): any {
+  const err = new Error(message || 'Market-data requests are paused by server configuration') as any;
   err.httpStatus = 503;
   err.isDataApiPaused = true;
   return err;
 }
 
-/** @param {any} err */
-function isDataApiPausedError(err) {
+function isDataApiPausedError(err: any): boolean {
   return Boolean(err && err.isDataApiPaused);
 }
 
-/** @param {any} err */
-function isAbortError(err) {
+function isAbortError(err: any): boolean {
   if (!err) return false;
   const name = String(err.name || '');
   const message = String(err.message || err || '');
   return name === 'AbortError' || Number(err.httpStatus) === 499 || /aborted|aborterror/i.test(message);
 }
 
-/** @param {string} [message] */
-function buildRequestAbortError(message) {
-  const err = /** @type {any} */ (new Error(message || 'Request aborted'));
+function buildRequestAbortError(message?: string): any {
+  const err = new Error(message || 'Request aborted') as any;
   err.name = 'AbortError';
   err.httpStatus = 499;
   return err;
 }
 
-/**
- * @param {string} message
- * @param {number} timeoutMs
- */
-function buildTaskTimeoutError(message, timeoutMs) {
-  const err = /** @type {any} */ (new Error(`${message || 'Task'} timed out after ${timeoutMs}ms`));
+function buildTaskTimeoutError(message: string, timeoutMs: number): any {
+  const err = new Error(`${message || 'Task'} timed out after ${timeoutMs}ms`) as any;
   err.httpStatus = 504;
   err.isTaskTimeout = true;
   return err;
 }
 
-/** @param {any} err */
-function isDataApiRateLimitedError(err) {
+function isDataApiRateLimitedError(err: any): boolean {
   const message = String(err && err.message ? err.message : err || '');
   return (
     /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message) ||
@@ -221,16 +199,14 @@ function isDataApiRateLimitedError(err) {
   );
 }
 
-/** @param {string} [message] */
-function buildDataApiRateLimitedError(message) {
-  const err = /** @type {any} */ (new Error(message || 'Market-data provider rate limit reached'));
+function buildDataApiRateLimitedError(message?: string): any {
+  const err = new Error(message || 'Market-data provider rate limit reached') as any;
   err.httpStatus = 429;
   err.isDataApiRateLimited = true;
   return err;
 }
 
-/** @param {any} err */
-function isDataApiSubscriptionRestrictedError(err) {
+function isDataApiSubscriptionRestrictedError(err: any): boolean {
   const message = String(err && err.message ? err.message : err || '');
   return (
     Boolean(err && err.isDataApiSubscriptionRestricted) ||
@@ -244,15 +220,11 @@ function isDataApiSubscriptionRestrictedError(err) {
 // Abort / timeout helpers
 // ---------------------------------------------------------------------------
 
-/**
- * @param {number} ms
- * @param {AbortSignal | null} [signal]
- */
-function sleepWithAbort(ms, signal) {
+function sleepWithAbort(ms: number, signal?: AbortSignal | null): Promise<void> {
   const waitMs = Math.max(1, Math.ceil(Number(ms) || 0));
   return new Promise((resolve, reject) => {
     let settled = false;
-    const done = (/** @type {Function} */ fn) => {
+    const done = (fn: Function): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -274,11 +246,7 @@ function sleepWithAbort(ms, signal) {
   });
 }
 
-/**
- * @param {AbortSignal | null} parentSignal
- * @param {AbortController} controller
- */
-function linkAbortSignalToController(parentSignal, controller) {
+function linkAbortSignalToController(parentSignal: AbortSignal | null, controller: AbortController): () => void {
   if (!parentSignal || !controller) return () => {};
   const forwardAbort = () => {
     try {
@@ -297,11 +265,10 @@ function linkAbortSignalToController(parentSignal, controller) {
   };
 }
 
-/**
- * @param {(signal: AbortSignal | null) => Promise<any>} task
- * @param {{ label?: string, signal?: AbortSignal | null, timeoutMs?: number }} [options]
- */
-async function runWithAbortAndTimeout(task, options = {}) {
+async function runWithAbortAndTimeout(
+  task: (signal: AbortSignal | null) => Promise<any>,
+  options: { label?: string; signal?: AbortSignal | null; timeoutMs?: number } = {},
+): Promise<any> {
   const label = String(options.label || 'Task').trim() || 'Task';
   const parentSignal = options.signal || null;
   const timeoutMs = Math.max(0, Math.floor(Number(options.timeoutMs) || 0));
@@ -315,7 +282,7 @@ async function runWithAbortAndTimeout(task, options = {}) {
   const controller = new AbortController();
   const unlinkAbort = linkAbortSignalToController(parentSignal, controller);
 
-  let timeoutTimer = null;
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutTimer = setTimeout(() => {
       try {
@@ -342,8 +309,7 @@ async function runWithAbortAndTimeout(task, options = {}) {
 // Stall watchdog
 // ---------------------------------------------------------------------------
 
-/** @param {() => void} onStall */
-function createProgressStallWatchdog(onStall) {
+function createProgressStallWatchdog(onStall: () => void) {
   let lastProgressMs = Date.now();
   let stalled = false;
   const timer = setInterval(() => {
@@ -372,8 +338,7 @@ function createProgressStallWatchdog(onStall) {
   };
 }
 
-/** @param {number} retryAttempt */
-function getStallRetryBackoffMs(retryAttempt) {
+function getStallRetryBackoffMs(retryAttempt: number): number {
   const attempt = Math.max(1, Math.floor(Number(retryAttempt) || 1));
   const delay = DIVERGENCE_STALL_RETRY_BASE_MS * 2 ** (attempt - 1);
   return Math.min(60_000, delay);
@@ -383,8 +348,7 @@ function getStallRetryBackoffMs(retryAttempt) {
 // Rate-limit slot acquisition
 // ---------------------------------------------------------------------------
 
-/** @param {AbortSignal | null} [signal] */
-async function acquireDataApiRateLimitSlot(signal) {
+async function acquireDataApiRateLimitSlot(signal?: AbortSignal | null): Promise<void> {
   while (true) {
     if (signal && signal.aborted) {
       throw buildRequestAbortError('Request aborted while waiting for DataAPI rate-limit slot');
@@ -405,8 +369,7 @@ async function acquireDataApiRateLimitSlot(signal) {
 // Core HTTP fetch
 // ---------------------------------------------------------------------------
 
-/** @param {string} url */
-function withDataApiKey(url) {
+function withDataApiKey(url: string): string {
   const parsed = new URL(url, DATA_API_BASE);
   if (!parsed.searchParams.has('apiKey')) {
     parsed.searchParams.set('apiKey', DATA_API_KEY);
@@ -414,12 +377,11 @@ function withDataApiKey(url) {
   return parsed.toString();
 }
 
-/**
- * @param {string} url
- * @param {string} label
- * @param {{ signal?: AbortSignal | null, metricsTracker?: any }} [options]
- */
-async function fetchDataApiJson(url, label, options = {}) {
+async function fetchDataApiJson(
+  url: string,
+  label: string,
+  options: { signal?: AbortSignal | null; metricsTracker?: any } = {},
+): Promise<any> {
   assertDataApiKey();
   if (isDataApiRequestsPaused()) {
     throw buildDataApiPausedError(`${label} requests are paused by server configuration`);
@@ -430,8 +392,7 @@ async function fetchDataApiJson(url, label, options = {}) {
   const requestStartedMs = Date.now();
   await acquireDataApiRateLimitSlot(externalSignal);
   const controller = new AbortController();
-  /** @type {boolean} */
-  let timedOut = false;
+  let timedOut: boolean = false;
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
@@ -463,7 +424,7 @@ async function fetchDataApiJson(url, label, options = {}) {
         throw buildDataApiRateLimitedError(`${label} request failed (429): ${bodyText || 'Too Many Requests'}`);
       }
       const details = bodyText || `HTTP ${resp.status}`;
-      const error = /** @type {any} */ (new Error(`${label} request failed (${resp.status}): ${details}`));
+      const error = new Error(`${label} request failed (${resp.status}): ${details}`) as any;
       error.httpStatus = resp.status;
       if (
         resp.status === 403 &&
@@ -478,7 +439,7 @@ async function fetchDataApiJson(url, label, options = {}) {
       if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
         throw buildDataApiRateLimitedError(`${label} request failed (429): ${apiError}`);
       }
-      const error = /** @type {any} */ (new Error(`${label} API error: ${apiError}`));
+      const error = new Error(`${label} API error: ${apiError}`) as any;
       if (/plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(apiError)) {
         error.isDataApiSubscriptionRestricted = true;
       }
@@ -492,26 +453,26 @@ async function fetchDataApiJson(url, label, options = {}) {
       });
     }
     return payload;
-  } catch (/** @type {any} */ err) {
+  } catch (err: any) {
     if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
       metricsTracker.recordApiCall({
         latencyMs: Date.now() - requestStartedMs,
         ok: false,
         rateLimited: isDataApiRateLimitedError(err),
-        timedOut: /** @type {boolean} */ (timedOut) === true,
+        timedOut,
         aborted: isAbortError(err),
         subscriptionRestricted: isDataApiSubscriptionRestrictedError(err),
       });
     }
     if (isAbortError(err)) {
       if (externalSignal && externalSignal.aborted) {
-        const abortError = /** @type {any} */ (new Error(`${label} request aborted`));
+        const abortError = new Error(`${label} request aborted`) as any;
         abortError.name = 'AbortError';
         abortError.httpStatus = 499;
         throw abortError;
       }
       if (timedOut) {
-        const timeoutError = /** @type {any} */ (new Error(`${label} request timed out after ${DATA_API_TIMEOUT_MS}ms`));
+        const timeoutError = new Error(`${label} request timed out after ${DATA_API_TIMEOUT_MS}ms`) as any;
         timeoutError.httpStatus = 504;
         throw timeoutError;
       }
@@ -525,14 +486,13 @@ async function fetchDataApiJson(url, label, options = {}) {
   }
 }
 
-/**
- * @param {string} label
- * @param {string[]} urls
- * @param {{ signal?: AbortSignal | null, metricsTracker?: any }} [options]
- */
-async function fetchDataApiArrayWithFallback(label, urls, options = {}) {
+async function fetchDataApiArrayWithFallback(
+  label: string,
+  urls: string[],
+  options: { signal?: AbortSignal | null; metricsTracker?: any } = {},
+): Promise<any[]> {
   assertDataApiKey();
-  let lastError = null;
+  let lastError: any = null;
   let sawEmptyResult = false;
 
   for (const url of urls) {
@@ -547,10 +507,10 @@ async function fetchDataApiArrayWithFallback(label, urls, options = {}) {
         continue;
       }
       return rows;
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
-      /** @type {any} */ (console).error(`${label} fetch failed (${sanitizeDataApiUrl(url)}): ${message}`);
+      console.error(`${label} fetch failed (${sanitizeDataApiUrl(url)}): ${message}`);
       if (isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
         break;
       }
@@ -565,7 +525,7 @@ async function fetchDataApiArrayWithFallback(label, urls, options = {}) {
 // Aggregate / interval config
 // ---------------------------------------------------------------------------
 
-const DATA_API_AGG_INTERVAL_MAP = {
+const DATA_API_AGG_INTERVAL_MAP: Record<string, { multiplier: number; timespan: string }> = {
   '1min': { multiplier: 1, timespan: 'minute' },
   '5min': { multiplier: 5, timespan: 'minute' },
   '15min': { multiplier: 15, timespan: 'minute' },
@@ -576,17 +536,15 @@ const DATA_API_AGG_INTERVAL_MAP = {
   '1week': { multiplier: 1, timespan: 'week' },
 };
 
-/** @param {string} interval */
-function getDataApiAggConfig(interval) {
-  return /** @type {Record<string, any>} */ (DATA_API_AGG_INTERVAL_MAP)[String(interval || '').trim()] || null;
+function getDataApiAggConfig(interval: string): { multiplier: number; timespan: string } | null {
+  return DATA_API_AGG_INTERVAL_MAP[String(interval || '').trim()] || null;
 }
 
-/**
- * @param {string} symbol
- * @param {string} interval
- * @param {{ from?: string, to?: string }} [options]
- */
-function buildDataApiAggregateRangeUrl(symbol, interval, options = {}) {
+function buildDataApiAggregateRangeUrl(
+  symbol: string,
+  interval: string,
+  options: { from?: string; to?: string } = {},
+): string {
   const config = getDataApiAggConfig(interval);
   if (!config) {
     throw new Error(`Unsupported interval for DataAPI aggregates: ${interval}`);
@@ -607,8 +565,7 @@ function buildDataApiAggregateRangeUrl(symbol, interval, options = {}) {
 // Timestamp normalization
 // ---------------------------------------------------------------------------
 
-/** @param {any} value */
-function normalizeUnixSeconds(value) {
+function normalizeUnixSeconds(value: any): number | null {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;
   if (numeric > 1e12) return Math.floor(numeric / 1000);
@@ -616,8 +573,7 @@ function normalizeUnixSeconds(value) {
   return Math.floor(numeric);
 }
 
-/** @param {any} value */
-function normalizeQuoteTimestamp(value) {
+function normalizeQuoteTimestamp(value: any): number | null {
   if (Number.isFinite(Number(value))) {
     const numeric = Number(value);
     if (numeric > 1e12) return Math.floor(numeric / 1000);
@@ -637,8 +593,7 @@ function normalizeQuoteTimestamp(value) {
 // Daily bars
 // ---------------------------------------------------------------------------
 
-/** @param {string} symbol */
-async function dataApiDailySingle(symbol) {
+async function dataApiDailySingle(symbol: string): Promise<any[] | null> {
   const end = new Date();
   const start = addUtcDays(end, -400);
   const url = buildDataApiAggregateRangeUrl(symbol, '1day', {
@@ -647,14 +602,14 @@ async function dataApiDailySingle(symbol) {
   });
   const rows = await fetchDataApiArrayWithFallback('DataAPI daily', [url]);
   const normalized = rows
-    .map((/** @type {any} */ row) => {
+    .map((row: any) => {
       const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
       const close = toNumberOrNull(row.c ?? row.close ?? row.price);
       const open = toNumberOrNull(row.o ?? row.open) ?? close;
       const high = toNumberOrNull(row.h ?? row.high) ?? close;
       const low = toNumberOrNull(row.l ?? row.low) ?? close;
       const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
-      const date = Number.isFinite(time) ? etDateStringFromUnixSeconds(/** @type {number} */ (time)) : '';
+      const date = Number.isFinite(time) ? etDateStringFromUnixSeconds(time as number) : '';
 
       if (!date || close === null || open === null || high === null || low === null) {
         return null;
@@ -668,24 +623,23 @@ async function dataApiDailySingle(symbol) {
   return normalized.length ? normalized : null;
 }
 
-/** @param {string} symbol */
-async function dataApiDaily(symbol) {
+async function dataApiDaily(symbol: string): Promise<any[] | null> {
   const candidates = getDataApiSymbolCandidates(symbol);
-  let lastError = null;
+  let lastError: any = null;
 
   for (const candidate of candidates) {
     try {
       const rows = await dataApiDailySingle(candidate);
       if (rows && rows.length > 0) {
         if (candidate !== normalizeTickerSymbol(symbol)) {
-          /** @type {any} */ (console).log(`DataAPI symbol fallback (daily): ${symbol} -> ${candidate}`);
+          console.log(`DataAPI symbol fallback (daily): ${symbol} -> ${candidate}`);
         }
         return rows;
       }
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       lastError = err;
       const message = err && err.message ? err.message : String(err);
-      /** @type {any} */ (console).error(`DataAPI daily failed for ${candidate} (requested ${symbol}): ${message}`);
+      console.error(`DataAPI daily failed for ${candidate} (requested ${symbol}): ${message}`);
     }
   }
 
@@ -697,8 +651,7 @@ async function dataApiDaily(symbol) {
 // Indicator / MA values
 // ---------------------------------------------------------------------------
 
-/** @param {any} payload */
-function extractLatestIndicatorValue(payload) {
+function extractLatestIndicatorValue(payload: any): number | null {
   if (!payload || typeof payload !== 'object') return null;
   const directResults = Array.isArray(payload.results) ? payload.results : [];
   if (directResults.length > 0) {
@@ -725,13 +678,12 @@ function extractLatestIndicatorValue(payload) {
   return null;
 }
 
-/**
- * @param {string} symbol
- * @param {string} indicatorType
- * @param {number} windowLength
- * @param {{ signal?: AbortSignal | null, metricsTracker?: any }} [options]
- */
-async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLength, options = {}) {
+async function fetchDataApiIndicatorLatestValue(
+  symbol: string,
+  indicatorType: string,
+  windowLength: number,
+  options: { signal?: AbortSignal | null; metricsTracker?: any } = {},
+): Promise<number> {
   const ticker = normalizeTickerSymbol(symbol);
   const type = String(indicatorType || '')
     .trim()
@@ -740,7 +692,7 @@ async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLen
   if (!ticker || !type) throw new Error('Invalid indicator request');
 
   const candidates = getDataApiSymbolCandidates(ticker);
-  let lastError = null;
+  let lastError: any = null;
 
   for (const candidate of candidates) {
     const url = buildDataApiUrl(`/v1/indicators/${encodeURIComponent(type)}/${encodeURIComponent(candidate)}`, {
@@ -755,12 +707,12 @@ async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLen
       const value = extractLatestIndicatorValue(payload);
       if (value !== null) {
         if (candidate !== ticker) {
-          /** @type {any} */ (console).log(`DataAPI symbol fallback (${type}${window}): ${ticker} -> ${candidate}`);
+          console.log(`DataAPI symbol fallback (${type}${window}): ${ticker} -> ${candidate}`);
         }
         return value;
       }
       lastError = new Error(`DataAPI ${type}${window} returned no value for ${candidate}`);
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       lastError = err;
       if (isDataApiRateLimitedError(err) || isDataApiPausedError(err) || isAbortError(err)) {
         throw err;
@@ -771,12 +723,11 @@ async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLen
   throw lastError || new Error(`DataAPI ${type}${window} request failed for ${ticker}`);
 }
 
-/**
- * @param {string} ticker
- * @param {number} latestClose
- * @param {{ signal?: AbortSignal | null, metricsTracker?: any }} [options]
- */
-async function fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, options = {}) {
+async function fetchDataApiMovingAverageStatesForTicker(
+  ticker: string,
+  latestClose: number,
+  options: { signal?: AbortSignal | null; metricsTracker?: any } = {},
+): Promise<{ ema8: boolean; ema21: boolean; sma50: boolean; sma200: boolean } | null> {
   const close = Number(latestClose);
   if (!Number.isFinite(close) || close <= 0) {
     return null;
@@ -801,8 +752,7 @@ async function fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, opt
 // Quote (currently stubbed)
 // ---------------------------------------------------------------------------
 
-/** @param {any} payload */
-function toQuoteRow(payload) {
+function toQuoteRow(payload: any): any {
   if (Array.isArray(payload)) return payload[0] || null;
   if (payload && Array.isArray(payload.data)) return payload.data[0] || null;
   if (payload && Array.isArray(payload.quote)) return payload.quote[0] || null;
@@ -810,14 +760,12 @@ function toQuoteRow(payload) {
   return null;
 }
 
-/** @param {string} symbol */
-async function dataApiQuoteSingle(symbol) {
+async function dataApiQuoteSingle(symbol: string): Promise<any> {
   void symbol;
   return null;
 }
 
-/** @param {string} symbol */
-async function dataApiLatestQuote(symbol) {
+async function dataApiLatestQuote(symbol: string): Promise<any> {
   void symbol;
   return null;
 }

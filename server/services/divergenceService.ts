@@ -1,21 +1,29 @@
-/**
- * Parse and validate a manual scan request from the HTTP layer.
- * @param {object} options
- * @param {import('express').Request} options.req - Express request object
- * @param {Function} options.parseBooleanInput - Boolean parser
- * @param {Function} options.parseEtDateInput - ET date parser
- * @returns {{ ok: true, value: { force: boolean, refreshUniverse: boolean, runDateEt?: string } } | { ok: false, error: string }}
- */
-function buildManualScanRequest(options) {
+import type { Request } from 'express';
+
+interface ManualScanResult {
+  ok: true;
+  value: { force: boolean; refreshUniverse: boolean; runDateEt?: string };
+}
+
+interface ManualScanError {
+  ok: false;
+  error: string;
+}
+
+function buildManualScanRequest(options: {
+  req: Request;
+  parseBooleanInput: (value: any, defaultValue: boolean) => boolean;
+  parseEtDateInput: (value: any) => string | null;
+}): ManualScanResult | ManualScanError {
   const { req, parseBooleanInput, parseEtDateInput } = options;
 
-  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
+  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput((req as any).body?.force, false);
   const refreshUniverse =
-    parseBooleanInput(req.query.refreshUniverse, false) || parseBooleanInput(req.body?.refreshUniverse, false);
+    parseBooleanInput(req.query.refreshUniverse, false) || parseBooleanInput((req as any).body?.refreshUniverse, false);
 
-  let runDateEt;
-  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
-    const parsedRunDate = parseEtDateInput(req.body.runDateEt);
+  let runDateEt: string | undefined;
+  if ((req as any).body && Object.prototype.hasOwnProperty.call((req as any).body, 'runDateEt')) {
+    const parsedRunDate = parseEtDateInput((req as any).body.runDateEt);
     if (!parsedRunDate) {
       return {
         ok: false,
@@ -35,17 +43,13 @@ function buildManualScanRequest(options) {
   };
 }
 
-/**
- * Query the database for the most recent divergence scan job and build a status payload.
- * @param {object} options
- * @param {{ query: Function }} options.divergencePool - PostgreSQL pool
- * @param {string} options.divergenceSourceInterval - Source interval for signal lookup
- * @param {Function} options.getIsScanRunning - Returns current running state
- * @param {Function} options.getLastFetchedTradeDateEt - Returns last fetched trade date
- * @param {Function} options.getLastScanDateEt - Returns last scan date fallback
- * @returns {Promise<{ running: boolean, lastScanDateEt: string|null, latestJob: object|null }>}
- */
-async function fetchLatestDivergenceScanStatus(options) {
+async function fetchLatestDivergenceScanStatus(options: {
+  divergencePool: { query: Function };
+  divergenceSourceInterval: string;
+  getIsScanRunning: () => boolean;
+  getLastFetchedTradeDateEt: () => string;
+  getLastScanDateEt: () => string;
+}) {
   const { divergencePool, divergenceSourceInterval, getIsScanRunning, getLastFetchedTradeDateEt, getLastScanDateEt } =
     options;
 

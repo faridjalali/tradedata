@@ -4,16 +4,16 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "tsx index.js",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit --project tsconfig.server.json",
-    "lint:server": "node --check index.js && node --check server/chartMath.js && node --check server/routes/chartRoutes.js && node --check server/routes/divergenceRoutes.js && node --check server/routes/healthRoutes.js && node --check server/services/divergenceService.js && node --check server/services/healthService.js",
+    "lint:server": "tsc --noEmit --project tsconfig.server.json",
     "lint:eslint": "eslint .",
     "lint": "npm run lint:server && npm run typecheck",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test test/*.test.js",
+    "test": "tsx --test test/*.test.ts",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -41,6 +41,7 @@
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   }

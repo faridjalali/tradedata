@@ -170,7 +170,7 @@ test('normalizeQuoteTimestamp handles numeric seconds', () => {
 test('normalizeQuoteTimestamp handles ISO strings', () => {
   const result = normalizeQuoteTimestamp('2026-01-15T12:00:00Z');
   assert.ok(Number.isFinite(result));
-  assert.ok(result > 0);
+  assert.ok(result! > 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -178,11 +178,11 @@ test('normalizeQuoteTimestamp handles ISO strings', () => {
 // ---------------------------------------------------------------------------
 
 test('isAbortError detects abort errors', () => {
-  const err1 = new Error('AbortError');
+  const err1: any = new Error('AbortError');
   err1.name = 'AbortError';
   assert.ok(isAbortError(err1));
 
-  const err2 = new Error('Request aborted');
+  const err2: any = new Error('Request aborted');
   err2.httpStatus = 499;
   assert.ok(isAbortError(err2));
 
@@ -192,13 +192,13 @@ test('isAbortError detects abort errors', () => {
 test('buildRequestAbortError creates abort error', () => {
   const err = buildRequestAbortError('test abort');
   assert.equal(err.name, 'AbortError');
-  assert.equal(err.httpStatus, 499);
+  assert.equal((err as any).httpStatus, 499);
   assert.ok(err.message.includes('test abort'));
 });
 
 test('buildTaskTimeoutError creates timeout error', () => {
   const err = buildTaskTimeoutError('fetch', 5000);
-  assert.equal(err.httpStatus, 504);
+  assert.equal((err as any).httpStatus, 504);
   assert.ok(err.message.includes('5000'));
 });
 
@@ -248,7 +248,7 @@ test('getDataApiAggConfig returns null for unknown intervals', () => {
 test('DATA_API_AGG_INTERVAL_MAP has all expected intervals', () => {
   const expected = ['1min', '5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
   for (const key of expected) {
-    assert.ok(DATA_API_AGG_INTERVAL_MAP[key], `Missing interval: ${key}`);
+    assert.ok((DATA_API_AGG_INTERVAL_MAP as any)[key], `Missing interval: ${key}`);
   }
 });
 

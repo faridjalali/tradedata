@@ -87,7 +87,7 @@ test('maxEtDateString returns greater of two dates', () => {
 test('maxEtDateString handles empty/null values', () => {
   assert.equal(maxEtDateString('2026-01-15', ''), '2026-01-15');
   assert.equal(maxEtDateString('', '2026-01-10'), '2026-01-10');
-  assert.equal(maxEtDateString(null, null), '');
+  assert.equal(maxEtDateString(null as any, null as any), '');
   assert.equal(maxEtDateString('', ''), '');
 });
 
@@ -104,7 +104,7 @@ test('parseDateKeyToUtcMs returns NaN for invalid formats', () => {
   assert.ok(Number.isNaN(parseDateKeyToUtcMs('2026-1-5')));
   assert.ok(Number.isNaN(parseDateKeyToUtcMs('not-a-date')));
   assert.ok(Number.isNaN(parseDateKeyToUtcMs('')));
-  assert.ok(Number.isNaN(parseDateKeyToUtcMs(null)));
+  assert.ok(Number.isNaN(parseDateKeyToUtcMs(null as any)));
 });
 
 // ---------------------------------------------------------------------------

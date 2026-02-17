@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../server/services/divergenceService.js';
 
-function defaultBooleanParser(value, fallback = false) {
+function defaultBooleanParser(value: any, fallback = false): boolean {
   if (value === true || value === 'true') return true;
   if (value === false || value === 'false') return false;
   return fallback;
@@ -14,13 +14,13 @@ test('buildManualScanRequest returns parsed booleans and optional date', () => {
     req: {
       query: { force: 'true', refreshUniverse: 'false' },
       body: { refreshUniverse: true, runDateEt: '2026-02-11' },
-    },
+    } as any,
     parseBooleanInput: defaultBooleanParser,
-    parseEtDateInput: (value) => value,
+    parseEtDateInput: (value: any) => value,
   });
 
   assert.equal(result.ok, true);
-  assert.deepEqual(result.value, {
+  assert.deepEqual((result as any).value, {
     force: true,
     refreshUniverse: true,
     runDateEt: '2026-02-11',
@@ -32,18 +32,18 @@ test('buildManualScanRequest returns validation error for invalid runDateEt', ()
     req: {
       query: {},
       body: { runDateEt: 'bad-date' },
-    },
+    } as any,
     parseBooleanInput: defaultBooleanParser,
     parseEtDateInput: () => null,
   });
   assert.equal(result.ok, false);
-  assert.equal(result.error, 'runDateEt must be YYYY-MM-DD');
+  assert.equal((result as any).error, 'runDateEt must be YYYY-MM-DD');
 });
 
 test('fetchLatestDivergenceScanStatus returns fallback scanned trade date and running state', async () => {
   const status = await fetchLatestDivergenceScanStatus({
     divergencePool: {
-      query: async (sql) => {
+      query: async (sql: string) => {
         if (sql.includes('FROM divergence_scan_jobs')) {
           return { rows: [{ id: 5, scanned_trade_date: null }] };
         }

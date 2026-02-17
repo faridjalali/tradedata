@@ -39,10 +39,6 @@ import {
 const gzipAsync = promisify(zlib.gzip);
 const brotliCompressAsync = promisify(zlib.brotliCompress);
 
-// Typed alias for global console (ESNext lib omits log/warn/error from Console)
-/** @type {{ log: Function, warn: Function, error: Function }} */
-const _log = /** @type {any} */ (console);
-
 // ---------------------------------------------------------------------------
 // Cache configuration (from env)
 // ---------------------------------------------------------------------------
@@ -95,11 +91,7 @@ const DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS = Math.max(
 // Timed cache helpers (SWR-style fresh / stale / miss)
 // ---------------------------------------------------------------------------
 
-/**
- * @param {any} cacheMap
- * @param {any} key
- */
-function getTimedCacheValue(cacheMap, key) {
+function getTimedCacheValue(cacheMap: any, key: any) {
   const entry = cacheMap.get(key);
   if (!entry) return { status: 'miss', value: null };
 
@@ -115,14 +107,7 @@ function getTimedCacheValue(cacheMap, key) {
   return { status: 'stale', value: entry.value };
 }
 
-/**
- * @param {any} cacheMap
- * @param {any} key
- * @param {any} value
- * @param {any} freshUntil
- * @param {any} [staleUntil]
- */
-function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
+function setTimedCacheValue(cacheMap: any, key: any, value: any, freshUntil: any, staleUntil?: any) {
   const now = Date.now();
   const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : now + 60000;
   const safeStaleUntil = Number.isFinite(staleUntil) ? staleUntil : safeFreshUntil + 300000;
@@ -134,8 +119,7 @@ function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
   });
 }
 
-/** @param {any} cacheMap */
-function sweepExpiredTimedCache(cacheMap) {
+function sweepExpiredTimedCache(cacheMap: any) {
   const now = Date.now();
   for (const [key, entry] of cacheMap.entries()) {
     if (!entry || !Number.isFinite(entry.staleUntil) || entry.staleUntil <= now) {
@@ -163,8 +147,7 @@ if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
 // Market-hours helpers
 // ---------------------------------------------------------------------------
 
-/** @param {any} dateEt */
-function isEtRegularHours(dateEt) {
+function isEtRegularHours(dateEt: any) {
   const dateStr = `${dateEt.getFullYear()}-${String(dateEt.getMonth() + 1).padStart(2, '0')}-${String(dateEt.getDate()).padStart(2, '0')}`;
   if (!tradingCalendar.isTradingDay(dateStr)) return false;
   const totalMinutes = dateEt.getHours() * 60 + dateEt.getMinutes();
@@ -249,7 +232,7 @@ function latestCompletedPacificTradeDateKey(nowUtc = new Date()) {
 // ---------------------------------------------------------------------------
 
 const CHART_INTRADAY_LOOKBACK_DAYS = 548;
-const CHART_INTRADAY_SLICE_DAYS = {
+const CHART_INTRADAY_SLICE_DAYS: Record<string, number> = {
   '1min': 30,
   '5min': 150,
   '15min': 150,
@@ -258,18 +241,16 @@ const CHART_INTRADAY_SLICE_DAYS = {
   '4hour': 45,
 };
 
-/** @param {any} _interval */
-function getIntradayLookbackDays(_interval) {
+function getIntradayLookbackDays(_interval: any) {
   void _interval;
   return 548;
 }
 
-/**
- * @param {string} symbol
- * @param {string} interval
- * @param {{ from?: any, to?: any, signal?: any, noCache?: boolean, metricsTracker?: any }} options
- */
-async function dataApiIntraday(symbol, interval, options = {}) {
+async function dataApiIntraday(
+  symbol: string,
+  interval: string,
+  options: { from?: any; to?: any; signal?: any; noCache?: boolean; metricsTracker?: any } = {},
+) {
   const { from, to, signal, noCache = false, metricsTracker = null } = options;
 
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
@@ -283,22 +264,22 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   }
 
   const executeFetch = async () => {
-    const CHUNK_SIZE_DAYS = {
+    const CHUNK_SIZE_DAYS: Record<string, number> = {
       '1min': 30,
       '5min': 150,
       '15min': 150,
     };
 
-    const maxDays = /** @type {Record<string, number>} */ (CHUNK_SIZE_DAYS)[interval];
+    const maxDays = CHUNK_SIZE_DAYS[interval];
     const startDt = options.from ? new Date(options.from) : addUtcDays(new Date(), -30);
     const endDt = options.to ? new Date(options.to) : new Date();
 
-    let urls = [];
+    let urls: string[] = [];
     if (maxDays && !options.from && !options.to) {
       urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
     } else if (maxDays) {
       let current = new Date(startDt);
-      const ranges = [];
+      const ranges: { from: string; to: string }[] = [];
       while (current < endDt) {
         const next = addUtcDays(new Date(current), maxDays);
         const chunkEnd = next < endDt ? next : endDt;
@@ -310,14 +291,14 @@ async function dataApiIntraday(symbol, interval, options = {}) {
       urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
     }
 
-    let rows = [];
+    let rows: any[] = [];
     if (urls.length > 1) {
       const results = await Promise.all(
         urls.map((url) =>
           fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
             .then((payload) => toArrayPayload(payload) || [])
-            .catch((err) => {
-              _log.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
+            .catch((err: any) => {
+              console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
               throw err;
             }),
         ),
@@ -328,7 +309,7 @@ async function dataApiIntraday(symbol, interval, options = {}) {
     }
 
     const normalized = rows
-      .map((/** @type {any} */ row) => {
+      .map((row: any) => {
         const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
         const close = toNumberOrNull(row.c ?? row.close ?? row.price);
         const open = toNumberOrNull(row.o ?? row.open) ?? close;
@@ -355,8 +336,8 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   };
 
   if (cached.status === 'stale') {
-    executeFetch().catch((err) => {
-      _log.error(`[SWR] Background refresh failed for ${cacheKey}:`, err.message);
+    executeFetch().catch((err: any) => {
+      console.error(`[SWR] Background refresh failed for ${cacheKey}:`, err.message);
     });
     return cached.value;
   }
@@ -364,22 +345,16 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   return await executeFetch();
 }
 
-/**
- * @param {string} symbol
- * @param {string} interval
- * @param {number} lookbackDays
- * @param {{ signal?: any, noCache?: boolean, metricsTracker?: any }} options
- */
 async function dataApiIntradayChartHistorySingle(
-  symbol,
-  interval,
-  lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS,
-  options = {},
+  symbol: string,
+  interval: string,
+  lookbackDays: number = CHART_INTRADAY_LOOKBACK_DAYS,
+  options: { signal?: any; noCache?: boolean; metricsTracker?: any } = {},
 ) {
   const signal = options && options.signal ? options.signal : null;
   const noCache = options && options.noCache === true;
   const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
-  const sliceDays = /** @type {Record<string, number>} */ (CHART_INTRADAY_SLICE_DAYS)[interval] || 30;
+  const sliceDays = CHART_INTRADAY_SLICE_DAYS[interval] || 30;
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
   const startDate = addUtcDays(endDate, -Math.max(1, lookbackDays));
@@ -395,15 +370,15 @@ async function dataApiIntradayChartHistorySingle(
         metricsTracker,
       });
       if (Array.isArray(rows) && rows.length > 0 && rows.length < 50000) {
-        return rows.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+        return rows.sort((a, b) => Number(a?.time ?? 0) - Number(b?.time ?? 0));
       }
       if (Array.isArray(rows) && rows.length === 0) {
         return [];
       }
       if (Array.isArray(rows) && rows.length >= 50000) {
-        _log.warn(`DataAPI ${interval} single-range payload hit cap for ${symbol}; retrying with slices`);
+        console.warn(`DataAPI ${interval} single-range payload hit cap for ${symbol}; retrying with slices`);
       }
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       if (
         isAbortError(err) ||
         isDataApiRateLimitedError(err) ||
@@ -413,13 +388,13 @@ async function dataApiIntradayChartHistorySingle(
         throw err;
       }
       const message = err && err.message ? err.message : String(err);
-      _log.warn(`DataAPI ${interval} single-range fetch failed for ${symbol}; falling back to slices: ${message}`);
+      console.warn(`DataAPI ${interval} single-range fetch failed for ${symbol}; falling back to slices: ${message}`);
     }
   }
 
   const byDateTime = new Map();
   let cursor = new Date(startDate);
-  let lastSliceError = null;
+  let lastSliceError: any = null;
 
   while (cursor <= endDate) {
     if (signal && signal.aborted) {
@@ -439,20 +414,21 @@ async function dataApiIntradayChartHistorySingle(
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
-          const rowKey = Number.isFinite(Number(row?.time))
+          if (!row) continue;
+          const rowKey = Number.isFinite(Number(row.time))
             ? String(Math.floor(Number(row.time)))
-            : String(row?.datetime || '');
+            : String((row as any).datetime || '');
           if (!rowKey) continue;
           byDateTime.set(rowKey, row);
         }
       }
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       lastSliceError = err;
       if (isAbortError(err)) {
         throw err;
       }
       const message = err && err.message ? err.message : String(err);
-      _log.error(
+      console.error(
         `DataAPI ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`,
       );
       if (isDataApiSubscriptionRestrictedError(err) || isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
@@ -479,21 +455,15 @@ async function dataApiIntradayChartHistorySingle(
   return Array.from(byDateTime.values()).sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
 }
 
-/**
- * @param {string} symbol
- * @param {string} interval
- * @param {number} lookbackDays
- * @param {{ signal?: any, noCache?: boolean, metricsTracker?: any }} options
- */
 async function dataApiIntradayChartHistory(
-  symbol,
-  interval,
-  lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS,
-  options = {},
+  symbol: string,
+  interval: string,
+  lookbackDays: number = CHART_INTRADAY_LOOKBACK_DAYS,
+  options: { signal?: any; noCache?: boolean; metricsTracker?: any } = {},
 ) {
   const requestedInterval = String(interval || '').trim();
   const intervalCandidates = [requestedInterval];
-  let lastError = null;
+  let lastError: any = null;
 
   for (const intervalCandidate of intervalCandidates) {
     const symbolCandidates = getDataApiSymbolCandidates(symbol);
@@ -502,17 +472,17 @@ async function dataApiIntradayChartHistory(
         const rows = await dataApiIntradayChartHistorySingle(candidate, intervalCandidate, lookbackDays, options);
         if (rows && rows.length > 0) {
           if (candidate !== normalizeTickerSymbol(symbol)) {
-            _log.log(`DataAPI symbol fallback (${intervalCandidate}): ${symbol} -> ${candidate}`);
+            console.log(`DataAPI symbol fallback (${intervalCandidate}): ${symbol} -> ${candidate}`);
           }
           return rows;
         }
-      } catch (/** @type {any} */ err) {
+      } catch (err: any) {
         lastError = err;
         if (isAbortError(err)) {
           throw err;
         }
         const message = err && err.message ? err.message : String(err);
-        _log.error(`DataAPI ${intervalCandidate} history failed for ${candidate} (requested ${symbol}): ${message}`);
+        console.error(`DataAPI ${intervalCandidate} history failed for ${candidate} (requested ${symbol}): ${message}`);
         if (isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
           throw err;
         }
@@ -530,17 +500,13 @@ async function dataApiIntradayChartHistory(
 // Technical indicator calculations
 // ---------------------------------------------------------------------------
 
-/**
- * @param {number[]} closePrices
- * @param {number} period
- */
-function calculateRSI(closePrices, period = 14) {
+function calculateRSI(closePrices: number[], period: number = 14): number[] {
   if (!Array.isArray(closePrices) || closePrices.length === 0) return [];
   if (closePrices.length === 1) return [50];
 
   const rsiValues = new Array(closePrices.length).fill(50);
-  const gains = [];
-  const losses = [];
+  const gains: number[] = [];
+  const losses: number[] = [];
 
   let avgGain = 0;
   let avgLoss = 0;
@@ -585,15 +551,11 @@ function calculateRSI(closePrices, period = 14) {
   return rsiValues;
 }
 
-/**
- * @param {any[]} values
- * @param {number} length
- */
-function calculateRMA(values, length = 14) {
+function calculateRMA(values: any[], length: number = 14) {
   const period = Math.max(1, Math.floor(length));
   const out = new Array(values.length).fill(null);
 
-  const validValues = [];
+  const validValues: { index: number; value: number }[] = [];
   let firstValidIndex = -1;
 
   for (let i = 0; i < values.length; i++) {
@@ -631,10 +593,8 @@ function calculateRMA(values, length = 14) {
   return out;
 }
 
-/** @param {string} interval */
-function getIntervalSeconds(interval) {
-  /** @type {Record<string, number>} */
-  const map = {
+function getIntervalSeconds(interval: string): number {
+  const map: Record<string, number> = {
     '1min': 60,
     '5min': 5 * 60,
     '15min': 15 * 60,
@@ -647,18 +607,17 @@ function getIntervalSeconds(interval) {
   return map[interval] || 60;
 }
 
-/** @param {any[]} bars */
-function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
+function normalizeIntradayVolumesFromCumulativeIfNeeded(bars: any[]) {
   if (!Array.isArray(bars) || bars.length < 2) return bars || [];
 
   const normalized = bars.map((bar) => ({ ...bar, volume: Number(bar.volume) || 0 }));
 
-  const maybeNormalizeDayRange = (/** @type {number} */ startIndex, /** @type {number} */ endIndex) => {
+  const maybeNormalizeDayRange = (startIndex: number, endIndex: number) => {
     if (endIndex - startIndex < 3) return;
 
     let nonDecreasing = 0;
     let steps = 0;
-    const positiveDiffs = [];
+    const positiveDiffs: number[] = [];
     let maxVolume = Number.NEGATIVE_INFINITY;
 
     for (let i = startIndex; i <= endIndex; i++) {
@@ -704,12 +663,7 @@ function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
   return normalized;
 }
 
-/**
- * @param {any[]} parentBars
- * @param {any[]} lowerTimeframeBars
- * @param {string} interval
- */
-function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval) {
+function computeVolumeDeltaByParentBars(parentBars: any[], lowerTimeframeBars: any[], interval: string) {
   if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
   if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
     return parentBars.map((bar) => ({ time: bar.time, delta: 0 }));
@@ -717,8 +671,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
 
   const intervalSeconds = getIntervalSeconds(interval);
   const parentTimes = parentBars.map((bar) => Number(bar.time));
-  /** @type {Array<Array<{ open: number, close: number, volume: number }>>} */
-  const intrabarsPerParent = parentBars.map(() => []);
+  const intrabarsPerParent: Array<Array<{ open: number; close: number; volume: number }>> = parentBars.map(() => []);
   let parentIndex = 0;
 
   for (const bar of lowerTimeframeBars) {
@@ -741,9 +694,9 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
     intrabarsPerParent[parentIndex].push({ open, close, volume });
   }
 
-  let lastClose = null;
-  let lastBull = null;
-  const deltas = [];
+  let lastClose: any = null;
+  let lastBull: any = null;
+  const deltas: { time: any; delta: number }[] = [];
 
   for (let i = 0; i < parentBars.length; i++) {
     const stream = intrabarsPerParent[i];
@@ -753,14 +706,12 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
     }
 
     let runningDelta = 0;
-    /** @type {any} */
-    let streamLastClose = lastClose;
-    /** @type {any} */
-    let streamLastBull = lastBull;
+    let streamLastClose: any = lastClose;
+    let streamLastBull: any = lastBull;
 
     for (let j = 0; j < stream.length; j++) {
       const ib = stream[j];
-      let isBull = ib.close > ib.open ? true : ib.close < ib.open ? false : null;
+      let isBull: boolean | null = ib.close > ib.open ? true : ib.close < ib.open ? false : null;
       if (isBull === null) {
         const prevClose = j === 0 ? streamLastClose : stream[j - 1].close;
         if (Number.isFinite(prevClose)) {
@@ -794,13 +745,12 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
   return deltas;
 }
 
-/**
- * @param {any[]} parentBars
- * @param {any[]} lowerTimeframeBars
- * @param {string} interval
- * @param {{ rsiLength?: number }} options
- */
-function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval, options = {}) {
+function calculateVolumeDeltaRsiSeries(
+  parentBars: any[],
+  lowerTimeframeBars: any[],
+  interval: string,
+  options: { rsiLength?: number } = {},
+) {
   const rsiLength = Math.max(1, Math.floor(Number(options.rsiLength) || 14));
 
   const deltaByBar = computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval);
@@ -828,7 +778,7 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
     vdRsiRaw[i] = Number.isFinite(value) ? value : null;
   }
 
-  const rsi = [];
+  const rsi: { time: any; value: number }[] = [];
   for (let i = 0; i < deltaByBar.length; i++) {
     const time = deltaByBar[i].time;
     const rsiValue = vdRsiRaw[i];
@@ -849,8 +799,7 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
 // Time conversion
 // ---------------------------------------------------------------------------
 
-/** @param {any} datetimeValue */
-function parseDataApiDateTime(datetimeValue) {
+function parseDataApiDateTime(datetimeValue: any) {
   if (typeof datetimeValue !== 'string') return null;
   const normalized = datetimeValue.trim().replace('T', ' ').replace('Z', '');
   const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
@@ -864,8 +813,7 @@ function parseDataApiDateTime(datetimeValue) {
   };
 }
 
-/** @param {any} bar */
-function parseBarTimeToUnixSeconds(bar) {
+function parseBarTimeToUnixSeconds(bar: any) {
   const numeric = normalizeUnixSeconds(bar?.time ?? bar?.timestamp ?? bar?.t);
   if (Number.isFinite(numeric)) return numeric;
   const parts = parseDataApiDateTime(bar?.datetime || bar?.date);
@@ -883,13 +831,9 @@ function parseBarTimeToUnixSeconds(bar) {
   return Math.floor(Date.UTC(year, month - 1, day, hour - etOffset, minute, 0) / 1000);
 }
 
-/**
- * @param {any[]} bars
- * @param {string} interval
- */
-function convertToLATime(bars, interval) {
+function convertToLATime(bars: any[], interval: string) {
   void interval;
-  const converted = [];
+  const converted: any[] = [];
 
   for (const bar of bars) {
     const timestamp = parseBarTimeToUnixSeconds(bar);
@@ -908,11 +852,7 @@ function convertToLATime(bars, interval) {
   return converted;
 }
 
-/**
- * @param {any} result
- * @param {any} quote
- */
-function patchLatestBarCloseWithQuote(result, quote) {
+function patchLatestBarCloseWithQuote(result: any, quote: any) {
   if (!result || !Array.isArray(result.bars) || result.bars.length === 0) return;
   const quotePrice = Number(quote && quote.price);
   if (!Number.isFinite(quotePrice) || quotePrice <= 0) return;
@@ -938,9 +878,9 @@ function patchLatestBarCloseWithQuote(result, quote) {
     low: boundedLow,
   };
 
-  const closePrices = bars.map((/** @type {any} */ bar) => Number(bar.close));
+  const closePrices = bars.map((bar: any) => Number(bar.close));
   const rsiValues = calculateRSI(closePrices, 14);
-  const patchedRsi = [];
+  const patchedRsi: { time: any; value: number }[] = [];
   for (let i = 0; i < bars.length; i++) {
     const raw = rsiValues[i];
     if (!Number.isFinite(raw)) continue;
@@ -956,17 +896,12 @@ function patchLatestBarCloseWithQuote(result, quote) {
 // Chart request / response helpers
 // ---------------------------------------------------------------------------
 
-/**
- * @param {any} value
- * @param {string} fallback
- */
-function toVolumeDeltaSourceInterval(value, fallback = '1min') {
+function toVolumeDeltaSourceInterval(value: any, fallback: string = '1min'): string {
   const normalized = String(value || '').trim();
   return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
 }
 
-/** @param {any} params */
-function buildChartRequestKey(params) {
+function buildChartRequestKey(params: any): string {
   return [
     'v1',
     params.ticker,
@@ -980,13 +915,12 @@ function buildChartRequestKey(params) {
 
 function createChartStageTimer() {
   const startedNs = process.hrtime.bigint();
-  /** @type {{ name: string, ms: number }[]} */
-  const stages = [];
+  const stages: { name: string; ms: number }[] = [];
   let previousNs = startedNs;
-  const toMs = (/** @type {any} */ durationNs) => Number(durationNs) / 1e6;
-  const fmt = (/** @type {any} */ ms) => Number(ms).toFixed(1);
+  const toMs = (durationNs: any) => Number(durationNs) / 1e6;
+  const fmt = (ms: any) => Number(ms).toFixed(1);
   return {
-    step(/** @type {string} */ name) {
+    step(name: string) {
       const nowNs = process.hrtime.bigint();
       stages.push({ name, ms: toMs(nowNs - previousNs) });
       previousNs = nowNs;
@@ -1005,41 +939,31 @@ function createChartStageTimer() {
   };
 }
 
-function getChartCacheControlHeaderValue() {
+function getChartCacheControlHeaderValue(): string {
   const maxAge = Math.max(0, Math.floor(CHART_RESPONSE_MAX_AGE_SECONDS));
   const swr = Math.max(0, Math.floor(CHART_RESPONSE_SWR_SECONDS));
   return `public, max-age=${maxAge}, stale-while-revalidate=${swr}`;
 }
 
-function getChartResultCacheExpiryMs(nowUtc = new Date()) {
+function getChartResultCacheExpiryMs(nowUtc = new Date()): number {
   if (CHART_RESULT_CACHE_TTL_SECONDS > 0) {
     return nowUtc.getTime() + CHART_RESULT_CACHE_TTL_SECONDS * 1000;
   }
   return getVdRsiCacheExpiryMs(nowUtc);
 }
 
-/**
- * @param {any} ifNoneMatchHeader
- * @param {any} etag
- */
-function ifNoneMatchMatchesEtag(ifNoneMatchHeader, etag) {
+function ifNoneMatchMatchesEtag(ifNoneMatchHeader: any, etag: any): boolean {
   const raw = String(ifNoneMatchHeader || '').trim();
   if (!raw || !etag) return false;
   if (raw === '*') return true;
   const candidates = raw
     .split(',')
-    .map((part) => part.trim())
+    .map((part: string) => part.trim())
     .filter(Boolean);
   return candidates.includes(etag);
 }
 
-/**
- * @param {any} req
- * @param {any} res
- * @param {any} payload
- * @param {any} serverTimingHeader
- */
-async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
+async function sendChartJsonResponse(req: any, res: any, payload: any, serverTimingHeader: any) {
   const body = JSON.stringify(payload);
   const bodyBuffer = Buffer.from(body);
   const etagHash = crypto.createHash('sha1').update(bodyBuffer).digest('hex').slice(0, 16);
@@ -1070,9 +994,9 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
       });
       res.setHeader('Content-Encoding', 'br');
       return res.status(200).send(compressed);
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
-      _log.warn(`Brotli compression failed for /api/chart response: ${message}`);
+      console.warn(`Brotli compression failed for /api/chart response: ${message}`);
     }
   }
 
@@ -1083,9 +1007,9 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
       });
       res.setHeader('Content-Encoding', 'gzip');
       return res.status(200).send(compressed);
-    } catch (/** @type {any} */ err) {
+    } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
-      _log.warn(`Gzip compression failed for /api/chart response: ${message}`);
+      console.warn(`Gzip compression failed for /api/chart response: ${message}`);
     }
   }
 
@@ -1096,8 +1020,7 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
 // Chart result building
 // ---------------------------------------------------------------------------
 
-/** @param {any} options */
-function buildChartResultFromRows(options = {}) {
+function buildChartResultFromRows(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const interval = String(options.interval || '4hour');
   const rowsByInterval = options.rowsByInterval instanceof Map ? options.rowsByInterval : new Map();
@@ -1106,14 +1029,14 @@ function buildChartResultFromRows(options = {}) {
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const timer = options.timer || null;
 
-  const convertBarsForInterval = (/** @type {any[]} */ rows, /** @type {string} */ tf) =>
+  const convertBarsForInterval = (rows: any[], tf: string) =>
     convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time));
   const directIntervalRows = rowsByInterval.get(interval) || [];
   const convertedBars = convertBarsForInterval(directIntervalRows, interval);
   if (timer) timer.step('parent_bars');
 
   if (convertedBars.length === 0) {
-    const err = /** @type {any} */ (new Error(`No valid ${interval} chart bars available for this ticker`));
+    const err: any = new Error(`No valid ${interval} chart bars available for this ticker`);
     err.httpStatus = 404;
     throw err;
   }
@@ -1121,7 +1044,7 @@ function buildChartResultFromRows(options = {}) {
   const closePrices = convertedBars.map((bar) => bar.close);
   const rsiValues = calculateRSI(closePrices, 14);
 
-  const rsi = [];
+  const rsi: { time: any; value: number }[] = [];
   for (let i = 0; i < convertedBars.length; i++) {
     const raw = rsiValues[i];
     if (!Number.isFinite(raw)) continue;
@@ -1132,7 +1055,7 @@ function buildChartResultFromRows(options = {}) {
   }
   if (timer) timer.step('rsi');
 
-  const normalizeSourceBars = (/** @type {any[]} */ rows, /** @type {string} */ tf) =>
+  const normalizeSourceBars = (rows: any[], tf: string) =>
     normalizeIntradayVolumesFromCumulativeIfNeeded(
       convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time)),
     );
@@ -1143,8 +1066,7 @@ function buildChartResultFromRows(options = {}) {
       : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
   if (timer) timer.step('source_bars');
 
-  /** @type {any} */
-  let volumeDeltaRsi = { rsi: [] };
+  let volumeDeltaRsi: any = { rsi: [] };
   const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
   const firstBarTime = convertedBars[0]?.time ?? '';
   const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
@@ -1158,11 +1080,11 @@ function buildChartResultFromRows(options = {}) {
   const parentWindowEndExclusive = Number.isFinite(lastParentTime)
     ? lastParentTime + getIntervalSeconds(interval)
     : Number.POSITIVE_INFINITY;
-  const vdSourceBarsInParentRange = vdSourceBars.filter((/** @type {any} */ bar) => {
+  const vdSourceBarsInParentRange = vdSourceBars.filter((bar: any) => {
     const t = Number(bar.time);
     return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
   });
-  const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((/** @type {any} */ bar) => {
+  const vdRsiSourceBarsInParentRange = vdRsiSourceBars.filter((bar: any) => {
     const t = Number(bar.time);
     return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
   });
@@ -1174,8 +1096,7 @@ function buildChartResultFromRows(options = {}) {
   );
   if (timer) timer.step('volume_delta');
 
-  /** @type {any} */
-  const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
+  const cachedVolumeDeltaRsi: any = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
   if (cachedVolumeDeltaRsi && cachedVolumeDeltaRsi.deltaValues) {
     volumeDeltaRsi = cachedVolumeDeltaRsi;
   } else {
@@ -1191,9 +1112,9 @@ function buildChartResultFromRows(options = {}) {
         };
       }
       setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
-    } catch (/** @type {any} */ volumeDeltaErr) {
+    } catch (volumeDeltaErr: any) {
       const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
-      _log.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
+      console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
     }
   }
   if (timer) timer.step('vd_rsi');
@@ -1221,11 +1142,10 @@ function buildChartResultFromRows(options = {}) {
 // getOrBuildChartResult (the main chart entry point)
 // ---------------------------------------------------------------------------
 
-/**
- * @param {any} params
- * @param {{ chartDebugMetrics?: any, schedulePostLoadPrewarmSequence?: Function }} deps
- */
-async function getOrBuildChartResult(params, deps = {}) {
+async function getOrBuildChartResult(
+  params: any,
+  deps: { chartDebugMetrics?: any; schedulePostLoadPrewarmSequence?: Function } = {},
+) {
   const {
     ticker,
     interval,
@@ -1282,7 +1202,7 @@ async function getOrBuildChartResult(params, deps = {}) {
   }
 
   if (CHART_IN_FLIGHT_REQUESTS.size >= CHART_IN_FLIGHT_MAX) {
-    const err = /** @type {any} */ (new Error('Too many concurrent chart requests'));
+    const err: any = new Error('Too many concurrent chart requests');
     err.httpStatus = 429;
     throw err;
   }
@@ -1358,7 +1278,7 @@ async function getOrBuildChartResult(params, deps = {}) {
     }
 
     if (timer) {
-      _log.log(`[chart-timing] ${ticker}/${interval} ${timer.summary()}`);
+      console.log(`[chart-timing] ${ticker}/${interval} ${timer.summary()}`);
     }
 
     return result;
@@ -1380,11 +1300,7 @@ async function getOrBuildChartResult(params, deps = {}) {
 // Chart latest payload extraction
 // ---------------------------------------------------------------------------
 
-/**
- * @param {any[]} points
- * @param {any} timeValue
- */
-function findPointByTime(points, timeValue) {
+function findPointByTime(points: any[], timeValue: any) {
   if (!Array.isArray(points) || points.length === 0 || timeValue == null) return null;
   const targetTime = Number(timeValue);
   for (let i = points.length - 1; i >= 0; i--) {
@@ -1393,8 +1309,7 @@ function findPointByTime(points, timeValue) {
   return null;
 }
 
-/** @param {any} result */
-function extractLatestChartPayload(result) {
+function extractLatestChartPayload(result: any) {
   if (!result || !Array.isArray(result.bars) || result.bars.length === 0) {
     return {
       interval: result?.interval || '',
@@ -1427,12 +1342,11 @@ async function getSpyDaily() {
   return dataApiDaily('SPY');
 }
 
-async function getSpyIntraday(lookbackDays = 30) {
+async function getSpyIntraday(lookbackDays: number = 30) {
   return dataApiIntradayChartHistory('SPY', '30min', lookbackDays);
 }
 
-/** @param {any} dateTimeStr */
-function isRegularHoursEt(dateTimeStr) {
+function isRegularHoursEt(dateTimeStr: any): boolean {
   const numeric = normalizeUnixSeconds(dateTimeStr);
   if (Number.isFinite(numeric)) {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -1441,8 +1355,7 @@ function isRegularHoursEt(dateTimeStr) {
       minute: '2-digit',
       hour12: false,
     }).formatToParts(new Date(Number(numeric) * 1000));
-    /** @type {Record<string, string>} */
-    const partMap = {};
+    const partMap: Record<string, string> = {};
     for (const part of parts) partMap[part.type] = part.value;
     const h = Number(partMap.hour || 0);
     const m = Number(partMap.minute || 0);
@@ -1457,8 +1370,7 @@ function isRegularHoursEt(dateTimeStr) {
   return totalMin >= 570 && totalMin <= 960;
 }
 
-/** @param {any} dateTimeStr */
-function roundEtTo30MinEpochMs(dateTimeStr) {
+function roundEtTo30MinEpochMs(dateTimeStr: any): number {
   const unixSeconds = normalizeUnixSeconds(dateTimeStr);
   if (Number.isFinite(unixSeconds)) {
     const d = new Date(Number(unixSeconds) * 1000);
@@ -1480,12 +1392,7 @@ function roundEtTo30MinEpochMs(dateTimeStr) {
   return d.getTime();
 }
 
-/**
- * @param {any[]} spyBars
- * @param {any[]} compBars
- * @param {any} days
- */
-function buildIntradayBreadthPoints(spyBars, compBars, days) {
+function buildIntradayBreadthPoints(spyBars: any[], compBars: any[], days: any) {
   const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const y = todayET.getFullYear();
   const mo = String(todayET.getMonth() + 1).padStart(2, '0');
@@ -1497,7 +1404,7 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   for (const bar of spyBars || []) {
     const unixSeconds = parseBarTimeToUnixSeconds(bar);
     const day = Number.isFinite(unixSeconds)
-      ? etDateStringFromUnixSeconds(/** @type {number} */ (unixSeconds))
+      ? etDateStringFromUnixSeconds(unixSeconds as number)
       : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
     if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;
@@ -1511,7 +1418,7 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   for (const bar of compBars || []) {
     const unixSeconds = parseBarTimeToUnixSeconds(bar);
     const day = Number.isFinite(unixSeconds)
-      ? etDateStringFromUnixSeconds(/** @type {number} */ (unixSeconds))
+      ? etDateStringFromUnixSeconds(unixSeconds as number)
       : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
     if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;

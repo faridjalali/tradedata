@@ -5,8 +5,8 @@ import { instrumentPool } from '../server/lib/dbMonitor.js';
 
 test('instrumentPool wraps query with timing', async () => {
   let queryCalled = false;
-  const fakePool = {
-    query: async (sql) => {
+  const fakePool: any = {
+    query: async (_sql: any) => {
       queryCalled = true;
       return { rows: [{ id: 1 }], rowCount: 1 };
     },
@@ -19,7 +19,7 @@ test('instrumentPool wraps query with timing', async () => {
 });
 
 test('instrumentPool preserves error behavior', async () => {
-  const fakePool = {
+  const fakePool: any = {
     query: async () => {
       throw new Error('connection refused');
     },
@@ -32,14 +32,14 @@ test('instrumentPool preserves error behavior', async () => {
 });
 
 test('instrumentPool is a no-op for null/undefined pool', () => {
-  assert.equal(instrumentPool(null), null);
-  assert.equal(instrumentPool(undefined), undefined);
+  assert.equal(instrumentPool(null as any), null);
+  assert.equal(instrumentPool(undefined as any), undefined);
 });
 
 test('instrumentPool handles config object query form', async () => {
-  let receivedArgs;
-  const fakePool = {
-    query: async (...args) => {
+  let receivedArgs: any;
+  const fakePool: any = {
+    query: async (...args: any[]) => {
       receivedArgs = args;
       return { rows: [], rowCount: 0 };
     },

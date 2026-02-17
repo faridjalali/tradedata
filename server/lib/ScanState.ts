@@ -1,26 +1,37 @@
 /**
  * ScanState — shared state management for scan-type background jobs.
- *
- * Encapsulates the 5 state variables every scan type needs (running, stopRequested,
- * abortController, resumeState, status) plus lifecycle methods (requestStop, canResume,
- * getStatus, beginRun, markStopped, markCompleted, markFailed, cleanup).
- *
- * Usage:
- *   const scan = new ScanState('vdfScan');
- *   const abort = scan.beginRun(resumeRequested);
- *   // ... process tickers ...
- *   scan.markCompleted({ totalTickers, processedTickers, errorTickers, ... });
- *   scan.cleanup(abort);
  */
+
+interface ScanStateOptions {
+  metricsKey?: string;
+  normalizeResume?: (data: any) => any;
+  canResumeValidator?: (resumeState: any) => boolean;
+}
+
+interface ScanStatusFields {
+  running?: boolean;
+  status?: string;
+  totalTickers?: number;
+  processedTickers?: number;
+  errorTickers?: number;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  [key: string]: any;
+}
+
 class ScanState {
-  /**
-   * @param {string} name - Unique identifier for this scan type (e.g. 'vdfScan', 'fetchDaily')
-   * @param {object} [options]
-   * @param {string} [options.metricsKey] - Key for runMetricsByType (defaults to name)
-   * @param {function} [options.normalizeResume] - Optional function to normalize resume state
-   * @param {function} [options.canResumeValidator] - Optional (resumeState) => boolean validator
-   */
-  constructor(name, options = {}) {
+  name: string;
+  metricsKey: string;
+  running: boolean;
+  stopRequested: boolean;
+  abortController: AbortController | null;
+  resumeState: any;
+  normalizeResume: ((data: any) => any) | null;
+  canResumeValidator: ((resumeState: any) => boolean) | null;
+  _status: ScanStatusFields;
+  _extraStatus: Record<string, any>;
+
+  constructor(name: string, options: ScanStateOptions = {}) {
     this.name = name;
     this.metricsKey = options.metricsKey || name;
     this.running = false;
@@ -45,22 +56,15 @@ class ScanState {
   // State queries
   // ---------------------------------------------------------------------------
 
-  /** Whether the scan should stop (stop requested or abort signal fired). */
-  get shouldStop() {
+  get shouldStop(): boolean {
     return this.stopRequested || Boolean(this.abortController?.signal?.aborted);
   }
 
-  /** Convenience accessor for the abort signal (or null). */
-  get signal() {
+  get signal(): AbortSignal | null {
     return this.abortController?.signal || null;
   }
 
-  /**
-   * Request the scan to stop. Sets stopRequested, updates status to 'stopping',
-   * and fires the abort controller.
-   * @returns {boolean} true if the stop was accepted (scan was running)
-   */
-  requestStop() {
+  requestStop(): boolean {
     if (!this.running) return false;
     this.stopRequested = true;
     this._status = { ...this._status, status: 'stopping', finishedAt: null };
@@ -74,13 +78,7 @@ class ScanState {
     return true;
   }
 
-  /**
-   * Check whether the scan can be resumed from a previous stop.
-   * Uses canResumeValidator if provided, otherwise does a default check on
-   * resumeState.tickers and resumeState.nextIndex.
-   * @returns {boolean}
-   */
-  canResume() {
+  canResume(): boolean {
     if (this.running) return false;
     if (!this.resumeState) return false;
     if (this.canResumeValidator) return this.canResumeValidator(this.resumeState);
@@ -88,12 +86,6 @@ class ScanState {
     return Array.isArray(rs.tickers) && rs.tickers.length > 0 && rs.nextIndex < rs.tickers.length;
   }
 
-  /**
-   * Return a status object matching the API response shape expected by the client.
-   * Extra fields (e.g. detected_tickers, last_published_trade_date) are merged
-   * from _extraStatus.
-   * @returns {object}
-   */
   getStatus() {
     return {
       running: Boolean(this.running),
@@ -113,13 +105,7 @@ class ScanState {
   // Lifecycle methods
   // ---------------------------------------------------------------------------
 
-  /**
-   * Begin a new run. Sets running=true, resets stop flag, creates abort controller.
-   * If not resuming, clears the resume state.
-   * @param {boolean} [resumeRequested=false]
-   * @returns {AbortController} the newly created abort controller
-   */
-  beginRun(resumeRequested = false) {
+  beginRun(resumeRequested = false): AbortController {
     this.running = true;
     this.stopRequested = false;
     if (!resumeRequested) this.resumeState = null;
@@ -127,42 +113,21 @@ class ScanState {
     return this.abortController;
   }
 
-  /**
-   * Merge fields into the internal status object.
-   * @param {object} fields
-   */
-  setStatus(fields) {
+  setStatus(fields: ScanStatusFields): void {
     this._status = { ...this._status, ...fields };
   }
 
-  /**
-   * Set scan-type-specific extra status fields that get merged into getStatus().
-   * @param {object} fields
-   */
-  setExtraStatus(fields) {
+  setExtraStatus(fields: Record<string, any>): void {
     this._extraStatus = { ...this._extraStatus, ...fields };
   }
 
-  /**
-   * Quick update for processedTickers and errorTickers during a run.
-   * Also flips status to 'stopping' if stop was requested.
-   * @param {number} processedTickers
-   * @param {number} errorTickers
-   */
-  updateProgress(processedTickers, errorTickers) {
+  updateProgress(processedTickers: number, errorTickers: number): void {
     this._status.processedTickers = processedTickers;
     this._status.errorTickers = errorTickers;
     if (this.stopRequested) this._status.status = 'stopping';
   }
 
-  /**
-   * Save resume state with a rewind-by-concurrency safety margin.
-   * In-flight workers that got aborted will be re-processed on resume.
-   * @param {any} data - Resume data (must include tickers/totalTickers/processedTickers)
-   * @param {number} concurrency - Current run concurrency (rewind amount)
-   * @returns {number} the safe next index after rewind
-   */
-  saveResumeState(data, concurrency) {
+  saveResumeState(data: any, concurrency: number): number {
     const total = data.totalTickers || (Array.isArray(data.tickers) ? data.tickers.length : 0);
     const safeNext = Math.max(0, Math.min(total, (data.processedTickers || 0) - (concurrency || 0)));
     const normalized = { ...data, nextIndex: safeNext, processedTickers: safeNext };
@@ -170,21 +135,12 @@ class ScanState {
     return safeNext;
   }
 
-  /**
-   * Mark the scan as stopped.
-   * @param {any} statusFields - Fields for the status object
-   */
-  markStopped(statusFields) {
+  markStopped(statusFields: any): void {
     this.stopRequested = false;
     this._status = { running: false, status: 'stopped', ...statusFields };
   }
 
-  /**
-   * Mark the scan as completed. Clears resume state.
-   * Auto-detects 'completed-with-errors' if errorTickers > 0.
-   * @param {any} statusFields - Fields for the status object
-   */
-  markCompleted(statusFields) {
+  markCompleted(statusFields: any): void {
     this.resumeState = null;
     this.stopRequested = false;
     const hasErrors = Number(statusFields?.errorTickers || 0) > 0;
@@ -195,22 +151,13 @@ class ScanState {
     };
   }
 
-  /**
-   * Mark the scan as failed. Clears resume state.
-   * @param {any} statusFields - Fields for the status object
-   */
-  markFailed(statusFields) {
+  markFailed(statusFields: any): void {
     this.resumeState = null;
     this.stopRequested = false;
     this._status = { running: false, status: 'failed', ...statusFields };
   }
 
-  /**
-   * Cleanup after a run completes (success, stop, or failure).
-   * Clears the abort controller (if it matches the provided ref) and sets running=false.
-   * @param {AbortController} [abortRef] - The abort controller from beginRun()
-   */
-  cleanup(abortRef) {
+  cleanup(abortRef?: AbortController): void {
     if (abortRef && this.abortController === abortRef) {
       this.abortController = null;
     } else if (!abortRef) {
@@ -219,12 +166,7 @@ class ScanState {
     this.running = false;
   }
 
-  /**
-   * Build the options object expected by registerDivergenceRoutes for this scan type.
-   * @param {function} runFn - The async run function
-   * @returns {object} { getStatus, requestStop, canResume, run, getIsRunning }
-   */
-  buildRouteOptions(runFn) {
+  buildRouteOptions(runFn: Function) {
     return {
       getStatus: () => this.getStatus(),
       requestStop: () => this.requestStop(),
@@ -235,21 +177,17 @@ class ScanState {
   }
 }
 
-/**
- * Run up to 2 retry passes over failed tickers with progressively reduced concurrency.
- * Pass 1: baseConcurrency / 2, Pass 2: baseConcurrency / 4.
- *
- * @param {object} opts
- * @param {string[]} opts.failedTickers - Tickers that failed in the main pass
- * @param {number} opts.baseConcurrency - Original run concurrency
- * @param {function} opts.worker - async (ticker) => { ticker, result?, error?, skipped? }
- * @param {function} [opts.onRecovered] - Called when a retry succeeds
- * @param {function} [opts.onStillFailed] - Called when a retry still fails
- * @param {function} [opts.shouldStop] - () => boolean, checked before each pass
- * @param {{ setPhase: Function, recordRetryRecovered: Function }} [opts.metricsTracker] - Run metrics tracker
- * @param {function} opts.mapWithConcurrency - The mapWithConcurrency function
- * @returns {Promise<string[]>} Tickers that still failed after all retries
- */
+interface RunRetryPassesOptions {
+  failedTickers: string[];
+  baseConcurrency: number;
+  worker: (ticker: string) => Promise<any>;
+  onRecovered?: (settled: any) => void;
+  onStillFailed?: (settled: any) => void;
+  shouldStop?: () => boolean;
+  metricsTracker?: { setPhase: Function; recordRetryRecovered: Function };
+  mapWithConcurrency: Function;
+}
+
 async function runRetryPasses({
   failedTickers,
   baseConcurrency,
@@ -259,7 +197,7 @@ async function runRetryPasses({
   shouldStop,
   metricsTracker,
   mapWithConcurrency,
-}) {
+}: RunRetryPassesOptions): Promise<string[]> {
   if (!failedTickers || failedTickers.length === 0) return [];
 
   let stillFailed = [...failedTickers];
@@ -280,7 +218,7 @@ async function runRetryPasses({
       retryBatch,
       retryConcurrency,
       worker,
-      (/** @type {any} */ settled) => {
+      (settled: any) => {
         if (settled.skipped) return;
         if (settled.error) {
           stillFailed.push(settled.ticker);

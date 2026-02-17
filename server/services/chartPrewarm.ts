@@ -12,7 +12,7 @@
  * Each target is awaited sequentially so we don't double the DB/API load.
  */
 
-const PREWARM_SEQUENCES = {
+const PREWARM_SEQUENCES: Record<string, string[]> = {
   '4hour': ['1day', '1week'],
   '1day': ['4hour', '1week'],
   '1week': ['1day', '4hour'],
@@ -21,20 +21,16 @@ const PREWARM_SEQUENCES = {
 /**
  * Return the ordered list of intervals to pre-warm after `interval` loads.
  * Returns [] for intervals without a prewarm strategy (e.g. intraday < 4h).
- * @param {string} interval
- * @returns {string[]}
  */
-function getPostLoadPrewarmSequence(interval) {
-  return /** @type {Record<string, string[]>} */ (PREWARM_SEQUENCES)[interval] || [];
+function getPostLoadPrewarmSequence(interval: string): string[] {
+  return PREWARM_SEQUENCES[interval] || [];
 }
 
 /**
  * Pre-warm a single interval by delegating to `getOrBuildChartResult`.
  * Best-effort: errors are logged (if enabled) but never propagated.
- * @param {any} options
- * @param {any} deps
  */
-async function prewarmChartResult(options, deps) {
+async function prewarmChartResult(options: any, deps: any): Promise<void> {
   const {
     getOrBuildChartResult,
     toVolumeDeltaSourceInterval,
@@ -88,10 +84,10 @@ async function prewarmChartResult(options, deps) {
       requestKey,
       skipFollowUpPrewarm: true,
     });
-  } catch (/** @type {any} */ err) {
+  } catch (err: any) {
     if (CHART_TIMING_LOG_ENABLED) {
       const message = err && err.message ? err.message : String(err);
-      /** @type {any} */ (console).warn(`[chart-prewarm] ${ticker} ${interval} failed: ${message}`);
+      console.warn(`[chart-prewarm] ${ticker} ${interval} failed: ${message}`);
     }
   }
 }
@@ -99,10 +95,8 @@ async function prewarmChartResult(options, deps) {
 /**
  * Schedule the full prewarm sequence for `interval`.
  * Each target is built sequentially to avoid resource spikes.
- * @param {any} options
- * @param {any} deps
  */
-function schedulePostLoadPrewarmSequence(options, deps) {
+function schedulePostLoadPrewarmSequence(options: any, deps: any): void {
   const { toVolumeDeltaSourceInterval, getIntradayLookbackDays } = deps;
 
   const ticker = String(options.ticker || '').toUpperCase();

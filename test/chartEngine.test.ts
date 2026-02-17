@@ -40,7 +40,7 @@ test('calculateRSI with all same prices returns consistent values', () => {
 });
 
 test('calculateRSI with only gains returns near 100', () => {
-  const closes = [];
+  const closes: number[] = [];
   for (let i = 0; i < 20; i++) closes.push(100 + i);
   const rsi = calculateRSI(closes, 14);
   const last = rsi[rsi.length - 1];
@@ -48,7 +48,7 @@ test('calculateRSI with only gains returns near 100', () => {
 });
 
 test('calculateRSI with only losses returns near 0', () => {
-  const closes = [];
+  const closes: number[] = [];
   for (let i = 0; i < 20; i++) closes.push(200 - i);
   const rsi = calculateRSI(closes, 14);
   const last = rsi[rsi.length - 1];
@@ -79,7 +79,7 @@ test('calculateRMA smooths values', () => {
   }
   // After warmup, should have numeric values
   for (let i = 5; i < rma.length; i++) {
-    assert.ok(typeof rma[i] === 'number' && Number.isFinite(rma[i]), `rma[${i}] should be a finite number`);
+    assert.ok(typeof rma[i] === 'number' && Number.isFinite(rma[i]!), `rma[${i}] should be a finite number`);
   }
 });
 
@@ -182,11 +182,11 @@ test('buildChartRequestKey differs for different params', () => {
 test('parseDataApiDateTime parses ISO datetime', () => {
   const result = parseDataApiDateTime('2026-01-15T14:30:00Z');
   assert.ok(result);
-  assert.equal(result.year, 2026);
-  assert.equal(result.month, 1);
-  assert.equal(result.day, 15);
-  assert.equal(result.hour, 14);
-  assert.equal(result.minute, 30);
+  assert.equal(result!.year, 2026);
+  assert.equal(result!.month, 1);
+  assert.equal(result!.day, 15);
+  assert.equal(result!.hour, 14);
+  assert.equal(result!.minute, 30);
 });
 
 test('parseDataApiDateTime returns null for invalid input', () => {

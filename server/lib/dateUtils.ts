@@ -3,24 +3,13 @@
  * All functions are pure — no external dependencies or mutable state.
  */
 
-/**
- * Add (or subtract) UTC days from a Date object.
- * @param {Date} date
- * @param {number} days
- * @returns {Date}
- */
-function addUtcDays(date, days) {
+function addUtcDays(date: Date, days: number): Date {
   const next = new Date(date);
   next.setUTCDate(next.getUTCDate() + days);
   return next;
 }
 
-/**
- * Convert a Unix-seconds timestamp to an ET date string (YYYY-MM-DD).
- * @param {number} unixSeconds
- * @returns {string}
- */
-function etDateStringFromUnixSeconds(unixSeconds) {
+function etDateStringFromUnixSeconds(unixSeconds: number): string {
   if (!Number.isFinite(unixSeconds)) return '';
   return new Date(Number(unixSeconds) * 1000).toLocaleDateString('en-CA', {
     timeZone: 'America/New_York',
@@ -30,12 +19,7 @@ function etDateStringFromUnixSeconds(unixSeconds) {
   });
 }
 
-/**
- * Current ET date string (YYYY-MM-DD).
- * @param {Date} [nowUtc]
- * @returns {string}
- */
-function currentEtDateString(nowUtc = new Date()) {
+function currentEtDateString(nowUtc: Date = new Date()): string {
   return nowUtc.toLocaleDateString('en-CA', {
     timeZone: 'America/New_York',
     year: 'numeric',
@@ -44,13 +28,7 @@ function currentEtDateString(nowUtc = new Date()) {
   });
 }
 
-/**
- * Return the lexicographically greater of two YYYY-MM-DD date strings.
- * @param {string} a
- * @param {string} b
- * @returns {string}
- */
-function maxEtDateString(a, b) {
+function maxEtDateString(a: string, b: string): string {
   const aVal = String(a || '').trim();
   const bVal = String(b || '').trim();
   if (!aVal) return bVal || '';
@@ -58,12 +36,7 @@ function maxEtDateString(a, b) {
   return aVal >= bVal ? aVal : bVal;
 }
 
-/**
- * Parse a YYYY-MM-DD date key to UTC milliseconds (midnight).
- * @param {string} dateKey
- * @returns {number} UTC ms or NaN
- */
-function parseDateKeyToUtcMs(dateKey) {
+function parseDateKeyToUtcMs(dateKey: string): number {
   const value = String(dateKey || '').trim();
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return NaN;
@@ -74,29 +47,14 @@ function parseDateKeyToUtcMs(dateKey) {
   return Date.UTC(year, month - 1, day, 0, 0, 0, 0);
 }
 
-/**
- * Subtract N days from a YYYY-MM-DD date key.
- * @param {string} dateKey
- * @param {number} days
- * @returns {string} YYYY-MM-DD or ''
- */
-function dateKeyDaysAgo(dateKey, days) {
+function dateKeyDaysAgo(dateKey: string, days: number): string {
   const baseMs = parseDateKeyToUtcMs(dateKey);
   if (!Number.isFinite(baseMs)) return '';
   const shifted = new Date(baseMs - Math.max(0, Number(days) || 0) * 24 * 60 * 60 * 1000);
   return shifted.toISOString().slice(0, 10);
 }
 
-/**
- * Convert ET local time components to UTC milliseconds.
- * @param {number} year
- * @param {number} month
- * @param {number} day
- * @param {number} hour
- * @param {number} minute
- * @returns {number}
- */
-function easternLocalToUtcMs(year, month, day, hour, minute) {
+function easternLocalToUtcMs(year: number, month: number, day: number, hour: number, minute: number): number {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   const etOffset = probe
     .toLocaleString('en-US', {
@@ -109,16 +67,7 @@ function easternLocalToUtcMs(year, month, day, hour, minute) {
   return Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
 }
 
-/**
- * Convert PT local time components to UTC milliseconds.
- * @param {number} year
- * @param {number} month
- * @param {number} day
- * @param {number} hour
- * @param {number} minute
- * @returns {number}
- */
-function pacificLocalToUtcMs(year, month, day, hour, minute) {
+function pacificLocalToUtcMs(year: number, month: number, day: number, hour: number, minute: number): number {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   const ptOffset = probe
     .toLocaleString('en-US', {
@@ -131,12 +80,7 @@ function pacificLocalToUtcMs(year, month, day, hour, minute) {
   return Date.UTC(year, month - 1, day, hour - ptOffset, minute, 0);
 }
 
-/**
- * Convert a Unix-seconds timestamp to a PT date string (YYYY-MM-DD).
- * @param {number} unixSeconds
- * @returns {string}
- */
-function pacificDateStringFromUnixSeconds(unixSeconds) {
+function pacificDateStringFromUnixSeconds(unixSeconds: number): string {
   if (!Number.isFinite(unixSeconds)) return '';
   return new Date(Number(unixSeconds) * 1000).toLocaleDateString('en-CA', {
     timeZone: 'America/Los_Angeles',
@@ -146,23 +90,11 @@ function pacificDateStringFromUnixSeconds(unixSeconds) {
   });
 }
 
-/**
- * Build a YYYY-MM-DD key from year/month/day parts.
- * @param {number} year
- * @param {number} month
- * @param {number} day
- * @returns {string}
- */
-function dateKeyFromYmdParts(year, month, day) {
+function dateKeyFromYmdParts(year: number, month: number, day: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/**
- * Get PT date/time parts from a UTC Date.
- * @param {Date} [nowUtc]
- * @returns {{ year: number, month: number, day: number, hour: number, minute: number, weekday: number }}
- */
-function pacificDateTimeParts(nowUtc = new Date()) {
+function pacificDateTimeParts(nowUtc: Date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles',
     year: 'numeric',
@@ -173,13 +105,11 @@ function pacificDateTimeParts(nowUtc = new Date()) {
     hour12: false,
     weekday: 'short',
   }).formatToParts(nowUtc);
-  /** @type {Record<string, string>} */
-  const map = {};
+  const map: Record<string, string> = {};
   for (const part of parts) {
     map[part.type] = part.value;
   }
-  /** @type {Record<string, number>} */
-  const weekdayMap = {
+  const weekdayMap: Record<string, number> = {
     Sun: 0,
     Mon: 1,
     Tue: 2,

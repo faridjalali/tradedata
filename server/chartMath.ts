@@ -1,21 +1,13 @@
-/**
- * Format a Date object as YYYY-MM-DD in UTC.
- * @param {Date} date
- * @returns {string}
- */
-function formatDateUTC(date) {
+/** Format a Date object as YYYY-MM-DD in UTC. */
+function formatDateUTC(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-/**
- * Convert unix seconds to a YYYY-MM-DD date key in America/Los_Angeles.
- * @param {number} unixSeconds
- * @returns {string}
- */
-function dayKeyInLA(unixSeconds) {
+/** Convert unix seconds to a YYYY-MM-DD date key in America/Los_Angeles. */
+function dayKeyInLA(unixSeconds: number): string {
   if (!Number.isFinite(unixSeconds)) return '';
   return new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
     timeZone: 'America/Los_Angeles',
@@ -25,12 +17,8 @@ function dayKeyInLA(unixSeconds) {
   });
 }
 
-/**
- * Convert unix seconds to a Monday-anchored YYYY-MM-DD week key in LA timezone.
- * @param {number} unixSeconds
- * @returns {string}
- */
-function weekKeyInLA(unixSeconds) {
+/** Convert unix seconds to a Monday-anchored YYYY-MM-DD week key in LA timezone. */
+function weekKeyInLA(unixSeconds: number): string {
   if (!Number.isFinite(unixSeconds)) return '';
   const dayString = new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
     timeZone: 'America/Los_Angeles',
@@ -51,12 +39,10 @@ function weekKeyInLA(unixSeconds) {
   return formatDateUTC(utcDate);
 }
 
-/**
- * Filter and sort OHLCV bars by time, discarding invalid entries.
- * @param {Array<{time: number|string, open: number, high: number, low: number, close: number, volume?: number}>} bars
- * @returns {Array<{time: number|string, open: number, high: number, low: number, close: number, volume?: number}>}
- */
-function normalizeBarsForAggregation(bars) {
+/** Filter and sort OHLCV bars by time, discarding invalid entries. */
+function normalizeBarsForAggregation(
+  bars: Array<{ time: number | string; open: number; high: number; low: number; close: number; volume?: number }>,
+): Array<{ time: number | string; open: number; high: number; low: number; close: number; volume?: number }> {
   if (!Array.isArray(bars)) return [];
   return bars
     .filter(
@@ -71,12 +57,10 @@ function normalizeBarsForAggregation(bars) {
     .sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-/**
- * Aggregate 4-hour OHLCV bars into daily bars keyed by LA day.
- * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} fourHourBars
- * @returns {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>}
- */
-function aggregate4HourBarsToDaily(fourHourBars) {
+/** Aggregate 4-hour OHLCV bars into daily bars keyed by LA day. */
+function aggregate4HourBarsToDaily(
+  fourHourBars: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
+): Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> {
   const sorted = normalizeBarsForAggregation(fourHourBars);
   if (sorted.length === 0) return [];
 
@@ -128,12 +112,10 @@ function aggregate4HourBarsToDaily(fourHourBars) {
     }));
 }
 
-/**
- * Aggregate daily OHLCV bars into weekly bars keyed by LA week (Mon-Sun).
- * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} dailyBars
- * @returns {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>}
- */
-function aggregateDailyBarsToWeekly(dailyBars) {
+/** Aggregate daily OHLCV bars into weekly bars keyed by LA week (Mon-Sun). */
+function aggregateDailyBarsToWeekly(
+  dailyBars: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
+): Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> {
   const sorted = normalizeBarsForAggregation(dailyBars);
   if (sorted.length === 0) return [];
 
@@ -185,12 +167,8 @@ function aggregateDailyBarsToWeekly(dailyBars) {
     }));
 }
 
-/**
- * Convert unix seconds to an ISO week key (YYYY-Www) using ET timezone.
- * @param {number} unixSeconds
- * @returns {string}
- */
-function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
+/** Convert unix seconds to an ISO week key (YYYY-Www) using ET timezone. */
+function isoWeekKeyFromEtUnixSeconds(unixSeconds: number): string {
   if (!Number.isFinite(unixSeconds)) return '';
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -215,28 +193,37 @@ function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
 
 /**
  * Classify a volume-delta divergence signal based on price action.
- * @param {number} volumeDelta
- * @param {number} close - Current close price
- * @param {number} prevClose - Previous close price
- * @returns {'bullish'|'bearish'|null}
+ * @param close - Current close price
+ * @param prevClose - Previous close price
  */
-function classifyDivergenceSignal(volumeDelta, close, prevClose) {
+function classifyDivergenceSignal(
+  volumeDelta: number,
+  close: number,
+  prevClose: number,
+): 'bullish' | 'bearish' | null {
   if (!Number.isFinite(volumeDelta) || !Number.isFinite(close) || !Number.isFinite(prevClose)) return null;
   if (volumeDelta > 0 && close < prevClose) return 'bullish';
   if (volumeDelta < 0 && close > prevClose) return 'bearish';
   return null;
 }
 
-/**
- * Aggregate daily bars and volume deltas into weekly divergence entries.
- * @param {Array<{time: number, open: number, high: number, low: number, close: number}>} dailyBars
- * @param {Array<{time: number, delta: number}>} dailyDeltas
- * @returns {Array<{weekKey: string, time: number, open: number, high: number, low: number, close: number, delta: number}>}
- */
-function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
+/** Aggregate daily bars and volume deltas into weekly divergence entries. */
+function aggregateDailyDivergenceToWeekly(
+  dailyBars: Array<{ time: number; open: number; high: number; low: number; close: number }>,
+  dailyDeltas: Array<{ time: number; delta: number }>,
+): Array<{ weekKey: string; time: number; open: number; high: number; low: number; close: number; delta: number }> {
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
   const deltaByTime = new Map((dailyDeltas || []).map((point) => [Number(point.time), Number(point.delta) || 0]));
-  const weekly = [];
+  const weekly: Array<{
+    weekKey: string;
+    time: number;
+    _lastTime: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    delta: number;
+  }> = [];
   const byKey = new Map();
 
   for (const bar of dailyBars) {
@@ -274,12 +261,10 @@ function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
   return weekly.sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-/**
- * Convert bar objects to [time, open, high, low, close, volume] tuples.
- * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} bars
- * @returns {Array<[number, number, number, number, number, number]>}
- */
-function barsToTuples(bars) {
+/** Convert bar objects to [time, open, high, low, close, volume] tuples. */
+function barsToTuples(
+  bars: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>,
+): Array<[number, number, number, number, number, number]> {
   if (!Array.isArray(bars)) return [];
   return bars.map((b) => [
     Number(b.time),
@@ -293,11 +278,12 @@ function barsToTuples(bars) {
 
 /**
  * Convert point objects to [time, value] tuples.
- * @param {Array<{time: number, [key: string]: number}>} points
- * @param {string} [valueKey='value'] - Key to extract as the second tuple element
- * @returns {Array<[number, number]>}
+ * @param valueKey - Key to extract as the second tuple element
  */
-function pointsToTuples(points, valueKey = 'value') {
+function pointsToTuples(
+  points: Array<{ time: number; [key: string]: number }>,
+  valueKey: string = 'value',
+): Array<[number, number]> {
   if (!Array.isArray(points)) return [];
   return points.map((p) => [Number(p.time), Number(p[valueKey])]);
 }

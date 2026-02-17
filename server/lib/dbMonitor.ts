@@ -3,49 +3,36 @@
  * and logs slow queries via console.warn (captured by Pino as structured JSON).
  */
 
+import type { Pool } from 'pg';
+
 const SLOW_QUERY_THRESHOLD_MS = Math.max(0, Number(process.env.SLOW_QUERY_THRESHOLD_MS) || 500);
 
-/**
- * Extract a loggable SQL snippet from pool.query() arguments.
- * @param {any[]} args - Arguments passed to pool.query()
- * @returns {string}
- */
-function extractSql(args) {
+function extractSql(args: any[]): string {
   const first = args[0];
   const raw = typeof first === 'string' ? first : first?.text || '';
   return raw.replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
-/**
- * Instrument a pg Pool's .query() method with timing and slow-query logging.
- * Mutates the pool in place (replaces .query) and returns it for chaining.
- *
- * @param {import('pg').Pool} pool
- * @param {string} poolName - Label for log output (e.g. 'primary', 'divergence')
- * @returns {import('pg').Pool}
- */
-export function instrumentPool(pool, poolName = 'primary') {
+export function instrumentPool(pool: Pool, poolName = 'primary'): Pool {
   if (!pool || typeof pool.query !== 'function') return pool;
 
   const originalQuery = pool.query.bind(pool);
 
-  /** @param {...any} args */
-  pool.query = async function monitoredQuery(...args) {
+  (pool as any).query = async function monitoredQuery(...args: any[]) {
     const start = performance.now();
     try {
-      const result = await /** @type {any} */ (originalQuery)(...args);
+      const result = await (originalQuery as any)(...args);
       const durationMs = performance.now() - start;
       if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
-        /** @type {any} */ (console).warn(
+        console.warn(
           `[slow-query] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)}`,
         );
       }
       return result;
-    } catch (err) {
-      const e = /** @type {any} */ (err);
+    } catch (err: any) {
       const durationMs = performance.now() - start;
-      /** @type {any} */ (console).error(
-        `[query-error] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)} error=${e && e.message ? e.message : e}`,
+      console.error(
+        `[query-error] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)} error=${err && err.message ? err.message : err}`,
       );
       throw err;
     }

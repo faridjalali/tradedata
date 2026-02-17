@@ -38,7 +38,7 @@ test('buildDebugMetricsPayload maps runtime metrics to response payload', () => 
     chartCacheSizes: { lowerTf: 1, vdRsiResults: 2, chartData: 3, quotes: 4, finalResults: 5, inFlight: 0 },
     chartDebugMetrics: { cacheHit: 9, cacheMiss: 1 },
     divergence: { configured: true, running: false, lastScanDateEt: '2026-02-12' },
-    memoryUsage: { rss: 100, heapTotal: 200, heapUsed: 150, external: 10 },
+    memoryUsage: { rss: 100, heapTotal: 200, heapUsed: 150, external: 10 } as any,
   });
 
   assert.equal(payload.shuttingDown, false);
@@ -88,7 +88,7 @@ test('buildReadyPayload returns 503 when primary DB is down', async () => {
         throw new Error('db down');
       },
     },
-    divergencePool: null,
+    divergencePool: null as any,
     isDivergenceConfigured: () => false,
     isShuttingDown: false,
     divergenceScanRunning: false,
