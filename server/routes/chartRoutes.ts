@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from 'express';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 function invalidIntervalErrorMessage(): string {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
@@ -7,9 +7,9 @@ function invalidIntervalErrorMessage(): string {
 /**
  * Extract a deduplicated, uppercased ticker list from query params.
  */
-function parseTickerListFromQuery(req: Request): string[] {
-  const singleTicker = String(req.query.ticker || '').trim();
-  const multiTickersRaw = String(req.query.tickers || '').trim();
+function parseTickerListFromQuery(req: FastifyRequest): string[] {
+  const singleTicker = String((req.query as Record<string, unknown>).ticker || '').trim();
+  const multiTickersRaw = String((req.query as Record<string, unknown>).tickers || '').trim();
   const merged = [singleTicker, multiTickersRaw].filter(Boolean).join(',');
   const tickers = merged
     .split(',')
@@ -29,10 +29,10 @@ function parseBooleanQueryFlag(value: string | undefined): boolean {
 }
 
 /**
- * Register all chart-related HTTP routes on the Express app.
+ * Register all chart-related HTTP routes on the Fastify app.
  */
 function registerChartRoutes(options: {
-  app: Express;
+  app: FastifyInstance;
   parseChartRequestParams: Function;
   validChartIntervals: string[];
   getOrBuildChartResult: Function;
@@ -75,19 +75,19 @@ function registerChartRoutes(options: {
     throw new Error('registerChartRoutes requires app');
   }
 
-  app.get('/api/chart', async (req: Request, res: Response) => {
+  app.get('/api/chart', async (req: FastifyRequest, res: FastifyReply) => {
     const startedAtMs = Date.now();
     try {
       const params = parseChartRequestParams(req);
       const { interval } = params;
       if (!validChartIntervals.includes(interval)) {
-        return res.status(400).json({ error: invalidIntervalErrorMessage() });
+        return res.code(400).send({ error: invalidIntervalErrorMessage() });
       }
 
       const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
 
       // Validation skipped for tuple format as shape differs
-      const useTupleFormat = req.query.format === 'tuple';
+      const useTupleFormat = (req.query as Record<string, unknown>).format === 'tuple';
       let payload = result;
 
       // console.log(`[ChartAPI] Request for ${params.ticker} ${interval} (tuple=${useTupleFormat})`);
@@ -109,11 +109,11 @@ function registerChartRoutes(options: {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {
           const reason = validation && validation.error ? validation.error : 'Invalid chart payload shape';
-          return res.status(500).json({ error: reason });
+          return res.code(500).send({ error: reason });
         }
       }
 
-      res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
+      res.header('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
       if (typeof onChartRequestMeasured === 'function') {
         onChartRequestMeasured({
           route: 'chart',
@@ -128,23 +128,23 @@ function registerChartRoutes(options: {
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
-        .json({ error: 'Failed to fetch chart data' });
+        .send({ error: 'Failed to fetch chart data' });
     }
   });
 
-  app.get('/api/chart/latest', async (req: Request, res: Response) => {
+  app.get('/api/chart/latest', async (req: FastifyRequest, res: FastifyReply) => {
     const startedAtMs = Date.now();
     try {
       const params = parseChartRequestParams(req);
       const { interval } = params;
       if (!validChartIntervals.includes(interval)) {
-        return res.status(400).json({ error: invalidIntervalErrorMessage() });
+        return res.code(400).send({ error: invalidIntervalErrorMessage() });
       }
 
       const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
       const latestPayload = extractLatestChartPayload(result);
 
-      const useTupleFormat = req.query.format === 'tuple';
+      const useTupleFormat = (req.query as Record<string, unknown>).format === 'tuple';
       let payload = latestPayload;
 
       if (useTupleFormat && typeof barsToTuples === 'function') {
@@ -170,11 +170,11 @@ function registerChartRoutes(options: {
         const validation = validateChartLatestPayload(latestPayload);
         if (!validation || validation.ok !== true) {
           const reason = validation && validation.error ? validation.error : 'Invalid latest payload shape';
-          return res.status(500).json({ error: reason });
+          return res.code(500).send({ error: reason });
         }
       }
 
-      res.setHeader('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
+      res.header('X-Chart-Cache', cacheHit ? 'hit' : 'miss');
       if (typeof onChartRequestMeasured === 'function') {
         onChartRequestMeasured({
           route: 'chart_latest',
@@ -189,21 +189,21 @@ function registerChartRoutes(options: {
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
-        .json({ error: 'Failed to fetch latest chart data' });
+        .send({ error: 'Failed to fetch latest chart data' });
     }
   });
 
   // Lightweight endpoint: returns cached daily OHLC bars from the last scan.
-  app.get('/api/chart/mini-bars', async (req: Request, res: Response) => {
+  app.get('/api/chart/mini-bars', async (req: FastifyRequest, res: FastifyReply) => {
     try {
-      const ticker = String(req.query.ticker || '')
+      const ticker = String((req.query as Record<string, unknown>).ticker || '')
         .trim()
         .toUpperCase();
       if (!ticker) {
-        return res.status(400).json({ error: 'Provide a ticker query parameter' });
+        return res.code(400).send({ error: 'Provide a ticker query parameter' });
       }
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
-        return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+        return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
       }
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
       let bars = cache ? cache.get(ticker) || [] : [];
@@ -218,34 +218,34 @@ function registerChartRoutes(options: {
       if (bars.length === 0 && typeof fetchMiniChartBarsFromApi === 'function') {
         bars = await fetchMiniChartBarsFromApi(ticker);
       }
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      return res.status(200).json({ ticker, bars });
+      res.header('Cache-Control', 'public, max-age=300');
+      return res.code(200).send({ ticker, bars });
     } catch (err: any) {
       console.error('Mini Bars API Error:', err && err.message ? err.message : err);
-      return res.status(500).json({ error: 'Failed to fetch mini bars' });
+      return res.code(500).send({ error: 'Failed to fetch mini bars' });
     }
   });
 
   // Batch endpoint: returns cached daily OHLC bars for multiple tickers (memory + DB only, no API fallback).
-  app.get('/api/chart/mini-bars/batch', async (req: Request, res: Response) => {
+  app.get('/api/chart/mini-bars/batch', async (req: FastifyRequest, res: FastifyReply) => {
     try {
       const tickers = parseTickerListFromQuery(req);
       if (tickers.length === 0) {
-        return res.status(400).json({ error: 'Provide ticker or tickers query parameter' });
+        return res.code(400).send({ error: 'Provide ticker or tickers query parameter' });
       }
       const maxTickers = 200;
       if (tickers.length > maxTickers) {
-        return res.status(400).json({ error: `Too many tickers (max ${maxTickers})` });
+        return res.code(400).send({ error: `Too many tickers (max ${maxTickers})` });
       }
       if (typeof isValidTickerSymbol === 'function') {
         for (const t of tickers) {
           if (!isValidTickerSymbol(t)) {
-            return res.status(400).json({ error: `Invalid ticker format: ${t}` });
+            return res.code(400).send({ error: `Invalid ticker format: ${t}` });
           }
         }
       }
 
-      const results: Record<string, any> = {};
+      const results: Record<string, unknown[]> = {};
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
       const dbNeeded = [];
 
@@ -283,7 +283,7 @@ function registerChartRoutes(options: {
         for (let i = 0; i < apiNeeded.length; i += API_CONCURRENCY) {
           const chunk = apiNeeded.slice(i, i + API_CONCURRENCY);
           const fetched = await Promise.all(
-            chunk.map((t) => fetchMiniChartBarsFromApi(t).then((bars: any) => ({ t, bars }))),
+            chunk.map((t) => fetchMiniChartBarsFromApi(t).then((bars: unknown[]) => ({ t, bars }))),
           );
           for (const { t, bars } of fetched) {
             if (Array.isArray(bars) && bars.length > 0) {
@@ -293,74 +293,74 @@ function registerChartRoutes(options: {
         }
       }
 
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      return res.status(200).json({ results });
+      res.header('Cache-Control', 'public, max-age=300');
+      return res.code(200).send({ results });
     } catch (err: any) {
       console.error('Mini Bars Batch API Error:', err && err.message ? err.message : err);
-      return res.status(500).json({ error: 'Failed to fetch mini bars batch' });
+      return res.code(500).send({ error: 'Failed to fetch mini bars batch' });
     }
   });
 
-  app.get('/api/chart/vdf-status', async (req: Request, res: Response) => {
+  app.get('/api/chart/vdf-status', async (req: FastifyRequest, res: FastifyReply) => {
     try {
       if (typeof options.getVDFStatus !== 'function') {
-        return res.status(501).json({ error: 'VDF endpoint is not enabled' });
+        return res.code(501).send({ error: 'VDF endpoint is not enabled' });
       }
-      const ticker = String(req.query.ticker || '')
+      const ticker = String((req.query as Record<string, unknown>).ticker || '')
         .trim()
         .toUpperCase();
       if (!ticker) {
-        return res.status(400).json({ error: 'Provide a ticker query parameter' });
+        return res.code(400).send({ error: 'Provide a ticker query parameter' });
       }
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
-        return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+        return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
       }
-      const force = parseBooleanQueryFlag(req.query.force as string);
-      const mode = req.query.mode === 'chart' ? 'chart' : 'scan';
+      const force = parseBooleanQueryFlag((req.query as Record<string, unknown>).force as string);
+      const mode = (req.query as Record<string, unknown>).mode === 'chart' ? 'chart' : 'scan';
       const result = await options.getVDFStatus(ticker, { force, mode });
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).json(result);
+      res.header('Cache-Control', 'no-store');
+      return res.code(200).send(result);
     } catch (err: any) {
       console.error('VDF Status API Error:', err && err.message ? err.message : err);
-      return res.status(502).json({ error: 'Failed to fetch VDF status' });
+      return res.code(502).send({ error: 'Failed to fetch VDF status' });
     }
   });
 
-  app.get('/api/chart/divergence-summary', async (req: Request, res: Response) => {
+  app.get('/api/chart/divergence-summary', async (req: FastifyRequest, res: FastifyReply) => {
     try {
       if (typeof getDivergenceSummaryForTickers !== 'function') {
-        return res.status(501).json({ error: 'Divergence summary endpoint is not enabled' });
+        return res.code(501).send({ error: 'Divergence summary endpoint is not enabled' });
       }
       const tickers = parseTickerListFromQuery(req);
       if (tickers.length === 0) {
-        return res.status(400).json({ error: 'Provide ticker or tickers query parameter' });
+        return res.code(400).send({ error: 'Provide ticker or tickers query parameter' });
       }
       const maxTickers = 200;
       if (tickers.length > maxTickers) {
-        return res.status(400).json({ error: `Too many tickers (max ${maxTickers})` });
+        return res.code(400).send({ error: `Too many tickers (max ${maxTickers})` });
       }
       if (typeof isValidTickerSymbol === 'function') {
         for (const ticker of tickers) {
           if (!isValidTickerSymbol(ticker)) {
-            return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
+            return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
           }
         }
       }
 
-      const vdSourceInterval = String(req.query.vdSourceInterval || '1min').trim();
-      const refresh = parseBooleanQueryFlag(req.query.refresh as string);
-      const noCache = parseBooleanQueryFlag(req.query.nocache as string) || parseBooleanQueryFlag(req.query.noCache as string);
+      const vdSourceInterval = String((req.query as Record<string, unknown>).vdSourceInterval || '1min').trim();
+      const refresh = parseBooleanQueryFlag((req.query as Record<string, unknown>).refresh as string);
+      const noCache = parseBooleanQueryFlag((req.query as Record<string, unknown>).nocache as string) || parseBooleanQueryFlag((req.query as Record<string, unknown>).noCache as string);
       const payload = await getDivergenceSummaryForTickers({
         tickers,
         vdSourceInterval,
         forceRefresh: refresh,
         noCache,
       });
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).json(payload);
+      res.header('Cache-Control', 'no-store');
+      return res.code(200).send(payload);
     } catch (err: any) {
       console.error('Chart Divergence Summary API Error:', err && err.message ? err.message : err);
-      return res.status(502).json({ error: 'Failed to fetch divergence summary' });
+      return res.code(502).send({ error: 'Failed to fetch divergence summary' });
     }
   });
 }

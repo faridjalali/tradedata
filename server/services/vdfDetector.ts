@@ -67,6 +67,53 @@ interface ProximitySignal {
   detail: string;
 }
 
+interface ScoredZone {
+  start: number;
+  end: number;
+  winSize: number;
+  startDate: string;
+  endDate: string;
+  score: number;
+  detected: boolean;
+  reason: string;
+  netDeltaPct: number;
+  overallPriceChange: number;
+  deltaSlopeNorm: number;
+  accumWeekRatio: number;
+  deltaShift: number;
+  weeks: number;
+  accumWeeks: number;
+  absorptionPct: number;
+  largeBuyVsSell: number;
+  volDeclineScore: number;
+  components: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8: number };
+  durationMultiplier: number;
+  concordancePenalty: number;
+  intraRally: number;
+  concordantFrac: number;
+  cappedDays: Array<{ date: string; original: number; capped: number }>;
+  rank?: number;
+}
+
+interface FormattedZone {
+  rank: number | undefined;
+  startDate: string;
+  endDate: string;
+  windowDays: number;
+  score: number;
+  weeks: number;
+  accumWeeks: number;
+  netDeltaPct: number;
+  absorptionPct: number;
+  accumWeekRatio: number;
+  overallPriceChange: number;
+  components: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8: number };
+  durationMultiplier: number;
+  concordancePenalty: number;
+  intraRally: number;
+  concordantFrac: number;
+}
+
 interface DetectVDFOptions {
   dataApiFetcher: (ticker: string, interval: string, days: number, opts: { signal?: AbortSignal }) => Promise<Bar1m[] | null>;
   signal?: AbortSignal;
@@ -480,7 +527,7 @@ function scoreSubwindow(dailySlice: DailyAggregate[], preDaily: DailyAggregate[]
  */
 function findAccumulationZones(allDaily: DailyAggregate[], preDaily: DailyAggregate[], maxZones = 3) {
   const windowSizes = [10, 14, 17, 20, 24, 28, 35];
-  const detected: Array<any> = [];
+  const detected: ScoredZone[] = [];
 
   for (const winSize of windowSizes) {
     if (allDaily.length < winSize) continue;
@@ -495,14 +542,14 @@ function findAccumulationZones(allDaily: DailyAggregate[], preDaily: DailyAggreg
           startDate: slice[0].date,
           endDate: slice[slice.length - 1].date,
           ...result,
-        });
+        } as ScoredZone);
       }
     }
   }
 
   // Greedy clustering: highest score first, reject overlap >30% or gap <10 days
   detected.sort((a, b) => b.score - a.score);
-  const zones: Array<any> = [];
+  const zones: ScoredZone[] = [];
   for (const w of detected) {
     let overlaps = false;
     for (const z of zones) {
@@ -605,11 +652,11 @@ function findDistributionClusters(allDaily: DailyAggregate[]): { distClusters: D
  * Evaluate proximity signals for breakout prediction.
  * Only fires when at least one zone has score >= 0.50.
  */
-function evaluateProximitySignals(allDaily: DailyAggregate[], zones: any[]): { compositeScore: number; level: string; signals: ProximitySignal[] } {
+function evaluateProximitySignals(allDaily: DailyAggregate[], zones: ScoredZone[]): { compositeScore: number; level: string; signals: ProximitySignal[] } {
   const noResult = { compositeScore: 0, level: 'none', signals: [] as ProximitySignal[] };
 
   if (!zones || zones.length === 0) return noResult;
-  const bestZone = zones.reduce((best: any, z: any) => (z.score > best.score ? z : best), zones[0]);
+  const bestZone = zones.reduce((best: ScoredZone, z: ScoredZone) => (z.score > best.score ? z : best), zones[0]);
   if (bestZone.score < 0.5) return noResult;
 
   const signals: ProximitySignal[] = [];
@@ -736,7 +783,7 @@ function evaluateProximitySignals(allDaily: DailyAggregate[], zones: any[]): { c
   // --- Signal 6: Multi-Zone Sequence — +20 pts ---
   {
     if (zones.length >= 2) {
-      const sortedByDate = [...zones].sort((a: any, b: any) => a.startDate.localeCompare(b.startDate));
+      const sortedByDate = [...zones].sort((a: ScoredZone, b: ScoredZone) => a.startDate.localeCompare(b.startDate));
       for (let i = 1; i < sortedByDate.length; i++) {
         const gap = sortedByDate[i].start - sortedByDate[i - 1].end;
         if (gap > 0 && gap < 30) {
@@ -815,11 +862,11 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     bestZoneWeeks: 0,
     reason,
     status,
-    zones: [] as any[],
-    allZones: [] as any[],
-    distribution: [] as any[],
+    zones: [] as FormattedZone[],
+    allZones: [] as FormattedZone[],
+    distribution: [] as { startDate: string; endDate: string; spanDays: number; priceChangePct: number; netDeltaPct: number }[],
     proximity: { compositeScore: 0, level: 'none', signals: [] as ProximitySignal[] },
-    metrics: {} as Record<string, any>,
+    metrics: {} as Record<string, unknown>,
   });
 
   try {
@@ -868,7 +915,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     const recentCutoffStr = recentCutoffDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
     // recentZones: zones whose endDate falls within the last 3 months
-    const recentZones = zones.filter((z: any) => z.endDate >= recentCutoffStr);
+    const recentZones = zones.filter((z: ScoredZone) => z.endDate >= recentCutoffStr);
     // For scoring, use recentZones only
     const scoringZones = recentZones;
 
@@ -878,7 +925,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     // Determine best zone from scoring zones (recent 3 months)
     const bestZone =
       scoringZones.length > 0
-        ? scoringZones.reduce((best: any, z: any) => (z.score > best.score ? z : best), scoringZones[0])
+        ? scoringZones.reduce((best: ScoredZone, z: ScoredZone) => (z.score > best.score ? z : best), scoringZones[0])
         : null;
     const bestScore = bestZone ? bestZone.score : 0;
     const bestZoneWeeks = bestZone ? bestZone.weeks : 0;
@@ -899,7 +946,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     }
 
     // Format zone helper
-    const formatZone = (z: any) => ({
+    const formatZone = (z: ScoredZone): FormattedZone => ({
       rank: z.rank,
       startDate: z.startDate,
       endDate: z.endDate,

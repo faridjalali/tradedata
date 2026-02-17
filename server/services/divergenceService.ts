@@ -1,5 +1,3 @@
-import type { Request } from 'express';
-
 interface ManualScanResult {
   ok: true;
   value: { force: boolean; refreshUniverse: boolean; runDateEt?: string };
@@ -11,19 +9,19 @@ interface ManualScanError {
 }
 
 function buildManualScanRequest(options: {
-  req: Request;
-  parseBooleanInput: (value: any, defaultValue: boolean) => boolean;
-  parseEtDateInput: (value: any) => string | null;
+  req: { query: Record<string, unknown>; body?: Record<string, unknown> };
+  parseBooleanInput: (value: unknown, defaultValue: boolean) => boolean;
+  parseEtDateInput: (value: unknown) => string | null;
 }): ManualScanResult | ManualScanError {
   const { req, parseBooleanInput, parseEtDateInput } = options;
 
-  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput((req as any).body?.force, false);
+  const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
   const refreshUniverse =
-    parseBooleanInput(req.query.refreshUniverse, false) || parseBooleanInput((req as any).body?.refreshUniverse, false);
+    parseBooleanInput(req.query.refreshUniverse, false) || parseBooleanInput(req.body?.refreshUniverse, false);
 
   let runDateEt: string | undefined;
-  if ((req as any).body && Object.prototype.hasOwnProperty.call((req as any).body, 'runDateEt')) {
-    const parsedRunDate = parseEtDateInput((req as any).body.runDateEt);
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
+    const parsedRunDate = parseEtDateInput(req.body.runDateEt);
     if (!parsedRunDate) {
       return {
         ok: false,
@@ -44,7 +42,7 @@ function buildManualScanRequest(options: {
 }
 
 async function fetchLatestDivergenceScanStatus(options: {
-  divergencePool: { query: Function };
+  divergencePool: { query: (...args: any[]) => Promise<{ rows: Record<string, any>[] }> };
   divergenceSourceInterval: string;
   getIsScanRunning: () => boolean;
   getLastFetchedTradeDateEt: () => string;

@@ -4,8 +4,8 @@
 
 interface ScanStateOptions {
   metricsKey?: string;
-  normalizeResume?: (data: any) => any;
-  canResumeValidator?: (resumeState: any) => boolean;
+  normalizeResume?: (data: Record<string, any>) => Record<string, any>;
+  canResumeValidator?: (resumeState: Record<string, any>) => boolean;
 }
 
 interface ScanStatusFields {
@@ -25,11 +25,11 @@ class ScanState {
   running: boolean;
   stopRequested: boolean;
   abortController: AbortController | null;
-  resumeState: any;
-  normalizeResume: ((data: any) => any) | null;
-  canResumeValidator: ((resumeState: any) => boolean) | null;
+  resumeState: Record<string, any> | null;
+  normalizeResume: ((data: Record<string, any>) => Record<string, any>) | null;
+  canResumeValidator: ((resumeState: Record<string, any>) => boolean) | null;
   _status: ScanStatusFields;
-  _extraStatus: Record<string, any>;
+  _extraStatus: Record<string, unknown>;
 
   constructor(name: string, options: ScanStateOptions = {}) {
     this.name = name;
@@ -117,7 +117,7 @@ class ScanState {
     this._status = { ...this._status, ...fields };
   }
 
-  setExtraStatus(fields: Record<string, any>): void {
+  setExtraStatus(fields: Record<string, unknown>): void {
     this._extraStatus = { ...this._extraStatus, ...fields };
   }
 
@@ -127,7 +127,7 @@ class ScanState {
     if (this.stopRequested) this._status.status = 'stopping';
   }
 
-  saveResumeState(data: any, concurrency: number): number {
+  saveResumeState(data: Record<string, any>, concurrency: number): number {
     const total = data.totalTickers || (Array.isArray(data.tickers) ? data.tickers.length : 0);
     const safeNext = Math.max(0, Math.min(total, (data.processedTickers || 0) - (concurrency || 0)));
     const normalized = { ...data, nextIndex: safeNext, processedTickers: safeNext };
@@ -135,12 +135,12 @@ class ScanState {
     return safeNext;
   }
 
-  markStopped(statusFields: any): void {
+  markStopped(statusFields: ScanStatusFields): void {
     this.stopRequested = false;
     this._status = { running: false, status: 'stopped', ...statusFields };
   }
 
-  markCompleted(statusFields: any): void {
+  markCompleted(statusFields: ScanStatusFields): void {
     this.resumeState = null;
     this.stopRequested = false;
     const hasErrors = Number(statusFields?.errorTickers || 0) > 0;
@@ -151,7 +151,7 @@ class ScanState {
     };
   }
 
-  markFailed(statusFields: any): void {
+  markFailed(statusFields: ScanStatusFields): void {
     this.resumeState = null;
     this.stopRequested = false;
     this._status = { running: false, status: 'failed', ...statusFields };
@@ -166,7 +166,7 @@ class ScanState {
     this.running = false;
   }
 
-  buildRouteOptions(runFn: Function) {
+  buildRouteOptions(runFn: (options?: Record<string, unknown>) => Promise<unknown>) {
     return {
       getStatus: () => this.getStatus(),
       requestStop: () => this.requestStop(),
@@ -180,12 +180,12 @@ class ScanState {
 interface RunRetryPassesOptions {
   failedTickers: string[];
   baseConcurrency: number;
-  worker: (ticker: string) => Promise<any>;
-  onRecovered?: (settled: any) => void;
-  onStillFailed?: (settled: any) => void;
+  worker: (ticker: string) => Promise<Record<string, any>>;
+  onRecovered?: (settled: Record<string, any>) => void;
+  onStillFailed?: (settled: Record<string, any>) => void;
   shouldStop?: () => boolean;
-  metricsTracker?: { setPhase: Function; recordRetryRecovered: Function };
-  mapWithConcurrency: Function;
+  metricsTracker?: { setPhase: (phase: string) => void; recordRetryRecovered: (ticker: string) => void };
+  mapWithConcurrency: <T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>, onSettled?: (result: R | { error: unknown }, index: number, item: T) => void, shouldStop?: () => boolean) => Promise<Array<R | { error: unknown }>>;
 }
 
 async function runRetryPasses({
@@ -218,14 +218,15 @@ async function runRetryPasses({
       retryBatch,
       retryConcurrency,
       worker,
-      (settled: any) => {
-        if (settled.skipped) return;
-        if (settled.error) {
-          stillFailed.push(settled.ticker);
-          if (onStillFailed) onStillFailed(settled);
+      (settled) => {
+        const s = settled as Record<string, any>;
+        if (s.skipped) return;
+        if (s.error) {
+          stillFailed.push(s.ticker);
+          if (onStillFailed) onStillFailed(s);
         } else {
-          if (onRecovered) onRecovered(settled);
-          if (metricsTracker) metricsTracker.recordRetryRecovered(settled.ticker);
+          if (onRecovered) onRecovered(s);
+          if (metricsTracker) metricsTracker.recordRetryRecovered(s.ticker);
         }
       },
       shouldStop,

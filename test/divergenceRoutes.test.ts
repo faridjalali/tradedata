@@ -23,11 +23,11 @@ function createMockRes() {
   return {
     statusCode: 200,
     body: null as any,
-    status(code: number) {
-      this.statusCode = code;
+    code(c: number) {
+      this.statusCode = c;
       return this;
     },
-    json(payload: any) {
+    send(payload: any) {
       this.body = payload;
       return this;
     },

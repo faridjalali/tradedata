@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import type { Request, Response } from 'express';
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -42,19 +41,19 @@ function cleanupExpiredSessions(): void {
 const cleanupTimer = setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL_MS);
 if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
 
-function parseCookieValue(req: Request): string | null {
+function parseCookieValue(req: { headers: { cookie?: string } }): string | null {
   const header = String(req.headers.cookie || '');
   const match = header.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]*)`));
   return match ? match[1] : null;
 }
 
-function setSessionCookie(res: Response, token: string): void {
+function setSessionCookie(reply: { header: (name: string, value: string) => any }, token: string): void {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+  reply.header('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
 }
 
-function clearSessionCookie(res: Response): void {
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+function clearSessionCookie(reply: { header: (name: string, value: string) => any }): void {
+  reply.header('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
 function getActiveSessionCount(): number {

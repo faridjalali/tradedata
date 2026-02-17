@@ -1,11 +1,11 @@
-import type { Express, Request, Response } from 'express';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 interface HealthRoutesOptions {
-  app: Express;
+  app: FastifyInstance;
   debugMetricsSecret?: string;
-  getDebugMetricsPayload: () => any;
-  getHealthPayload: () => any;
-  getReadyPayload: () => Promise<{ statusCode: number; body: any }>;
+  getDebugMetricsPayload: () => Record<string, unknown>;
+  getHealthPayload: () => Record<string, unknown>;
+  getReadyPayload: () => Promise<{ statusCode: number; body: Record<string, unknown> }>;
 }
 
 function registerHealthRoutes(options: HealthRoutesOptions): void {
@@ -15,27 +15,27 @@ function registerHealthRoutes(options: HealthRoutesOptions): void {
     throw new Error('registerHealthRoutes requires app');
   }
 
-  app.get('/api/debug/metrics', (req: Request, res: Response) => {
-    const providedSecret = String(req.query.secret || req.headers['x-debug-secret'] || '').trim();
+  app.get('/api/debug/metrics', (req: FastifyRequest, res: FastifyReply) => {
+    const providedSecret = String((req.query as any).secret || req.headers['x-debug-secret'] || '').trim();
     const configuredSecret = String(debugMetricsSecret || '').trim();
     if (configuredSecret && providedSecret !== configuredSecret) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.code(401).send({ error: 'Unauthorized' });
     }
-    return res.status(200).json(getDebugMetricsPayload());
+    return res.code(200).send(getDebugMetricsPayload());
   });
 
-  app.get('/healthz', (_req: Request, res: Response) => {
-    return res.status(200).json(getHealthPayload());
+  app.get('/healthz', (_req: FastifyRequest, res: FastifyReply) => {
+    return res.code(200).send(getHealthPayload());
   });
 
-  app.get('/readyz', async (_req: Request, res: Response) => {
+  app.get('/readyz', async (_req: FastifyRequest, res: FastifyReply) => {
     try {
       const readyPayload = await getReadyPayload();
-      return res.status(readyPayload.statusCode).json(readyPayload.body);
+      return res.code(readyPayload.statusCode).send(readyPayload.body);
     } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
       console.error(`Ready check failed: ${message}`);
-      return res.status(503).json({
+      return res.code(503).send({
         ready: false,
         error: 'Ready check failed',
       });
