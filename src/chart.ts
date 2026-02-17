@@ -1871,9 +1871,6 @@ function createPaneNameBadge(container: HTMLElement, pane: PaneControlType): HTM
   badge.textContent = getPaneShortLabel(pane);
   badge.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
   badge.style.top = `${PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX}px`;
-  badge.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  badge.style.padding = '0 8px';
   container.appendChild(badge);
   return badge;
 }
