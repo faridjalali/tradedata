@@ -1267,7 +1267,7 @@ button:hover {
   gap: 5px;
   padding: 5px 8px;
   white-space: nowrap;
-  min-width: 240px;
+  min-width: 310px;
 }
 
 .column-tf-custom-panel .glass-input {
