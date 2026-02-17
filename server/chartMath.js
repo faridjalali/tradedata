@@ -21,7 +21,7 @@ function dayKeyInLA(unixSeconds) {
     timeZone: 'America/Los_Angeles',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
 }
 
@@ -36,7 +36,7 @@ function weekKeyInLA(unixSeconds) {
     timeZone: 'America/Los_Angeles',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
   const match = dayString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return '';
@@ -59,14 +59,15 @@ function weekKeyInLA(unixSeconds) {
 function normalizeBarsForAggregation(bars) {
   if (!Array.isArray(bars)) return [];
   return bars
-    .filter((bar) => (
-      bar &&
-      Number.isFinite(Number(bar.time)) &&
-      Number.isFinite(Number(bar.open)) &&
-      Number.isFinite(Number(bar.high)) &&
-      Number.isFinite(Number(bar.low)) &&
-      Number.isFinite(Number(bar.close))
-    ))
+    .filter(
+      (bar) =>
+        bar &&
+        Number.isFinite(Number(bar.time)) &&
+        Number.isFinite(Number(bar.open)) &&
+        Number.isFinite(Number(bar.high)) &&
+        Number.isFinite(Number(bar.low)) &&
+        Number.isFinite(Number(bar.close)),
+    )
     .sort((a, b) => Number(a.time) - Number(b.time));
 }
 
@@ -101,7 +102,7 @@ function aggregate4HourBarsToDaily(fourHourBars) {
         low,
         close,
         volume,
-        _lastTime: time
+        _lastTime: time,
       });
       continue;
     }
@@ -123,7 +124,7 @@ function aggregate4HourBarsToDaily(fourHourBars) {
       high: bar.high,
       low: bar.low,
       close: bar.close,
-      volume: bar.volume
+      volume: bar.volume,
     }));
 }
 
@@ -158,7 +159,7 @@ function aggregateDailyBarsToWeekly(dailyBars) {
         low,
         close,
         volume,
-        _lastTime: time
+        _lastTime: time,
       });
       continue;
     }
@@ -180,7 +181,7 @@ function aggregateDailyBarsToWeekly(dailyBars) {
       high: bar.high,
       low: bar.low,
       close: bar.close,
-      volume: bar.volume
+      volume: bar.volume,
     }));
 }
 
@@ -195,7 +196,7 @@ function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
   const parts = formatter.formatToParts(new Date(Number(unixSeconds) * 1000));
   const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
@@ -208,7 +209,7 @@ function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const weekYear = d.getUTCFullYear();
   const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${weekYear}-W${String(weekNo).padStart(2, '0')}`;
 }
 
@@ -254,7 +255,7 @@ function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
         high: Number(bar.high),
         low: Number(bar.low),
         close: Number(bar.close),
-        delta
+        delta,
       };
       byKey.set(weekKey, seed);
       weekly.push(seed);
@@ -286,7 +287,7 @@ function barsToTuples(bars) {
     Number(b.high),
     Number(b.low),
     Number(b.close),
-    Number(b.volume)
+    Number(b.volume),
   ]);
 }
 
@@ -298,10 +299,7 @@ function barsToTuples(bars) {
  */
 function pointsToTuples(points, valueKey = 'value') {
   if (!Array.isArray(points)) return [];
-  return points.map((p) => [
-    Number(p.time),
-    Number(p[valueKey])
-  ]);
+  return points.map((p) => [Number(p.time), Number(p[valueKey])]);
 }
 
 export {

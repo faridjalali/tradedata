@@ -7,7 +7,7 @@
  * Output: analysis-vdf-full-year-results.json
  */
 
-"use strict";
+'use strict';
 
 const {
   vdAggregateDaily,
@@ -27,8 +27,24 @@ const FROM_DATE = '2025-02-15';
 const TO_DATE = '2026-02-14';
 
 const TICKERS = [
-  'ASTS', 'RKLB', 'BE', 'BW', 'COHR', 'CRDO', 'EOSE', 'GRAL',
-  'HUT', 'IMNM', 'INSM', 'MOD', 'PL', 'SATS', 'STX', 'UUUU', 'WULF', 'META'
+  'ASTS',
+  'RKLB',
+  'BE',
+  'BW',
+  'COHR',
+  'CRDO',
+  'EOSE',
+  'GRAL',
+  'HUT',
+  'IMNM',
+  'INSM',
+  'MOD',
+  'PL',
+  'SATS',
+  'STX',
+  'UUUU',
+  'WULF',
+  'META',
 ];
 
 // --- Fetch helpers ---
@@ -37,11 +53,16 @@ async function fetchBars(symbol, mult, ts, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${symbol} ${from}→${to}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c,
-    volume: r.v || 0,
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetch1mChunked(symbol, from, to) {
@@ -58,8 +79,9 @@ async function fetch1mChunked(symbol, from, to) {
     const bars = await fetchBars(symbol, 1, 'minute', f, t);
     process.stdout.write(` ${bars.length}\n`);
     all.push(...bars);
-    await new Promise(r => setTimeout(r, 200));
-    cursor = new Date(cEnd); cursor.setDate(cursor.getDate() + 1);
+    await new Promise((r) => setTimeout(r, 200));
+    cursor = new Date(cEnd);
+    cursor.setDate(cursor.getDate() + 1);
   }
   const map = new Map();
   for (const b of all) map.set(b.time, b);
@@ -81,9 +103,9 @@ function std(arr) {
 function computeWeeklySummary(daily) {
   const weeks = buildWeeks(daily);
   let cumDelta = 0;
-  return weeks.map(w => {
+  return weeks.map((w) => {
     // Find daily data for this week
-    const weekDays = daily.filter(d => {
+    const weekDays = daily.filter((d) => {
       const dt = new Date(d.date + 'T12:00:00Z');
       const dow = dt.getUTCDay();
       const monday = new Date(dt);
@@ -118,7 +140,8 @@ function computeWeeklySummary(daily) {
 function computeMonthlyPhases(daily) {
   // 20-day rolling window analysis for institutional flow classification
   const phases = [];
-  for (let i = 19; i < daily.length; i += 10) { // step by 10 for bi-weekly granularity
+  for (let i = 19; i < daily.length; i += 10) {
+    // step by 10 for bi-weekly granularity
     const window = daily.slice(Math.max(0, i - 19), i + 1);
     if (window.length < 10) continue;
     const priceChg = ((window[window.length - 1].close - window[0].close) / window[0].close) * 100;
@@ -157,7 +180,7 @@ function computeMonthlyPhases(daily) {
 function findDeltaAnomalies(daily) {
   const anomalies = [];
   for (let i = 20; i < daily.length; i++) {
-    const rolling20 = daily.slice(i - 20, i).map(d => Math.abs(d.delta));
+    const rolling20 = daily.slice(i - 20, i).map((d) => Math.abs(d.delta));
     const rollingAvg = mean(rolling20);
     const rollingStd = std(rolling20);
     const ratio = rollingAvg > 0 ? Math.abs(daily[i].delta) / rollingAvg : 0;
@@ -215,7 +238,9 @@ function findStreaks(daily) {
       endDate: streakDays[streakDays.length - 1].date,
       days: currentStreak.len,
       totalDelta: Math.round(totalDelta),
-      intensifying: currentStreak.type === 'red' && streakDays.length >= 3 &&
+      intensifying:
+        currentStreak.type === 'red' &&
+        streakDays.length >= 3 &&
         Math.abs(streakDays[streakDays.length - 1].delta) > Math.abs(streakDays[0].delta),
     });
   }
@@ -228,27 +253,35 @@ function computeSubPeriodDivergence(daily) {
   const divergenceWindows = [];
   for (let i = 19; i < daily.length; i++) {
     const window = daily.slice(i - 19, i + 1);
-    const prices = window.map(d => d.close);
+    const prices = window.map((d) => d.close);
     let cumD = 0;
-    const cumDeltas = window.map(d => { cumD += d.delta; return cumD; });
+    const cumDeltas = window.map((d) => {
+      cumD += d.delta;
+      return cumD;
+    });
 
     // Pearson correlation
     const n = prices.length;
-    const meanP = mean(prices), meanD = mean(cumDeltas);
-    let num = 0, denP = 0, denD = 0;
+    const meanP = mean(prices),
+      meanD = mean(cumDeltas);
+    let num = 0,
+      denP = 0,
+      denD = 0;
     for (let j = 0; j < n; j++) {
-      const dp = prices[j] - meanP, dd = cumDeltas[j] - meanD;
+      const dp = prices[j] - meanP,
+        dd = cumDeltas[j] - meanD;
       num += dp * dd;
       denP += dp * dp;
       denD += dd * dd;
     }
-    const corr = (denP > 0 && denD > 0) ? num / Math.sqrt(denP * denD) : 0;
+    const corr = denP > 0 && denD > 0 ? num / Math.sqrt(denP * denD) : 0;
 
-    if (i % 5 === 0 || Math.abs(corr) > 0.7) { // Sample every 5 days + notable divergences
+    if (i % 5 === 0 || Math.abs(corr) > 0.7) {
+      // Sample every 5 days + notable divergences
       divergenceWindows.push({
         endDate: daily[i].date,
         correlation: +corr.toFixed(3),
-        priceChg: +((prices[n - 1] - prices[0]) / prices[0] * 100).toFixed(2),
+        priceChg: +(((prices[n - 1] - prices[0]) / prices[0]) * 100).toFixed(2),
         netDelta: Math.round(cumDeltas[n - 1]),
       });
     }
@@ -277,7 +310,7 @@ function runJSAlgorithm(allDaily) {
   const proximity = evaluateProximitySignals(scanDaily, zones);
 
   // Format zones
-  const formattedZones = zones.map(z => ({
+  const formattedZones = zones.map((z) => ({
     rank: z.rank,
     startDate: z.startDate,
     endDate: z.endDate,
@@ -292,24 +325,26 @@ function runJSAlgorithm(allDaily) {
     concordantFrac: +(z.concordantFrac || 0).toFixed(3),
     concordancePenalty: +(z.concordancePenalty || 1).toFixed(3),
     durationMultiplier: +z.durationMultiplier.toFixed(3),
-    components: z.components ? {
-      s1_netDelta: +z.components.s1.toFixed(3),
-      s2_deltaSlope: +z.components.s2.toFixed(3),
-      s3_deltaShift: +z.components.s3.toFixed(3),
-      s4_accumRatio: +z.components.s4.toFixed(3),
-      s5_buyVsSell: +z.components.s5.toFixed(3),
-      s6_absorption: +z.components.s6.toFixed(3),
-      s7_volDecline: +z.components.s7.toFixed(3),
-      s8_divergence: +z.components.s8.toFixed(3),
-    } : null,
+    components: z.components
+      ? {
+          s1_netDelta: +z.components.s1.toFixed(3),
+          s2_deltaSlope: +z.components.s2.toFixed(3),
+          s3_deltaShift: +z.components.s3.toFixed(3),
+          s4_accumRatio: +z.components.s4.toFixed(3),
+          s5_buyVsSell: +z.components.s5.toFixed(3),
+          s6_absorption: +z.components.s6.toFixed(3),
+          s7_volDecline: +z.components.s7.toFixed(3),
+          s8_divergence: +z.components.s8.toFixed(3),
+        }
+      : null,
     intraRally: +(z.intraRally || 0).toFixed(2),
   }));
 
   // Format distribution
-  const formattedDist = distClusters.map(c => ({
+  const formattedDist = distClusters.map((c) => ({
     startDate: c.startDate,
     endDate: c.endDate,
-    spanDays: c.spanDays || (c.end - c.start + 1),
+    spanDays: c.spanDays || c.end - c.start + 1,
     priceChangePct: +(c.priceChangePct || c.maxPriceChg || 0).toFixed(2),
     netDeltaPct: +(c.netDeltaPct || c.minDeltaPct || 0).toFixed(3),
   }));
@@ -349,22 +384,28 @@ async function main() {
       // Price summary
       const startPrice = allDaily[0].close;
       const endPrice = allDaily[allDaily.length - 1].close;
-      const highPrice = Math.max(...allDaily.map(d => d.high));
-      const lowPrice = Math.min(...allDaily.map(d => d.low));
-      console.log(`  Price: ${startPrice.toFixed(2)} → ${endPrice.toFixed(2)} (${((endPrice-startPrice)/startPrice*100).toFixed(1)}%)`);
+      const highPrice = Math.max(...allDaily.map((d) => d.high));
+      const lowPrice = Math.min(...allDaily.map((d) => d.low));
+      console.log(
+        `  Price: ${startPrice.toFixed(2)} → ${endPrice.toFixed(2)} (${(((endPrice - startPrice) / startPrice) * 100).toFixed(1)}%)`,
+      );
       console.log(`  High: ${highPrice.toFixed(2)}, Low: ${lowPrice.toFixed(2)}`);
 
       // Total delta
       const totalNetDelta = allDaily.reduce((s, d) => s + d.delta, 0);
       const totalVol = allDaily.reduce((s, d) => s + d.totalVol, 0);
-      console.log(`  Net Delta: ${(totalNetDelta / 1000).toFixed(0)}K (${(totalNetDelta / totalVol * 100).toFixed(3)}%)`);
+      console.log(
+        `  Net Delta: ${(totalNetDelta / 1000).toFixed(0)}K (${((totalNetDelta / totalVol) * 100).toFixed(3)}%)`,
+      );
 
       // Run JS algorithm
       console.log(`  Running JS algorithm...`);
       const jsResult = runJSAlgorithm(allDaily);
       console.log(`  JS Zones: ${jsResult.zones.length}`);
       for (const z of jsResult.zones) {
-        console.log(`    Z${z.rank}: ${z.startDate}→${z.endDate} score=${z.score} netΔ=${z.netDeltaPct}% price=${z.overallPriceChange}% conc=${z.concordantFrac}`);
+        console.log(
+          `    Z${z.rank}: ${z.startDate}→${z.endDate} score=${z.score} netΔ=${z.netDeltaPct}% price=${z.overallPriceChange}% conc=${z.concordantFrac}`,
+        );
       }
       console.log(`  JS Distribution: ${jsResult.distribution.length}`);
       for (const d of jsResult.distribution) {
@@ -386,11 +427,11 @@ async function main() {
       const dailyCompact = allDaily.map((d, i) => ({
         date: d.date,
         close: +d.close.toFixed(2),
-        priceChg: i > 0 ? +((d.close - allDaily[i-1].close) / allDaily[i-1].close * 100).toFixed(2) : 0,
+        priceChg: i > 0 ? +(((d.close - allDaily[i - 1].close) / allDaily[i - 1].close) * 100).toFixed(2) : 0,
         delta: Math.round(d.delta),
-        deltaPct: d.totalVol > 0 ? +(d.delta / d.totalVol * 100).toFixed(3) : 0,
+        deltaPct: d.totalVol > 0 ? +((d.delta / d.totalVol) * 100).toFixed(3) : 0,
         vol: Math.round(d.totalVol),
-        isAbsorption: i > 0 && d.close < allDaily[i-1].close && d.delta > 0,
+        isAbsorption: i > 0 && d.close < allDaily[i - 1].close && d.delta > 0,
       }));
 
       results[ticker] = {
@@ -399,11 +440,11 @@ async function main() {
           dateRange: `${allDaily[0].date} → ${allDaily[allDaily.length - 1].date}`,
           startPrice: +startPrice.toFixed(2),
           endPrice: +endPrice.toFixed(2),
-          priceChangePct: +((endPrice - startPrice) / startPrice * 100).toFixed(2),
+          priceChangePct: +(((endPrice - startPrice) / startPrice) * 100).toFixed(2),
           highPrice: +highPrice.toFixed(2),
           lowPrice: +lowPrice.toFixed(2),
           totalNetDeltaK: Math.round(totalNetDelta / 1000),
-          totalNetDeltaPct: +(totalNetDelta / totalVol * 100).toFixed(3),
+          totalNetDeltaPct: +((totalNetDelta / totalVol) * 100).toFixed(3),
           avgDailyVol: Math.round(totalVol / allDaily.length),
         },
         jsAlgorithm: jsResult,
@@ -414,7 +455,6 @@ async function main() {
         divergenceWindows,
         dailyData: dailyCompact,
       };
-
     } catch (err) {
       console.error(`  ERROR: ${err.message}`);
       results[ticker] = { error: err.message };
@@ -431,7 +471,7 @@ async function main() {
   console.log(`Results saved to ${outputPath}`);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

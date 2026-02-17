@@ -11,9 +11,9 @@
  * that is_detected === true with composite_score >= 0.70.
  */
 
-"use strict";
+'use strict';
 
-const { detectHTF, HTF_CONFIG } = require("./server/services/htfDetector");
+const { detectHTF, HTF_CONFIG } = require('./server/services/htfDetector');
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const BASE_TIME = 1704067200; // 2024-01-01 00:00 UTC
@@ -26,11 +26,11 @@ const TOTAL_DAYS = 200;
 const IMPULSE_START = 170;
 const IMPULSE_END = 189; // 20-day impulse
 const CONSOL_START = 190;
-const CONSOL_END = 199;  // 10-day consolidation
+const CONSOL_END = 199; // 10-day consolidation
 
 const START_PRICE = 10.0;
 const END_PRICE = 20.0;
-const CONSOL_CENTER = 19.50;
+const CONSOL_CENTER = 19.5;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ function generate15mBars() {
 
       if (d < IMPULSE_START) {
         // Phase 1: moderate vol bars at $10
-        const noise = (rand() - 0.5) * 0.30;
+        const noise = (rand() - 0.5) * 0.3;
         const mid = START_PRICE + noise * 0.5;
         const range = 0.08 + rand() * 0.12; // ~1–2% range
         bars.push({
@@ -175,7 +175,7 @@ function generate1mBars() {
 
   // Return 30 days: last 20 days of impulse + 10 days consolidation
   const startDay = IMPULSE_START; // day 170
-  const endDay = CONSOL_END;       // day 199
+  const endDay = CONSOL_END; // day 199
 
   for (let d = startDay; d <= endDay; d++) {
     const dayBase = BASE_TIME + d * DAY_S;
@@ -227,44 +227,46 @@ const cached15m = generate15mBars();
 const cached1m = generate1mBars();
 
 async function mockDataApiFetcher(ticker, interval /*, lookbackDays, opts */) {
-  if (interval === "1day") return cachedDaily;
-  if (interval === "15min") return cached15m;
-  if (interval === "1min") return cached1m;
+  if (interval === '1day') return cachedDaily;
+  if (interval === '15min') return cached15m;
+  if (interval === '1min') return cached1m;
   return [];
 }
 
 // ─── Run Test ───────────────────────────────────────────────────────────────
 
 (async function main() {
-  console.log("=== HTF Detector Synthetic Data Test ===\n");
+  console.log('=== HTF Detector Synthetic Data Test ===\n');
   console.log(`Config composite_threshold: ${HTF_CONFIG.composite_threshold}`);
   console.log(`Timeline: ${TOTAL_DAYS} trading days`);
   console.log(`  Pre-impulse:   days 0–${IMPULSE_START - 1} ($${START_PRICE})`);
-  console.log(`  Impulse:       days ${IMPULSE_START}–${IMPULSE_END} ($${START_PRICE}→$${END_PRICE}, ${((END_PRICE - START_PRICE) / START_PRICE * 100).toFixed(0)}% gain)`);
+  console.log(
+    `  Impulse:       days ${IMPULSE_START}–${IMPULSE_END} ($${START_PRICE}→$${END_PRICE}, ${(((END_PRICE - START_PRICE) / START_PRICE) * 100).toFixed(0)}% gain)`,
+  );
   console.log(`  Consolidation: days ${CONSOL_START}–${CONSOL_END} (~$${CONSOL_CENTER})\n`);
   console.log(`Bar counts: daily=${cachedDaily.length}, 15m=${cached15m.length}, 1m=${cached1m.length}\n`);
 
-  const result = await detectHTF("SYNTH", {
+  const result = await detectHTF('SYNTH', {
     dataApiFetcher: mockDataApiFetcher,
     signal: null,
   });
 
-  console.log("─── RESULT ───");
+  console.log('─── RESULT ───');
   console.log(`  is_detected:     ${result.is_detected}`);
   console.log(`  is_candidate:    ${result.is_candidate}`);
-  console.log(`  composite_score: ${result.composite_score?.toFixed(4) ?? "null"}`);
+  console.log(`  composite_score: ${result.composite_score?.toFixed(4) ?? 'null'}`);
   console.log(`  status:          ${result.status}`);
-  console.log(`  impulse_gain_pct: ${result.impulse_gain_pct?.toFixed(2) ?? "null"}%`);
+  console.log(`  impulse_gain_pct: ${result.impulse_gain_pct?.toFixed(2) ?? 'null'}%`);
 
   if (result.impulse) {
     console.log(
-      `  impulse:         $${result.impulse.start_price?.toFixed(2)} → $${result.impulse.end_price?.toFixed(2)}`
+      `  impulse:         $${result.impulse.start_price?.toFixed(2)} → $${result.impulse.end_price?.toFixed(2)}`,
     );
   }
 
   console.log(`  consolidation_bars: ${result.consolidation_bars}`);
-  console.log(`  flag_retrace_pct:   ${result.flag_retrace_pct?.toFixed(2) ?? "null"}%`);
-  console.log(`  yz_percentile:      ${result.yz_percentile?.toFixed(2) ?? "null"}`);
+  console.log(`  flag_retrace_pct:   ${result.flag_retrace_pct?.toFixed(2) ?? 'null'}%`);
+  console.log(`  yz_percentile:      ${result.yz_percentile?.toFixed(2) ?? 'null'}`);
 
   if (result.delta_metrics) {
     console.log(`  delta_compression:  ${result.delta_metrics.compression_score?.toFixed(4)}`);
@@ -289,9 +291,13 @@ async function mockDataApiFetcher(ticker, interval /*, lookbackDays, opts */) {
     console.log(`  component scores:`);
     console.log(`    yz_score:    ${result.composite.yz_score?.toFixed(4)} (weight ${HTF_CONFIG.weight_yz})`);
     console.log(`    delta_score: ${result.composite.delta_score?.toFixed(4)} (weight ${HTF_CONFIG.weight_delta})`);
-    console.log(`    decay_score: ${result.composite.decay_score?.toFixed(4)} (weight ${HTF_CONFIG.weight_range_decay})`);
+    console.log(
+      `    decay_score: ${result.composite.decay_score?.toFixed(4)} (weight ${HTF_CONFIG.weight_range_decay})`,
+    );
     console.log(`    vwap_score:  ${result.composite.vwap_score?.toFixed(4)} (weight ${HTF_CONFIG.weight_vwap})`);
-    console.log(`    → composite: ${result.composite.composite_score?.toFixed(4)} (threshold ${HTF_CONFIG.composite_threshold})`);
+    console.log(
+      `    → composite: ${result.composite.composite_score?.toFixed(4)} (threshold ${HTF_CONFIG.composite_threshold})`,
+    );
   }
 
   if (result.breakout) {
@@ -299,28 +305,26 @@ async function mockDataApiFetcher(ticker, interval /*, lookbackDays, opts */) {
     console.log(`    detected: ${result.breakout.breakout_detected}`);
   }
 
-  console.log("\n─── VERDICT ───");
+  console.log('\n─── VERDICT ───');
   if (result.is_detected) {
-    console.log("PASS — HTF pattern detected as expected");
+    console.log('PASS — HTF pattern detected as expected');
   } else {
-    console.log("FAIL — HTF pattern NOT detected");
+    console.log('FAIL — HTF pattern NOT detected');
     console.log(`   Status: ${result.status}`);
     if (result.composite) {
       console.log(
-        `   Composite ${result.composite.composite_score?.toFixed(4)} < threshold ${HTF_CONFIG.composite_threshold}`
+        `   Composite ${result.composite.composite_score?.toFixed(4)} < threshold ${HTF_CONFIG.composite_threshold}`,
       );
       const scores = [
-        { name: "yz", score: result.composite.yz_score, weight: HTF_CONFIG.weight_yz },
-        { name: "delta", score: result.composite.delta_score, weight: HTF_CONFIG.weight_delta },
-        { name: "decay", score: result.composite.decay_score, weight: HTF_CONFIG.weight_range_decay },
-        { name: "vwap", score: result.composite.vwap_score, weight: HTF_CONFIG.weight_vwap },
+        { name: 'yz', score: result.composite.yz_score, weight: HTF_CONFIG.weight_yz },
+        { name: 'delta', score: result.composite.delta_score, weight: HTF_CONFIG.weight_delta },
+        { name: 'decay', score: result.composite.decay_score, weight: HTF_CONFIG.weight_range_decay },
+        { name: 'vwap', score: result.composite.vwap_score, weight: HTF_CONFIG.weight_vwap },
       ];
       const sorted = scores.sort((a, b) => a.score - b.score);
-      console.log("   Weakest metrics:");
+      console.log('   Weakest metrics:');
       for (const s of sorted) {
-        console.log(
-          `     ${s.name}: ${s.score?.toFixed(4)} × ${s.weight} = ${(s.score * s.weight)?.toFixed(4)}`
-        );
+        console.log(`     ${s.name}: ${s.score?.toFixed(4)} × ${s.weight} = ${(s.score * s.weight)?.toFixed(4)}`);
       }
     }
   }

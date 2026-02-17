@@ -238,7 +238,13 @@ export interface RunMetricsPayload {
   statuses?: {
     fetchDaily?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null;
     fetchWeekly?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null;
-    vdfScan?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number; detected_tickers?: number } | null;
+    vdfScan?: {
+      status?: string;
+      running?: boolean;
+      processed_tickers?: number;
+      total_tickers?: number;
+      detected_tickers?: number;
+    } | null;
   };
   runs?: {
     fetchDaily?: RunMetricsSnapshot | null;
@@ -265,8 +271,14 @@ export interface VDFZone {
   concordancePenalty?: number;
   concordantFrac?: number;
   components?: {
-    s1: number; s2: number; s3: number; s4: number;
-    s5: number; s6: number; s7: number; s8?: number;
+    s1: number;
+    s2: number;
+    s3: number;
+    s4: number;
+    s5: number;
+    s6: number;
+    s7: number;
+    s8?: number;
   };
 }
 

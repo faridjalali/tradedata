@@ -241,6 +241,60 @@ h2 {
   }
 }
 
+/* Unified button for custom chart */
+.pane-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  min-width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: relative;
+}
+@media (hover: hover) {
+  .pane-btn:hover {
+    border-color: var(--highlight);
+    color: var(--text-primary);
+  }
+}
+.pane-btn.active {
+  background: var(--highlight);
+  color: var(--highlight-text);
+  border-color: var(--highlight);
+}
+.pane-btn.label {
+  padding: 0 8px;
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+  color: var(--text-primary);
+}
+.pane-btn.disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+.pane-btn.pane-overlay {
+  position: absolute;
+  z-index: 30;
+}
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.pane-btn.refresh-btn svg { transition: none; }
+.pane-btn.refresh-btn.loading svg { animation: refresh-spin 0.8s linear infinite; }
+
 /* Dropdown panel (nav, custom range, etc.) */
 .header-dropdown-panel {
   position: absolute;
@@ -293,14 +347,12 @@ h2 {
 
 
 .divergence-run-btn {
-  width: auto !important;
-  min-width: 52px !important;
-  padding: 2px 8px !important;
+  min-width: 52px;
+  padding: 2px 8px;
 }
 .divergence-control-icon-btn {
-  min-width: 30px !important;
-  width: 30px !important;
-  padding: 2px 0 !important;
+  min-width: 24px;
+  padding: 2px 0;
   text-align: center;
 }
 .divergence-run-status {
@@ -320,12 +372,12 @@ h2 {
 }
 .feed-controls-group {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
 }
 
 /* Tooltip Styles */
-.tf-btn[data-tooltip]:hover::after {
+.pane-btn[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: 125%; /* Position above */
@@ -586,21 +638,6 @@ h2 {
   margin-top: 6px;
 }
 
-.log-history-pagination .tf-btn {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.log-history-pagination .tf-btn.disabled {
-  opacity: 0.3;
-  pointer-events: none;
-}
 
 .ticker-history-section .header-sort-controls {
   margin-bottom: 0px;
@@ -1151,33 +1188,6 @@ button:hover {
   opacity: 1;
 }
 
-/* Sort Buttons (Ticker & Live Feed) */
-.header-sort-controls .tf-btn,
-#chart-controls .tf-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  padding: 2px 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-align: center;
-  line-height: 20px;
-}
-
-@media (hover: hover) {
-  .header-sort-controls .tf-btn:hover,
-  #chart-controls .tf-btn:hover {
-    background: var(--border-overlay-30);
-    color: var(--text-primary);
-  }
-}
-
-.header-sort-controls .tf-btn.active,
-#chart-controls .tf-btn.active {
-  background: var(--highlight);
-  color: var(--highlight-text);
-  border-color: var(--highlight);
-}
 
 /* Column timeframe inline buttons */
 .column-tf-controls {
@@ -1187,29 +1197,6 @@ button:hover {
   position: relative;
 }
 
-.column-tf-controls .tf-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  padding: 2px 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-align: center;
-  line-height: 20px;
-}
-
-@media (hover: hover) {
-  .column-tf-controls .tf-btn:hover {
-    background: var(--border-overlay-30);
-    color: var(--text-primary);
-  }
-}
-
-.column-tf-controls .tf-btn.active {
-  background: var(--highlight);
-  color: var(--highlight-text);
-  border-color: var(--highlight);
-}
 
 /* Custom date range panel (inside column-tf-controls) */
 .column-tf-custom-panel {
@@ -1222,7 +1209,7 @@ button:hover {
   gap: 5px;
   padding: 5px 8px;
   white-space: nowrap;
-  min-width: 240px;
+  min-width: 310px;
 }
 
 .column-tf-custom-panel .glass-input {
@@ -1240,20 +1227,12 @@ button:hover {
 }
 
 .column-tf-apply {
-  height: 24px;
-  width: 24px;
-  padding: 0;
   font-size: 1rem;
-  font-weight: 600;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   line-height: 1;
 }
 
 /* Sort arrow indicator — tiny arrow in top-right corner via CSS */
-.header-sort-controls .tf-btn[data-sort-dir]::after {
+.header-sort-controls .pane-btn[data-sort-dir]::after {
   content: attr(data-sort-dir);
   position: absolute;
   top: 1px;
@@ -1293,36 +1272,10 @@ button:hover {
   flex-wrap: wrap;
 }
 
-.single-page-controls .tf-btn {
-  width: auto;
-  min-width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-align: center;
-  line-height: 20px;
-}
 
-@media (hover: hover) {
-  .single-page-controls .tf-btn:hover {
-    background: var(--border-overlay-30);
-    color: var(--text-primary);
-  }
-}
-
-.single-page-controls .tf-btn.active {
-  background: var(--highlight);
-  color: var(--highlight-text);
-  border-color: var(--highlight);
-}
-
-#breadth-metric-btns .tf-btn {
+#breadth-metric-btns .pane-btn {
   padding: 0 14px;
-  min-width: auto;
   white-space: nowrap;
-  font-size: 0.78rem;
   letter-spacing: 0.02em;
 }
 
@@ -1369,7 +1322,7 @@ button:hover {
 
 .chart-controls-bar {
   display: flex;
-  gap: 20px;
+  gap: 6px;
   margin-bottom: 20px;
   flex-wrap: wrap;
   align-items: center;
@@ -1378,20 +1331,8 @@ button:hover {
 .chart-navigation-group {
   margin-left: auto;
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
-}
-
-.tf-btn.icon-only {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  padding: 0;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
 /* Fullscreen state */
@@ -1562,7 +1503,7 @@ button:hover {
   }
 
   .chart-controls-bar {
-    gap: 10px;
+    gap: 6px;
   }
 }
 

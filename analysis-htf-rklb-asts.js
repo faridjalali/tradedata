@@ -28,14 +28,16 @@ async function fetchBars(symbol, multiplier, timespan, from, to) {
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${symbol} ${multiplier}${timespan} ${from}-${to}`);
   const json = await resp.json();
   const results = json.results || [];
-  return results.map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o,
-    high: r.h,
-    low: r.l,
-    close: r.c,
-    volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return results
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetchDailyBars(symbol, fromDate, toDate) {
@@ -103,7 +105,9 @@ async function fetch1mBars(symbol, fromDate, toDate) {
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // =========================================================================
 // MATH HELPERS (copied from htfDetector.js for standalone use)
@@ -123,13 +127,14 @@ function rollingMean(arr, window) {
 function rollingStd(arr, window) {
   const out = new Array(arr.length).fill(NaN);
   for (let i = window - 1; i < arr.length; i++) {
-    let sum = 0, sum2 = 0;
+    let sum = 0,
+      sum2 = 0;
     for (let j = i - window + 1; j <= i; j++) {
       sum += arr[j];
       sum2 += arr[j] * arr[j];
     }
     const mean = sum / window;
-    const variance = (sum2 / window) - (mean * mean);
+    const variance = sum2 / window - mean * mean;
     out[i] = Math.sqrt(Math.max(0, variance));
   }
   return out;
@@ -146,10 +151,16 @@ function percentileRank(value, sortedArr) {
 
 function linearRegression(xs, ys) {
   const n = xs.length;
-  let sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0,
+    syy = 0;
   for (let i = 0; i < n; i++) {
-    sx += xs[i]; sy += ys[i];
-    sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i];
+    sx += xs[i];
+    sy += ys[i];
+    sxx += xs[i] * xs[i];
+    sxy += xs[i] * ys[i];
     syy += ys[i] * ys[i];
   }
   const denom = n * sxx - sx * sx;
@@ -157,7 +168,8 @@ function linearRegression(xs, ys) {
   const slope = (n * sxy - sx * sy) / denom;
   const intercept = (sy - slope * sx) / n;
   const yMean = sy / n;
-  let ssTot = 0, ssRes = 0;
+  let ssTot = 0,
+    ssRes = 0;
   for (let i = 0; i < n; i++) {
     const yPred = intercept + slope * xs[i];
     ssTot += (ys[i] - yMean) ** 2;
@@ -176,11 +188,16 @@ function yangZhangVolatility(bars, window) {
   const yz = new Array(n).fill(NaN);
   for (let end = window; end < n; end++) {
     const start = end - window;
-    let sumLogOC2 = 0, sumLogCO2 = 0, sumRS = 0;
+    let sumLogOC2 = 0,
+      sumLogCO2 = 0,
+      sumRS = 0;
     let count = 0;
     for (let i = start + 1; i <= end; i++) {
       const prevClose = bars[i - 1].close;
-      const o = bars[i].open, h = bars[i].high, l = bars[i].low, c = bars[i].close;
+      const o = bars[i].open,
+        h = bars[i].high,
+        l = bars[i].low,
+        c = bars[i].close;
       if (prevClose <= 0 || o <= 0 || c <= 0) continue;
       const logCO = Math.log(o / prevClose);
       const logOC = Math.log(c / o);
@@ -190,7 +207,7 @@ function yangZhangVolatility(bars, window) {
       const logLC = Math.log(l / c);
       sumLogCO2 += logCO * logCO;
       sumLogOC2 += logOC * logOC;
-      sumRS += (logHO * logHC) + (logLO * logLC);
+      sumRS += logHO * logHC + logLO * logLC;
       count++;
     }
     if (count < 2) continue;
@@ -222,7 +239,7 @@ function yzPercentileRank(yzSeries, lookback) {
 }
 
 function computeDeltaSeries1m(bars1m) {
-  return bars1m.map(b => {
+  return bars1m.map((b) => {
     if (b.close > b.open) return b.volume;
     if (b.close < b.open) return -b.volume;
     return 0;
@@ -236,7 +253,10 @@ function computeDeltaCompression(bars1m, consolStartTime, config) {
   // Find bars from consolidation start
   let startIdx = 0;
   for (let i = 0; i < bars1m.length; i++) {
-    if (bars1m[i].time >= consolStartTime) { startIdx = i; break; }
+    if (bars1m[i].time >= consolStartTime) {
+      startIdx = i;
+      break;
+    }
   }
 
   // Need enough context before consolidation
@@ -283,11 +303,12 @@ function computeRangeDecay(bars15m, consolIdx, config) {
     return { score: 0, coefficient: 0, rSquared: 0, isDecaying: false };
   }
 
-  const pctRanges = flagBars.map(b => (b.high - b.low) / b.close);
+  const pctRanges = flagBars.map((b) => (b.high - b.low) / b.close);
   const smoothWindow = Math.min(26, Math.max(3, Math.floor(pctRanges.length / 3)));
   const smoothed = rollingMean(pctRanges, smoothWindow);
 
-  const xs = [], ys = [];
+  const xs = [],
+    ys = [];
   for (let i = 0; i < smoothed.length; i++) {
     if (Number.isFinite(smoothed[i]) && smoothed[i] > 0) {
       xs.push(i);
@@ -319,7 +340,8 @@ function computeVwapDeviation(bars15m, consolIdx, config) {
   }
 
   // Anchored VWAP from consolidation start
-  let cumVP = 0, cumV = 0;
+  let cumVP = 0,
+    cumV = 0;
   const vwap = [];
   const deviations = [];
   for (let i = 0; i < flagBars.length; i++) {
@@ -365,7 +387,8 @@ function findBullRunEpisodes(dailyBars, minGainPct = 40) {
     for (let i = 0; i <= n - windowLen; i++) {
       const end = i + windowLen - 1;
       // Find lowest low in window
-      let lowIdx = i, lowPrice = dailyBars[i].low;
+      let lowIdx = i,
+        lowPrice = dailyBars[i].low;
       for (let j = i; j <= end; j++) {
         if (dailyBars[j].low < lowPrice) {
           lowPrice = dailyBars[j].low;
@@ -373,7 +396,8 @@ function findBullRunEpisodes(dailyBars, minGainPct = 40) {
         }
       }
       // Find highest high AFTER the low
-      let highIdx = lowIdx, highPrice = dailyBars[lowIdx].high;
+      let highIdx = lowIdx,
+        highPrice = dailyBars[lowIdx].high;
       for (let j = lowIdx; j <= end; j++) {
         if (dailyBars[j].high > highPrice) {
           highPrice = dailyBars[j].high;
@@ -397,12 +421,14 @@ function findBullRunEpisodes(dailyBars, minGainPct = 40) {
       for (let j = consolStart; j <= Math.min(consolEnd, n - 1); j++) {
         const retrace = ((highPrice - dailyBars[j].low) / highPrice) * 100;
         maxRetrace = Math.max(maxRetrace, retrace);
-        if (retrace > 50) { // Too deep
+        if (retrace > 50) {
+          // Too deep
           consolEnd = j;
           consolValid = false;
           break;
         }
-        if (dailyBars[j].close > highPrice * 1.05) { // Breakout
+        if (dailyBars[j].close > highPrice * 1.05) {
+          // Breakout
           consolEnd = j;
           break;
         }
@@ -412,9 +438,15 @@ function findBullRunEpisodes(dailyBars, minGainPct = 40) {
       if (consolDays < 3) continue; // Too short
 
       episodes.push({
-        lowIdx, highIdx, consolStart, consolEnd,
-        lowPrice, highPrice, gainPct,
-        consolDays, maxRetrace,
+        lowIdx,
+        highIdx,
+        consolStart,
+        consolEnd,
+        lowPrice,
+        highPrice,
+        gainPct,
+        consolDays,
+        maxRetrace,
         lowDate: toDateStr(dailyBars[lowIdx].time),
         highDate: toDateStr(dailyBars[highIdx].time),
         consolStartDate: toDateStr(dailyBars[consolStart].time),
@@ -431,7 +463,10 @@ function findBullRunEpisodes(dailyBars, minGainPct = 40) {
     // Check if this overlaps with an already-selected episode
     let overlaps = false;
     for (let d = ep.lowIdx; d <= ep.highIdx; d++) {
-      if (used.has(d)) { overlaps = true; break; }
+      if (used.has(d)) {
+        overlaps = true;
+        break;
+      }
     }
     if (overlaps) continue;
     for (let d = ep.lowIdx; d <= ep.highIdx; d++) used.add(d);
@@ -499,9 +534,8 @@ function analyzeEpisode(episode, dailyBars, bars15m, bars1m, config) {
   for (let i = consolIdx15m; i < consolEndIdx15m && i < yzPctRanks.length; i++) {
     if (Number.isFinite(yzPctRanks[i])) yzConsolValues.push(yzPctRanks[i]);
   }
-  const yzMedian = yzConsolValues.length > 0
-    ? yzConsolValues.sort((a, b) => a - b)[Math.floor(yzConsolValues.length / 2)]
-    : NaN;
+  const yzMedian =
+    yzConsolValues.length > 0 ? yzConsolValues.sort((a, b) => a - b)[Math.floor(yzConsolValues.length / 2)] : NaN;
 
   // 2. Delta Compression
   const deltaResult = computeDeltaCompression(bars1m, consolStartDailyTime, config);
@@ -513,28 +547,29 @@ function analyzeEpisode(episode, dailyBars, bars15m, bars1m, config) {
   const vwapResult = computeVwapDeviation(bars15m, consolIdx15m, config);
 
   // 5. Composite Score
-  const composite = (config.weight_yz || 0.30) * yzScore
-    + (config.weight_delta || 0.25) * deltaResult.score
-    + (config.weight_range_decay || 0.25) * rangeDecayResult.score
-    + (config.weight_vwap || 0.20) * vwapResult.score;
+  const composite =
+    (config.weight_yz || 0.3) * yzScore +
+    (config.weight_delta || 0.25) * deltaResult.score +
+    (config.weight_range_decay || 0.25) * rangeDecayResult.score +
+    (config.weight_vwap || 0.2) * vwapResult.score;
 
   // 6. Additional metrics for research
   // Volume profile during consolidation
-  const consolVolumes1m = bars1m.filter(b => b.time >= consolStartDailyTime && b.time <= consolEndDailyTime + 86400);
+  const consolVolumes1m = bars1m.filter((b) => b.time >= consolStartDailyTime && b.time <= consolEndDailyTime + 86400);
   const totalConsolVol = consolVolumes1m.reduce((s, b) => s + b.volume, 0);
   const avgConsolVol = consolVolumes1m.length > 0 ? totalConsolVol / consolVolumes1m.length : 0;
 
   // Pre-impulse volume for comparison
   const preImpulseStart = Math.max(0, impulseStartTime - 30 * 86400);
-  const preImpulseVols = bars1m.filter(b => b.time >= preImpulseStart && b.time < impulseStartTime);
-  const avgPreImpulseVol = preImpulseVols.length > 0
-    ? preImpulseVols.reduce((s, b) => s + b.volume, 0) / preImpulseVols.length
-    : 0;
+  const preImpulseVols = bars1m.filter((b) => b.time >= preImpulseStart && b.time < impulseStartTime);
+  const avgPreImpulseVol =
+    preImpulseVols.length > 0 ? preImpulseVols.reduce((s, b) => s + b.volume, 0) / preImpulseVols.length : 0;
 
   const volRatio = avgPreImpulseVol > 0 ? avgConsolVol / avgPreImpulseVol : NaN;
 
   // Price tightness: how tight is the consolidation range relative to impulse?
-  let consolHighPrice = -Infinity, consolLowPrice = Infinity;
+  let consolHighPrice = -Infinity,
+    consolLowPrice = Infinity;
   for (const b of flagBars15m) {
     if (b.high > consolHighPrice) consolHighPrice = b.high;
     if (b.low < consolLowPrice) consolLowPrice = b.low;
@@ -548,12 +583,10 @@ function analyzeEpisode(episode, dailyBars, bars15m, bars1m, config) {
   const halfIdx = Math.floor(flagBars15m.length / 2);
   const firstHalf = flagBars15m.slice(0, halfIdx);
   const secondHalf = flagBars15m.slice(halfIdx);
-  const firstHalfRange = firstHalf.length > 0
-    ? firstHalf.reduce((s, b) => s + (b.high - b.low), 0) / firstHalf.length
-    : 0;
-  const secondHalfRange = secondHalf.length > 0
-    ? secondHalf.reduce((s, b) => s + (b.high - b.low), 0) / secondHalf.length
-    : 0;
+  const firstHalfRange =
+    firstHalf.length > 0 ? firstHalf.reduce((s, b) => s + (b.high - b.low), 0) / firstHalf.length : 0;
+  const secondHalfRange =
+    secondHalf.length > 0 ? secondHalf.reduce((s, b) => s + (b.high - b.low), 0) / secondHalf.length : 0;
   const rangeContractionRatio = firstHalfRange > 0 ? secondHalfRange / firstHalfRange : NaN;
 
   return {
@@ -579,7 +612,7 @@ function analyzeEpisode(episode, dailyBars, bars15m, bars1m, config) {
       pctRank: vwapResult.pctRank,
     },
     composite,
-    detectedStrict: composite >= 0.70,
+    detectedStrict: composite >= 0.7,
     detectedModerate: composite >= 0.55,
     volumeAnalysis: {
       avgConsolVol1m: Math.round(avgConsolVol),
@@ -590,7 +623,7 @@ function analyzeEpisode(episode, dailyBars, bars15m, bars1m, config) {
       consolRangePct: consolRangePct.toFixed(2),
       actualRetracePct: actualRetrace.toFixed(2),
       rangeContractionRatio: Number.isFinite(rangeContractionRatio) ? rangeContractionRatio.toFixed(3) : 'N/A',
-    }
+    },
   };
 }
 
@@ -603,7 +636,7 @@ const HTF_CONFIG = {
   impulse_lookback_days: 60,
   impulse_min_days: 3,
   impulse_max_days: 45,
-  consolidation_range_shrink: 0.50,
+  consolidation_range_shrink: 0.5,
   consolidation_min_bars_15m: 130,
   consolidation_max_bars_15m: 780,
   consolidation_max_retrace_pct: 25.0,
@@ -611,16 +644,16 @@ const HTF_CONFIG = {
   yz_percentile_lookback: 6552,
   yz_contraction_threshold: 10.0,
   delta_hourly_window: 60,
-  delta_compression_threshold: 0.80,
+  delta_compression_threshold: 0.8,
   range_decay_min_bars: 50,
   range_decay_coeff_threshold: -0.02,
   vwap_deviation_window: 52,
   vwap_deviation_percentile: 20.0,
-  weight_yz: 0.30,
+  weight_yz: 0.3,
   weight_delta: 0.25,
   weight_range_decay: 0.25,
-  weight_vwap: 0.20,
-  composite_threshold: 0.70,
+  weight_vwap: 0.2,
+  composite_threshold: 0.7,
   breakout_range_multiple: 2.0,
   breakout_delta_surge_percentile: 90.0,
 };
@@ -629,7 +662,7 @@ const HTF_CONFIG_MODERATE = {
   ...HTF_CONFIG,
   impulse_min_gain_pct: 50.0,
   impulse_lookback_days: 90,
-  consolidation_range_shrink: 0.60,
+  consolidation_range_shrink: 0.6,
   consolidation_min_bars_15m: 78,
   consolidation_max_retrace_pct: 35.0,
   range_decay_coeff_threshold: -0.01,
@@ -661,8 +694,11 @@ async function analyzeSymbol(symbol) {
   }
 
   // Print daily price summary
-  console.log(`\n  Daily price range: $${daily[0].close.toFixed(2)} (${toDateStr(daily[0].time)}) → $${daily[daily.length - 1].close.toFixed(2)} (${toDateStr(daily[daily.length - 1].time)})`);
-  let allTimeHigh = 0, allTimeLow = Infinity;
+  console.log(
+    `\n  Daily price range: $${daily[0].close.toFixed(2)} (${toDateStr(daily[0].time)}) → $${daily[daily.length - 1].close.toFixed(2)} (${toDateStr(daily[daily.length - 1].time)})`,
+  );
+  let allTimeHigh = 0,
+    allTimeLow = Infinity;
   for (const b of daily) {
     if (b.high > allTimeHigh) allTimeHigh = b.high;
     if (b.low < allTimeLow) allTimeLow = b.low;
@@ -692,18 +728,38 @@ async function analyzeSymbol(symbol) {
     }
 
     console.log(`\n    STRICT MODE (composite threshold: 0.70):`);
-    console.log(`      YZ Score:       ${strictResult.yz.score.toFixed(4)}  (pctRank: ${strictResult.yz.pctRankAtEnd?.toFixed(1) || 'N/A'}, median: ${strictResult.yz.medianPctRank?.toFixed(1) || 'N/A'})`);
-    console.log(`      Delta Score:    ${strictResult.delta.score.toFixed(4)}  (meanPctRank: ${strictResult.delta.meanPctRank.toFixed(1)}, stdPctRank: ${strictResult.delta.stdPctRank.toFixed(1)})`);
-    console.log(`      RangeDecay:     ${strictResult.rangeDecay.score.toFixed(4)}  (coeff: ${strictResult.rangeDecay.coefficient.toFixed(6)}, R²: ${strictResult.rangeDecay.rSquared.toFixed(4)}, decaying: ${strictResult.rangeDecay.isDecaying})`);
-    console.log(`      VWAP Score:     ${strictResult.vwap.score.toFixed(4)}  (pctRank: ${strictResult.vwap.pctRank.toFixed(1)})`);
-    console.log(`      COMPOSITE:      ${strictResult.composite.toFixed(4)}  → ${strictResult.detectedStrict ? '✅ DETECTED' : '❌ NOT DETECTED'}`);
+    console.log(
+      `      YZ Score:       ${strictResult.yz.score.toFixed(4)}  (pctRank: ${strictResult.yz.pctRankAtEnd?.toFixed(1) || 'N/A'}, median: ${strictResult.yz.medianPctRank?.toFixed(1) || 'N/A'})`,
+    );
+    console.log(
+      `      Delta Score:    ${strictResult.delta.score.toFixed(4)}  (meanPctRank: ${strictResult.delta.meanPctRank.toFixed(1)}, stdPctRank: ${strictResult.delta.stdPctRank.toFixed(1)})`,
+    );
+    console.log(
+      `      RangeDecay:     ${strictResult.rangeDecay.score.toFixed(4)}  (coeff: ${strictResult.rangeDecay.coefficient.toFixed(6)}, R²: ${strictResult.rangeDecay.rSquared.toFixed(4)}, decaying: ${strictResult.rangeDecay.isDecaying})`,
+    );
+    console.log(
+      `      VWAP Score:     ${strictResult.vwap.score.toFixed(4)}  (pctRank: ${strictResult.vwap.pctRank.toFixed(1)})`,
+    );
+    console.log(
+      `      COMPOSITE:      ${strictResult.composite.toFixed(4)}  → ${strictResult.detectedStrict ? '✅ DETECTED' : '❌ NOT DETECTED'}`,
+    );
 
     console.log(`\n    MODERATE MODE (composite threshold: 0.55):`);
-    console.log(`      YZ Score:       ${modResult.yz.score.toFixed(4)}  (pctRank: ${modResult.yz.pctRankAtEnd?.toFixed(1) || 'N/A'}, median: ${modResult.yz.medianPctRank?.toFixed(1) || 'N/A'})`);
-    console.log(`      Delta Score:    ${modResult.delta.score.toFixed(4)}  (meanPctRank: ${modResult.delta.meanPctRank.toFixed(1)}, stdPctRank: ${modResult.delta.stdPctRank.toFixed(1)})`);
-    console.log(`      RangeDecay:     ${modResult.rangeDecay.score.toFixed(4)}  (coeff: ${modResult.rangeDecay.coefficient.toFixed(6)}, R²: ${modResult.rangeDecay.rSquared.toFixed(4)}, decaying: ${modResult.rangeDecay.isDecaying})`);
-    console.log(`      VWAP Score:     ${modResult.vwap.score.toFixed(4)}  (pctRank: ${modResult.vwap.pctRank.toFixed(1)})`);
-    console.log(`      COMPOSITE:      ${modResult.composite.toFixed(4)}  → ${modResult.detectedModerate ? '✅ DETECTED' : '❌ NOT DETECTED'}`);
+    console.log(
+      `      YZ Score:       ${modResult.yz.score.toFixed(4)}  (pctRank: ${modResult.yz.pctRankAtEnd?.toFixed(1) || 'N/A'}, median: ${modResult.yz.medianPctRank?.toFixed(1) || 'N/A'})`,
+    );
+    console.log(
+      `      Delta Score:    ${modResult.delta.score.toFixed(4)}  (meanPctRank: ${modResult.delta.meanPctRank.toFixed(1)}, stdPctRank: ${modResult.delta.stdPctRank.toFixed(1)})`,
+    );
+    console.log(
+      `      RangeDecay:     ${modResult.rangeDecay.score.toFixed(4)}  (coeff: ${modResult.rangeDecay.coefficient.toFixed(6)}, R²: ${modResult.rangeDecay.rSquared.toFixed(4)}, decaying: ${modResult.rangeDecay.isDecaying})`,
+    );
+    console.log(
+      `      VWAP Score:     ${modResult.vwap.score.toFixed(4)}  (pctRank: ${modResult.vwap.pctRank.toFixed(1)})`,
+    );
+    console.log(
+      `      COMPOSITE:      ${modResult.composite.toFixed(4)}  → ${modResult.detectedModerate ? '✅ DETECTED' : '❌ NOT DETECTED'}`,
+    );
 
     console.log(`\n    ADDITIONAL METRICS:`);
     console.log(`      Flag bars (15m): ${strictResult.flagBarsCount}`);
@@ -742,7 +798,8 @@ async function main() {
     if (!data?.episodes) continue;
     const total = data.episodes.length;
     // Re-analyze to count detections
-    let strictDetected = 0, modDetected = 0;
+    let strictDetected = 0,
+      modDetected = 0;
     for (const ep of data.episodes) {
       const strict = analyzeEpisode(ep, data.daily, data.bars15m, data.bars1m, HTF_CONFIG);
       const mod = analyzeEpisode(ep, data.daily, data.bars15m, data.bars1m, HTF_CONFIG_MODERATE);
@@ -750,8 +807,8 @@ async function main() {
       if (!mod.error && mod.detectedModerate) modDetected++;
     }
     console.log(`\n  ${sym}: ${total} episodes found`);
-    console.log(`    Strict detection: ${strictDetected}/${total} (${((strictDetected/total)*100).toFixed(0)}%)`);
-    console.log(`    Moderate detection: ${modDetected}/${total} (${((modDetected/total)*100).toFixed(0)}%)`);
+    console.log(`    Strict detection: ${strictDetected}/${total} (${((strictDetected / total) * 100).toFixed(0)}%)`);
+    console.log(`    Moderate detection: ${modDetected}/${total} (${((modDetected / total) * 100).toFixed(0)}%)`);
   }
 
   // Aggregate metric analysis: what scores are most commonly failing?
@@ -762,7 +819,8 @@ async function main() {
   for (const [sym, data] of Object.entries(results)) {
     if (!data?.episodes) continue;
     console.log(`\n  ${sym}:`);
-    const allStrict = [], allMod = [];
+    const allStrict = [],
+      allMod = [];
     for (const ep of data.episodes) {
       const strict = analyzeEpisode(ep, data.daily, data.bars15m, data.bars1m, HTF_CONFIG);
       const mod = analyzeEpisode(ep, data.daily, data.bars15m, data.bars1m, HTF_CONFIG_MODERATE);
@@ -777,17 +835,25 @@ async function main() {
       const avgVwap = allMod.reduce((s, r) => s + r.vwap.score, 0) / allMod.length;
 
       console.log(`    Average scores across ${allMod.length} episodes (moderate config):`);
-      console.log(`      YZ:         ${avgYZ.toFixed(4)}  (weight: 0.30, contribution: ${(avgYZ * 0.30).toFixed(4)})`);
-      console.log(`      Delta:      ${avgDelta.toFixed(4)}  (weight: 0.25, contribution: ${(avgDelta * 0.25).toFixed(4)})`);
-      console.log(`      RangeDecay: ${avgDecay.toFixed(4)}  (weight: 0.25, contribution: ${(avgDecay * 0.25).toFixed(4)})`);
-      console.log(`      VWAP:       ${avgVwap.toFixed(4)}  (weight: 0.20, contribution: ${(avgVwap * 0.20).toFixed(4)})`);
-      console.log(`      Avg Composite: ${(avgYZ * 0.30 + avgDelta * 0.25 + avgDecay * 0.25 + avgVwap * 0.20).toFixed(4)}`);
+      console.log(`      YZ:         ${avgYZ.toFixed(4)}  (weight: 0.30, contribution: ${(avgYZ * 0.3).toFixed(4)})`);
+      console.log(
+        `      Delta:      ${avgDelta.toFixed(4)}  (weight: 0.25, contribution: ${(avgDelta * 0.25).toFixed(4)})`,
+      );
+      console.log(
+        `      RangeDecay: ${avgDecay.toFixed(4)}  (weight: 0.25, contribution: ${(avgDecay * 0.25).toFixed(4)})`,
+      );
+      console.log(
+        `      VWAP:       ${avgVwap.toFixed(4)}  (weight: 0.20, contribution: ${(avgVwap * 0.2).toFixed(4)})`,
+      );
+      console.log(
+        `      Avg Composite: ${(avgYZ * 0.3 + avgDelta * 0.25 + avgDecay * 0.25 + avgVwap * 0.2).toFixed(4)}`,
+      );
 
       // Find which metrics are < 0.5 most often
-      const lowYZ = allMod.filter(r => r.yz.score < 0.5).length;
-      const lowDelta = allMod.filter(r => r.delta.score < 0.5).length;
-      const lowDecay = allMod.filter(r => r.rangeDecay.score < 0.5).length;
-      const lowVwap = allMod.filter(r => r.vwap.score < 0.5).length;
+      const lowYZ = allMod.filter((r) => r.yz.score < 0.5).length;
+      const lowDelta = allMod.filter((r) => r.delta.score < 0.5).length;
+      const lowDecay = allMod.filter((r) => r.rangeDecay.score < 0.5).length;
+      const lowVwap = allMod.filter((r) => r.vwap.score < 0.5).length;
       console.log(`\n    Metrics scoring < 0.5 (blocking detection):`);
       console.log(`      YZ < 0.5:         ${lowYZ}/${allMod.length} episodes`);
       console.log(`      Delta < 0.5:      ${lowDelta}/${allMod.length} episodes`);
@@ -795,18 +861,18 @@ async function main() {
       console.log(`      VWAP < 0.5:       ${lowVwap}/${allMod.length} episodes`);
 
       // Range decay deep-dive
-      const decayCoeffs = allMod.map(r => r.rangeDecay.coefficient);
-      const decayR2s = allMod.map(r => r.rangeDecay.rSquared);
+      const decayCoeffs = allMod.map((r) => r.rangeDecay.coefficient);
+      const decayR2s = allMod.map((r) => r.rangeDecay.rSquared);
       console.log(`\n    Range Decay deep-dive:`);
-      console.log(`      Coefficients: ${decayCoeffs.map(c => c.toFixed(6)).join(', ')}`);
-      console.log(`      R² values:    ${decayR2s.map(r => r.toFixed(4)).join(', ')}`);
+      console.log(`      Coefficients: ${decayCoeffs.map((c) => c.toFixed(6)).join(', ')}`);
+      console.log(`      R² values:    ${decayR2s.map((r) => r.toFixed(4)).join(', ')}`);
 
       // Volume ratio analysis
-      const volRatios = allMod.map(r => r.volumeAnalysis.volRatio);
+      const volRatios = allMod.map((r) => r.volumeAnalysis.volRatio);
       console.log(`\n    Volume ratios (consol/pre-impulse): ${volRatios.join(', ')}`);
 
       // Range contraction analysis
-      const rangeContractions = allMod.map(r => r.priceAnalysis.rangeContractionRatio);
+      const rangeContractions = allMod.map((r) => r.priceAnalysis.rangeContractionRatio);
       console.log(`    Range contraction (2nd/1st half): ${rangeContractions.join(', ')}`);
     }
   }
@@ -814,7 +880,7 @@ async function main() {
   console.log(`\n\nAnalysis complete.`);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

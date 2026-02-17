@@ -18,9 +18,10 @@ import {
 // ---------------------------------------------------------------------------
 
 test('calculateRSI returns values between 0 and 100', () => {
-  const closes = [44, 44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10,
-    45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.00, 46.03,
-    46.41, 46.22, 45.64];
+  const closes = [
+    44, 44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.1, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.0,
+    46.03, 46.41, 46.22, 45.64,
+  ];
   const rsi = calculateRSI(closes, 14);
   assert.equal(rsi.length, closes.length);
   for (const val of rsi) {
@@ -78,8 +79,7 @@ test('calculateRMA smooths values', () => {
   }
   // After warmup, should have numeric values
   for (let i = 5; i < rma.length; i++) {
-    assert.ok(typeof rma[i] === 'number' && Number.isFinite(rma[i]),
-      `rma[${i}] should be a finite number`);
+    assert.ok(typeof rma[i] === 'number' && Number.isFinite(rma[i]), `rma[${i}] should be a finite number`);
   }
 });
 
@@ -138,7 +138,7 @@ test('buildChartRequestKey builds deterministic key', () => {
     vdRsiLength: 14,
     vdSourceInterval: '1min',
     vdRsiSourceInterval: '1min',
-    lookbackDays: 548
+    lookbackDays: 548,
   });
   assert.ok(key.includes('SPY'));
   assert.ok(key.includes('4hour'));
@@ -150,19 +150,27 @@ test('buildChartRequestKey builds deterministic key', () => {
     vdRsiLength: 14,
     vdSourceInterval: '1min',
     vdRsiSourceInterval: '1min',
-    lookbackDays: 548
+    lookbackDays: 548,
   });
   assert.equal(key, key2);
 });
 
 test('buildChartRequestKey differs for different params', () => {
   const key1 = buildChartRequestKey({
-    ticker: 'SPY', interval: '4hour', vdRsiLength: 14,
-    vdSourceInterval: '1min', vdRsiSourceInterval: '1min', lookbackDays: 548
+    ticker: 'SPY',
+    interval: '4hour',
+    vdRsiLength: 14,
+    vdSourceInterval: '1min',
+    vdRsiSourceInterval: '1min',
+    lookbackDays: 548,
   });
   const key2 = buildChartRequestKey({
-    ticker: 'AAPL', interval: '4hour', vdRsiLength: 14,
-    vdSourceInterval: '1min', vdRsiSourceInterval: '1min', lookbackDays: 548
+    ticker: 'AAPL',
+    interval: '4hour',
+    vdRsiLength: 14,
+    vdSourceInterval: '1min',
+    vdRsiSourceInterval: '1min',
+    lookbackDays: 548,
   });
   assert.notEqual(key1, key2);
 });

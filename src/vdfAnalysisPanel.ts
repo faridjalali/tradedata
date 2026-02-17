@@ -9,18 +9,62 @@ import type { VDFZone, VDFDistribution, VDFProximity, VDFCacheEntry } from '../s
 // ─── VDF Component Metadata ─────────────────────────────────────────────────
 
 const VDF_COMPONENTS: Array<{ key: string; label: string; defaultWeight: number; tooltip: string }> = [
-  { key: 's8', label: 'Divergence', defaultWeight: 35, tooltip: 'Overall price-down + delta-up divergence. The PRIMARY thesis signal. Score = 0 when price is rising or delta is negative.' },
-  { key: 's6', label: 'Absorption', defaultWeight: 25, tooltip: 'Percentage of days where price fell but delta was positive. Day-by-day divergence confirmation: institutions buying the dip.' },
-  { key: 's1', label: 'Net Delta', defaultWeight: 15, tooltip: 'Total net buying as % of total volume. Supporting signal: is there net buying?' },
-  { key: 's2', label: 'Delta Slope', defaultWeight: 10, tooltip: 'Trend of cumulative weekly delta. Supporting signal: is buying building over time?' },
-  { key: 's3', label: 'Delta Shift', defaultWeight: 5, tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.' },
-  { key: 's4', label: 'Accum Ratio', defaultWeight: 5, tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks.' },
-  { key: 's5', label: 'Buy vs Sell', defaultWeight: 3, tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.' },
-  { key: 's7', label: 'Vol Decline', defaultWeight: 2, tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.' },
+  {
+    key: 's8',
+    label: 'Divergence',
+    defaultWeight: 35,
+    tooltip:
+      'Overall price-down + delta-up divergence. The PRIMARY thesis signal. Score = 0 when price is rising or delta is negative.',
+  },
+  {
+    key: 's6',
+    label: 'Absorption',
+    defaultWeight: 25,
+    tooltip:
+      'Percentage of days where price fell but delta was positive. Day-by-day divergence confirmation: institutions buying the dip.',
+  },
+  {
+    key: 's1',
+    label: 'Net Delta',
+    defaultWeight: 15,
+    tooltip: 'Total net buying as % of total volume. Supporting signal: is there net buying?',
+  },
+  {
+    key: 's2',
+    label: 'Delta Slope',
+    defaultWeight: 10,
+    tooltip: 'Trend of cumulative weekly delta. Supporting signal: is buying building over time?',
+  },
+  {
+    key: 's3',
+    label: 'Delta Shift',
+    defaultWeight: 5,
+    tooltip: 'Is buying stronger now than before? Compares avg daily delta in the zone to the pre-context period.',
+  },
+  {
+    key: 's4',
+    label: 'Accum Ratio',
+    defaultWeight: 5,
+    tooltip: 'Fraction of weeks with positive delta. High ratio = persistent buying across multiple weeks.',
+  },
+  {
+    key: 's5',
+    label: 'Buy vs Sell',
+    defaultWeight: 3,
+    tooltip: 'Ratio of large buy days to large sell days. Detects if big-volume days lean bullish or bearish.',
+  },
+  {
+    key: 's7',
+    label: 'Vol Decline',
+    defaultWeight: 2,
+    tooltip: 'Volume declining from first-third to last-third of the zone. Supply drying up = fewer sellers remain.',
+  },
 ];
 
 const VDF_DEFAULT_WEIGHTS: Record<string, number> = {};
-VDF_COMPONENTS.forEach(c => { VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight; });
+VDF_COMPONENTS.forEach((c) => {
+  VDF_DEFAULT_WEIGHTS[c.key] = c.defaultWeight;
+});
 
 // ─── Module State ───────────────────────────────────────────────────────────
 
@@ -42,7 +86,9 @@ function loadVDFWeightsFromStorage(): void {
         }
       }
     }
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 function getVDFWeightTotal(): number {
@@ -65,7 +111,7 @@ function recomputeVDFZoneScore(zone: VDFZone): number {
 
 function getVDFComponentLabels(): Array<[string, string, string]> {
   const total = getVDFWeightTotal();
-  return VDF_COMPONENTS.map(c => {
+  return VDF_COMPONENTS.map((c) => {
     const w = vdfWeights[c.key] || 0;
     const pct = total > 0 ? Math.round((w / total) * 100) : 0;
     return [c.key, c.label, `${pct}%`] as [string, string, string];
@@ -106,18 +152,20 @@ function vdfProximityColor(level: string): string {
 
 function buildComponentBarsHtml(components: Record<string, number>): string {
   const c = getThemeColors();
-  return getVDFComponentLabels().map(([key, label, weight]: [string, string, string]) => {
-    const val = Number(components[key]) || 0;
-    const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
-    const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : c.textMuted;
-    return `<div style="display:grid;grid-template-columns:130px 1fr 36px;gap:6px;align-items:center;margin:2px 0;">
+  return getVDFComponentLabels()
+    .map(([key, label, weight]: [string, string, string]) => {
+      const val = Number(components[key]) || 0;
+      const pct = Math.max(0, Math.min(100, Math.round(val * 100)));
+      const barColor = val >= 0.7 ? '#26a69a' : val >= 0.4 ? '#8bc34a' : c.textMuted;
+      return `<div style="display:grid;grid-template-columns:130px 1fr 36px;gap:6px;align-items:center;margin:2px 0;">
       <span style="color:${c.textSecondary};font-size:11px;white-space:nowrap;">${escapeHtml(label)} (${weight})</span>
       <div style="height:4px;background:${c.surfaceElevated};border-radius:2px;overflow:hidden;">
         <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;"></div>
       </div>
       <span style="color:${c.textPrimary};font-size:11px;font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;text-align:right;">${val.toFixed(2)}</span>
     </div>`;
-  }).join('');
+    })
+    .join('');
 }
 
 function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
@@ -125,32 +173,39 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
   const recomputed = recomputeVDFZoneScore(zone);
   const scoreInt = Math.round(recomputed * 100);
   const serverScoreInt = Math.round(zone.score * 100);
-  const isCustomWeights = !VDF_COMPONENTS.every(comp => vdfWeights[comp.key] === comp.defaultWeight);
+  const isCustomWeights = !VDF_COMPONENTS.every((comp) => vdfWeights[comp.key] === comp.defaultWeight);
   const label = isBest ? `Zone ${index + 1} (Primary)` : `Zone ${index + 1}`;
   const color = vdfScoreColor(scoreInt);
 
   let metricsLine = '';
   const parts: string[] = [];
-  if (zone.overallPriceChange != null) parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
-  if (zone.netDeltaPct != null) parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
+  if (zone.overallPriceChange != null)
+    parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
+  if (zone.netDeltaPct != null)
+    parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
   if (zone.absorptionPct != null) parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
-  if (parts.length) metricsLine = `<div style="margin:4px 0;color:${c.textSecondary};font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
+  if (parts.length)
+    metricsLine = `<div style="margin:4px 0;color:${c.textSecondary};font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let detailLine = '';
   const dParts: string[] = [];
-  if (zone.accumWeeks != null && zone.weeks) dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
+  if (zone.accumWeeks != null && zone.weeks)
+    dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
   if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
-  if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0) dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
-  if (dParts.length) detailLine = `<div style="margin:2px 0;color:${c.textSecondary};font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
+  if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0)
+    dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
+  if (dParts.length)
+    detailLine = `<div style="margin:2px 0;color:${c.textSecondary};font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let componentsHtml = '';
   if (zone.components) {
     componentsHtml = `<div style="margin-top:8px;"><div style="color:${c.textSecondary};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Components</div>${buildComponentBarsHtml(zone.components as unknown as Record<string, number>)}</div>`;
   }
 
-  const scoreDiffHtml = isCustomWeights && serverScoreInt !== scoreInt
-    ? `<span style="font-size:10px;color:${c.textMuted};margin-left:4px;">(was ${serverScoreInt})</span>`
-    : '';
+  const scoreDiffHtml =
+    isCustomWeights && serverScoreInt !== scoreInt
+      ? `<span style="font-size:10px;color:${c.textMuted};margin-left:4px;">(was ${serverScoreInt})</span>`
+      : '';
 
   return `<div style="background:${c.cardBg};border:1px solid ${c.surfaceElevated};border-radius:4px;padding:12px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -168,7 +223,8 @@ function buildDistributionHtml(dist: VDFDistribution, index: number): string {
   const c = getThemeColors();
   let detail = '';
   const parts: string[] = [];
-  if (dist.priceChangePct != null) parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
+  if (dist.priceChangePct != null)
+    parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
   if (dist.netDeltaPct != null) parts.push(`Delta ${dist.netDeltaPct >= 0 ? '+' : ''}${dist.netDeltaPct.toFixed(1)}%`);
   if (parts.length) detail = parts.join(' while ') + ' \u2014 selling into strength.';
 
@@ -184,12 +240,15 @@ function buildProximityHtml(prox: VDFProximity): string {
   const levelLabel = prox.level.charAt(0).toUpperCase() + prox.level.slice(1);
   const levelColor = vdfProximityColor(prox.level);
 
-  const signalRows = prox.signals.map(sig =>
-    `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;">
+  const signalRows = prox.signals
+    .map(
+      (sig) =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;">
       <span style="color:${c.textPrimary};">\u2713 ${escapeHtml(sig.detail)}</span>
       <span style="color:${levelColor};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-weight:600;white-space:nowrap;margin-left:12px;">+${sig.points}</span>
-    </div>`
-  ).join('');
+    </div>`,
+    )
+    .join('');
 
   return `<div style="margin-top:4px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
@@ -223,7 +282,11 @@ export function toggleVDFAnalysisPanel(): void {
   body.style.display = isCollapsed ? 'block' : 'none';
   const chevron = vdfAnalysisPanelEl.querySelector('.vdf-ap-chevron') as HTMLElement | null;
   if (chevron) chevron.textContent = isCollapsed ? '\u25be' : '\u25b8';
-  try { localStorage.setItem('chart_vdf_panel_collapsed', isCollapsed ? '0' : '1'); } catch { /* */ }
+  try {
+    localStorage.setItem('chart_vdf_panel_collapsed', isCollapsed ? '0' : '1');
+  } catch {
+    /* */
+  }
 }
 
 export function clearVDFAnalysisPanel(): void {
@@ -261,7 +324,11 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
   const metrics = entry.details?.metrics;
 
   let collapsed = true;
-  try { collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0'; } catch { /* */ }
+  try {
+    collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0';
+  } catch {
+    /* */
+  }
 
   const chevron = collapsed ? '\u25b8' : '\u25be';
   const bodyDisplay = collapsed ? 'none' : 'block';
@@ -274,9 +341,11 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
       <span style="color:${c.textSecondary};font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:12px;">${escapeHtml(ticker)}</span>
     </div>
     <div style="display:flex;align-items:center;">
-      ${entry.is_detected
-        ? `<span style="font-size:11px;color:${c.textMuted};">${escapeHtml(tier)}</span>`
-        : `<span style="font-size:11px;color:${c.textMuted};">Not detected</span>`}
+      ${
+        entry.is_detected
+          ? `<span style="font-size:11px;color:${c.textMuted};">${escapeHtml(tier)}</span>`
+          : `<span style="font-size:11px;color:${c.textMuted};">Not detected</span>`
+      }
     </div>
   </div>`;
 
@@ -309,23 +378,36 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
     const assessHtml = `<div style="margin-bottom:16px;font-size:13px;color:${c.textPrimary};">${assessParts}</div>`;
 
     // Chart legend
-    const swatchStyle = 'display:inline-block;width:14px;height:5px;border-radius:1px;vertical-align:middle;margin-right:5px;';
-    const dashStyle = 'display:inline-block;width:14px;height:0;border-top:1px dashed;vertical-align:middle;margin-right:5px;';
-    const glowStyle = 'display:inline-block;width:3px;height:12px;border-radius:1px;vertical-align:middle;margin-right:5px;';
+    const swatchStyle =
+      'display:inline-block;width:14px;height:5px;border-radius:1px;vertical-align:middle;margin-right:5px;';
+    const dashStyle =
+      'display:inline-block;width:14px;height:0;border-top:1px dashed;vertical-align:middle;margin-right:5px;';
+    const glowStyle =
+      'display:inline-block;width:3px;height:12px;border-radius:1px;vertical-align:middle;margin-right:5px;';
     const legendItems: string[] = [];
-    legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(38,166,154,0.7);"></span>Accumulation</span>`);
+    legendItems.push(
+      `<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(38,166,154,0.7);"></span>Accumulation</span>`,
+    );
     if (entry.distribution.length > 0) {
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(239,83,80,0.65);"></span>Distribution</span>`);
+      legendItems.push(
+        `<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(239,83,80,0.65);"></span>Distribution</span>`,
+      );
     }
-    const hasAbsorption = entry.zones.some(z => (z.absorptionPct || 0) >= 5);
+    const hasAbsorption = entry.zones.some((z) => (z.absorptionPct || 0) >= 5);
     if (hasAbsorption) {
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(255,167,38,0.7);"></span>Absorption</span>`);
+      legendItems.push(
+        `<span style="white-space:nowrap;"><span style="${swatchStyle}background:rgba(255,167,38,0.7);"></span>Absorption</span>`,
+      );
     }
-    legendItems.push(`<span style="white-space:nowrap;"><span style="${dashStyle}border-color:rgba(38,166,154,0.4);"></span>Zone bounds</span>`);
+    legendItems.push(
+      `<span style="white-space:nowrap;"><span style="${dashStyle}border-color:rgba(38,166,154,0.4);"></span>Zone bounds</span>`,
+    );
     const proxLegend = entry.proximity;
     if (proxLegend && proxLegend.level !== 'none' && proxLegend.compositeScore > 0) {
       const plc = vdfProximityColor(proxLegend.level);
-      legendItems.push(`<span style="white-space:nowrap;"><span style="${glowStyle}background:${plc};box-shadow:0 0 4px ${plc};"></span>Proximity</span>`);
+      legendItems.push(
+        `<span style="white-space:nowrap;"><span style="${glowStyle}background:${plc};box-shadow:0 0 4px ${plc};"></span>Proximity</span>`,
+      );
     }
     const legendHtml = `<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding:8px 12px;background:${c.cardBg};border:1px solid ${c.surfaceElevated};border-radius:4px;margin-bottom:16px;font-size:11px;color:${c.textSecondary};">${legendItems.join('')}</div>`;
 

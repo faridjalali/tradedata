@@ -23,11 +23,16 @@ async function fetchBars(symbol, mult, ts, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c,
-    volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetch1mChunked(symbol, from, to) {
@@ -35,7 +40,8 @@ async function fetch1mChunked(symbol, from, to) {
   let cursor = new Date(from);
   const end = new Date(to);
   while (cursor < end) {
-    const cEnd = new Date(cursor); cEnd.setDate(cEnd.getDate() + 25);
+    const cEnd = new Date(cursor);
+    cEnd.setDate(cEnd.getDate() + 25);
     if (cEnd > end) cEnd.setTime(end.getTime());
     const f = cursor.toISOString().split('T')[0];
     const t = cEnd.toISOString().split('T')[0];
@@ -43,16 +49,21 @@ async function fetch1mChunked(symbol, from, to) {
     const bars = await fetchBars(symbol, 1, 'minute', f, t);
     process.stdout.write(` ${bars.length}\n`);
     all.push(...bars);
-    await new Promise(r => setTimeout(r, 300));
-    cursor = new Date(cEnd); cursor.setDate(cursor.getDate() + 1);
+    await new Promise((r) => setTimeout(r, 300));
+    cursor = new Date(cEnd);
+    cursor.setDate(cursor.getDate() + 1);
   }
   const map = new Map();
   for (const b of all) map.set(b.time, b);
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-function toDate(ts) { return new Date(ts * 1000).toISOString().split('T')[0]; }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function toDate(ts) {
+  return new Date(ts * 1000).toISOString().split('T')[0];
+}
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // =========================================================================
 // CORE ALGORITHM: Volume Delta Accumulation Score
@@ -75,7 +86,7 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
     const d = toDate(b.time);
     if (!dailyMap.has(d)) dailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0, closes: [], highs: [], lows: [] });
     const day = dailyMap.get(d);
-    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
+    const delta = b.close > b.open ? b.volume : b.close < b.open ? -b.volume : 0;
     if (delta > 0) day.buyVol += b.volume;
     else if (delta < 0) day.sellVol += b.volume;
     day.totalVol += b.volume;
@@ -85,7 +96,7 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
   }
 
   const dates = [...dailyMap.keys()].sort();
-  const dailyData = dates.map(d => {
+  const dailyData = dates.map((d) => {
     const day = dailyMap.get(d);
     return {
       date: d,
@@ -109,25 +120,28 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
     const d = toDate(b.time);
     if (!preDailyMap.has(d)) preDailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0 });
     const day = preDailyMap.get(d);
-    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
+    const delta = b.close > b.open ? b.volume : b.close < b.open ? -b.volume : 0;
     if (delta > 0) day.buyVol += b.volume;
     else if (delta < 0) day.sellVol += b.volume;
     day.totalVol += b.volume;
   }
   const preDates = [...preDailyMap.keys()].sort();
-  const preAvgDailyDelta = preDates.length > 0
-    ? preDates.reduce((s, d) => s + (preDailyMap.get(d).buyVol - preDailyMap.get(d).sellVol), 0) / preDates.length
-    : 0;
-  const preAvgDailyVol = preDates.length > 0
-    ? preDates.reduce((s, d) => s + preDailyMap.get(d).totalVol, 0) / preDates.length
-    : 1;
+  const preAvgDailyDelta =
+    preDates.length > 0
+      ? preDates.reduce((s, d) => s + (preDailyMap.get(d).buyVol - preDailyMap.get(d).sellVol), 0) / preDates.length
+      : 0;
+  const preAvgDailyVol =
+    preDates.length > 0 ? preDates.reduce((s, d) => s + preDailyMap.get(d).totalVol, 0) / preDates.length : 1;
 
   // === METRIC 1: Price-Delta Divergence (core metric) ===
   // Measure: price slope vs cumulative delta slope over the consolidation
-  const closes = dailyData.map(d => d.close);
+  const closes = dailyData.map((d) => d.close);
   const cumDeltas = [];
   let cumD = 0;
-  for (const d of dailyData) { cumD += d.delta; cumDeltas.push(cumD); }
+  for (const d of dailyData) {
+    cumD += d.delta;
+    cumDeltas.push(cumD);
+  }
 
   const xs = closes.map((_, i) => i);
   const priceReg = linReg(xs, closes);
@@ -243,7 +257,10 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
 
   // === METRIC 5: Volume Decline ===
   // Declining volume during consolidation is bullish (selling pressure exhausting)
-  const volSlope = linReg(xs, dailyData.map(d => Math.log(Math.max(1, d.totalVol)))).slope;
+  const volSlope = linReg(
+    xs,
+    dailyData.map((d) => Math.log(Math.max(1, d.totalVol))),
+  ).slope;
   const volDeclineScore = volSlope < 0 ? Math.min(1.0, Math.abs(volSlope) / 0.03) : 0;
 
   // === METRIC 6: Price Structure ===
@@ -263,12 +280,12 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
   // Weights reflect importance: divergence is king, accumulation confirms,
   // VD RSI provides additional confirmation, spikes and volume are supporting
   const weights = {
-    divergence: 0.30,
-    accumulation: 0.20,
-    vdRsiDiv: 0.20,
-    spikes: 0.10,
-    volDecline: 0.10,
-    priceStructure: 0.10,
+    divergence: 0.3,
+    accumulation: 0.2,
+    vdRsiDiv: 0.2,
+    spikes: 0.1,
+    volDecline: 0.1,
+    priceStructure: 0.1,
   };
 
   const composite =
@@ -294,40 +311,55 @@ function computeAccumulationDivergence(consolBars1m, preContextBars1m) {
       nDays: dailyData.length,
       priceStart: closes[0],
       priceEnd: closes[closes.length - 1],
-    }
+    },
   };
 }
 
 function computeRSI(values, period = 14) {
   const rsi = new Array(values.length).fill(NaN);
   if (values.length < period + 1) return rsi;
-  let avgGain = 0, avgLoss = 0;
+  let avgGain = 0,
+    avgLoss = 0;
   for (let i = 1; i <= period; i++) {
     const ch = values[i] - values[i - 1];
-    if (ch > 0) avgGain += ch; else avgLoss -= ch;
+    if (ch > 0) avgGain += ch;
+    else avgLoss -= ch;
   }
-  avgGain /= period; avgLoss /= period;
-  rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  avgGain /= period;
+  avgLoss /= period;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
   for (let i = period + 1; i < values.length; i++) {
     const ch = values[i] - values[i - 1];
     avgGain = (avgGain * (period - 1) + (ch > 0 ? ch : 0)) / period;
     avgLoss = (avgLoss * (period - 1) + (ch < 0 ? -ch : 0)) / period;
-    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
   }
   return rsi;
 }
 
 function linReg(xs, ys) {
   const n = xs.length;
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] ** 2; sxy += xs[i] * ys[i]; }
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += xs[i];
+    sy += ys[i];
+    sxx += xs[i] ** 2;
+    sxy += xs[i] * ys[i];
+  }
   const d = n * sxx - sx * sx;
   if (d === 0) return { slope: 0, r2: 0 };
   const slope = (n * sxy - sx * sy) / d;
   const yMean = sy / n;
   const intercept = (sy - slope * sx) / n;
-  let ssTot = 0, ssRes = 0;
-  for (let i = 0; i < n; i++) { ssTot += (ys[i] - yMean) ** 2; ssRes += (ys[i] - intercept - slope * xs[i]) ** 2; }
+  let ssTot = 0,
+    ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    ssTot += (ys[i] - yMean) ** 2;
+    ssRes += (ys[i] - intercept - slope * xs[i]) ** 2;
+  }
   return { slope, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0 };
 }
 
@@ -337,14 +369,49 @@ function linReg(xs, ys) {
 
 const TEST_CASES = [
   // POSITIVE: Known accumulation periods that preceded breakouts
-  { symbol: 'RKLB', from: '2025-02-26', to: '2025-04-07', preFrom: '2025-01-26', expected: true, label: 'RKLB Feb-Apr 2025 (user-identified accumulation)' },
-  { symbol: 'ASTS', from: '2024-09-20', to: '2024-11-07', preFrom: '2024-08-20', expected: true, label: 'ASTS Sep-Nov 2024 (VD RSI divergence confirmed earlier)' },
-  { symbol: 'ASTS', from: '2024-11-07', to: '2025-01-31', preFrom: '2024-10-07', expected: true, label: 'ASTS Nov 2024-Jan 2025 (key episode)' },
-  { symbol: 'RKLB', from: '2024-12-01', to: '2025-01-21', preFrom: '2024-11-01', expected: true, label: 'RKLB Dec 2024-Jan 2025 consolidation' },
+  {
+    symbol: 'RKLB',
+    from: '2025-02-26',
+    to: '2025-04-07',
+    preFrom: '2025-01-26',
+    expected: true,
+    label: 'RKLB Feb-Apr 2025 (user-identified accumulation)',
+  },
+  {
+    symbol: 'ASTS',
+    from: '2024-09-20',
+    to: '2024-11-07',
+    preFrom: '2024-08-20',
+    expected: true,
+    label: 'ASTS Sep-Nov 2024 (VD RSI divergence confirmed earlier)',
+  },
+  {
+    symbol: 'ASTS',
+    from: '2024-11-07',
+    to: '2025-01-31',
+    preFrom: '2024-10-07',
+    expected: true,
+    label: 'ASTS Nov 2024-Jan 2025 (key episode)',
+  },
+  {
+    symbol: 'RKLB',
+    from: '2024-12-01',
+    to: '2025-01-21',
+    preFrom: '2024-11-01',
+    expected: true,
+    label: 'RKLB Dec 2024-Jan 2025 consolidation',
+  },
 
   // NEGATIVE examples: price declines where no breakout followed (or decline continued)
   // We'll also test some "random" consolidation that didn't work
-  { symbol: 'RKLB', from: '2026-01-16', to: '2026-02-14', preFrom: '2025-12-16', expected: false, label: 'RKLB Jan-Feb 2026 (current — unknown outcome, declining)' },
+  {
+    symbol: 'RKLB',
+    from: '2026-01-16',
+    to: '2026-02-14',
+    preFrom: '2025-12-16',
+    expected: false,
+    label: 'RKLB Jan-Feb 2026 (current — unknown outcome, declining)',
+  },
 ];
 
 // =========================================================================
@@ -370,14 +437,16 @@ async function main() {
       const consolEnd = new Date(tc.to + 'T23:59:59Z').getTime() / 1000;
       const preEnd = consolStart - 1;
 
-      const preContextBars = bars1m.filter(b => b.time < consolStart);
-      const consolBars = bars1m.filter(b => b.time >= consolStart && b.time <= consolEnd);
+      const preContextBars = bars1m.filter((b) => b.time < consolStart);
+      const consolBars = bars1m.filter((b) => b.time >= consolStart && b.time <= consolEnd);
 
       console.log(`\n  Pre-context: ${preContextBars.length} 1m bars`);
       console.log(`  Consolidation: ${consolBars.length} 1m bars`);
 
       if (consolBars.length > 0) {
-        console.log(`  Price: $${consolBars[0].close.toFixed(2)} → $${consolBars[consolBars.length - 1].close.toFixed(2)}`);
+        console.log(
+          `  Price: $${consolBars[0].close.toFixed(2)} → $${consolBars[consolBars.length - 1].close.toFixed(2)}`,
+        );
       }
 
       const result = computeAccumulationDivergence(consolBars, preContextBars);
@@ -406,7 +475,7 @@ async function main() {
         console.log(`\n      WEIGHTED COMPOSITE: ${d.composite.toFixed(4)}`);
       }
 
-      const correct = (result.detected === tc.expected) || tc.label.includes('unknown');
+      const correct = result.detected === tc.expected || tc.label.includes('unknown');
       console.log(`\n    Match expected: ${correct ? '✅' : '⚠️ MISMATCH'}`);
 
       results.push({
@@ -417,7 +486,6 @@ async function main() {
         correct,
         details: result.details,
       });
-
     } catch (err) {
       console.error(`  ERROR: ${err.message}`);
     }
@@ -431,11 +499,15 @@ async function main() {
   console.log(`${'Label'.padEnd(55)} ${'Expected'.padEnd(10)} ${'Detected'.padEnd(10)} ${'Score'.padEnd(8)} Match`);
   console.log(`${'─'.repeat(95)}`);
   for (const r of results) {
-    console.log(`${r.label.slice(0, 54).padEnd(55)} ${(r.expected ? 'YES' : 'NO').padEnd(10)} ${(r.detected ? 'YES' : 'NO').padEnd(10)} ${r.score.toFixed(4).padEnd(8)} ${r.correct ? '✅' : '⚠️'}`);
+    console.log(
+      `${r.label.slice(0, 54).padEnd(55)} ${(r.expected ? 'YES' : 'NO').padEnd(10)} ${(r.detected ? 'YES' : 'NO').padEnd(10)} ${r.score.toFixed(4).padEnd(8)} ${r.correct ? '✅' : '⚠️'}`,
+    );
   }
 
-  const accuracy = results.filter(r => r.correct).length / results.length;
-  console.log(`\nAccuracy: ${results.filter(r => r.correct).length}/${results.length} (${(accuracy * 100).toFixed(0)}%)`);
+  const accuracy = results.filter((r) => r.correct).length / results.length;
+  console.log(
+    `\nAccuracy: ${results.filter((r) => r.correct).length}/${results.length} (${(accuracy * 100).toFixed(0)}%)`,
+  );
 
   // === ALGORITHM SPECIFICATION ===
   console.log(`\n\n${'═'.repeat(80)}`);
@@ -486,4 +558,7 @@ THRESHOLD: composite >= 0.35 → detected
   console.log('Done.');
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

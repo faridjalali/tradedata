@@ -18,7 +18,11 @@ export function normalizePersistedTrendlines(lines: unknown): RSIPersistedTrendl
     const time2 = candidate.time2;
     const value1 = Number(candidate.value1);
     const value2 = Number(candidate.value2);
-    if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
+    if (
+      (typeof time1 !== 'string' && typeof time1 !== 'number') ||
+      (typeof time2 !== 'string' && typeof time2 !== 'number')
+    )
+      continue;
     if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
     out.push({ time1, value1, time2, value2 });
   }
@@ -39,7 +43,7 @@ export function loadTrendlineStorage(): Record<string, PersistedTrendlineBundle>
     for (const [key, bundle] of Object.entries(parsed || {})) {
       normalized[key] = {
         rsi: normalizePersistedTrendlines(bundle?.rsi),
-        volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
+        volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi),
       };
     }
     return normalized;
@@ -62,6 +66,6 @@ export function loadPersistedTrendlinesForContext(ticker: string, interval: Char
   const bundle = storage[buildTrendlineContextKey(ticker, interval)];
   return {
     rsi: normalizePersistedTrendlines(bundle?.rsi),
-    volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi)
+    volumeDeltaRsi: normalizePersistedTrendlines(bundle?.volumeDeltaRsi),
   };
 }

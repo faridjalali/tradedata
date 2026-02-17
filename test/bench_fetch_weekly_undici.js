@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 
-const mode = String(process.argv[2] || 'baseline').trim().toLowerCase();
+const mode = String(process.argv[2] || 'baseline')
+  .trim()
+  .toLowerCase();
 const tickerLimit = Math.max(1, Number(process.argv[3]) || 80);
 const workerCount = Math.max(1, Number(process.argv[4]) || 16);
 const sourceInterval = String(process.argv[5] || process.env.BENCH_SOURCE_INTERVAL || '1min').trim();
@@ -10,24 +12,30 @@ const lookbackDays = Math.max(28, Number(process.argv[6]) || 35);
 import { setGlobalDispatcher, Agent } from 'undici';
 
 if (mode === 'undici') {
-  setGlobalDispatcher(new Agent({
-    keepAliveTimeout: 10000,
-    keepAliveMaxTimeout: 10000,
-    pipelining: 0,
-    connect: { timeout: 10000 }
-  }));
+  setGlobalDispatcher(
+    new Agent({
+      keepAliveTimeout: 10000,
+      keepAliveMaxTimeout: 10000,
+      pipelining: 0,
+      connect: { timeout: 10000 },
+    }),
+  );
 } else if (mode === 'undici-app') {
-  setGlobalDispatcher(new Agent({
-    keepAliveTimeout: 10000,
-    keepAliveMaxTimeout: 10000,
-    connect: { timeout: 10000 }
-  }));
+  setGlobalDispatcher(
+    new Agent({
+      keepAliveTimeout: 10000,
+      keepAliveMaxTimeout: 10000,
+      connect: { timeout: 10000 },
+    }),
+  );
 } else if (mode === 'undici-previous') {
-  setGlobalDispatcher(new Agent({
-    keepAliveTimeout: 15000,
-    keepAliveMaxTimeout: 30000,
-    connect: { timeout: 15000 }
-  }));
+  setGlobalDispatcher(
+    new Agent({
+      keepAliveTimeout: 15000,
+      keepAliveMaxTimeout: 30000,
+      connect: { timeout: 15000 },
+    }),
+  );
 } else if (mode !== 'baseline') {
   console.error(`Unknown mode: ${mode}`);
   process.exit(2);
@@ -44,14 +52,86 @@ const DATA_API_TIMEOUT_MS = Math.max(1000, Number(process.env.BENCH_TIMEOUT_MS) 
 const MAX_RPS = Math.max(1, Number(process.env.BENCH_MAX_RPS) || 95);
 
 const TICKERS = [
-  'AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA','BRK.B','JPM','V',
-  'LLY','WMT','XOM','UNH','MA','PG','HD','COST','ABBV','MRK',
-  'AVGO','PEP','KO','ADBE','BAC','NFLX','ORCL','CSCO','TMO','CRM',
-  'ACN','MCD','DIS','ABT','LIN','DHR','CMCSA','INTC','VZ','WFC',
-  'AMD','TXN','QCOM','AMGN','PFE','PM','LOW','RTX','INTU','CAT',
-  'UPS','HON','NKE','SPGI','UNP','MS','GS','BLK','SBUX','SCHW',
-  'PLD','AXP','DE','GE','ISRG','SYK','BKNG','LMT','NOW','GILD',
-  'MU','MDT','ADP','CB','MMM','CI','SO','CVX','BA','T'
+  'AAPL',
+  'MSFT',
+  'NVDA',
+  'AMZN',
+  'GOOGL',
+  'META',
+  'TSLA',
+  'BRK.B',
+  'JPM',
+  'V',
+  'LLY',
+  'WMT',
+  'XOM',
+  'UNH',
+  'MA',
+  'PG',
+  'HD',
+  'COST',
+  'ABBV',
+  'MRK',
+  'AVGO',
+  'PEP',
+  'KO',
+  'ADBE',
+  'BAC',
+  'NFLX',
+  'ORCL',
+  'CSCO',
+  'TMO',
+  'CRM',
+  'ACN',
+  'MCD',
+  'DIS',
+  'ABT',
+  'LIN',
+  'DHR',
+  'CMCSA',
+  'INTC',
+  'VZ',
+  'WFC',
+  'AMD',
+  'TXN',
+  'QCOM',
+  'AMGN',
+  'PFE',
+  'PM',
+  'LOW',
+  'RTX',
+  'INTU',
+  'CAT',
+  'UPS',
+  'HON',
+  'NKE',
+  'SPGI',
+  'UNP',
+  'MS',
+  'GS',
+  'BLK',
+  'SBUX',
+  'SCHW',
+  'PLD',
+  'AXP',
+  'DE',
+  'GE',
+  'ISRG',
+  'SYK',
+  'BKNG',
+  'LMT',
+  'NOW',
+  'GILD',
+  'MU',
+  'MDT',
+  'ADP',
+  'CB',
+  'MMM',
+  'CI',
+  'SO',
+  'CVX',
+  'BA',
+  'T',
 ].slice(0, tickerLimit);
 
 let rateTokens = MAX_RPS;
@@ -105,7 +185,9 @@ function buildUrl(path, params = {}) {
 }
 
 function normalizeInterval(interval) {
-  const key = String(interval || '').trim().toLowerCase();
+  const key = String(interval || '')
+    .trim()
+    .toLowerCase();
   const map = {
     '1min': { multiplier: 1, timespan: 'minute' },
     '5min': { multiplier: 5, timespan: 'minute' },
@@ -114,7 +196,7 @@ function normalizeInterval(interval) {
     '1hour': { multiplier: 1, timespan: 'hour' },
     '4hour': { multiplier: 4, timespan: 'hour' },
     '1day': { multiplier: 1, timespan: 'day' },
-    '1week': { multiplier: 1, timespan: 'week' }
+    '1week': { multiplier: 1, timespan: 'week' },
   };
   return map[key] || map['1day'];
 }
@@ -125,7 +207,7 @@ function buildAggregateRangeUrl(symbol, interval, from, to) {
   return buildUrl(path, {
     adjusted: 'true',
     sort: 'asc',
-    limit: '50000'
+    limit: '50000',
   });
 }
 
@@ -206,7 +288,11 @@ async function fetchJson(url) {
     if (String(err?.name || '') === 'AbortError') {
       apiErrors += 1;
       recordStatus('ABORT');
-    } else if (!/^HTTP_/.test(String(err?.message || '')) && String(err?.message || '') !== 'PARSE_ERR' && String(err?.message || '') !== 'API_ERR') {
+    } else if (
+      !/^HTTP_/.test(String(err?.message || '')) &&
+      String(err?.message || '') !== 'PARSE_ERR' &&
+      String(err?.message || '') !== 'API_ERR'
+    ) {
       apiErrors += 1;
       recordStatus('FETCH_ERR');
     }
@@ -227,7 +313,7 @@ async function fetchHistoryRows(ticker, interval, days) {
   const chunkDaysByInterval = {
     '1min': 30,
     '5min': 150,
-    '15min': 150
+    '15min': 150,
   };
   const chunkDays = chunkDaysByInterval[String(interval || '').trim()] || 0;
 
@@ -246,7 +332,7 @@ async function fetchHistoryRows(ticker, interval, days) {
   }
 
   const payloads = await Promise.all(
-    ranges.map(([rFrom, rTo]) => fetchJson(buildAggregateRangeUrl(ticker, interval, rFrom, rTo)))
+    ranges.map(([rFrom, rTo]) => fetchJson(buildAggregateRangeUrl(ticker, interval, rFrom, rTo))),
   );
 
   const out = [];
@@ -262,7 +348,7 @@ function buildIndicatorUrl(ticker, type, windowLength) {
     window: String(windowLength),
     series_type: 'close',
     order: 'desc',
-    limit: '1'
+    limit: '1',
   });
 }
 
@@ -272,7 +358,7 @@ async function processTicker(ticker) {
     const [sourceRows, dailyRows, weeklyRows] = await Promise.all([
       fetchHistoryRows(ticker, sourceInterval, lookbackDays),
       fetchHistoryRows(ticker, '1day', lookbackDays),
-      fetchHistoryRows(ticker, '1week', lookbackDays)
+      fetchHistoryRows(ticker, '1week', lookbackDays),
     ]);
 
     if (sourceRows.length === 0 || dailyRows.length === 0 || weeklyRows.length === 0) {
@@ -285,7 +371,7 @@ async function processTicker(ticker) {
         fetchJson(buildIndicatorUrl(ticker, 'ema', 8)),
         fetchJson(buildIndicatorUrl(ticker, 'ema', 21)),
         fetchJson(buildIndicatorUrl(ticker, 'sma', 50)),
-        fetchJson(buildIndicatorUrl(ticker, 'sma', 200))
+        fetchJson(buildIndicatorUrl(ticker, 'sma', 200)),
       ]);
     }
   } catch {
@@ -313,7 +399,9 @@ async function main() {
 
   const elapsedMs = Number(process.hrtime.bigint() - startedAll) / 1e6;
   const avgCall = latenciesMs.length ? latenciesMs.reduce((a, b) => a + b, 0) / latenciesMs.length : 0;
-  const avgTicker = tickerDurationsMs.length ? tickerDurationsMs.reduce((a, b) => a + b, 0) / tickerDurationsMs.length : 0;
+  const avgTicker = tickerDurationsMs.length
+    ? tickerDurationsMs.reduce((a, b) => a + b, 0) / tickerDurationsMs.length
+    : 0;
 
   const result = {
     mode,
@@ -336,7 +424,9 @@ async function main() {
     tickerP50Ms: Number(percentile(tickerDurationsMs, 0.5).toFixed(2)),
     tickerP95Ms: Number(percentile(tickerDurationsMs, 0.95).toFixed(2)),
     tickerP99Ms: Number(percentile(tickerDurationsMs, 0.99).toFixed(2)),
-    statusCounts: Object.fromEntries([...statusCounts.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
+    statusCounts: Object.fromEntries(
+      [...statusCounts.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    ),
   };
 
   console.log(JSON.stringify(result));

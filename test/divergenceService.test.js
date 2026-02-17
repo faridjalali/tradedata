@@ -1,10 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  buildManualScanRequest,
-  fetchLatestDivergenceScanStatus
-} from '../server/services/divergenceService.js';
+import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../server/services/divergenceService.js';
 
 function defaultBooleanParser(value, fallback = false) {
   if (value === true || value === 'true') return true;
@@ -16,17 +13,17 @@ test('buildManualScanRequest returns parsed booleans and optional date', () => {
   const result = buildManualScanRequest({
     req: {
       query: { force: 'true', refreshUniverse: 'false' },
-      body: { refreshUniverse: true, runDateEt: '2026-02-11' }
+      body: { refreshUniverse: true, runDateEt: '2026-02-11' },
     },
     parseBooleanInput: defaultBooleanParser,
-    parseEtDateInput: (value) => value
+    parseEtDateInput: (value) => value,
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.value, {
     force: true,
     refreshUniverse: true,
-    runDateEt: '2026-02-11'
+    runDateEt: '2026-02-11',
   });
 });
 
@@ -34,10 +31,10 @@ test('buildManualScanRequest returns validation error for invalid runDateEt', ()
   const result = buildManualScanRequest({
     req: {
       query: {},
-      body: { runDateEt: 'bad-date' }
+      body: { runDateEt: 'bad-date' },
     },
     parseBooleanInput: defaultBooleanParser,
-    parseEtDateInput: () => null
+    parseEtDateInput: () => null,
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'runDateEt must be YYYY-MM-DD');
@@ -54,12 +51,12 @@ test('fetchLatestDivergenceScanStatus returns fallback scanned trade date and ru
           return { rows: [{ scanned_trade_date: '2026-02-11' }] };
         }
         throw new Error('unexpected query');
-      }
+      },
     },
     divergenceSourceInterval: '5min',
     getIsScanRunning: () => true,
     getLastFetchedTradeDateEt: () => '',
-    getLastScanDateEt: () => '2026-02-10'
+    getLastScanDateEt: () => '2026-02-10',
   });
 
   assert.equal(status.running, true);
@@ -71,12 +68,12 @@ test('fetchLatestDivergenceScanStatus returns fallback scanned trade date and ru
 test('fetchLatestDivergenceScanStatus prefers in-memory last fetched date when available', async () => {
   const status = await fetchLatestDivergenceScanStatus({
     divergencePool: {
-      query: async () => ({ rows: [{ id: 6, scanned_trade_date: '2026-02-09' }] })
+      query: async () => ({ rows: [{ id: 6, scanned_trade_date: '2026-02-09' }] }),
     },
     divergenceSourceInterval: '5min',
     getIsScanRunning: () => false,
     getLastFetchedTradeDateEt: () => '2026-02-12',
-    getLastScanDateEt: () => '2026-02-10'
+    getLastScanDateEt: () => '2026-02-10',
   });
 
   assert.equal(status.running, false);

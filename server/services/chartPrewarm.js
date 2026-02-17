@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Chart pre-warming service.
  *
@@ -14,7 +15,7 @@
 
 const PREWARM_SEQUENCES = {
   '4hour': ['1day', '1week'],
-  '1day':  ['4hour', '1week'],
+  '1day': ['4hour', '1week'],
   '1week': ['1day', '4hour'],
 };
 
@@ -53,21 +54,36 @@ async function prewarmChartResult(options = {}, deps = {}) {
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays(interval)));
 
   const requestKey = buildChartRequestKey({
-    ticker, interval, vdRsiLength, vdSourceInterval, vdRsiSourceInterval, lookbackDays,
+    ticker,
+    interval,
+    vdRsiLength,
+    vdSourceInterval,
+    vdRsiSourceInterval,
+    lookbackDays,
   });
 
   if (getTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey)) return;
 
   const inFlight = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
   if (inFlight) {
-    try { await inFlight; } catch { /* best-effort */ }
+    try {
+      await inFlight;
+    } catch {
+      /* best-effort */
+    }
     return;
   }
 
   try {
     await getOrBuildChartResult({
-      ticker, interval, vdRsiLength, vdSourceInterval, vdRsiSourceInterval,
-      lookbackDays, requestKey, skipFollowUpPrewarm: true,
+      ticker,
+      interval,
+      vdRsiLength,
+      vdSourceInterval,
+      vdRsiSourceInterval,
+      lookbackDays,
+      requestKey,
+      skipFollowUpPrewarm: true,
     });
   } catch (err) {
     if (CHART_TIMING_LOG_ENABLED) {
@@ -82,10 +98,7 @@ async function prewarmChartResult(options = {}, deps = {}) {
  * Each target is built sequentially to avoid resource spikes.
  */
 function schedulePostLoadPrewarmSequence(options = {}, deps = {}) {
-  const {
-    toVolumeDeltaSourceInterval,
-    getIntradayLookbackDays,
-  } = deps;
+  const { toVolumeDeltaSourceInterval, getIntradayLookbackDays } = deps;
 
   const ticker = String(options.ticker || '').toUpperCase();
   const interval = String(options.interval || '').trim();
@@ -101,10 +114,17 @@ function schedulePostLoadPrewarmSequence(options = {}, deps = {}) {
 
   void (async () => {
     for (const targetInterval of sequence) {
-      await prewarmChartResult({
-        ticker, interval: targetInterval,
-        vdRsiLength, vdSourceInterval, vdRsiSourceInterval, lookbackDays,
-      }, deps);
+      await prewarmChartResult(
+        {
+          ticker,
+          interval: targetInterval,
+          vdRsiLength,
+          vdSourceInterval,
+          vdRsiSourceInterval,
+          lookbackDays,
+        },
+        deps,
+      );
     }
   })();
 }

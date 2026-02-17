@@ -5,7 +5,7 @@
  * findDistributionClusters, and evaluateProximitySignals with updated algorithm.
  * Saves results in same format as analysis-vdf-full-year-results.json.
  */
-"use strict";
+'use strict';
 
 const {
   findAccumulationZones,
@@ -30,7 +30,7 @@ for (const ticker of tickers) {
 
   // Reconstruct daily data in the format the algorithm expects
   const rawDaily = b.dailyData;
-  const allDaily = rawDaily.map(d => {
+  const allDaily = rawDaily.map((d) => {
     const totalVol = d.vol || 0;
     const delta = d.delta || 0;
     // Reconstruct buyVol and sellVol from delta and totalVol
@@ -47,7 +47,7 @@ for (const ticker of tickers) {
       close: d.close,
       open: d.close * (1 - (d.priceChg || 0) / 100), // approximate open from priceChg
       high: d.close, // approximate (not used in scoring)
-      low: d.close,  // approximate (not used in scoring)
+      low: d.close, // approximate (not used in scoring)
     };
   });
 
@@ -67,7 +67,7 @@ for (const ticker of tickers) {
   const zones = findAccumulationZones(scanDaily, preDaily, 5);
   const distResult = findDistributionClusters(scanDaily);
   const distribution = distResult.distClusters || distResult || [];
-  const proximity = zones.some(z => z.score >= 0.50)
+  const proximity = zones.some((z) => z.score >= 0.5)
     ? evaluateProximitySignals(scanDaily, zones)
     : { compositeScore: 0, level: 'none', signals: [] };
 
@@ -88,18 +88,20 @@ for (const ticker of tickers) {
         concordancePenalty: +(z.concordancePenalty || 1).toFixed(3),
         durationMultiplier: +(z.durationMultiplier || 1).toFixed(3),
         accumWeeks: z.accumWeeks || 'n/a',
-        components: z.components ? {
-          s1_netDelta: +(z.components.s1 || 0).toFixed(3),
-          s2_deltaSlope: +(z.components.s2 || 0).toFixed(3),
-          s3_deltaShift: +(z.components.s3 || 0).toFixed(3),
-          s4_accumRatio: +(z.components.s4 || 0).toFixed(3),
-          s5_buyVsSell: +(z.components.s5 || 0).toFixed(3),
-          s6_absorption: +(z.components.s6 || 0).toFixed(3),
-          s7_volDecline: +(z.components.s7 || 0).toFixed(3),
-          s8_divergence: +(z.components.s8 || 0).toFixed(3),
-        } : null,
+        components: z.components
+          ? {
+              s1_netDelta: +(z.components.s1 || 0).toFixed(3),
+              s2_deltaSlope: +(z.components.s2 || 0).toFixed(3),
+              s3_deltaShift: +(z.components.s3 || 0).toFixed(3),
+              s4_accumRatio: +(z.components.s4 || 0).toFixed(3),
+              s5_buyVsSell: +(z.components.s5 || 0).toFixed(3),
+              s6_absorption: +(z.components.s6 || 0).toFixed(3),
+              s7_volDecline: +(z.components.s7 || 0).toFixed(3),
+              s8_divergence: +(z.components.s8 || 0).toFixed(3),
+            }
+          : null,
       })),
-      distribution: distribution.map(d => ({
+      distribution: distribution.map((d) => ({
         startDate: d.startDate,
         endDate: d.endDate,
         spanDays: d.spanDays,
@@ -116,7 +118,9 @@ for (const ticker of tickers) {
     dailyData: rawDaily,
   };
 
-  console.log(`  → ${zones.length} zones, best=${zones.length > 0 ? zones[0].score.toFixed(3) : 'none'}, prox=${proximity.compositeScore}(${proximity.level}), dist=${distribution.length}`);
+  console.log(
+    `  → ${zones.length} zones, best=${zones.length > 0 ? zones[0].score.toFixed(3) : 'none'}, prox=${proximity.compositeScore}(${proximity.level}), dist=${distribution.length}`,
+  );
 }
 
 fs.writeFileSync('./analysis-vdf-full-year-results.json', JSON.stringify(results, null, 2));

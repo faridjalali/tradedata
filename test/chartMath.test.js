@@ -6,7 +6,7 @@ import {
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,
   aggregateDailyDivergenceToWeekly,
-  isoWeekKeyFromEtUnixSeconds
+  isoWeekKeyFromEtUnixSeconds,
 } from '../server/chartMath.js';
 
 function unixSeconds(iso) {
@@ -18,7 +18,7 @@ test('aggregate4HourBarsToDaily aggregates OHLCV by LA day', () => {
     { time: unixSeconds('2026-01-07T16:00:00Z'), open: 103, high: 105, low: 100, close: 101, volume: 12 },
     { time: unixSeconds('2026-01-06T15:00:00Z'), open: 100, high: 103, low: 99, close: 102, volume: 10 },
     { time: unixSeconds('2026-01-07T22:00:00Z'), open: 101, high: 106, low: 99, close: 104, volume: 9 },
-    { time: unixSeconds('2026-01-06T23:00:00Z'), open: 102, high: 104, low: 101, close: 103, volume: 8 }
+    { time: unixSeconds('2026-01-06T23:00:00Z'), open: 102, high: 104, low: 101, close: 103, volume: 8 },
   ];
 
   const daily = aggregate4HourBarsToDaily(bars);
@@ -44,7 +44,7 @@ test('aggregateDailyBarsToWeekly aggregates OHLCV by LA week (Mon-Sun)', () => {
     { time: unixSeconds('2026-01-08T20:00:00Z'), open: 11, high: 13, low: 10, close: 12, volume: 120 },
     { time: unixSeconds('2026-01-09T20:00:00Z'), open: 12, high: 14, low: 11, close: 13, volume: 130 },
     { time: unixSeconds('2026-01-12T20:00:00Z'), open: 13, high: 14, low: 12, close: 12, volume: 90 },
-    { time: unixSeconds('2026-01-13T20:00:00Z'), open: 12, high: 15, low: 11, close: 14, volume: 95 }
+    { time: unixSeconds('2026-01-13T20:00:00Z'), open: 12, high: 15, low: 11, close: 14, volume: 95 },
   ];
 
   const weekly = aggregateDailyBarsToWeekly(dailyBars);
@@ -75,13 +75,13 @@ test('aggregateDailyDivergenceToWeekly sums deltas by ET ISO week', () => {
     { time: unixSeconds('2026-01-05T20:00:00Z'), open: 10, high: 11, low: 9, close: 10 },
     { time: unixSeconds('2026-01-06T20:00:00Z'), open: 10, high: 12, low: 10, close: 11 },
     { time: unixSeconds('2026-01-12T20:00:00Z'), open: 11, high: 13, low: 10, close: 12 },
-    { time: unixSeconds('2026-01-13T20:00:00Z'), open: 12, high: 14, low: 11, close: 13 }
+    { time: unixSeconds('2026-01-13T20:00:00Z'), open: 12, high: 14, low: 11, close: 13 },
   ];
   const dailyDeltas = [
     { time: dailyBars[0].time, delta: 100 },
     { time: dailyBars[1].time, delta: -30 },
     { time: dailyBars[2].time, delta: 40 },
-    { time: dailyBars[3].time, delta: 60 }
+    { time: dailyBars[3].time, delta: 60 },
   ];
 
   const weekly = aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas);

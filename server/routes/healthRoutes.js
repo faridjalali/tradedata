@@ -7,14 +7,8 @@
  * @param {Function} options.getHealthPayload - Returns health check object
  * @param {Function} options.getReadyPayload - Returns readiness check (async)
  */
-function registerHealthRoutes(options = {}) {
-  const {
-    app,
-    debugMetricsSecret,
-    getDebugMetricsPayload,
-    getHealthPayload,
-    getReadyPayload
-  } = options;
+function registerHealthRoutes(options) {
+  const { app, debugMetricsSecret, getDebugMetricsPayload, getHealthPayload, getReadyPayload } = options;
 
   if (!app) {
     throw new Error('registerHealthRoutes requires app');
@@ -37,12 +31,12 @@ function registerHealthRoutes(options = {}) {
     try {
       const readyPayload = await getReadyPayload();
       return res.status(readyPayload.statusCode).json(readyPayload.body);
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       const message = err && err.message ? err.message : String(err);
-      console.error(`Ready check failed: ${message}`);
+      /** @type {any} */ (console).error(`Ready check failed: ${message}`);
       return res.status(503).json({
         ready: false,
-        error: 'Ready check failed'
+        error: 'Ready check failed',
       });
     }
   });

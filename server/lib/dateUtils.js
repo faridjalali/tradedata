@@ -26,7 +26,7 @@ function etDateStringFromUnixSeconds(unixSeconds) {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
 }
 
@@ -40,7 +40,7 @@ function currentEtDateString(nowUtc = new Date()) {
     timeZone: 'America/New_York',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
 }
 
@@ -83,7 +83,7 @@ function parseDateKeyToUtcMs(dateKey) {
 function dateKeyDaysAgo(dateKey, days) {
   const baseMs = parseDateKeyToUtcMs(dateKey);
   if (!Number.isFinite(baseMs)) return '';
-  const shifted = new Date(baseMs - (Math.max(0, Number(days) || 0) * 24 * 60 * 60 * 1000));
+  const shifted = new Date(baseMs - Math.max(0, Number(days) || 0) * 24 * 60 * 60 * 1000);
   return shifted.toISOString().slice(0, 10);
 }
 
@@ -98,10 +98,14 @@ function dateKeyDaysAgo(dateKey, days) {
  */
 function easternLocalToUtcMs(year, month, day, hour, minute) {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const etOffset = probe.toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    timeZoneName: 'short'
-  }).includes('EST') ? -5 : -4;
+  const etOffset = probe
+    .toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    })
+    .includes('EST')
+    ? -5
+    : -4;
   return Date.UTC(year, month - 1, day, hour - etOffset, minute, 0);
 }
 
@@ -116,10 +120,14 @@ function easternLocalToUtcMs(year, month, day, hour, minute) {
  */
 function pacificLocalToUtcMs(year, month, day, hour, minute) {
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const ptOffset = probe.toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
-    timeZoneName: 'short'
-  }).includes('PST') ? -8 : -7;
+  const ptOffset = probe
+    .toLocaleString('en-US', {
+      timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short',
+    })
+    .includes('PST')
+    ? -8
+    : -7;
   return Date.UTC(year, month - 1, day, hour - ptOffset, minute, 0);
 }
 
@@ -134,7 +142,7 @@ function pacificDateStringFromUnixSeconds(unixSeconds) {
     timeZone: 'America/Los_Angeles',
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
   });
 }
 
@@ -163,14 +171,22 @@ function pacificDateTimeParts(nowUtc = new Date()) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    weekday: 'short'
+    weekday: 'short',
   }).formatToParts(nowUtc);
+  /** @type {Record<string, string>} */
   const map = {};
   for (const part of parts) {
     map[part.type] = part.value;
   }
+  /** @type {Record<string, number>} */
   const weekdayMap = {
-    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
   };
   return {
     year: Number(map.year || 0),
@@ -178,7 +194,7 @@ function pacificDateTimeParts(nowUtc = new Date()) {
     day: Number(map.day || 0),
     hour: Number(map.hour || 0),
     minute: Number(map.minute || 0),
-    weekday: Number(weekdayMap[map.weekday] ?? NaN)
+    weekday: Number(weekdayMap[map.weekday] ?? NaN),
   };
 }
 

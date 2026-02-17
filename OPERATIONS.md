@@ -3,6 +3,7 @@
 ## Health Endpoints
 
 ### `GET /healthz`
+
 Purpose: liveness check (process is running).
 
 Expected response (`200`):
@@ -17,10 +18,12 @@ Expected response (`200`):
 ```
 
 Notes:
+
 - This does not verify database connectivity.
 - Returns `200` while app process is alive.
 
 ### `GET /readyz`
+
 Purpose: readiness check (safe to receive traffic).
 
 Expected response (`200` when ready, `503` when not ready):
@@ -42,6 +45,7 @@ Expected response (`200` when ready, `503` when not ready):
 ```
 
 Readiness criteria:
+
 - `shuttingDown === false`
 - `primaryDb === true`
 
@@ -56,19 +60,23 @@ Recommended settings:
 5. Restart policy: `ON_FAILURE`
 
 Optional fallback:
+
 - Use `/healthz` only if you want pure process liveness and do not want DB readiness gating.
 
 ## Environment Requirements
 
 Required at startup:
+
 - `DATABASE_URL`
 
 Recommended:
+
 - `DATA_API_KEY`
 - `DIVERGENCE_DATABASE_URL` (if using Divergence features)
 - `DIVERGENCE_SCAN_SECRET`
 
 If `BASIC_AUTH_ENABLED=true`:
+
 - `BASIC_AUTH_PASSWORD` must be set.
 
 ## Graceful Shutdown Behavior

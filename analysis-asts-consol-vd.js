@@ -18,11 +18,16 @@ async function fetchBars(symbol, multiplier, timespan, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c,
-    volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetch1mChunked(symbol, from, to) {
@@ -30,7 +35,8 @@ async function fetch1mChunked(symbol, from, to) {
   let cursor = new Date(from);
   const end = new Date(to);
   while (cursor < end) {
-    const cEnd = new Date(cursor); cEnd.setDate(cEnd.getDate() + 25);
+    const cEnd = new Date(cursor);
+    cEnd.setDate(cEnd.getDate() + 25);
     if (cEnd > end) cEnd.setTime(end.getTime());
     const f = cursor.toISOString().split('T')[0];
     const t = cEnd.toISOString().split('T')[0];
@@ -38,15 +44,18 @@ async function fetch1mChunked(symbol, from, to) {
     const bars = await fetchBars(symbol, 1, 'minute', f, t);
     process.stdout.write(` ${bars.length}\n`);
     all.push(...bars);
-    await new Promise(r => setTimeout(r, 300));
-    cursor = new Date(cEnd); cursor.setDate(cursor.getDate() + 1);
+    await new Promise((r) => setTimeout(r, 300));
+    cursor = new Date(cEnd);
+    cursor.setDate(cursor.getDate() + 1);
   }
   const map = new Map();
   for (const b of all) map.set(b.time, b);
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-function toDate(ts) { return new Date(ts * 1000).toISOString().split('T')[0]; }
+function toDate(ts) {
+  return new Date(ts * 1000).toISOString().split('T')[0];
+}
 
 // =========================================================================
 // VOLUME DELTA COMPUTATION
@@ -69,7 +78,8 @@ function computeRSI(values, period = 14) {
   if (values.length < period + 1) return rsi;
 
   // Initial average gain/loss
-  let avgGain = 0, avgLoss = 0;
+  let avgGain = 0,
+    avgLoss = 0;
   for (let i = 1; i <= period; i++) {
     const change = values[i] - values[i - 1];
     if (change > 0) avgGain += change;
@@ -78,7 +88,7 @@ function computeRSI(values, period = 14) {
   avgGain /= period;
   avgLoss /= period;
 
-  rsi[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
 
   for (let i = period + 1; i < values.length; i++) {
     const change = values[i] - values[i - 1];
@@ -86,7 +96,7 @@ function computeRSI(values, period = 14) {
     const loss = change < 0 ? -change : 0;
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;
-    rsi[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
   }
   return rsi;
 }
@@ -130,8 +140,8 @@ function analyzeVolumeStructure(bars1m) {
   }
 
   const dailyDates = [...dailyMap.keys()].sort();
-  const dailyDeltas = dailyDates.map(d => dailyMap.get(d));
-  const dailyCloses = dailyDates.map(d => dailyCloseMap.get(d));
+  const dailyDeltas = dailyDates.map((d) => dailyMap.get(d));
+  const dailyCloses = dailyDates.map((d) => dailyCloseMap.get(d));
 
   // Cumulative daily delta
   const cumDailyDelta = [];
@@ -149,7 +159,7 @@ function analyzeVolumeStructure(bars1m) {
     weeklyMap.set(weekStart, prev + delta);
   }
   const weeklyDates = [...weeklyMap.keys()].sort();
-  const weeklyDeltas = weeklyDates.map(d => weeklyMap.get(d));
+  const weeklyDeltas = weeklyDates.map((d) => weeklyMap.get(d));
 
   // Cumulative weekly delta
   const cumWeeklyDelta = [];
@@ -215,9 +225,9 @@ function detectVDRSIDivergence(dailyCloses, vdRsi14, dailyDates) {
   }
   if (validIndices.length < 10) return { divergence: false, reason: 'Not enough valid data' };
 
-  const validCloses = validIndices.map(i => dailyCloses[i]);
-  const validRsi = validIndices.map(i => vdRsi14[i]);
-  const validDates = validIndices.map(i => dailyDates[i]);
+  const validCloses = validIndices.map((i) => dailyCloses[i]);
+  const validRsi = validIndices.map((i) => vdRsi14[i]);
+  const validDates = validIndices.map((i) => dailyDates[i]);
 
   // Overall slope (linear regression)
   const n = validCloses.length;
@@ -282,8 +292,16 @@ function detectVDRSIDivergence(dailyCloses, vdRsi14, dailyDates) {
 
 function linReg(xs, ys) {
   const n = xs.length;
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] ** 2; sxy += xs[i] * ys[i]; }
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += xs[i];
+    sy += ys[i];
+    sxx += xs[i] ** 2;
+    sxy += xs[i] * ys[i];
+  }
   const d = n * sxx - sx * sx;
   if (d === 0) return { slope: 0 };
   return { slope: (n * sxy - sx * sy) / d };
@@ -333,7 +351,7 @@ async function main() {
     // Filter to just the consolidation period
     const fromTs = new Date(ep.from + 'T00:00:00Z').getTime() / 1000;
     const toTs = new Date(ep.to + 'T23:59:59Z').getTime() / 1000;
-    const consolBars = bars1m.filter(b => b.time >= fromTs && b.time <= toTs);
+    const consolBars = bars1m.filter((b) => b.time >= fromTs && b.time <= toTs);
 
     if (consolBars.length < 100) {
       console.log(`  Only ${consolBars.length} 1m bars — insufficient`);
@@ -341,20 +359,28 @@ async function main() {
     }
 
     console.log(`\n  Data: ${consolBars.length} 1m bars`);
-    console.log(`  Price: $${consolBars[0].close.toFixed(2)} → $${consolBars[consolBars.length - 1].close.toFixed(2)} (${((consolBars[consolBars.length - 1].close / consolBars[0].close - 1) * 100).toFixed(1)}%)`);
+    console.log(
+      `  Price: $${consolBars[0].close.toFixed(2)} → $${consolBars[consolBars.length - 1].close.toFixed(2)} (${((consolBars[consolBars.length - 1].close / consolBars[0].close - 1) * 100).toFixed(1)}%)`,
+    );
 
     // Analyze volume structure
     const vs = analyzeVolumeStructure(consolBars);
 
     // === CUMULATIVE DELTA ===
     console.log(`\n  CUMULATIVE VOLUME DELTA:`);
-    console.log(`    Total cumulative delta: ${(vs.totalCumDelta / 1e6).toFixed(2)}M ${vs.totalCumDelta > 0 ? '(NET BUYING)' : '(NET SELLING)'}`);
+    console.log(
+      `    Total cumulative delta: ${(vs.totalCumDelta / 1e6).toFixed(2)}M ${vs.totalCumDelta > 0 ? '(NET BUYING)' : '(NET SELLING)'}`,
+    );
     console.log(`    Total volume: ${(consolBars.reduce((s, b) => s + b.volume, 0) / 1e6).toFixed(2)}M`);
-    console.log(`    Delta as % of volume: ${((vs.totalCumDelta / consolBars.reduce((s, b) => s + b.volume, 0)) * 100).toFixed(2)}%`);
+    console.log(
+      `    Delta as % of volume: ${((vs.totalCumDelta / consolBars.reduce((s, b) => s + b.volume, 0)) * 100).toFixed(2)}%`,
+    );
 
     // Daily delta table
     console.log(`\n    DAILY DELTA BREAKDOWN:`);
-    console.log(`    ${'Date'.padEnd(12)} ${'Delta'.padStart(14)} ${'Cum Delta'.padStart(14)} ${'Close'.padStart(8)} ${'VD RSI'.padStart(8)}`);
+    console.log(
+      `    ${'Date'.padEnd(12)} ${'Delta'.padStart(14)} ${'Cum Delta'.padStart(14)} ${'Close'.padStart(8)} ${'VD RSI'.padStart(8)}`,
+    );
     console.log(`    ${'─'.repeat(60)}`);
 
     for (let i = 0; i < vs.dailyDates.length; i++) {
@@ -362,7 +388,9 @@ async function main() {
       const cumD = vs.cumDailyDelta[i];
       const close = vs.dailyCloses[i];
       const rsi = vs.vdRsi14[i];
-      console.log(`    ${vs.dailyDates[i].padEnd(12)} ${(delta >= 0 ? '+' : '') + (delta / 1e6).toFixed(3) + 'M'}${' '.repeat(Math.max(0, 9 - ((delta / 1e6).toFixed(3).length + 1)))} ${(cumD >= 0 ? '+' : '') + (cumD / 1e6).toFixed(3) + 'M'}${' '.repeat(Math.max(0, 9 - ((cumD / 1e6).toFixed(3).length + 1)))} $${close?.toFixed(2) || 'N/A'} ${Number.isFinite(rsi) ? rsi.toFixed(1) : '--'}`);
+      console.log(
+        `    ${vs.dailyDates[i].padEnd(12)} ${(delta >= 0 ? '+' : '') + (delta / 1e6).toFixed(3) + 'M'}${' '.repeat(Math.max(0, 9 - ((delta / 1e6).toFixed(3).length + 1)))} ${(cumD >= 0 ? '+' : '') + (cumD / 1e6).toFixed(3) + 'M'}${' '.repeat(Math.max(0, 9 - ((cumD / 1e6).toFixed(3).length + 1)))} $${close?.toFixed(2) || 'N/A'} ${Number.isFinite(rsi) ? rsi.toFixed(1) : '--'}`,
+      );
     }
 
     // Weekly summary
@@ -370,7 +398,9 @@ async function main() {
     for (let i = 0; i < vs.weeklyDates.length; i++) {
       const wd = vs.weeklyDeltas[i];
       const cwd = vs.cumWeeklyDelta[i];
-      console.log(`    Week of ${vs.weeklyDates[i]}: ${(wd >= 0 ? '+' : '')}${(wd / 1e6).toFixed(3)}M  (cum: ${(cwd >= 0 ? '+' : '')}${(cwd / 1e6).toFixed(3)}M)`);
+      console.log(
+        `    Week of ${vs.weeklyDates[i]}: ${wd >= 0 ? '+' : ''}${(wd / 1e6).toFixed(3)}M  (cum: ${cwd >= 0 ? '+' : ''}${(cwd / 1e6).toFixed(3)}M)`,
+      );
     }
 
     // === CHUNKS: split consolidation into 3 equal parts ===
@@ -387,7 +417,9 @@ async function main() {
         const chunkEndPrice = chunkCloses[chunkCloses.length - 1];
         const chunkRsi = vs.vdRsi14.slice(start, end).filter(Number.isFinite);
         const avgRsi = chunkRsi.length > 0 ? chunkRsi.reduce((s, v) => s + v, 0) / chunkRsi.length : NaN;
-        console.log(`    Part ${t + 1} (${vs.dailyDates[start]}→${vs.dailyDates[end - 1]}): delta ${(chunkSum >= 0 ? '+' : '')}${(chunkSum / 1e6).toFixed(3)}M, price $${chunkStartPrice?.toFixed(2)}→$${chunkEndPrice?.toFixed(2)}, avg VD RSI ${Number.isFinite(avgRsi) ? avgRsi.toFixed(1) : 'N/A'}`);
+        console.log(
+          `    Part ${t + 1} (${vs.dailyDates[start]}→${vs.dailyDates[end - 1]}): delta ${chunkSum >= 0 ? '+' : ''}${(chunkSum / 1e6).toFixed(3)}M, price $${chunkStartPrice?.toFixed(2)}→$${chunkEndPrice?.toFixed(2)}, avg VD RSI ${Number.isFinite(avgRsi) ? avgRsi.toFixed(1) : 'N/A'}`,
+        );
       }
     }
 
@@ -397,9 +429,15 @@ async function main() {
     console.log(`    Bullish divergence detected: ${divResult.divergence ? '✅ YES' : '❌ NO'}`);
     console.log(`    Price trend: ${divResult.priceTrend} (slope: ${divResult.priceSlope?.toFixed(4) || 'N/A'})`);
     console.log(`    VD RSI trend: ${divResult.rsiTrend} (slope: ${divResult.rsiSlope?.toFixed(4) || 'N/A'})`);
-    console.log(`    Half comparison: price ${divResult.halfComparison.firstHalfPriceAvg}→${divResult.halfComparison.secondHalfPriceAvg}, VD RSI ${divResult.halfComparison.firstHalfRsiAvg}→${divResult.halfComparison.secondHalfRsiAvg}`);
-    console.log(`    Quarter lows: price Q1 $${divResult.quarterLows.q1PriceLow} vs Q4 $${divResult.quarterLows.q4PriceLow} (${divResult.quarterLows.priceLowerLow ? 'lower low' : 'higher low'})`);
-    console.log(`    Quarter lows: VD RSI Q1 ${divResult.quarterLows.q1RsiLow} vs Q4 ${divResult.quarterLows.q4RsiLow} (${divResult.quarterLows.rsiHigherLow ? 'higher low ✅' : 'lower low'})`);
+    console.log(
+      `    Half comparison: price ${divResult.halfComparison.firstHalfPriceAvg}→${divResult.halfComparison.secondHalfPriceAvg}, VD RSI ${divResult.halfComparison.firstHalfRsiAvg}→${divResult.halfComparison.secondHalfRsiAvg}`,
+    );
+    console.log(
+      `    Quarter lows: price Q1 $${divResult.quarterLows.q1PriceLow} vs Q4 $${divResult.quarterLows.q4PriceLow} (${divResult.quarterLows.priceLowerLow ? 'lower low' : 'higher low'})`,
+    );
+    console.log(
+      `    Quarter lows: VD RSI Q1 ${divResult.quarterLows.q1RsiLow} vs Q4 ${divResult.quarterLows.q4RsiLow} (${divResult.quarterLows.rsiHigherLow ? 'higher low ✅' : 'lower low'})`,
+    );
     console.log(`    VD RSI start/end: ${divResult.startEndRsi.start} → ${divResult.startEndRsi.end}`);
 
     // === PRICE vs CUMULATIVE DELTA CORRELATION ===
@@ -411,20 +449,24 @@ async function main() {
       }
     }
     if (validPairs.length >= 5) {
-      const prices = validPairs.map(p => p.price);
-      const cumDeltas = validPairs.map(p => p.cumDelta);
+      const prices = validPairs.map((p) => p.price);
+      const cumDeltas = validPairs.map((p) => p.cumDelta);
       // Correlation
       const n = prices.length;
       const meanP = prices.reduce((s, v) => s + v, 0) / n;
       const meanD = cumDeltas.reduce((s, v) => s + v, 0) / n;
-      let cov = 0, varP = 0, varD = 0;
+      let cov = 0,
+        varP = 0,
+        varD = 0;
       for (let i = 0; i < n; i++) {
         cov += (prices[i] - meanP) * (cumDeltas[i] - meanD);
         varP += (prices[i] - meanP) ** 2;
         varD += (cumDeltas[i] - meanD) ** 2;
       }
-      const corr = (varP > 0 && varD > 0) ? cov / Math.sqrt(varP * varD) : 0;
-      console.log(`\n  PRICE vs CUMULATIVE DELTA CORRELATION: ${corr.toFixed(4)} ${corr < -0.3 ? '(NEGATIVE = bullish accumulation ✅)' : corr > 0.3 ? '(POSITIVE = price-following)' : '(WEAK)'}`);
+      const corr = varP > 0 && varD > 0 ? cov / Math.sqrt(varP * varD) : 0;
+      console.log(
+        `\n  PRICE vs CUMULATIVE DELTA CORRELATION: ${corr.toFixed(4)} ${corr < -0.3 ? '(NEGATIVE = bullish accumulation ✅)' : corr > 0.3 ? '(POSITIVE = price-following)' : '(WEAK)'}`,
+      );
     }
   }
 
@@ -452,4 +494,7 @@ POTENTIAL ALGORITHM ADDITIONS for moderate HTF:
   console.log('Done.');
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

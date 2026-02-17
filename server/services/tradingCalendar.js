@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Trading Calendar — hybrid approach using SPY daily bars (historical proof)
  * and the /v1/marketstatus/upcoming endpoint (future holidays / early closes).
@@ -6,8 +7,8 @@
  */
 
 const HISTORICAL_LOOKBACK_DAYS = 900; // ~2.5 years
-const FUTURE_PROJECTION_DAYS = 365;   // 1 year ahead
-const REFRESH_HOUR_ET = 5;            // 5:00 AM ET daily refresh
+const FUTURE_PROJECTION_DAYS = 365; // 1 year ahead
+const REFRESH_HOUR_ET = 5; // 5:00 AM ET daily refresh
 
 /** @type {Set<string>} YYYY-MM-DD keys of confirmed trading days */
 let tradingDays = new Set();
@@ -182,7 +183,7 @@ function getStatus() {
     earlyClosesCount: earlyCloses.size,
     rangeStart: calendarRangeStart,
     rangeEnd: calendarRangeEnd,
-    lastRefreshedAt
+    lastRefreshedAt,
   };
 }
 
@@ -200,10 +201,11 @@ async function fetchHistoricalTradingDays(deps) {
   const toStr = formatDateUTC(end);
   log(`Fetching SPY daily bars ${fromStr} → ${toStr}`);
 
-  const url = buildDataApiUrl(
-    `/v2/aggs/ticker/SPY/range/1/day/${fromStr}/${toStr}`,
-    { adjusted: 'true', sort: 'asc', limit: 50000 }
-  );
+  const url = buildDataApiUrl(`/v2/aggs/ticker/SPY/range/1/day/${fromStr}/${toStr}`, {
+    adjusted: 'true',
+    sort: 'asc',
+    limit: 50000,
+  });
 
   const data = await fetchDataApiJson(url, 'TradingCalendar-SPY');
   const results = (data && data.results) || [];
@@ -327,7 +329,7 @@ async function refreshCalendar(deps) {
       const log = deps.log || console.log;
       log(`Upcoming holidays fetch failed (non-fatal): ${err && err.message ? err.message : err}`);
       return { holidays: new Set(), eCloses: new Map() };
-    })
+    }),
   ]);
 
   if (historical.dates.size === 0) {
@@ -368,7 +370,9 @@ async function init(deps = {}) {
 
   try {
     await refreshCalendar(deps);
-    log(`Initialized: ${tradingDays.size} trading days, ${earlyCloses.size} early closes, range ${calendarRangeStart} to ${calendarRangeEnd}`);
+    log(
+      `Initialized: ${tradingDays.size} trading days, ${earlyCloses.size} early closes, range ${calendarRangeStart} to ${calendarRangeEnd}`,
+    );
     scheduleRefresh(deps);
   } catch (err) {
     log(`Init failed: ${err && err.message ? err.message : err}; staying in weekday-only mode`);
@@ -387,4 +391,14 @@ function destroy() {
 // Exports
 // ---------------------------------------------------------------------------
 
-export { init, destroy, isTradingDay, isEarlyClose, getCloseTimeEt, previousTradingDay, nextTradingDay, getTradingDaysBetween, getStatus };
+export {
+  init,
+  destroy,
+  isTradingDay,
+  isEarlyClose,
+  getCloseTimeEt,
+  previousTradingDay,
+  nextTradingDay,
+  getTradingDaysBetween,
+  getStatus,
+};

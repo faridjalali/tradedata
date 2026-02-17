@@ -25,8 +25,11 @@ jobs:
       - name: Lint (ESLint)
         run: npx eslint .
 
-      - name: Typecheck
+      - name: Typecheck (frontend)
         run: npx tsc --noEmit
+
+      - name: Typecheck (server)
+        run: npx tsc --noEmit --project tsconfig.server.json
 
       - name: Test
         run: node --test test/*.test.js

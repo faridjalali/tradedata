@@ -6,7 +6,7 @@ import { registerDivergenceRoutes } from '../server/routes/divergenceRoutes.js';
 function createMockApp() {
   const routes = {
     get: new Map(),
-    post: new Map()
+    post: new Map(),
   };
   return {
     routes,
@@ -15,7 +15,7 @@ function createMockApp() {
     },
     post(path, handler) {
       routes.post.set(path, handler);
-    }
+    },
   };
 }
 
@@ -30,7 +30,7 @@ function createMockRes() {
     json(payload) {
       this.body = payload;
       return this;
-    }
+    },
   };
 }
 
@@ -53,20 +53,17 @@ function buildOptions(overrides = {}) {
     divergenceSourceInterval: '5min',
     getLastFetchedTradeDateEt: () => '',
     getLastScanDateEt: () => '',
-    ...overrides
+    ...overrides,
   };
 }
 
 test('registerDivergenceRoutes requires app', () => {
-  assert.throws(
-    () => registerDivergenceRoutes({}),
-    /registerDivergenceRoutes requires app/
-  );
+  assert.throws(() => registerDivergenceRoutes({}), /registerDivergenceRoutes requires app/);
 });
 
 test('POST /api/divergence/scan returns 503 when divergence DB is not configured', async () => {
   const options = buildOptions({
-    isDivergenceConfigured: () => false
+    isDivergenceConfigured: () => false,
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.post.get('/api/divergence/scan');
@@ -78,7 +75,7 @@ test('POST /api/divergence/scan returns 503 when divergence DB is not configured
 
 test('POST /api/divergence/scan enforces secret when configured', async () => {
   const options = buildOptions({
-    divergenceScanSecret: 'top-secret'
+    divergenceScanSecret: 'top-secret',
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.post.get('/api/divergence/scan');
@@ -90,7 +87,7 @@ test('POST /api/divergence/scan enforces secret when configured', async () => {
 
 test('POST /api/divergence/scan validates runDateEt', async () => {
   const options = buildOptions({
-    parseEtDateInput: () => null
+    parseEtDateInput: () => null,
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.post.get('/api/divergence/scan');
@@ -108,7 +105,7 @@ test('POST /api/divergence/scan starts manual scan with parsed options', async (
       return {};
     },
     parseEtDateInput: (value) => String(value),
-    parseBooleanInput: defaultBooleanParser
+    parseBooleanInput: defaultBooleanParser,
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.post.get('/api/divergence/scan');
@@ -117,9 +114,9 @@ test('POST /api/divergence/scan starts manual scan with parsed options', async (
     {
       query: { force: 'true' },
       headers: {},
-      body: { refreshUniverse: true, runDateEt: '2026-02-11' }
+      body: { refreshUniverse: true, runDateEt: '2026-02-11' },
     },
-    res
+    res,
   );
   assert.equal(res.statusCode, 202);
   assert.deepEqual(res.body, { status: 'started' });
@@ -127,7 +124,7 @@ test('POST /api/divergence/scan starts manual scan with parsed options', async (
     force: true,
     refreshUniverse: true,
     runDateEt: '2026-02-11',
-    trigger: 'manual-api'
+    trigger: 'manual-api',
   });
 });
 
@@ -142,11 +139,11 @@ test('GET /api/divergence/scan/status returns running state and fallback trade d
           return { rows: [{ scanned_trade_date: '2026-02-11' }] };
         }
         throw new Error('unexpected query');
-      }
+      },
     },
     getIsScanRunning: () => true,
     getLastFetchedTradeDateEt: () => '',
-    getLastScanDateEt: () => '2026-02-10'
+    getLastScanDateEt: () => '2026-02-10',
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.get.get('/api/divergence/scan/status');
@@ -165,8 +162,8 @@ test('GET /api/divergence/scan/status falls back to in-memory status on query er
     divergencePool: {
       query: async () => {
         throw new Error('db down');
-      }
-    }
+      },
+    },
   });
   registerDivergenceRoutes(options);
   const handler = options.app.routes.get.get('/api/divergence/scan/status');

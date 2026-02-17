@@ -6,16 +6,12 @@
  * @param {Function} options.parseEtDateInput - ET date parser
  * @returns {{ ok: true, value: { force: boolean, refreshUniverse: boolean, runDateEt?: string } } | { ok: false, error: string }}
  */
-function buildManualScanRequest(options = {}) {
-  const {
-    req,
-    parseBooleanInput,
-    parseEtDateInput
-  } = options;
+function buildManualScanRequest(options) {
+  const { req, parseBooleanInput, parseEtDateInput } = options;
 
   const force = parseBooleanInput(req.query.force, false) || parseBooleanInput(req.body?.force, false);
-  const refreshUniverse = parseBooleanInput(req.query.refreshUniverse, false)
-    || parseBooleanInput(req.body?.refreshUniverse, false);
+  const refreshUniverse =
+    parseBooleanInput(req.query.refreshUniverse, false) || parseBooleanInput(req.body?.refreshUniverse, false);
 
   let runDateEt;
   if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'runDateEt')) {
@@ -23,7 +19,7 @@ function buildManualScanRequest(options = {}) {
     if (!parsedRunDate) {
       return {
         ok: false,
-        error: 'runDateEt must be YYYY-MM-DD'
+        error: 'runDateEt must be YYYY-MM-DD',
       };
     }
     runDateEt = parsedRunDate;
@@ -34,29 +30,24 @@ function buildManualScanRequest(options = {}) {
     value: {
       force,
       refreshUniverse,
-      runDateEt
-    }
+      runDateEt,
+    },
   };
 }
 
 /**
  * Query the database for the most recent divergence scan job and build a status payload.
  * @param {object} options
- * @param {object} options.divergencePool - PostgreSQL pool
+ * @param {{ query: Function }} options.divergencePool - PostgreSQL pool
  * @param {string} options.divergenceSourceInterval - Source interval for signal lookup
  * @param {Function} options.getIsScanRunning - Returns current running state
  * @param {Function} options.getLastFetchedTradeDateEt - Returns last fetched trade date
  * @param {Function} options.getLastScanDateEt - Returns last scan date fallback
  * @returns {Promise<{ running: boolean, lastScanDateEt: string|null, latestJob: object|null }>}
  */
-async function fetchLatestDivergenceScanStatus(options = {}) {
-  const {
-    divergencePool,
-    divergenceSourceInterval,
-    getIsScanRunning,
-    getLastFetchedTradeDateEt,
-    getLastScanDateEt
-  } = options;
+async function fetchLatestDivergenceScanStatus(options) {
+  const { divergencePool, divergenceSourceInterval, getIsScanRunning, getLastFetchedTradeDateEt, getLastScanDateEt } =
+    options;
 
   const latest = await divergencePool.query(`
     SELECT *
@@ -67,28 +58,29 @@ async function fetchLatestDivergenceScanStatus(options = {}) {
   const latestJob = latest.rows[0] || null;
 
   if (latestJob && !latestJob.scanned_trade_date) {
-    const tradeDateResult = await divergencePool.query(`
+    const tradeDateResult = await divergencePool.query(
+      `
       SELECT MAX(trade_date)::text AS scanned_trade_date
       FROM divergence_signals
       WHERE scan_job_id = $1
         AND timeframe = '1d'
         AND source_interval = $2
-    `, [latestJob.id, divergenceSourceInterval]);
+    `,
+      [latestJob.id, divergenceSourceInterval],
+    );
     const fallbackTradeDate = String(tradeDateResult.rows[0]?.scanned_trade_date || '').trim();
     if (fallbackTradeDate) {
       latestJob.scanned_trade_date = fallbackTradeDate;
     }
   }
 
-  const lastScanDateEt = getLastFetchedTradeDateEt()
-    || String(latestJob?.scanned_trade_date || '').trim()
-    || getLastScanDateEt()
-    || null;
+  const lastScanDateEt =
+    getLastFetchedTradeDateEt() || String(latestJob?.scanned_trade_date || '').trim() || getLastScanDateEt() || null;
 
   return {
     running: getIsScanRunning(),
     lastScanDateEt,
-    latestJob
+    latestJob,
   };
 }
 

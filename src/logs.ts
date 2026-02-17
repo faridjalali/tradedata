@@ -8,64 +8,69 @@ let historyPage = 0;
 let historyEntries: RunMetricsSnapshot[] = [];
 
 function escapeHtml(value: unknown): string {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function fmtNumber(value: unknown, digits = 0): string {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return '--';
-    return num.toFixed(Math.max(0, digits));
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '--';
+  return num.toFixed(Math.max(0, digits));
 }
 
 function fmtStatus(value: unknown): string {
-    const raw = String(value || '').trim();
-    if (!raw) return 'idle';
-    return raw;
+  const raw = String(value || '').trim();
+  if (!raw) return 'idle';
+  return raw;
 }
 
 function fmtIsoToLocal(value: unknown): string {
-    const raw = String(value || '').trim();
-    if (!raw) return '--';
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return '--';
-    return parsed.toLocaleString();
+  const raw = String(value || '').trim();
+  if (!raw) return '--';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '--';
+  return parsed.toLocaleString();
 }
 
 function buildRunCardHtml(
-    title: string,
-    run: RunMetricsSnapshot | null | undefined,
-    statusFallback: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null | undefined
+  title: string,
+  run: RunMetricsSnapshot | null | undefined,
+  statusFallback:
+    | { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number }
+    | null
+    | undefined,
 ): string {
-    const statusText = fmtStatus(run?.status || statusFallback?.status || (statusFallback?.running ? 'running' : 'idle'));
-    const processed = Number(run?.tickers?.processed ?? statusFallback?.processed_tickers ?? 0);
-    const total = Number(run?.tickers?.total ?? statusFallback?.total_tickers ?? 0);
-    const errors = Number(run?.tickers?.errors ?? 0);
-    const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
-    const avg = fmtNumber(run?.api?.avgLatencyMs, 1);
-    const calls = fmtNumber(run?.api?.calls, 0);
-    const failures = fmtNumber(run?.api?.failures, 0);
-    const rateLimited = fmtNumber(run?.api?.rateLimited, 0);
-    const flushes = fmtNumber(run?.db?.flushCount, 0);
-    const summaryRows = fmtNumber(run?.db?.summaryRows, 0);
-    const signalRows = fmtNumber(run?.db?.signalRows, 0);
-    const duration = fmtNumber(run?.durationSeconds, 1);
-    const phase = escapeHtml(run?.phase || '--');
+  const statusText = fmtStatus(run?.status || statusFallback?.status || (statusFallback?.running ? 'running' : 'idle'));
+  const processed = Number(run?.tickers?.processed ?? statusFallback?.processed_tickers ?? 0);
+  const total = Number(run?.tickers?.total ?? statusFallback?.total_tickers ?? 0);
+  const errors = Number(run?.tickers?.errors ?? 0);
+  const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
+  const avg = fmtNumber(run?.api?.avgLatencyMs, 1);
+  const calls = fmtNumber(run?.api?.calls, 0);
+  const failures = fmtNumber(run?.api?.failures, 0);
+  const rateLimited = fmtNumber(run?.api?.rateLimited, 0);
+  const flushes = fmtNumber(run?.db?.flushCount, 0);
+  const summaryRows = fmtNumber(run?.db?.summaryRows, 0);
+  const signalRows = fmtNumber(run?.db?.signalRows, 0);
+  const duration = fmtNumber(run?.durationSeconds, 1);
+  const phase = escapeHtml(run?.phase || '--');
 
-    const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
-    const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
-    const failedCount = failedList.length;
-    const recoveredCount = recoveredList.length;
+  const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
+  const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
+  const failedCount = failedList.length;
+  const recoveredCount = recoveredList.length;
 
-    let failedSection = '';
-    if (failedCount > 0 || recoveredCount > 0) {
-        const failedItems = failedList.map(t => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
-        const recoveredItems = recoveredList.map(t => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`).join('');
-        failedSection = `
+  let failedSection = '';
+  if (failedCount > 0 || recoveredCount > 0) {
+    const failedItems = failedList.map((t) => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
+    const recoveredItems = recoveredList
+      .map((t) => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`)
+      .join('');
+    failedSection = `
           <details class="log-failed-details">
             <summary class="log-failed-summary">
               ${failedCount > 0 ? `${failedCount} failed` : ''}${failedCount > 0 && recoveredCount > 0 ? ', ' : ''}${recoveredCount > 0 ? `${recoveredCount} recovered via retry` : ''}
@@ -76,9 +81,9 @@ function buildRunCardHtml(
             </div>
           </details>
         `;
-    }
+  }
 
-    return `
+  return `
       <article class="log-run-card">
         <div class="log-run-card-title">
           <span>${escapeHtml(title)}</span>
@@ -104,17 +109,17 @@ function buildRunCardHtml(
 }
 
 function buildConfigCardHtml(payload: RunMetricsPayload): string {
-    const config = payload.config || {};
-    const source = escapeHtml(config.divergenceSourceInterval || '--');
-    const lookback = fmtNumber(config.divergenceLookbackDays, 0);
-    const concurrency = fmtNumber(config.divergenceConcurrencyConfigured, 0);
-    const flushSize = fmtNumber(config.divergenceFlushSize, 0);
-    const rps = fmtNumber(config.dataApiMaxRequestsPerSecond, 0);
-    const bucket = fmtNumber(config.dataApiRateBucketCapacity, 0);
-    const timeout = fmtNumber(config.dataApiTimeoutMs, 0);
-    const scheduler = payload.schedulerEnabled ? 'on' : 'off';
+  const config = payload.config || {};
+  const source = escapeHtml(config.divergenceSourceInterval || '--');
+  const lookback = fmtNumber(config.divergenceLookbackDays, 0);
+  const concurrency = fmtNumber(config.divergenceConcurrencyConfigured, 0);
+  const flushSize = fmtNumber(config.divergenceFlushSize, 0);
+  const rps = fmtNumber(config.dataApiMaxRequestsPerSecond, 0);
+  const bucket = fmtNumber(config.dataApiRateBucketCapacity, 0);
+  const timeout = fmtNumber(config.dataApiTimeoutMs, 0);
+  const scheduler = payload.schedulerEnabled ? 'on' : 'off';
 
-    return `
+  return `
       <article class="log-run-card">
         <div class="log-run-card-title">
           <span>Runtime Config</span>
@@ -134,33 +139,35 @@ function buildConfigCardHtml(payload: RunMetricsPayload): string {
 }
 
 function renderRunCards(payload: RunMetricsPayload): void {
-    const host = document.getElementById('logs-run-cards');
-    if (!host) return;
-    const cards = [
-        buildRunCardHtml('Fetch Daily', payload.runs?.fetchDaily, payload.statuses?.fetchDaily),
-        buildRunCardHtml('Fetch Weekly', payload.runs?.fetchWeekly, payload.statuses?.fetchWeekly),
-        buildRunCardHtml('VDF Scan', payload.runs?.vdfScan, payload.statuses?.vdfScan),
-        buildConfigCardHtml(payload)
-    ];
-    host.innerHTML = cards.join('');
+  const host = document.getElementById('logs-run-cards');
+  if (!host) return;
+  const cards = [
+    buildRunCardHtml('Fetch Daily', payload.runs?.fetchDaily, payload.statuses?.fetchDaily),
+    buildRunCardHtml('Fetch Weekly', payload.runs?.fetchWeekly, payload.statuses?.fetchWeekly),
+    buildRunCardHtml('VDF Scan', payload.runs?.vdfScan, payload.statuses?.vdfScan),
+    buildConfigCardHtml(payload),
+  ];
+  host.innerHTML = cards.join('');
 }
 
 function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
-    const processed = Number(run?.tickers?.processed || 0);
-    const total = Number(run?.tickers?.total || 0);
-    const errors = Number(run?.tickers?.errors || 0);
-    const calls = Number(run?.api?.calls || 0);
-    const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
-    const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
-    const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
-    const failedCount = failedList.length;
-    const recoveredCount = recoveredList.length;
+  const processed = Number(run?.tickers?.processed || 0);
+  const total = Number(run?.tickers?.total || 0);
+  const errors = Number(run?.tickers?.errors || 0);
+  const calls = Number(run?.api?.calls || 0);
+  const p95 = fmtNumber(run?.api?.p95LatencyMs, 1);
+  const failedList = Array.isArray(run?.failedTickers) ? run.failedTickers : [];
+  const recoveredList = Array.isArray(run?.retryRecovered) ? run.retryRecovered : [];
+  const failedCount = failedList.length;
+  const recoveredCount = recoveredList.length;
 
-    let failedSection = '';
-    if (failedCount > 0 || recoveredCount > 0) {
-        const failedItems = failedList.map(t => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
-        const recoveredItems = recoveredList.map(t => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`).join('');
-        failedSection = `
+  let failedSection = '';
+  if (failedCount > 0 || recoveredCount > 0) {
+    const failedItems = failedList.map((t) => `<span class="log-failed-ticker">${escapeHtml(t)}</span>`).join('');
+    const recoveredItems = recoveredList
+      .map((t) => `<span class="log-recovered-ticker">${escapeHtml(t)}</span>`)
+      .join('');
+    failedSection = `
           <details class="log-failed-details">
             <summary class="log-failed-summary">
               ${failedCount > 0 ? `${failedCount} failed` : ''}${failedCount > 0 && recoveredCount > 0 ? ', ' : ''}${recoveredCount > 0 ? `${recoveredCount} recovered` : ''}
@@ -171,9 +178,9 @@ function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
             </div>
           </details>
         `;
-    }
+  }
 
-    return `
+  return `
       <article class="log-history-entry">
         <div class="log-history-header">
           <span>${escapeHtml(String(run?.runType || 'run'))}</span>
@@ -191,103 +198,104 @@ function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
 }
 
 function renderHistoryPage(): void {
-    const host = document.getElementById('logs-history-container');
-    const paginationHost = document.getElementById('logs-history-pagination');
-    if (!host) return;
-    if (historyEntries.length === 0) {
-        host.innerHTML = '<div class="loading">No run history yet</div>';
-        if (paginationHost) paginationHost.innerHTML = '';
-        return;
-    }
+  const host = document.getElementById('logs-history-container');
+  const paginationHost = document.getElementById('logs-history-pagination');
+  if (!host) return;
+  if (historyEntries.length === 0) {
+    host.innerHTML = '<div class="loading">No run history yet</div>';
+    if (paginationHost) paginationHost.innerHTML = '';
+    return;
+  }
 
-    const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
-    if (historyPage >= totalPages) historyPage = totalPages - 1;
-    if (historyPage < 0) historyPage = 0;
+  const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
+  if (historyPage >= totalPages) historyPage = totalPages - 1;
+  if (historyPage < 0) historyPage = 0;
 
-    const start = historyPage * HISTORY_PAGE_SIZE;
-    const pageItems = historyEntries.slice(start, start + HISTORY_PAGE_SIZE);
+  const start = historyPage * HISTORY_PAGE_SIZE;
+  const pageItems = historyEntries.slice(start, start + HISTORY_PAGE_SIZE);
 
-    const prevDisabled = historyPage === 0;
-    const nextDisabled = historyPage >= totalPages - 1;
+  const prevDisabled = historyPage === 0;
+  const nextDisabled = historyPage >= totalPages - 1;
 
-    const entriesHtml = pageItems.map(buildHistoryEntryHtml).join('');
-    const prevSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
-    const nextSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-    const paginationHtml = totalPages > 1 ?
-        `<button class="pane-btn log-history-prev${prevDisabled ? ' disabled' : ''}"${prevDisabled ? ' disabled' : ''}>${prevSvg}</button>` +
+  const entriesHtml = pageItems.map(buildHistoryEntryHtml).join('');
+  const prevSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+  const nextSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  const paginationHtml =
+    totalPages > 1
+      ? `<button class="pane-btn log-history-prev${prevDisabled ? ' disabled' : ''}"${prevDisabled ? ' disabled' : ''}>${prevSvg}</button>` +
         `<button class="pane-btn log-history-next${nextDisabled ? ' disabled' : ''}"${nextDisabled ? ' disabled' : ''}>${nextSvg}</button>`
       : '';
 
-    host.innerHTML = entriesHtml;
-    if (paginationHost) paginationHost.innerHTML = paginationHtml;
+  host.innerHTML = entriesHtml;
+  if (paginationHost) paginationHost.innerHTML = paginationHtml;
 }
 
 function renderHistory(payload: RunMetricsPayload): void {
-    historyEntries = Array.isArray(payload.history) ? payload.history : [];
-    renderHistoryPage();
+  historyEntries = Array.isArray(payload.history) ? payload.history : [];
+  renderHistoryPage();
 }
 
 async function fetchRunMetricsPayload(): Promise<RunMetricsPayload> {
-    const response = await fetch('/api/logs/run-metrics', { cache: 'no-store' });
-    if (!response.ok) {
-        throw new Error(`Failed to fetch run metrics (HTTP ${response.status})`);
-    }
-    return response.json() as Promise<RunMetricsPayload>;
+  const response = await fetch('/api/logs/run-metrics', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch run metrics (HTTP ${response.status})`);
+  }
+  return response.json() as Promise<RunMetricsPayload>;
 }
 
 export async function refreshLogsView(): Promise<void> {
-    if (logsRefreshInFlight) return;
-    logsRefreshInFlight = true;
-    const refreshBtn = document.getElementById('logs-refresh-btn');
-    refreshBtn?.classList.add('loading');
-    try {
-        const payload = await fetchRunMetricsPayload();
-        renderRunCards(payload);
-        renderHistory(payload);
-    } catch (error) {
-        // Only show error message if no existing content — avoids wiping good data on transient failures
-        const host = document.getElementById('logs-history-container');
-        if (host && !host.children.length) host.innerHTML = '<div class="loading">Failed to load logs</div>';
-        console.error('Failed to refresh logs view:', error);
-    } finally {
-        logsRefreshInFlight = false;
-        refreshBtn?.classList.remove('loading');
-    }
+  if (logsRefreshInFlight) return;
+  logsRefreshInFlight = true;
+  const refreshBtn = document.getElementById('logs-refresh-btn');
+  refreshBtn?.classList.add('loading');
+  try {
+    const payload = await fetchRunMetricsPayload();
+    renderRunCards(payload);
+    renderHistory(payload);
+  } catch (error) {
+    // Only show error message if no existing content — avoids wiping good data on transient failures
+    const host = document.getElementById('logs-history-container');
+    if (host && !host.children.length) host.innerHTML = '<div class="loading">Failed to load logs</div>';
+    console.error('Failed to refresh logs view:', error);
+  } finally {
+    logsRefreshInFlight = false;
+    refreshBtn?.classList.remove('loading');
+  }
 }
 
 export function startLogsPolling(): void {
-    if (logsPollTimer !== null) return;
-    logsPollTimer = window.setInterval(() => {
-        refreshLogsView().catch(() => {});
-    }, 5000);
+  if (logsPollTimer !== null) return;
+  logsPollTimer = window.setInterval(() => {
+    refreshLogsView().catch(() => {});
+  }, 5000);
 }
 
 export function stopLogsPolling(): void {
-    if (logsPollTimer === null) return;
-    window.clearInterval(logsPollTimer);
-    logsPollTimer = null;
+  if (logsPollTimer === null) return;
+  window.clearInterval(logsPollTimer);
+  logsPollTimer = null;
 }
 
 export function initLogsView(): void {
-    const refreshBtn = document.getElementById('logs-refresh-btn');
-    refreshBtn?.addEventListener('click', () => {
-        refreshLogsView().catch(() => {});
-    });
+  const refreshBtn = document.getElementById('logs-refresh-btn');
+  refreshBtn?.addEventListener('click', () => {
+    refreshLogsView().catch(() => {});
+  });
 
-    // Pagination for history entries
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        if (target.closest('.log-history-prev')) {
-            if (historyPage > 0) {
-                historyPage--;
-                renderHistoryPage();
-            }
-        } else if (target.closest('.log-history-next')) {
-            const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
-            if (historyPage < totalPages - 1) {
-                historyPage++;
-                renderHistoryPage();
-            }
-        }
-    });
+  // Pagination for history entries
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.log-history-prev')) {
+      if (historyPage > 0) {
+        historyPage--;
+        renderHistoryPage();
+      }
+    } else if (target.closest('.log-history-next')) {
+      const totalPages = Math.ceil(historyEntries.length / HISTORY_PAGE_SIZE);
+      if (historyPage < totalPages - 1) {
+        historyPage++;
+        renderHistoryPage();
+      }
+    }
+  });
 }

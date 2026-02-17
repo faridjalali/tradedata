@@ -11,7 +11,7 @@ const APP_TIMEZONE_OPTIONS: AppTimeZoneOption[] = [
   { value: 'America/Denver', label: 'Denver (US Mountain time)' },
   { value: 'America/Chicago', label: 'Chicago (US Central time)' },
   { value: 'America/New_York', label: 'New York (US Eastern time)' },
-  { value: 'UTC', label: 'UTC' }
+  { value: 'UTC', label: 'UTC' },
 ];
 
 const APP_TIMEZONE_VALUES = new Set(APP_TIMEZONE_OPTIONS.map((option) => option.value));
@@ -44,9 +44,7 @@ function normalizeAppTimeZone(value: unknown): string {
 function resolveInitialTimeZone(): string {
   let stored = '';
   try {
-    stored = typeof window !== 'undefined'
-      ? String(window.localStorage.getItem(APP_TIMEZONE_STORAGE_KEY) || '')
-      : '';
+    stored = typeof window !== 'undefined' ? String(window.localStorage.getItem(APP_TIMEZONE_STORAGE_KEY) || '') : '';
   } catch {
     stored = '';
   }
@@ -62,10 +60,7 @@ function persistTimeZone(value: string): void {
   }
 }
 
-function buildFormatterCacheKey(
-  locale: string | string[],
-  options: Intl.DateTimeFormatOptions
-): string {
+function buildFormatterCacheKey(locale: string | string[], options: Intl.DateTimeFormatOptions): string {
   const localeKey = Array.isArray(locale) ? locale.join('|') : locale;
   const entries = Object.entries(options)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -88,7 +83,7 @@ export function getAppTimeZoneLabel(timeZone: string = currentAppTimeZone): stri
 
 export function getAppTimeZoneFormatter(
   locale: string | string[] = 'en-US',
-  options: Intl.DateTimeFormatOptions = {}
+  options: Intl.DateTimeFormatOptions = {},
 ): Intl.DateTimeFormat {
   const activeTimeZone = getAppTimeZone();
   if (formatterCacheTimeZone !== activeTimeZone) {
@@ -101,7 +96,7 @@ export function getAppTimeZoneFormatter(
 
   const formatter = new Intl.DateTimeFormat(locale, {
     ...options,
-    timeZone: activeTimeZone
+    timeZone: activeTimeZone,
   });
   formatterCache.set(cacheKey, formatter);
   return formatter;
@@ -128,9 +123,7 @@ export function setAppTimeZone(value: string): string {
   return nextTimeZone;
 }
 
-export function onAppTimeZoneChange(
-  listener: (nextTimeZone: string, previousTimeZone: string) => void
-): () => void {
+export function onAppTimeZoneChange(listener: (nextTimeZone: string, previousTimeZone: string) => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

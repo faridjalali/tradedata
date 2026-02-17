@@ -16,11 +16,16 @@ async function fetchBars(symbol, mult, ts, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c,
-    volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetch1mChunked(symbol, from, to) {
@@ -37,7 +42,7 @@ async function fetch1mChunked(symbol, from, to) {
     const bars = await fetchBars(symbol, 1, 'minute', f, t);
     process.stdout.write(` ${bars.length}\n`);
     all.push(...bars);
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 250));
     cursor = new Date(cEnd);
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -46,21 +51,38 @@ async function fetch1mChunked(symbol, from, to) {
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-function mean(arr) { return arr.length > 0 ? arr.reduce((s, v) => s + v, 0) / arr.length : 0; }
-function std(arr) { const m = mean(arr); return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length); }
+function mean(arr) {
+  return arr.length > 0 ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+}
+function std(arr) {
+  const m = mean(arr);
+  return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length);
+}
 
 function linReg(xs, ys) {
   const n = xs.length;
   if (n < 2) return { slope: 0, r2: 0 };
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] ** 2; sxy += xs[i] * ys[i]; }
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += xs[i];
+    sy += ys[i];
+    sxx += xs[i] ** 2;
+    sxy += xs[i] * ys[i];
+  }
   const d = n * sxx - sx * sx;
   if (d === 0) return { slope: 0, r2: 0 };
   const slope = (n * sxy - sx * sy) / d;
   const intercept = (sy - slope * sx) / n;
   const yMean = sy / n;
-  let ssTot = 0, ssRes = 0;
-  for (let i = 0; i < n; i++) { ssTot += (ys[i] - yMean) ** 2; ssRes += (ys[i] - intercept - slope * xs[i]) ** 2; }
+  let ssTot = 0,
+    ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    ssTot += (ys[i] - yMean) ** 2;
+    ssRes += (ys[i] - intercept - slope * xs[i]) ** 2;
+  }
   return { slope, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0 };
 }
 
@@ -68,24 +90,43 @@ function buildDaily(bars1m) {
   const dailyMap = new Map();
   for (const b of bars1m) {
     const d = new Date(b.time * 1000).toISOString().split('T')[0];
-    if (!dailyMap.has(d)) dailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0, high: -Infinity, low: Infinity, close: 0, open: 0, first: true });
+    if (!dailyMap.has(d))
+      dailyMap.set(d, {
+        buyVol: 0,
+        sellVol: 0,
+        totalVol: 0,
+        high: -Infinity,
+        low: Infinity,
+        close: 0,
+        open: 0,
+        first: true,
+      });
     const day = dailyMap.get(d);
-    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
+    const delta = b.close > b.open ? b.volume : b.close < b.open ? -b.volume : 0;
     if (delta > 0) day.buyVol += b.volume;
     else if (delta < 0) day.sellVol += b.volume;
     day.totalVol += b.volume;
     day.close = b.close;
     day.high = Math.max(day.high, b.high);
     day.low = Math.min(day.low, b.low);
-    if (day.first) { day.open = b.open; day.first = false; }
+    if (day.first) {
+      day.open = b.open;
+      day.first = false;
+    }
   }
   const dates = [...dailyMap.keys()].sort();
-  return dates.map(d => {
+  return dates.map((d) => {
     const day = dailyMap.get(d);
     return {
-      date: d, delta: day.buyVol - day.sellVol, totalVol: day.totalVol,
-      buyVol: day.buyVol, sellVol: day.sellVol,
-      close: day.close, open: day.open, high: day.high, low: day.low,
+      date: d,
+      delta: day.buyVol - day.sellVol,
+      totalVol: day.totalVol,
+      buyVol: day.buyVol,
+      sellVol: day.sellVol,
+      close: day.close,
+      open: day.open,
+      high: day.high,
+      low: day.low,
       rangePct: day.close > 0 ? ((day.high - day.low) / day.close) * 100 : 0,
       deltaPct: day.totalVol > 0 ? ((day.buyVol - day.sellVol) / day.totalVol) * 100 : 0,
     };
@@ -103,21 +144,26 @@ function buildWeeks(daily) {
     if (!weekMap.has(wk)) weekMap.set(wk, []);
     weekMap.get(wk).push(d);
   }
-  return [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([weekStart, days]) => {
-    const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
-    const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
-    const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
-    return {
-      weekStart, delta: buyVol - sellVol, totalVol,
-      deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0,
-      nDays: days.length,
-      open: days[0].open, close: days[days.length - 1].close,
-      high: Math.max(...days.map(d => d.high)),
-      low: Math.min(...days.map(d => d.low)),
-      avgRange: mean(days.map(d => d.rangePct)),
-      avgVol: totalVol / days.length,
-    };
-  });
+  return [...weekMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, days]) => {
+      const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
+      const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
+      const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
+      return {
+        weekStart,
+        delta: buyVol - sellVol,
+        totalVol,
+        deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0,
+        nDays: days.length,
+        open: days[0].open,
+        close: days[days.length - 1].close,
+        high: Math.max(...days.map((d) => d.high)),
+        low: Math.min(...days.map((d) => d.low)),
+        avgRange: mean(days.map((d) => d.rangePct)),
+        avgVol: totalVol / days.length,
+      };
+    });
 }
 
 function scoreSubwindow(dailySlice, preDaily, opts = {}) {
@@ -128,7 +174,7 @@ function scoreSubwindow(dailySlice, preDaily, opts = {}) {
   const n = dailySlice.length;
   const totalVol = dailySlice.reduce((s, d) => s + d.totalVol, 0);
   const avgDailyVol = totalVol / n;
-  const closes = dailySlice.map(d => d.close);
+  const closes = dailySlice.map((d) => d.close);
   const overallPriceChange = ((closes[n - 1] - closes[0]) / closes[0]) * 100;
 
   if (overallPriceChange > 10 || overallPriceChange < -45) return null;
@@ -136,7 +182,7 @@ function scoreSubwindow(dailySlice, preDaily, opts = {}) {
   const preAvgDelta = preDaily.length > 0 ? preDaily.reduce((s, d) => s + d.delta, 0) / preDaily.length : 0;
   const preAvgVol = preDaily.length > 0 ? preDaily.reduce((s, d) => s + d.totalVol, 0) / preDaily.length : avgDailyVol;
 
-  let effectiveDeltas = dailySlice.map(d => d.delta);
+  let effectiveDeltas = dailySlice.map((d) => d.delta);
   let cappedDays = [];
   if (useCapping) {
     const dm = mean(effectiveDeltas);
@@ -167,7 +213,10 @@ function scoreSubwindow(dailySlice, preDaily, opts = {}) {
   }
   const cumWeeklyDelta = [];
   let cwd = 0;
-  for (const wd of weeklyDeltas) { cwd += wd; cumWeeklyDelta.push(cwd); }
+  for (const wd of weeklyDeltas) {
+    cwd += wd;
+    cumWeeklyDelta.push(cwd);
+  }
   const weeklyXs = weeks.map((_, i) => i);
   const avgWeeklyVol = weeks.reduce((s, w) => s + w.totalVol, 0) / weeks.length;
   const deltaSlopeNorm = avgWeeklyVol > 0 ? (linReg(weeklyXs, cumWeeklyDelta).slope / avgWeeklyVol) * 100 : 0;
@@ -183,32 +232,38 @@ function scoreSubwindow(dailySlice, preDaily, opts = {}) {
   }
   const absorptionPct = n > 1 ? (absorptionDays / (n - 1)) * 100 : 0;
 
-  const largeBuyDays = dailySlice.filter(d => d.delta > avgDailyVol * 0.10).length;
-  const largeSellDays = dailySlice.filter(d => d.delta < -avgDailyVol * 0.10).length;
+  const largeBuyDays = dailySlice.filter((d) => d.delta > avgDailyVol * 0.1).length;
+  const largeSellDays = dailySlice.filter((d) => d.delta < -avgDailyVol * 0.1).length;
   const largeBuyVsSell = ((largeBuyDays - largeSellDays) / n) * 100;
 
   const cumDeltas = [];
   let cd = 0;
-  for (const ed of effectiveDeltas) { cd += ed; cumDeltas.push(cd); }
+  for (const ed of effectiveDeltas) {
+    cd += ed;
+    cumDeltas.push(cd);
+  }
   const meanP = mean(closes);
   const meanD = mean(cumDeltas);
-  let cov = 0, varP = 0, varD = 0;
+  let cov = 0,
+    varP = 0,
+    varD = 0;
   for (let i = 0; i < n; i++) {
     cov += (closes[i] - meanP) * (cumDeltas[i] - meanD);
     varP += (closes[i] - meanP) ** 2;
     varD += (cumDeltas[i] - meanD) ** 2;
   }
-  const priceDeltaCorr = (varP > 0 && varD > 0) ? cov / Math.sqrt(varP * varD) : 0;
+  const priceDeltaCorr = varP > 0 && varD > 0 ? cov / Math.sqrt(varP * varD) : 0;
 
-  const accumWeeks = weeklyDeltas.filter(wd => wd > 0).length;
+  const accumWeeks = weeklyDeltas.filter((wd) => wd > 0).length;
   const accumWeekRatio = accumWeeks / weeks.length;
 
   const third = Math.floor(n / 3);
-  const t1Vols = dailySlice.slice(0, third).map(d => d.totalVol);
-  const t3Vols = dailySlice.slice(2 * third).map(d => d.totalVol);
-  const volDeclineScore = (mean(t1Vols) > 0 && mean(t3Vols) < mean(t1Vols))
-    ? Math.min(1, (mean(t1Vols) - mean(t3Vols)) / mean(t1Vols) / 0.3)
-    : 0;
+  const t1Vols = dailySlice.slice(0, third).map((d) => d.totalVol);
+  const t3Vols = dailySlice.slice(2 * third).map((d) => d.totalVol);
+  const volDeclineScore =
+    mean(t1Vols) > 0 && mean(t3Vols) < mean(t1Vols)
+      ? Math.min(1, (mean(t1Vols) - mean(t3Vols)) / mean(t1Vols) / 0.3)
+      : 0;
 
   const s1 = Math.max(0, Math.min(1, (netDeltaPct + 1.5) / 5));
   const s2 = Math.max(0, Math.min(1, (deltaSlopeNorm + 0.5) / 4));
@@ -218,17 +273,27 @@ function scoreSubwindow(dailySlice, preDaily, opts = {}) {
   const s6 = Math.max(0, Math.min(1, absorptionPct / 20));
   const s7 = volDeclineScore;
 
-  const rawScore = s1 * 0.25 + s2 * 0.22 + s3 * 0.15 + s4 * 0.15 + s5 * 0.10 + s6 * 0.08 + s7 * 0.05;
-  const durationMultiplier = Math.min(1.15, 0.70 + (weeks.length - 2) * 0.075);
+  const rawScore = s1 * 0.25 + s2 * 0.22 + s3 * 0.15 + s4 * 0.15 + s5 * 0.1 + s6 * 0.08 + s7 * 0.05;
+  const durationMultiplier = Math.min(1.15, 0.7 + (weeks.length - 2) * 0.075);
   const score = rawScore * durationMultiplier;
 
   return {
-    score, detected: score >= 0.30, netDeltaPct, overallPriceChange,
-    deltaSlopeNorm, priceDeltaCorr, accumWeekRatio, deltaShift,
-    weeks: weeks.length, accumWeeks, absorptionPct,
-    largeBuyVsSell, volDeclineScore,
+    score,
+    detected: score >= 0.3,
+    netDeltaPct,
+    overallPriceChange,
+    deltaSlopeNorm,
+    priceDeltaCorr,
+    accumWeekRatio,
+    deltaShift,
+    weeks: weeks.length,
+    accumWeeks,
+    absorptionPct,
+    largeBuyVsSell,
+    volDeclineScore,
     components: { s1, s2, s3, s4, s5, s6, s7 },
-    durationMultiplier, cappedDays,
+    durationMultiplier,
+    cappedDays,
     weeksData: weeks.map((w, i) => ({ ...w, effectiveDelta: weeklyDeltas[i] })),
   };
 }
@@ -244,9 +309,12 @@ function findAccumulationZones(allDaily, preDaily) {
       const result = scoreSubwindow(slice, preDaily);
       if (result && result.detected) {
         detected.push({
-          start, end: start + winSize - 1, winSize,
-          startDate: slice[0].date, endDate: slice[slice.length - 1].date,
-          ...result
+          start,
+          end: start + winSize - 1,
+          winSize,
+          startDate: slice[0].date,
+          endDate: slice[slice.length - 1].date,
+          ...result,
         });
       }
     }
@@ -263,7 +331,7 @@ function findAccumulationZones(allDaily, preDaily) {
       const overlapDays = Math.max(0, overlapEnd - overlapStart + 1);
       const thisSize = w.end - w.start + 1;
       const gap = w.start > z.end ? w.start - z.end : z.start > w.end ? z.start - w.end : 0;
-      if (overlapDays / thisSize > 0.30 || gap < 10) {
+      if (overlapDays / thisSize > 0.3 || gap < 10) {
         overlaps = true;
         break;
       }
@@ -288,26 +356,32 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   console.log('='.repeat(80));
 
   // Find breakout day index
-  const breakoutIdx = allDaily.findIndex(d => d.date >= breakoutDate);
+  const breakoutIdx = allDaily.findIndex((d) => d.date >= breakoutDate);
   const preBreakoutDaily = breakoutIdx > 0 ? allDaily.slice(0, breakoutIdx) : allDaily;
 
   // Get only RED (negative delta) days
-  const redDays = preBreakoutDaily.filter(d => d.delta < 0);
+  const redDays = preBreakoutDaily.filter((d) => d.delta < 0);
   console.log(`\n  Total days before breakout: ${preBreakoutDaily.length}`);
-  console.log(`  RED delta days (negative): ${redDays.length} (${(redDays.length/preBreakoutDaily.length*100).toFixed(0)}%)`);
-  console.log(`  GREEN delta days (positive): ${preBreakoutDaily.length - redDays.length} (${((preBreakoutDaily.length - redDays.length)/preBreakoutDaily.length*100).toFixed(0)}%)`);
+  console.log(
+    `  RED delta days (negative): ${redDays.length} (${((redDays.length / preBreakoutDaily.length) * 100).toFixed(0)}%)`,
+  );
+  console.log(
+    `  GREEN delta days (positive): ${preBreakoutDaily.length - redDays.length} (${(((preBreakoutDaily.length - redDays.length) / preBreakoutDaily.length) * 100).toFixed(0)}%)`,
+  );
 
   // Show all daily deltas with RED magnitude visualization
   console.log(`\n  Daily delta magnitudes (RED days highlighted):`);
-  const avgVol = mean(preBreakoutDaily.map(d => d.totalVol));
+  const avgVol = mean(preBreakoutDaily.map((d) => d.totalVol));
   for (const d of preBreakoutDaily) {
     const dir = d.delta >= 0 ? '+' : '';
-    const normDelta = avgVol > 0 ? Math.abs(d.delta) / avgVol * 100 : 0;
+    const normDelta = avgVol > 0 ? (Math.abs(d.delta) / avgVol) * 100 : 0;
     const isRed = d.delta < 0;
     const marker = isRed ? '🔴' : '  ';
     const barLen = Math.min(30, Math.round(normDelta * 3));
     const bar = isRed ? '█'.repeat(barLen) : '░'.repeat(barLen);
-    console.log(`    ${marker} ${d.date}: ${dir}${(d.delta/1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  |${bar}|  norm=${normDelta.toFixed(1)}%`);
+    console.log(
+      `    ${marker} ${d.date}: ${dir}${(d.delta / 1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  |${bar}|  norm=${normDelta.toFixed(1)}%`,
+    );
   }
 
   // Rolling 5-day RED delta metrics
@@ -316,14 +390,16 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   const rollingRedMetrics = [];
   for (let i = 4; i < preBreakoutDaily.length; i++) {
     const window = preBreakoutDaily.slice(i - 4, i + 1);
-    const redInWindow = window.filter(d => d.delta < 0);
-    const avgRedMag = redInWindow.length > 0 ? mean(redInWindow.map(d => Math.abs(d.delta))) : 0;
+    const redInWindow = window.filter((d) => d.delta < 0);
+    const avgRedMag = redInWindow.length > 0 ? mean(redInWindow.map((d) => Math.abs(d.delta))) : 0;
     const redCount = redInWindow.length;
-    const stdRedMag = redInWindow.length > 1 ? std(redInWindow.map(d => Math.abs(d.delta))) : 0;
-    const normAvgRed = avgVol > 0 ? avgRedMag / avgVol * 100 : 0;
+    const stdRedMag = redInWindow.length > 1 ? std(redInWindow.map((d) => Math.abs(d.delta))) : 0;
+    const normAvgRed = avgVol > 0 ? (avgRedMag / avgVol) * 100 : 0;
     rollingRedMetrics.push({ date: preBreakoutDaily[i].date, avgRedMag, stdRedMag, redCount, normAvgRed });
     const redBar = '█'.repeat(Math.min(25, Math.round(normAvgRed * 3)));
-    console.log(`    ${preBreakoutDaily[i].date}: redDays=${redCount}/5  avgRedMag=${(avgRedMag/1000).toFixed(0).padStart(5)}K  (${normAvgRed.toFixed(1).padStart(5)}%)  |${redBar}|`);
+    console.log(
+      `    ${preBreakoutDaily[i].date}: redDays=${redCount}/5  avgRedMag=${(avgRedMag / 1000).toFixed(0).padStart(5)}K  (${normAvgRed.toFixed(1).padStart(5)}%)  |${redBar}|`,
+    );
   }
 
   // Split into halves and compare RED delta stats
@@ -331,29 +407,37 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   const firstHalf = preBreakoutDaily.slice(0, halfIdx);
   const secondHalf = preBreakoutDaily.slice(halfIdx);
 
-  const firstRedDays = firstHalf.filter(d => d.delta < 0);
-  const secondRedDays = secondHalf.filter(d => d.delta < 0);
+  const firstRedDays = firstHalf.filter((d) => d.delta < 0);
+  const secondRedDays = secondHalf.filter((d) => d.delta < 0);
 
-  const firstRedMags = firstRedDays.map(d => Math.abs(d.delta));
-  const secondRedMags = secondRedDays.map(d => Math.abs(d.delta));
+  const firstRedMags = firstRedDays.map((d) => Math.abs(d.delta));
+  const secondRedMags = secondRedDays.map((d) => Math.abs(d.delta));
 
   const firstAvg = mean(firstRedMags);
   const secondAvg = mean(secondRedMags);
   const firstStd = std(firstRedMags);
   const secondStd = std(secondRedMags);
   // Normalize by volume
-  const firstAvgVol = mean(firstHalf.map(d => d.totalVol));
-  const secondAvgVol = mean(secondHalf.map(d => d.totalVol));
-  const firstNorm = firstAvgVol > 0 ? firstAvg / firstAvgVol * 100 : 0;
-  const secondNorm = secondAvgVol > 0 ? secondAvg / secondAvgVol * 100 : 0;
+  const firstAvgVol = mean(firstHalf.map((d) => d.totalVol));
+  const secondAvgVol = mean(secondHalf.map((d) => d.totalVol));
+  const firstNorm = firstAvgVol > 0 ? (firstAvg / firstAvgVol) * 100 : 0;
+  const secondNorm = secondAvgVol > 0 ? (secondAvg / secondAvgVol) * 100 : 0;
 
   console.log(`\n  RED delta contraction: First Half vs Second Half`);
   console.log(`  ─────────────────────────────────────────────────`);
   console.log(`                           First Half        Second Half       Change`);
-  console.log(`    Red days:            ${firstRedDays.length.toString().padStart(5)} (${(firstRedDays.length/firstHalf.length*100).toFixed(0)}%)          ${secondRedDays.length.toString().padStart(5)} (${(secondRedDays.length/secondHalf.length*100).toFixed(0)}%)`);
-  console.log(`    Avg |red delta|:     ${(firstAvg/1000).toFixed(0).padStart(5)}K              ${(secondAvg/1000).toFixed(0).padStart(5)}K          ${((secondAvg - firstAvg)/firstAvg*100).toFixed(0)}%`);
-  console.log(`    Std |red delta|:     ${(firstStd/1000).toFixed(0).padStart(5)}K              ${(secondStd/1000).toFixed(0).padStart(5)}K          ${firstStd > 0 ? ((secondStd - firstStd)/firstStd*100).toFixed(0) : '?'}%`);
-  console.log(`    Norm avg (÷ vol):    ${firstNorm.toFixed(1).padStart(5)}%              ${secondNorm.toFixed(1).padStart(5)}%          ${firstNorm > 0 ? ((secondNorm - firstNorm)/firstNorm*100).toFixed(0) : '?'}%`);
+  console.log(
+    `    Red days:            ${firstRedDays.length.toString().padStart(5)} (${((firstRedDays.length / firstHalf.length) * 100).toFixed(0)}%)          ${secondRedDays.length.toString().padStart(5)} (${((secondRedDays.length / secondHalf.length) * 100).toFixed(0)}%)`,
+  );
+  console.log(
+    `    Avg |red delta|:     ${(firstAvg / 1000).toFixed(0).padStart(5)}K              ${(secondAvg / 1000).toFixed(0).padStart(5)}K          ${(((secondAvg - firstAvg) / firstAvg) * 100).toFixed(0)}%`,
+  );
+  console.log(
+    `    Std |red delta|:     ${(firstStd / 1000).toFixed(0).padStart(5)}K              ${(secondStd / 1000).toFixed(0).padStart(5)}K          ${firstStd > 0 ? (((secondStd - firstStd) / firstStd) * 100).toFixed(0) : '?'}%`,
+  );
+  console.log(
+    `    Norm avg (÷ vol):    ${firstNorm.toFixed(1).padStart(5)}%              ${secondNorm.toFixed(1).padStart(5)}%          ${firstNorm > 0 ? (((secondNorm - firstNorm) / firstNorm) * 100).toFixed(0) : '?'}%`,
+  );
 
   // Thirds analysis for finer granularity
   const thirdSize = Math.floor(preBreakoutDaily.length / 3);
@@ -368,40 +452,48 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   const thirdResults = [];
   for (let t = 0; t < 3; t++) {
     const th = thirds[t];
-    const redD = th.filter(d => d.delta < 0);
-    const redMags = redD.map(d => Math.abs(d.delta));
+    const redD = th.filter((d) => d.delta < 0);
+    const redMags = redD.map((d) => Math.abs(d.delta));
     const avgMag = mean(redMags);
     const stdMag = std(redMags);
-    const thAvgVol = mean(th.map(d => d.totalVol));
-    const normMag = thAvgVol > 0 ? avgMag / thAvgVol * 100 : 0;
+    const thAvgVol = mean(th.map((d) => d.totalVol));
+    const normMag = thAvgVol > 0 ? (avgMag / thAvgVol) * 100 : 0;
     thirdResults.push({ label: thirdLabels[t], redDays: redD.length, totalDays: th.length, avgMag, stdMag, normMag });
-    console.log(`    ${thirdLabels[t].padEnd(6)}: ${redD.length} red/${th.length} total  avgMag=${(avgMag/1000).toFixed(0).padStart(5)}K  std=${(stdMag/1000).toFixed(0).padStart(5)}K  norm=${normMag.toFixed(1)}%`);
+    console.log(
+      `    ${thirdLabels[t].padEnd(6)}: ${redD.length} red/${th.length} total  avgMag=${(avgMag / 1000).toFixed(0).padStart(5)}K  std=${(stdMag / 1000).toFixed(0).padStart(5)}K  norm=${normMag.toFixed(1)}%`,
+    );
   }
 
   // Last 10 days before breakout - detailed RED analysis
   const last10 = preBreakoutDaily.slice(-10);
-  const last10Red = last10.filter(d => d.delta < 0);
-  const periodRed = preBreakoutDaily.filter(d => d.delta < 0);
+  const last10Red = last10.filter((d) => d.delta < 0);
+  const periodRed = preBreakoutDaily.filter((d) => d.delta < 0);
   console.log(`\n  Last 10 days before breakout — RED analysis:`);
   console.log(`    Red days in last 10: ${last10Red.length}/10`);
-  console.log(`    Avg |red delta| last 10: ${(last10Red.length > 0 ? mean(last10Red.map(d => Math.abs(d.delta)))/1000 : 0).toFixed(0)}K`);
-  console.log(`    Avg |red delta| overall: ${(periodRed.length > 0 ? mean(periodRed.map(d => Math.abs(d.delta)))/1000 : 0).toFixed(0)}K`);
+  console.log(
+    `    Avg |red delta| last 10: ${(last10Red.length > 0 ? mean(last10Red.map((d) => Math.abs(d.delta))) / 1000 : 0).toFixed(0)}K`,
+  );
+  console.log(
+    `    Avg |red delta| overall: ${(periodRed.length > 0 ? mean(periodRed.map((d) => Math.abs(d.delta))) / 1000 : 0).toFixed(0)}K`,
+  );
   if (last10Red.length > 0 && periodRed.length > 0) {
-    const lastAvg = mean(last10Red.map(d => Math.abs(d.delta)));
-    const allAvg = mean(periodRed.map(d => Math.abs(d.delta)));
-    console.log(`    Change: ${((lastAvg - allAvg) / allAvg * 100).toFixed(0)}% (negative = contraction)`);
+    const lastAvg = mean(last10Red.map((d) => Math.abs(d.delta)));
+    const allAvg = mean(periodRed.map((d) => Math.abs(d.delta)));
+    console.log(`    Change: ${(((lastAvg - allAvg) / allAvg) * 100).toFixed(0)}% (negative = contraction)`);
   }
 
   // Linear regression of |red delta| magnitude over time
   if (redDays.length >= 5) {
     const redXs = redDays.map((_, i) => i);
-    const redYs = redDays.map(d => Math.abs(d.delta));
+    const redYs = redDays.map((d) => Math.abs(d.delta));
     const redReg = linReg(redXs, redYs);
-    const normSlope = mean(redYs) > 0 ? redReg.slope / mean(redYs) * 100 : 0;
+    const normSlope = mean(redYs) > 0 ? (redReg.slope / mean(redYs)) * 100 : 0;
     console.log(`\n  Linear trend of |red delta| magnitude:`);
-    console.log(`    Slope: ${(redReg.slope/1000).toFixed(2)}K/day  (norm: ${normSlope.toFixed(2)}% per red day)`);
+    console.log(`    Slope: ${(redReg.slope / 1000).toFixed(2)}K/day  (norm: ${normSlope.toFixed(2)}% per red day)`);
     console.log(`    R²: ${redReg.r2.toFixed(4)}`);
-    console.log(`    Direction: ${redReg.slope < 0 ? 'CONTRACTING (sellers weakening)' : 'EXPANDING (sellers strengthening)'}`);
+    console.log(
+      `    Direction: ${redReg.slope < 0 ? 'CONTRACTING (sellers weakening)' : 'EXPANDING (sellers strengthening)'}`,
+    );
   }
 
   return { rollingRedMetrics, thirdResults };
@@ -427,14 +519,18 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   console.log('\n  Daily data:');
   for (const d of allDaily) {
     const dir = d.delta >= 0 ? '+' : '';
-    console.log(`    ${d.date}: $${d.close.toFixed(2).padStart(7)}  ∂=${dir}${(d.delta/1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  rng=${d.rangePct.toFixed(2).padStart(6)}%  vol=${(d.totalVol/1e6).toFixed(2)}M`);
+    console.log(
+      `    ${d.date}: $${d.close.toFixed(2).padStart(7)}  ∂=${dir}${(d.delta / 1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  rng=${d.rangePct.toFixed(2).padStart(6)}%  vol=${(d.totalVol / 1e6).toFixed(2)}M`,
+    );
   }
 
   console.log('\n  Weekly summary:');
   for (const w of allWeeks) {
     const dir = w.delta >= 0 ? '+' : '';
     const priceDir = w.close >= w.open ? '▲' : '▼';
-    console.log(`    ${w.weekStart}: ${priceDir} $${w.open.toFixed(2)}→$${w.close.toFixed(2)}  ∂=${dir}${w.deltaPct.toFixed(2).padStart(7)}%  (${dir}${(w.delta/1000).toFixed(0).padStart(7)}K)  rng=${w.avgRange.toFixed(2).padStart(6)}%  vol=${(w.avgVol/1e6).toFixed(2)}M  [${w.nDays}d]`);
+    console.log(
+      `    ${w.weekStart}: ${priceDir} $${w.open.toFixed(2)}→$${w.close.toFixed(2)}  ∂=${dir}${w.deltaPct.toFixed(2).padStart(7)}%  (${dir}${(w.delta / 1000).toFixed(0).padStart(7)}K)  rng=${w.avgRange.toFixed(2).padStart(6)}%  vol=${(w.avgVol / 1e6).toFixed(2)}M  [${w.nDays}d]`,
+    );
   }
 
   console.log(`\n  Cumulative delta vs price:`);
@@ -443,7 +539,9 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
     cumDelta += w.delta;
     const priceDir = w.close >= w.open ? '▲' : '▼';
     const dDir = cumDelta >= 0 ? '+' : '';
-    console.log(`    ${w.weekStart}: price $${w.close.toFixed(2)} ${priceDir}  cum∂=${dDir}${(cumDelta/1000).toFixed(0)}K`);
+    console.log(
+      `    ${w.weekStart}: price $${w.close.toFixed(2)} ${priceDir}  cum∂=${dDir}${(cumDelta / 1000).toFixed(0)}K`,
+    );
   }
 
   // Rolling 5-day delta
@@ -472,18 +570,27 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
     for (let start = 0; start <= allDaily.length - winSize; start++) {
       const slice = allDaily.slice(start, start + winSize);
       const result = scoreSubwindow(slice, preDaily);
-      if (result) windowResults.push({ start, winSize, ...result, startDate: slice[0].date, endDate: slice[slice.length - 1].date });
+      if (result)
+        windowResults.push({
+          start,
+          winSize,
+          ...result,
+          startDate: slice[0].date,
+          endDate: slice[slice.length - 1].date,
+        });
     }
 
     windowResults.sort((a, b) => b.score - a.score);
     for (const w of windowResults.slice(0, 5)) {
       const det = w.detected ? '✅' : '  ';
       const gated = w.reason === 'concordant' ? ' [concordant]' : w.reason === 'slope_gate' ? ' [slope]' : '';
-      console.log(`    ${det} ${w.startDate}→${w.endDate}  score=${w.score.toFixed(4)}  net∂=${w.netDeltaPct?.toFixed(2) || '?'}%  price=${w.overallPriceChange.toFixed(1)}%  corr=${w.priceDeltaCorr?.toFixed(2) || '?'}  slope=${w.deltaSlopeNorm?.toFixed(2) || '?'}  accWk=${w.accumWeeks || '?'}/${w.weeks || '?'}${gated}`);
+      console.log(
+        `    ${det} ${w.startDate}→${w.endDate}  score=${w.score.toFixed(4)}  net∂=${w.netDeltaPct?.toFixed(2) || '?'}%  price=${w.overallPriceChange.toFixed(1)}%  corr=${w.priceDeltaCorr?.toFixed(2) || '?'}  slope=${w.deltaSlopeNorm?.toFixed(2) || '?'}  accWk=${w.accumWeeks || '?'}/${w.weeks || '?'}${gated}`,
+      );
     }
 
-    const detectedCount = windowResults.filter(w => w.detected).length;
-    const gatedCount = windowResults.filter(w => w.score === 0).length;
+    const detectedCount = windowResults.filter((w) => w.detected).length;
+    const gatedCount = windowResults.filter((w) => w.score === 0).length;
     console.log(`    → ${detectedCount}/${windowResults.length} detected, ${gatedCount} gated`);
   }
 
@@ -499,28 +606,40 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
       const z = zones[zi];
       const c = z.components;
       console.log(`\n  Zone ${zi + 1}: ${z.startDate} → ${z.endDate} (${z.winSize}d, ${z.weeks}wk)`);
-      console.log(`    Score: ${z.score.toFixed(4)}  |  Price: ${z.overallPriceChange.toFixed(1)}%  |  Net∂: ${z.netDeltaPct.toFixed(2)}%  |  Slope: ${z.deltaSlopeNorm.toFixed(2)}  |  Corr: ${z.priceDeltaCorr.toFixed(2)}`);
-      console.log(`    AccWk: ${z.accumWeeks}/${z.weeks} (${(z.accumWeekRatio*100).toFixed(0)}%)  |  Absorption: ${z.absorptionPct.toFixed(1)}%  |  BuySell: ${z.largeBuyVsSell.toFixed(1)}  |  VolDecl: ${z.volDeclineScore.toFixed(2)}`);
-      console.log(`    Components: s1=${c.s1.toFixed(2)} s2=${c.s2.toFixed(2)} s3=${c.s3.toFixed(2)} s4=${c.s4.toFixed(2)} s5=${c.s5.toFixed(2)} s6=${c.s6.toFixed(2)} s7=${c.s7.toFixed(2)}  durMult=${z.durationMultiplier.toFixed(3)}`);
+      console.log(
+        `    Score: ${z.score.toFixed(4)}  |  Price: ${z.overallPriceChange.toFixed(1)}%  |  Net∂: ${z.netDeltaPct.toFixed(2)}%  |  Slope: ${z.deltaSlopeNorm.toFixed(2)}  |  Corr: ${z.priceDeltaCorr.toFixed(2)}`,
+      );
+      console.log(
+        `    AccWk: ${z.accumWeeks}/${z.weeks} (${(z.accumWeekRatio * 100).toFixed(0)}%)  |  Absorption: ${z.absorptionPct.toFixed(1)}%  |  BuySell: ${z.largeBuyVsSell.toFixed(1)}  |  VolDecl: ${z.volDeclineScore.toFixed(2)}`,
+      );
+      console.log(
+        `    Components: s1=${c.s1.toFixed(2)} s2=${c.s2.toFixed(2)} s3=${c.s3.toFixed(2)} s4=${c.s4.toFixed(2)} s5=${c.s5.toFixed(2)} s6=${c.s6.toFixed(2)} s7=${c.s7.toFixed(2)}  durMult=${z.durationMultiplier.toFixed(3)}`,
+      );
       if (z.cappedDays?.length > 0) {
-        console.log(`    Capped: ${z.cappedDays.map(cd => `${cd.date} (${(cd.original/1000).toFixed(0)}K→${(cd.capped/1000).toFixed(0)}K)`).join(', ')}`);
+        console.log(
+          `    Capped: ${z.cappedDays.map((cd) => `${cd.date} (${(cd.original / 1000).toFixed(0)}K→${(cd.capped / 1000).toFixed(0)}K)`).join(', ')}`,
+        );
       }
       console.log(`    Weeks:`);
       for (const w of z.weeksData) {
         const dir = w.effectiveDelta >= 0 ? '+' : '';
         const priceDir = w.close >= w.open ? '▲' : '▼';
-        console.log(`      ${w.weekStart}: ${priceDir} $${w.close.toFixed(2)}  ${dir}${(w.effectiveDelta/1000).toFixed(0)}K  (${dir}${w.deltaPct.toFixed(2)}%)  [${w.nDays}d]`);
+        console.log(
+          `      ${w.weekStart}: ${priceDir} $${w.close.toFixed(2)}  ${dir}${(w.effectiveDelta / 1000).toFixed(0)}K  (${dir}${w.deltaPct.toFixed(2)}%)  [${w.nDays}d]`,
+        );
       }
 
       const zoneSlice = allDaily.slice(z.start, z.start + z.winSize);
       console.log(`    Daily detail:`);
       for (let i = 0; i < zoneSlice.length; i++) {
         const d = zoneSlice[i];
-        const prev = i > 0 ? zoneSlice[i-1] : null;
-        const priceChg = prev ? ((d.close - prev.close) / prev.close * 100).toFixed(1) : '—';
+        const prev = i > 0 ? zoneSlice[i - 1] : null;
+        const priceChg = prev ? (((d.close - prev.close) / prev.close) * 100).toFixed(1) : '—';
         const dir = d.delta >= 0 ? '+' : '';
-        const absorb = (prev && d.close < prev.close && d.delta > 0) ? ' ★ABSORB' : '';
-        console.log(`      ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta/1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol/1e6).toFixed(2)}M${absorb}`);
+        const absorb = prev && d.close < prev.close && d.delta > 0 ? ' ★ABSORB' : '';
+        console.log(
+          `      ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta / 1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol / 1e6).toFixed(2)}M${absorb}`,
+        );
       }
     }
   } else {
@@ -531,14 +650,28 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
       for (let start = 0; start <= allDaily.length - winSize; start++) {
         const slice = allDaily.slice(start, start + winSize);
         const result = scoreSubwindow(slice, preDaily);
-        if (result) allWindows.push({ start, winSize, ...result, startDate: slice[0].date, endDate: slice[slice.length-1].date });
+        if (result)
+          allWindows.push({
+            start,
+            winSize,
+            ...result,
+            startDate: slice[0].date,
+            endDate: slice[slice.length - 1].date,
+          });
       }
     }
     allWindows.sort((a, b) => b.score - a.score);
     console.log('\n  Top 15 highest-scoring windows (including gated):');
     for (const w of allWindows.slice(0, 15)) {
-      const gated = w.reason === 'concordant' ? ' [concordant]' : w.reason === 'slope_gate' ? ` [slope=${w.deltaSlopeNorm?.toFixed(2)}]` : '';
-      console.log(`    ${w.startDate}→${w.endDate} (${w.winSize}d)  score=${w.score.toFixed(4)}  net∂=${w.netDeltaPct?.toFixed(2) || '?'}%  price=${w.overallPriceChange.toFixed(1)}%  slope=${w.deltaSlopeNorm?.toFixed(2) || '?'}  corr=${w.priceDeltaCorr?.toFixed(2) || '?'}${gated}`);
+      const gated =
+        w.reason === 'concordant'
+          ? ' [concordant]'
+          : w.reason === 'slope_gate'
+            ? ` [slope=${w.deltaSlopeNorm?.toFixed(2)}]`
+            : '';
+      console.log(
+        `    ${w.startDate}→${w.endDate} (${w.winSize}d)  score=${w.score.toFixed(4)}  net∂=${w.netDeltaPct?.toFixed(2) || '?'}%  price=${w.overallPriceChange.toFixed(1)}%  slope=${w.deltaSlopeNorm?.toFixed(2) || '?'}  corr=${w.priceDeltaCorr?.toFixed(2) || '?'}${gated}`,
+      );
     }
   }
 
@@ -551,25 +684,27 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
   console.log('  SATS — LAST 10 DAYS BEFORE BREAKOUT (6/16/25)');
   console.log('='.repeat(80));
 
-  const breakoutIdx = allDaily.findIndex(d => d.date >= '2025-06-16');
+  const breakoutIdx = allDaily.findIndex((d) => d.date >= '2025-06-16');
   const preBreakoutSlice = breakoutIdx > 0 ? allDaily.slice(0, breakoutIdx) : allDaily;
   const lastDays = preBreakoutSlice.slice(-10);
-  const avgRange = mean(preBreakoutSlice.map(d => d.rangePct));
-  const avgVol = mean(preBreakoutSlice.map(d => d.totalVol));
+  const avgRange = mean(preBreakoutSlice.map((d) => d.rangePct));
+  const avgVol = mean(preBreakoutSlice.map((d) => d.totalVol));
   const last5 = lastDays.slice(-5);
-  const last5Range = mean(last5.map(d => d.rangePct));
-  const last5Vol = mean(last5.map(d => d.totalVol));
+  const last5Range = mean(last5.map((d) => d.rangePct));
+  const last5Vol = mean(last5.map((d) => d.totalVol));
 
   console.log(`  Last 5d avg range: ${last5Range.toFixed(2)}% (overall avg: ${avgRange.toFixed(2)}%)`);
-  console.log(`  Last 5d avg vol: ${(last5Vol/1e6).toFixed(2)}M (overall avg: ${(avgVol/1e6).toFixed(2)}M)`);
+  console.log(`  Last 5d avg vol: ${(last5Vol / 1e6).toFixed(2)}M (overall avg: ${(avgVol / 1e6).toFixed(2)}M)`);
 
   for (let i = 0; i < lastDays.length; i++) {
     const d = lastDays[i];
-    const prev = i > 0 ? lastDays[i-1] : null;
-    const priceChg = prev ? ((d.close - prev.close) / prev.close * 100).toFixed(1) : '—';
+    const prev = i > 0 ? lastDays[i - 1] : null;
+    const priceChg = prev ? (((d.close - prev.close) / prev.close) * 100).toFixed(1) : '—';
     const dir = d.delta >= 0 ? '+' : '';
-    const absorb = (prev && d.close < prev.close && d.delta > 0) ? ' ★ABSORB' : '';
-    console.log(`    ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta/1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol/1e6).toFixed(2)}M${absorb}`);
+    const absorb = prev && d.close < prev.close && d.delta > 0 ? ' ★ABSORB' : '';
+    console.log(
+      `    ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta / 1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol / 1e6).toFixed(2)}M${absorb}`,
+    );
   }
 
   // Breakout and post-breakout
@@ -578,15 +713,17 @@ function analyzeRedDeltaContraction(allDaily, breakoutDate) {
     const postSlice = allDaily.slice(breakoutIdx, Math.min(breakoutIdx + 15, allDaily.length));
     for (let i = 0; i < postSlice.length; i++) {
       const d = postSlice[i];
-      const prev = i > 0 ? postSlice[i-1] : preBreakoutSlice[preBreakoutSlice.length - 1];
-      const priceChg = prev ? ((d.close - prev.close) / prev.close * 100).toFixed(1) : '—';
+      const prev = i > 0 ? postSlice[i - 1] : preBreakoutSlice[preBreakoutSlice.length - 1];
+      const priceChg = prev ? (((d.close - prev.close) / prev.close) * 100).toFixed(1) : '—';
       const dir = d.delta >= 0 ? '+' : '';
-      console.log(`    ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta/1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol/1e6).toFixed(2)}M`);
+      console.log(
+        `    ${d.date}: $${d.close.toFixed(2).padStart(7)} (${priceChg.padStart(6)}%)  ∂=${dir}${(d.delta / 1000).toFixed(0).padStart(6)}K  (${d.deltaPct.toFixed(1).padStart(6)}%)  vol=${(d.totalVol / 1e6).toFixed(2)}M`,
+      );
     }
   }
 
   console.log('\nDone.');
-})().catch(err => {
+})().catch((err) => {
   console.error('Error:', err.message || err);
   process.exit(1);
 });

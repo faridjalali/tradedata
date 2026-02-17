@@ -7,6 +7,7 @@
     "start": "node index.js",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "typecheck:server": "tsc --noEmit --project tsconfig.server.json",
     "lint:server": "node --check index.js && node --check server/chartMath.js && node --check server/routes/chartRoutes.js && node --check server/routes/divergenceRoutes.js && node --check server/routes/healthRoutes.js && node --check server/services/divergenceService.js && node --check server/services/healthService.js",
     "lint:eslint": "eslint .",
     "lint": "npm run lint:server && npm run typecheck",
@@ -32,6 +33,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.3",
+    "@types/pg": "^8.16.0",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "eslint": "^10.0.0",

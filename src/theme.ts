@@ -134,7 +134,11 @@ export function setTheme(name: ThemeName): void {
   if (name === currentTheme) return;
   currentTheme = name;
   applyThemeToDOM();
-  try { localStorage.setItem(THEME_STORAGE_KEY, name); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, name);
+  } catch {
+    /* ignore */
+  }
   window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: name } }));
 }
 
@@ -171,6 +175,8 @@ export function initTheme(): void {
     if (stored === 'light' || stored === 'beige' || stored === 'dark' || stored === 'claude') {
       currentTheme = stored;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   applyThemeToDOM();
 }

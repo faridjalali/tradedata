@@ -16,36 +16,51 @@ async function fetchBars(symbol, mult, ts, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c, volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
-function toDate(ts) { return new Date(ts * 1000).toISOString().split('T')[0]; }
+function toDate(ts) {
+  return new Date(ts * 1000).toISOString().split('T')[0];
+}
 
 function analyzeVolContraction(bars15m, label) {
   // Aggregate to daily
   const dailyMap = new Map();
   for (const b of bars15m) {
     const d = toDate(b.time);
-    if (!dailyMap.has(d)) dailyMap.set(d, { open: b.open, high: -Infinity, low: Infinity, close: b.close, vol: 0, first: true });
+    if (!dailyMap.has(d))
+      dailyMap.set(d, { open: b.open, high: -Infinity, low: Infinity, close: b.close, vol: 0, first: true });
     const day = dailyMap.get(d);
     day.high = Math.max(day.high, b.high);
     day.low = Math.min(day.low, b.low);
     day.close = b.close;
     day.vol += b.volume;
-    if (day.first) { day.open = b.open; day.first = false; }
+    if (day.first) {
+      day.open = b.open;
+      day.first = false;
+    }
   }
   const dates = [...dailyMap.keys()].sort();
-  const daily = dates.map(d => dailyMap.get(d));
+  const daily = dates.map((d) => dailyMap.get(d));
 
-  if (daily.length < 10) { console.log(`  ${label}: insufficient data (${daily.length} days)`); return; }
+  if (daily.length < 10) {
+    console.log(`  ${label}: insufficient data (${daily.length} days)`);
+    return;
+  }
 
   // Compute daily range % and ATR
-  const ranges = daily.map(d => ((d.high - d.low) / d.close) * 100);
-  const vols = daily.map(d => d.vol);
-  const closes = daily.map(d => d.close);
+  const ranges = daily.map((d) => ((d.high - d.low) / d.close) * 100);
+  const vols = daily.map((d) => d.vol);
+  const closes = daily.map((d) => d.close);
 
   // Bollinger Band width (20-period)
   const bbWidths = [];
@@ -77,7 +92,7 @@ function analyzeVolContraction(bars15m, label) {
     const bbThird = Math.floor(bbWidths.length / 3);
     const bbT1 = bbWidths.slice(0, bbThird).reduce((s, v) => s + v, 0) / bbThird;
     const bbT3 = bbWidths.slice(2 * bbThird).reduce((s, v) => s + v, 0) / (bbWidths.length - 2 * bbThird);
-    bbContraction = `${((bbT3 - bbT1) / bbT1 * 100).toFixed(1)}%`;
+    bbContraction = `${(((bbT3 - bbT1) / bbT1) * 100).toFixed(1)}%`;
   }
 
   // Last 5 days vs first 5 days
@@ -90,20 +105,30 @@ function analyzeVolContraction(bars15m, label) {
   console.log(`    Daily Range (avg):`);
   console.log(`      First third: ${avgT1Range.toFixed(3)}%`);
   console.log(`      Last third:  ${avgT3Range.toFixed(3)}%`);
-  console.log(`      Contraction: ${rangeContraction.toFixed(1)}% ${rangeContraction < -10 ? '✅ CONTRACTING' : rangeContraction > 10 ? '⬆ EXPANDING' : '~ FLAT'}`);
+  console.log(
+    `      Contraction: ${rangeContraction.toFixed(1)}% ${rangeContraction < -10 ? '✅ CONTRACTING' : rangeContraction > 10 ? '⬆ EXPANDING' : '~ FLAT'}`,
+  );
   console.log(`    Volume (avg):`);
   console.log(`      First third: ${(avgT1Vol / 1e6).toFixed(2)}M`);
   console.log(`      Last third:  ${(avgT3Vol / 1e6).toFixed(2)}M`);
-  console.log(`      Change:      ${volContraction.toFixed(1)}% ${volContraction < -15 ? '✅ DECLINING' : '~ FLAT/RISING'}`);
+  console.log(
+    `      Change:      ${volContraction.toFixed(1)}% ${volContraction < -15 ? '✅ DECLINING' : '~ FLAT/RISING'}`,
+  );
   console.log(`    BB Width change: ${bbContraction}`);
   console.log(`    Last 5d vs First 5d:`);
-  console.log(`      Range: ${first5Range.toFixed(3)}% → ${last5Range.toFixed(3)}% (${((last5Range/first5Range - 1)*100).toFixed(1)}%)`);
-  console.log(`      Volume: ${(first5Vol/1e6).toFixed(2)}M → ${(last5Vol/1e6).toFixed(2)}M (${((last5Vol/first5Vol - 1)*100).toFixed(1)}%)`);
+  console.log(
+    `      Range: ${first5Range.toFixed(3)}% → ${last5Range.toFixed(3)}% (${((last5Range / first5Range - 1) * 100).toFixed(1)}%)`,
+  );
+  console.log(
+    `      Volume: ${(first5Vol / 1e6).toFixed(2)}M → ${(last5Vol / 1e6).toFixed(2)}M (${((last5Vol / first5Vol - 1) * 100).toFixed(1)}%)`,
+  );
 
   // Daily detail for last 10 days
   console.log(`    Last 10 days detail:`);
   for (let i = Math.max(0, daily.length - 10); i < daily.length; i++) {
-    console.log(`      ${dates[i]}: range=${ranges[i].toFixed(3)}% vol=${(vols[i]/1e6).toFixed(2)}M close=$${closes[i].toFixed(2)}`);
+    console.log(
+      `      ${dates[i]}: range=${ranges[i].toFixed(3)}% vol=${(vols[i] / 1e6).toFixed(2)}M close=$${closes[i].toFixed(2)}`,
+    );
   }
 }
 
@@ -124,4 +149,7 @@ async function main() {
   console.log('\nDone.');
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

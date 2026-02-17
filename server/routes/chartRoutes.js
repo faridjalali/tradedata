@@ -1,3 +1,4 @@
+// @ts-nocheck
 function invalidIntervalErrorMessage() {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
@@ -10,9 +11,7 @@ function invalidIntervalErrorMessage() {
 function parseTickerListFromQuery(req) {
   const singleTicker = String(req.query.ticker || '').trim();
   const multiTickersRaw = String(req.query.tickers || '').trim();
-  const merged = [singleTicker, multiTickersRaw]
-    .filter(Boolean)
-    .join(',');
+  const merged = [singleTicker, multiTickersRaw].filter(Boolean).join(',');
   const tickers = merged
     .split(',')
     .map((item) => item.trim().toUpperCase())
@@ -26,7 +25,9 @@ function parseTickerListFromQuery(req) {
  * @returns {boolean}
  */
 function parseBooleanQueryFlag(value) {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
@@ -65,7 +66,7 @@ function registerChartRoutes(options = {}) {
     getMiniBarsCacheByTicker,
     loadMiniChartBarsFromDb,
     loadMiniChartBarsFromDbBatch,
-    fetchMiniChartBarsFromApi
+    fetchMiniChartBarsFromApi,
   } = options;
 
   if (!app) {
@@ -82,7 +83,7 @@ function registerChartRoutes(options = {}) {
       }
 
       const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
-      
+
       // Validation skipped for tuple format as shape differs
       const useTupleFormat = req.query.format === 'tuple';
       let payload = result;
@@ -97,11 +98,11 @@ function registerChartRoutes(options = {}) {
           volumeDelta: pointsToTuples(result.volumeDelta, 'delta'),
           volumeDeltaRsi: {
             ...result.volumeDeltaRsi,
-            rsi: pointsToTuples(result.volumeDeltaRsi?.rsi)
-          }
+            rsi: pointsToTuples(result.volumeDeltaRsi?.rsi),
+          },
         };
       } else if (useTupleFormat) {
-          console.warn('[ChartAPI] Tuple format requested but helpers missing!');
+        console.warn('[ChartAPI] Tuple format requested but helpers missing!');
       } else if (typeof validateChartPayload === 'function') {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {
@@ -116,14 +117,16 @@ function registerChartRoutes(options = {}) {
           route: 'chart',
           interval,
           cacheHit,
-          durationMs: Date.now() - startedAtMs
+          durationMs: Date.now() - startedAtMs,
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
       console.error('Chart API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
-      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: 'Failed to fetch chart data' });
+      res
+        .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
+        .json({ error: 'Failed to fetch chart data' });
     }
   });
 
@@ -147,15 +150,19 @@ function registerChartRoutes(options = {}) {
         // Since barsToTuples expects array, we wrap and unwrap
         const barTuple = latestPayload.latestBar ? barsToTuples([latestPayload.latestBar])[0] : null;
         const rsiTuple = latestPayload.latestRsi ? pointsToTuples([latestPayload.latestRsi])[0] : null;
-        const vdTuple = latestPayload.latestVolumeDelta ? pointsToTuples([latestPayload.latestVolumeDelta], 'delta')[0] : null;
-        const vdRsiTuple = latestPayload.latestVolumeDeltaRsi ? pointsToTuples([latestPayload.latestVolumeDeltaRsi])[0] : null;
+        const vdTuple = latestPayload.latestVolumeDelta
+          ? pointsToTuples([latestPayload.latestVolumeDelta], 'delta')[0]
+          : null;
+        const vdRsiTuple = latestPayload.latestVolumeDeltaRsi
+          ? pointsToTuples([latestPayload.latestVolumeDeltaRsi])[0]
+          : null;
 
         payload = {
           ...latestPayload,
           latestBar: barTuple,
           latestRsi: rsiTuple,
           latestVolumeDelta: vdTuple,
-          latestVolumeDeltaRsi: vdRsiTuple
+          latestVolumeDeltaRsi: vdRsiTuple,
         };
       } else if (typeof validateChartLatestPayload === 'function') {
         const validation = validateChartLatestPayload(latestPayload);
@@ -171,21 +178,25 @@ function registerChartRoutes(options = {}) {
           route: 'chart_latest',
           interval,
           cacheHit,
-          durationMs: Date.now() - startedAtMs
+          durationMs: Date.now() - startedAtMs,
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
     } catch (err) {
       console.error('Chart Latest API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
-      res.status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502).json({ error: 'Failed to fetch latest chart data' });
+      res
+        .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
+        .json({ error: 'Failed to fetch latest chart data' });
     }
   });
 
   // Lightweight endpoint: returns cached daily OHLC bars from the last scan.
   app.get('/api/chart/mini-bars', async (req, res) => {
     try {
-      const ticker = String(req.query.ticker || '').trim().toUpperCase();
+      const ticker = String(req.query.ticker || '')
+        .trim()
+        .toUpperCase();
       if (!ticker) {
         return res.status(400).json({ error: 'Provide a ticker query parameter' });
       }
@@ -193,7 +204,7 @@ function registerChartRoutes(options = {}) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
-      let bars = cache ? (cache.get(ticker) || []) : [];
+      let bars = cache ? cache.get(ticker) || [] : [];
       // Fall back to DB if in-memory cache is empty (e.g. after server restart).
       if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
         bars = await loadMiniChartBarsFromDb(ticker);
@@ -238,7 +249,7 @@ function registerChartRoutes(options = {}) {
 
       // 1. Check in-memory cache first
       for (const t of tickers) {
-        const cached = cache ? (cache.get(t) || []) : [];
+        const cached = cache ? cache.get(t) || [] : [];
         if (cached.length > 0) {
           results[t] = cached;
         } else {
@@ -269,7 +280,9 @@ function registerChartRoutes(options = {}) {
         const API_CONCURRENCY = 5;
         for (let i = 0; i < apiNeeded.length; i += API_CONCURRENCY) {
           const chunk = apiNeeded.slice(i, i + API_CONCURRENCY);
-          const fetched = await Promise.all(chunk.map(t => fetchMiniChartBarsFromApi(t).then(bars => ({ t, bars }))));
+          const fetched = await Promise.all(
+            chunk.map((t) => fetchMiniChartBarsFromApi(t).then((bars) => ({ t, bars }))),
+          );
           for (const { t, bars } of fetched) {
             if (Array.isArray(bars) && bars.length > 0) {
               results[t] = bars;
@@ -291,7 +304,9 @@ function registerChartRoutes(options = {}) {
       if (typeof options.getVDFStatus !== 'function') {
         return res.status(501).json({ error: 'VDF endpoint is not enabled' });
       }
-      const ticker = String(req.query.ticker || '').trim().toUpperCase();
+      const ticker = String(req.query.ticker || '')
+        .trim()
+        .toUpperCase();
       if (!ticker) {
         return res.status(400).json({ error: 'Provide a ticker query parameter' });
       }
@@ -337,7 +352,7 @@ function registerChartRoutes(options = {}) {
         tickers,
         vdSourceInterval,
         forceRefresh: refresh,
-        noCache
+        noCache,
       });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(payload);

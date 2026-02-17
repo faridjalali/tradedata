@@ -13,20 +13,39 @@
     <link rel="icon" type="image/png" href="./voldelta_icon.png?v=1" />
     <link rel="apple-touch-icon" href="./voldelta_icon.png?v=1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Volume Delta" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
-    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"></script>
-    <script type="module" crossorigin src="./assets/index-Dkvcaxvx.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+      integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"
+      integrity="sha384-3N9GHhCtN3CQef6tNfqgZlv7sQLYIkcChN+uaTZ7xVdzKYp/SjBNPxa92+hM7EAY"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"
+      integrity="sha384-6pZys+XyCH0tACkmBDDBmI3cqbXjHWKKPtaZLx45PUShrKwmpQljmRsBkU58Ln1F"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/lightweight-charts-line-tools@2.0.1/dist/lightweight-charts-line-tools.standalone.production.js"
+      integrity="sha384-Vg1julmeksVLE9Cw/0YuYMH1yo4tIOsDpgYeBFDTzEXATPK0BFjJ2VA1DxbxEgOg"
+      crossorigin="anonymous"
+    ></script>
+    <script type="module" crossorigin src="./assets/index-L-Otshoy.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/vendor-charts-C-3zq_q_.js">
   </head>
   <body>
-    <div id="site-lock-overlay" class="site-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Site Passcode Lock">
+    <div
+      id="site-lock-overlay"
+      class="site-lock-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Site Passcode Lock"
+    >
       <div class="site-lock-panel">
         <div class="site-lock-title">Catvue</div>
         <div class="site-lock-subtitle">Enter Passcode</div>
@@ -61,87 +80,87 @@
       <header>
         <div class="header-left">
           <div id="global-settings-container">
-            <button id="global-settings-toggle" class="settings-icon-btn" aria-label="Global settings" title="Settings">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                <circle cx="12" cy="12" r="3"/>
+            <button id="global-settings-toggle" class="settings-icon-btn" aria-label="Global settings">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                />
+                <circle cx="12" cy="12" r="3" />
               </svg>
             </button>
             <div id="global-settings-panel" class="global-settings-panel hidden">
-              <div class="global-settings-row" style="justify-content:space-between;">
+              <div class="global-settings-row" style="justify-content: space-between">
                 <label class="global-settings-label">Theme</label>
-                <div id="global-theme-btns" style="display:flex;gap:6px;align-items:center;">
+                <div id="global-theme-btns" style="display: flex; gap: 6px; align-items: center">
                   <button class="theme-swatch-btn active" data-theme="dark" title="Dark"></button>
                   <button class="theme-swatch-btn" data-theme="light" title="Light"></button>
                   <button class="theme-swatch-btn" data-theme="beige" title="Beige"></button>
-                  <button class="theme-swatch-btn" data-theme="claude" title="Claude"></button>
+                  <button class="theme-swatch-btn" data-theme="claude" title="Brown"></button>
                 </div>
               </div>
-              <div class="global-settings-row" style="justify-content:space-between;">
+              <div class="global-settings-row" style="justify-content: space-between">
                 <label class="global-settings-label">Minichart on Mobile</label>
-                <div id="global-minichart-mobile-btns" style="display:flex;gap:6px;align-items:center;">
-                  <button class="tf-btn active" data-minichart-mobile="off">Off</button>
-                  <button class="tf-btn" data-minichart-mobile="on">On</button>
+                <div id="global-minichart-mobile-btns" style="display: flex; gap: 6px; align-items: center">
+                  <button class="pane-btn active" data-minichart-mobile="off">Off</button>
+                  <button class="pane-btn" data-minichart-mobile="on">On</button>
                 </div>
               </div>
               <div class="global-settings-row global-settings-timezone-row">
                 <label for="global-timezone-select" class="global-settings-label">Timezone</label>
-                <select id="global-timezone-select" class="glass-input global-settings-select" aria-label="Timezone"></select>
+                <select
+                  id="global-timezone-select"
+                  class="glass-input global-settings-select"
+                  aria-label="Timezone"
+                ></select>
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
                 <button
-                  class="tf-btn divergence-run-btn"
-                  id="divergence-fetch-daily-btn"
-                  data-tooltip="Fetch daily divergence data from divergence_symbols and build daily cards"
-                >
-                  Fetch Daily
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-fetch-daily-stop-btn"
-                  data-tooltip="Stop Fetch Daily"
                   aria-label="Stop Fetch Daily"
                   disabled
                 >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
                 </button>
                 <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
                 <button
-                  class="tf-btn divergence-run-btn"
-                  id="divergence-fetch-weekly-btn"
-                  data-tooltip="Fetch weekly divergence data from divergence_symbols and build weekly cards"
-                >
-                  Fetch Weekly
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-fetch-weekly-stop-btn"
-                  data-tooltip="Stop Fetch Weekly"
                   aria-label="Stop Fetch Weekly"
                   disabled
                 >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
                 </button>
                 <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
                 <button
-                  class="tf-btn divergence-run-btn"
-                  id="divergence-vdf-scan-btn"
-                  data-tooltip="Run VDF (Volume Divergence Flag) detection on all tickers in divergence_symbols"
-                >
-                  Analyze
-                </button>
-                <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-vdf-scan-stop-btn"
-                  data-tooltip="Stop VDF Scan"
                   aria-label="Stop VDF Scan"
                   disabled
                 >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
                 </button>
                 <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
               </div>
@@ -164,17 +183,12 @@
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
             </button>
-            <input
-              type="text"
-              id="search-input"
-              class="glass-input hidden-search"
-              placeholder=""
-            />
+            <input type="text" id="search-input" class="glass-input hidden-search" placeholder="" />
           </div>
         </div>
         <div class="header-right">
           <div id="header-nav-container">
-            <button id="header-nav-toggle" class="settings-icon-btn" aria-label="Navigation" title="Navigation">
+            <button id="header-nav-toggle" class="settings-icon-btn" aria-label="Navigation">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="12" cy="5" r="2"></circle>
                 <circle cx="12" cy="12" r="2"></circle>
@@ -197,7 +211,23 @@
             <div class="column-header">
               <h2>Run Metrics</h2>
               <div class="header-sort-controls">
-                <button id="logs-refresh-btn" class="tf-btn" title="Refresh metrics">↻</button>
+                <button id="logs-refresh-btn" class="pane-btn refresh-btn">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M21.5 2v6h-6" />
+                    <path d="M21.5 8A10 10 0 0 0 3.2 7.2" />
+                    <path d="M2.5 22v-6h6" />
+                    <path d="M2.5 16A10 10 0 0 0 20.8 16.8" />
+                  </svg>
+                </button>
               </div>
             </div>
             <div id="logs-run-cards" class="logs-grid">
@@ -226,23 +256,38 @@
               <div class="header-title-group">
                 <h2>Daily</h2>
                 <div class="column-tf-controls" data-column="daily">
-                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
                     <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
                     <input type="date" class="glass-input column-tf-to" />
-                    <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
+                    <button class="pane-btn column-tf-apply">&#x203A;</button>
                   </div>
                 </div>
               </div>
               <div class="header-sort-controls divergence-daily-sort">
-                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                <button class="pane-btn" data-sort="favorite" title="Favorites only">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polygon
+                      points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                    />
+                  </svg>
+                </button>
+                <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-daily-container" class="alerts-list">
@@ -255,23 +300,38 @@
               <div class="header-title-group">
                 <h2>Weekly</h2>
                 <div class="column-tf-controls" data-column="weekly">
-                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
                     <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
                     <input type="date" class="glass-input column-tf-to" />
-                    <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
+                    <button class="pane-btn column-tf-apply">&#x203A;</button>
                   </div>
                 </div>
               </div>
               <div class="header-sort-controls divergence-weekly-sort">
-                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                <button class="pane-btn" data-sort="favorite" title="Favorites only">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polygon
+                      points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                    />
+                  </svg>
+                </button>
+                <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-weekly-container" class="alerts-list">
@@ -284,123 +344,187 @@
       <!-- TICKER DETAIL VIEW (Moved from Live Feed) -->
       <div id="ticker-view" class="hidden">
         <div class="ticker-history-section">
-            <div class="split-view">
-              <!-- Daily Column -->
-              <div class="column">
-                <div class="column-header">
-                  <div class="header-title-group">
-                    <h2>Daily</h2>
-                    <div class="column-tf-controls" data-column="daily">
-                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
-                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                        <input type="date" class="glass-input column-tf-from" />
-                        <span class="column-tf-sep">to</span>
-                        <input type="date" class="glass-input column-tf-to" />
-                        <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
-                      </div>
+          <div class="split-view">
+            <!-- Daily Column -->
+            <div class="column">
+              <div class="column-header">
+                <div class="header-title-group">
+                  <h2>Daily</h2>
+                  <div class="column-tf-controls" data-column="daily">
+                    <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                    <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                    <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                    <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
+                    <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                      <input type="date" class="glass-input column-tf-from" />
+                      <span class="column-tf-sep">to</span>
+                      <input type="date" class="glass-input column-tf-to" />
+                      <button class="pane-btn column-tf-apply">&#x203A;</button>
                     </div>
                   </div>
-                  <div class="header-sort-controls ticker-daily-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
-                  </div>
                 </div>
-                <div id="ticker-daily-container" class="alerts-list">
-                  <div class="loading">Loading...</div>
+                <div class="header-sort-controls ticker-daily-sort">
+                  <button class="pane-btn" data-sort="favorite" title="Favorites only">
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polygon
+                        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                      />
+                    </svg>
+                  </button>
+                  <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                  <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                  <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
                 </div>
               </div>
-
-              <!-- Weekly Column -->
-              <div class="column">
-                <div class="column-header">
-                  <div class="header-title-group">
-                    <h2>Weekly</h2>
-                    <div class="column-tf-controls" data-column="weekly">
-                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
-                      <div class="column-tf-custom-panel header-dropdown-panel hidden">
-                        <input type="date" class="glass-input column-tf-from" />
-                        <span class="column-tf-sep">to</span>
-                        <input type="date" class="glass-input column-tf-to" />
-                        <button class="tf-btn column-tf-apply" title="Apply date range">&#x203A;</button>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="header-sort-controls ticker-weekly-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
-                  </div>
-                </div>
-                <div id="ticker-weekly-container" class="alerts-list">
-                  <div class="loading">Loading...</div>
-                </div>
+              <div id="ticker-daily-container" class="alerts-list">
+                <div class="loading">Loading...</div>
               </div>
             </div>
 
-
-
-            <!-- Custom Chart Section -->
-            <div id="custom-chart-container" class="custom-chart-section">
-              <!-- Chart controls -->
-              <div id="chart-controls" class="chart-controls-bar">
-                <div class="feed-controls-group">
-                  <button class="tf-btn" data-interval="5min" style="display:none;">5</button>
-                  <button class="tf-btn" data-interval="15min">15</button>
-                  <button class="tf-btn" data-interval="30min">30</button>
-                  <button class="tf-btn" data-interval="1hour">1h</button>
-                  <button class="tf-btn" data-interval="4hour">4h</button>
-                  <button class="tf-btn active" data-interval="1day">1D</button>
-                  <button class="tf-btn" data-interval="1week">1W</button>
+            <!-- Weekly Column -->
+            <div class="column">
+              <div class="column-header">
+                <div class="header-title-group">
+                  <h2>Weekly</h2>
+                  <div class="column-tf-controls" data-column="weekly">
+                    <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                    <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                    <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                    <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
+                    <div class="column-tf-custom-panel header-dropdown-panel hidden">
+                      <input type="date" class="glass-input column-tf-from" />
+                      <span class="column-tf-sep">to</span>
+                      <input type="date" class="glass-input column-tf-to" />
+                      <button class="pane-btn column-tf-apply">&#x203A;</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="chart-navigation-group">
-                  <button id="chart-nav-prev" class="tf-btn icon-only" title="Previous Ticker (Up Arrow)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="18 15 12 9 6 15"></polyline>
+                <div class="header-sort-controls ticker-weekly-sort">
+                  <button class="pane-btn" data-sort="favorite" title="Favorites only">
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polygon
+                        points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+                      />
                     </svg>
                   </button>
-                  <button id="chart-nav-next" class="tf-btn icon-only" title="Next Ticker (Down Arrow)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                  </button>
+                  <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                  <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                  <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
                 </div>
-                <button id="chart-fullscreen-btn" class="tf-btn icon-only" type="button" title="Fullscreen (Space)">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="5.5 1 1 1 1 5.5"/>
-                    <polyline points="10.5 1 15 1 15 5.5"/>
-                    <polyline points="10.5 15 15 15 15 10.5"/>
-                    <polyline points="5.5 15 1 15 1 10.5"/>
-                  </svg>
-                </button>
-                <button id="ticker-back-btn" class="tf-btn icon-only" type="button" title="Back to overview">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="19" y1="12" x2="5" y2="12"></line>
-                    <polyline points="12 19 5 12 12 5"></polyline>
-                  </svg>
-                </button>
               </div>
-
-              <!-- Error state -->
-              <div id="chart-error" class="chart-error" style="display:none;"></div>
-
-              <!-- Chart content -->
-              <div id="chart-content">
-                <div id="vd-chart-container" style="width: 100%; height: 240px;"></div>
-                <div id="price-chart-container" style="width: 100%; height: 400px;"></div>
-                <div id="rsi-chart-container" style="width: 100%; height: 400px;"></div>
-                <div id="vd-rsi-chart-container" style="width: 100%; height: 400px;"></div>
+              <div id="ticker-weekly-container" class="alerts-list">
+                <div class="loading">Loading...</div>
               </div>
             </div>
           </div>
+
+          <!-- Custom Chart Section -->
+          <div id="custom-chart-container" class="custom-chart-section">
+            <!-- Chart controls -->
+            <div id="chart-controls" class="chart-controls-bar">
+              <div class="feed-controls-group">
+                <button class="pane-btn" data-interval="5min" style="display: none">5</button>
+                <button class="pane-btn" data-interval="15min">15</button>
+                <button class="pane-btn" data-interval="30min">30</button>
+                <button class="pane-btn" data-interval="1hour">1h</button>
+                <button class="pane-btn" data-interval="4hour">4h</button>
+                <button class="pane-btn active" data-interval="1day">1D</button>
+                <button class="pane-btn" data-interval="1week">1W</button>
+              </div>
+              <div class="chart-navigation-group">
+                <button id="chart-nav-prev" class="pane-btn" title="Previous Ticker">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                  </svg>
+                </button>
+                <button id="chart-nav-next" class="pane-btn" title="Next Ticker">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+              </div>
+              <button id="chart-fullscreen-btn" class="pane-btn" type="button" title="Fullscreen">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="5.5 1 1 1 1 5.5" />
+                  <polyline points="10.5 1 15 1 15 5.5" />
+                  <polyline points="10.5 15 15 15 15 10.5" />
+                  <polyline points="5.5 15 1 15 1 10.5" />
+                </svg>
+              </button>
+              <button id="ticker-back-btn" class="pane-btn" type="button" title="Back">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <line x1="19" y1="12" x2="5" y2="12"></line>
+                  <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Error state -->
+            <div id="chart-error" class="chart-error" style="display: none"></div>
+
+            <!-- Chart content -->
+            <div id="chart-content">
+              <div id="vd-chart-container" style="width: 100%; height: 200px"></div>
+              <div id="price-chart-container" style="width: 100%; height: 400px"></div>
+              <div id="rsi-chart-container" style="width: 100%; height: 200px"></div>
+              <div id="vd-rsi-chart-container" style="width: 100%; height: 220px"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- BREADTH VIEW -->
@@ -409,16 +533,16 @@
           <div class="single-page-header">
             <div class="single-page-controls">
               <div id="breadth-tf-btns" class="feed-controls-group">
-                <button class="tf-btn" data-days="1">T</button>
-                <button class="tf-btn active" data-days="5">5</button>
-                <button class="tf-btn" data-days="10">10</button>
-                <button class="tf-btn" data-days="20">20</button>
-                <button class="tf-btn" data-days="30">30</button>
+                <button class="pane-btn" data-days="1">T</button>
+                <button class="pane-btn active" data-days="5">5</button>
+                <button class="pane-btn" data-days="10">10</button>
+                <button class="pane-btn" data-days="20">20</button>
+                <button class="pane-btn" data-days="30">30</button>
               </div>
               <div id="breadth-metric-btns" class="feed-controls-group">
-                <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
-                <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
-                <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
+                <button class="pane-btn active" data-metric="SVIX">SPY / SVIX</button>
+                <button class="pane-btn" data-metric="RSP">SPY / RSP</button>
+                <button class="pane-btn" data-metric="MAGS">SPY / MAGS</button>
               </div>
             </div>
             <span id="breadth-subtitle" class="single-page-subtitle">SPY vs SVIX — Normalized</span>
@@ -426,7 +550,7 @@
           <div class="single-page-chart-wrapper">
             <canvas id="breadth-chart"></canvas>
           </div>
-          <div id="breadth-error" class="single-page-status" style="display:none;"></div>
+          <div id="breadth-error" class="single-page-status" style="display: none"></div>
         </div>
       </main>
     </div>

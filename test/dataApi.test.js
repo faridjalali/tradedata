@@ -31,7 +31,7 @@ test('buildDataApiUrl builds URL with path and params', () => {
   const url = buildDataApiUrl('/v2/aggs/ticker/SPY/range/1/day/2026-01-01/2026-01-15', {
     adjusted: 'true',
     sort: 'asc',
-    limit: '50000'
+    limit: '50000',
   });
   assert.ok(url.includes('/v2/aggs/ticker/SPY/range/1/day/'));
   assert.ok(url.includes('adjusted=true'));

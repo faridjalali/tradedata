@@ -7,7 +7,7 @@
  * Also re-runs the full algorithm with custom weights to catch
  * zones that cross the 0.30 detection threshold in either direction.
  */
-"use strict";
+'use strict';
 
 const {
   findAccumulationZones,
@@ -19,8 +19,8 @@ const {
 const fs = require('fs');
 
 // Weight sets
-const DEFAULT_W = { s1: 0.20, s2: 0.15, s3: 0.10, s4: 0.10, s5: 0.05, s6: 0.18, s7: 0.05, s8: 0.17 };
-const CUSTOM_W  = { s1: 0.18, s2: 0.15, s3: 0.05, s4: 0.05, s5: 0.05, s6: 0.22, s7: 0.05, s8: 0.25 };
+const DEFAULT_W = { s1: 0.2, s2: 0.15, s3: 0.1, s4: 0.1, s5: 0.05, s6: 0.18, s7: 0.05, s8: 0.17 };
+const CUSTOM_W = { s1: 0.18, s2: 0.15, s3: 0.05, s4: 0.05, s5: 0.05, s6: 0.22, s7: 0.05, s8: 0.25 };
 
 function rescoreZone(zone, weights) {
   if (!zone.components) return zone.score;
@@ -35,9 +35,15 @@ function rescoreZone(zone, weights) {
   const s7 = comps.s7_volDecline ?? comps.s7 ?? 0;
   const s8 = comps.s8_divergence ?? comps.s8 ?? 0;
 
-  const rawScore = s1 * weights.s1 + s2 * weights.s2 + s3 * weights.s3 +
-                   s4 * weights.s4 + s5 * weights.s5 + s6 * weights.s6 +
-                   s7 * weights.s7 + s8 * weights.s8;
+  const rawScore =
+    s1 * weights.s1 +
+    s2 * weights.s2 +
+    s3 * weights.s3 +
+    s4 * weights.s4 +
+    s5 * weights.s5 +
+    s6 * weights.s6 +
+    s7 * weights.s7 +
+    s8 * weights.s8;
   const concordancePenalty = zone.concordancePenalty ?? 1.0;
   const durationMultiplier = zone.durationMultiplier ?? 1.0;
   return rawScore * concordancePenalty * durationMultiplier;
@@ -70,9 +76,7 @@ const LLM_VERDICTS = {
     proximity: 'inflated (was 70 imminent, sell anomaly counted)',
   },
   BW: {
-    zones: [
-      { dates: '2025-04-02→2025-05-06', verdict: 'agree', note: 'Strong bottom accumulation' },
-    ],
+    zones: [{ dates: '2025-04-02→2025-05-06', verdict: 'agree', note: 'Strong bottom accumulation' }],
     proximity: 'inflated (sell anomaly counted as bullish)',
   },
   COHR: {
@@ -93,9 +97,7 @@ const LLM_VERDICTS = {
     proximity: 'heavily inflated (100pts, sell anomaly 6.8x counted)',
   },
   EOSE: {
-    zones: [
-      { dates: '2025-04-01→2025-04-14', verdict: 'false_positive', note: 'concordant 68%, s8=0.001' },
-    ],
+    zones: [{ dates: '2025-04-01→2025-04-14', verdict: 'false_positive', note: 'concordant 68%, s8=0.001' }],
     proximity: 'correct (none)',
   },
   GRAL: {
@@ -204,12 +206,20 @@ console.log('='.repeat(110));
 console.log(`\nDefault:  s1=20  s2=15  s3=10  s4=10  s5=5  s6=18  s7=5  s8=17`);
 console.log(`Custom:   s1=18  s2=15  s3=5   s4=5   s5=5  s6=22  s7=5  s8=25`);
 console.log(`Changes:  s1-2   s2=    s3-5   s4-5   s5=   s6+4   s7=   s8+8`);
-console.log(`\nKey shift: +8 to Divergence (s8), +4 to Absorption (s6), -5 each to Delta Shift (s3) and Accum Ratio (s4)\n`);
+console.log(
+  `\nKey shift: +8 to Divergence (s8), +4 to Absorption (s6), -5 each to Delta Shift (s3) and Accum Ratio (s4)\n`,
+);
 
-let totalAgree = 0, totalPartial = 0, totalFP = 0;
-let customBetterCount = 0, defaultBetterCount = 0, sameCount = 0;
-let fpScoreDefault = [], fpScoreCustom = [];
-let tpScoreDefault = [], tpScoreCustom = [];
+let totalAgree = 0,
+  totalPartial = 0,
+  totalFP = 0;
+let customBetterCount = 0,
+  defaultBetterCount = 0,
+  sameCount = 0;
+let fpScoreDefault = [],
+  fpScoreCustom = [];
+let tpScoreDefault = [],
+  tpScoreCustom = [];
 
 for (const ticker of tickers) {
   const b = before[ticker];
@@ -230,11 +240,14 @@ for (const ticker of tickers) {
     const marker = diff > 0.01 ? '↑' : diff < -0.01 ? '↓' : '≈';
 
     // Find LLM verdict for this zone
-    const llmZone = llm.zones.find(lz => z.startDate >= lz.dates.split('→')[0].trim() && z.endDate <= lz.dates.split('→')[1].trim())
-                 || llm.zones.find(lz => lz.dates.includes(z.startDate) || lz.dates.includes(z.endDate));
+    const llmZone =
+      llm.zones.find(
+        (lz) => z.startDate >= lz.dates.split('→')[0].trim() && z.endDate <= lz.dates.split('→')[1].trim(),
+      ) || llm.zones.find((lz) => lz.dates.includes(z.startDate) || lz.dates.includes(z.endDate));
     const verdict = llmZone ? llmZone.verdict : 'unknown';
     const note = llmZone ? llmZone.note : '';
-    const verdictSymbol = verdict === 'agree' ? '✓' : verdict === 'partial' ? '~' : verdict === 'false_positive' ? '✗' : '?';
+    const verdictSymbol =
+      verdict === 'agree' ? '✓' : verdict === 'partial' ? '~' : verdict === 'false_positive' ? '✗' : '?';
 
     if (verdict === 'agree') totalAgree++;
     else if (verdict === 'partial') totalPartial++;
@@ -265,8 +278,12 @@ for (const ticker of tickers) {
     const s3val = z.components?.s3_deltaShift ?? z.components?.s3 ?? 0;
     const s4val = z.components?.s4_accumRatio ?? z.components?.s4 ?? 0;
 
-    console.log(`  ${verdictSymbol} Z${z.rank}: ${z.startDate}→${z.endDate} | ${z.windowDays}d | conc=${(z.concordantFrac||0).toFixed(2)} | price=${(z.overallPriceChange||0).toFixed(1)}%`);
-    console.log(`    Default: ${defaultScore.toFixed(3)} | Custom: ${customScore.toFixed(3)} (${marker}${Math.abs(diff).toFixed(3)}) | s8=${s8val.toFixed(2)} s6=${s6val.toFixed(2)} s3=${s3val.toFixed(2)} s4=${s4val.toFixed(2)}`);
+    console.log(
+      `  ${verdictSymbol} Z${z.rank}: ${z.startDate}→${z.endDate} | ${z.windowDays}d | conc=${(z.concordantFrac || 0).toFixed(2)} | price=${(z.overallPriceChange || 0).toFixed(1)}%`,
+    );
+    console.log(
+      `    Default: ${defaultScore.toFixed(3)} | Custom: ${customScore.toFixed(3)} (${marker}${Math.abs(diff).toFixed(3)}) | s8=${s8val.toFixed(2)} s6=${s6val.toFixed(2)} s3=${s3val.toFixed(2)} s4=${s4val.toFixed(2)}`,
+    );
     if (note) console.log(`    LLM: ${verdict} — ${note}`);
   }
 
@@ -288,15 +305,19 @@ console.log(`  Same: ${sameCount} zones`);
 if (fpScoreDefault.length > 0) {
   const avgFPDefault = fpScoreDefault.reduce((s, v) => s + v, 0) / fpScoreDefault.length;
   const avgFPCustom = fpScoreCustom.reduce((s, v) => s + v, 0) / fpScoreCustom.length;
-  console.log(`\nFalse Positive avg score: Default=${avgFPDefault.toFixed(3)} → Custom=${avgFPCustom.toFixed(3)} (${avgFPCustom < avgFPDefault ? 'BETTER — lower FP scores' : 'WORSE — higher FP scores'})`);
-  console.log(`  FP scores (default): ${fpScoreDefault.map(s => s.toFixed(3)).join(', ')}`);
-  console.log(`  FP scores (custom):  ${fpScoreCustom.map(s => s.toFixed(3)).join(', ')}`);
+  console.log(
+    `\nFalse Positive avg score: Default=${avgFPDefault.toFixed(3)} → Custom=${avgFPCustom.toFixed(3)} (${avgFPCustom < avgFPDefault ? 'BETTER — lower FP scores' : 'WORSE — higher FP scores'})`,
+  );
+  console.log(`  FP scores (default): ${fpScoreDefault.map((s) => s.toFixed(3)).join(', ')}`);
+  console.log(`  FP scores (custom):  ${fpScoreCustom.map((s) => s.toFixed(3)).join(', ')}`);
 }
 
 if (tpScoreDefault.length > 0) {
   const avgTPDefault = tpScoreDefault.reduce((s, v) => s + v, 0) / tpScoreDefault.length;
   const avgTPCustom = tpScoreCustom.reduce((s, v) => s + v, 0) / tpScoreCustom.length;
-  console.log(`\nTrue Positive avg score: Default=${avgTPDefault.toFixed(3)} → Custom=${avgTPCustom.toFixed(3)} (${avgTPCustom > avgTPDefault ? 'BETTER — higher TP scores' : avgTPCustom < avgTPDefault ? 'SLIGHTLY WORSE — lower TP scores' : 'SAME'})`);
+  console.log(
+    `\nTrue Positive avg score: Default=${avgTPDefault.toFixed(3)} → Custom=${avgTPCustom.toFixed(3)} (${avgTPCustom > avgTPDefault ? 'BETTER — higher TP scores' : avgTPCustom < avgTPDefault ? 'SLIGHTLY WORSE — lower TP scores' : 'SAME'})`,
+  );
 }
 
 // Threshold analysis: which zones cross the 0.30 detection threshold?
@@ -304,20 +325,25 @@ console.log(`\n${'─'.repeat(110)}`);
 console.log('THRESHOLD ANALYSIS — zones crossing 0.30 detection boundary');
 console.log('─'.repeat(110));
 
-let newlyDetected = 0, newlyRejected = 0;
+let newlyDetected = 0,
+  newlyRejected = 0;
 for (const ticker of tickers) {
   const b = before[ticker];
   if (b.error) continue;
-  for (const z of (b.jsAlgorithm.zones || [])) {
+  for (const z of b.jsAlgorithm.zones || []) {
     const defaultScore = z.score;
     const customScore = rescoreZone(z, CUSTOM_W);
-    if (defaultScore >= 0.30 && customScore < 0.30) {
+    if (defaultScore >= 0.3 && customScore < 0.3) {
       newlyRejected++;
-      console.log(`  REJECTED: ${ticker} Z${z.rank} (${z.startDate}→${z.endDate}) default=${defaultScore.toFixed(3)} → custom=${customScore.toFixed(3)}`);
+      console.log(
+        `  REJECTED: ${ticker} Z${z.rank} (${z.startDate}→${z.endDate}) default=${defaultScore.toFixed(3)} → custom=${customScore.toFixed(3)}`,
+      );
     }
-    if (defaultScore < 0.30 && customScore >= 0.30) {
+    if (defaultScore < 0.3 && customScore >= 0.3) {
       newlyDetected++;
-      console.log(`  DETECTED: ${ticker} Z${z.rank} (${z.startDate}→${z.endDate}) default=${defaultScore.toFixed(3)} → custom=${customScore.toFixed(3)}`);
+      console.log(
+        `  DETECTED: ${ticker} Z${z.rank} (${z.startDate}→${z.endDate}) default=${defaultScore.toFixed(3)} → custom=${customScore.toFixed(3)}`,
+      );
     }
   }
 }
@@ -339,9 +365,15 @@ if (fpScoreDefault.length > 0 && tpScoreDefault.length > 0) {
   const gapDefault = minTPDefault - maxFPDefault;
   const gapCustom = minTPCustom - maxFPCustom;
 
-  console.log(`  Default: min TP = ${minTPDefault.toFixed(3)}, max FP = ${maxFPDefault.toFixed(3)}, gap = ${gapDefault.toFixed(3)}`);
-  console.log(`  Custom:  min TP = ${minTPCustom.toFixed(3)}, max FP = ${maxFPCustom.toFixed(3)}, gap = ${gapCustom.toFixed(3)}`);
-  console.log(`  ${gapCustom > gapDefault ? 'CUSTOM BETTER — wider separation between TPs and FPs' : gapCustom < gapDefault ? 'DEFAULT BETTER — wider separation' : 'SAME separation'}`);
+  console.log(
+    `  Default: min TP = ${minTPDefault.toFixed(3)}, max FP = ${maxFPDefault.toFixed(3)}, gap = ${gapDefault.toFixed(3)}`,
+  );
+  console.log(
+    `  Custom:  min TP = ${minTPCustom.toFixed(3)}, max FP = ${maxFPCustom.toFixed(3)}, gap = ${gapCustom.toFixed(3)}`,
+  );
+  console.log(
+    `  ${gapCustom > gapDefault ? 'CUSTOM BETTER — wider separation between TPs and FPs' : gapCustom < gapDefault ? 'DEFAULT BETTER — wider separation' : 'SAME separation'}`,
+  );
 }
 
 console.log(`\n${'─'.repeat(110)}`);

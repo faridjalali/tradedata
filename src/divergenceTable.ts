@@ -18,20 +18,22 @@ interface PersistedDivergenceSourceSettings {
 }
 
 function normalizeState(raw: unknown): DivergenceState {
-  const value = String(raw || '').trim().toLowerCase();
+  const value = String(raw || '')
+    .trim()
+    .toLowerCase();
   if (value === 'bullish' || value === 'bearish') return value;
   return 'neutral';
 }
 
 function normalizeTicker(value: unknown): string {
-  return String(value || '').trim().toUpperCase();
+  return String(value || '')
+    .trim()
+    .toUpperCase();
 }
 
 function normalizeSourceInterval(raw: unknown): string {
   const value = String(raw || '').trim();
-  return VALID_DIVERGENCE_SOURCE_INTERVALS.has(value)
-    ? value
-    : DEFAULT_DIVERGENCE_SOURCE_INTERVAL;
+  return VALID_DIVERGENCE_SOURCE_INTERVALS.has(value) ? value : DEFAULT_DIVERGENCE_SOURCE_INTERVAL;
 }
 
 export function getPreferredDivergenceSourceInterval(): string {
@@ -83,30 +85,25 @@ function normalizeApiSummary(item: DivergenceSummaryApiItem): DivergenceSummaryE
     states[String(days)] = normalizeState(rawStates[String(days)]);
   }
   const expiresAtMs = Number(item?.expiresAtMs);
-  const safeExpiresAt = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()
-    ? expiresAtMs
-    : (Date.now() + (60 * 60 * 1000));
+  const safeExpiresAt =
+    Number.isFinite(expiresAtMs) && expiresAtMs > Date.now() ? expiresAtMs : Date.now() + 60 * 60 * 1000;
   return {
     ticker,
     tradeDate: typeof item?.tradeDate === 'string' ? item.tradeDate : null,
     states,
-    expiresAtMs: safeExpiresAt
+    expiresAtMs: safeExpiresAt,
   };
 }
 
 async function fetchDivergenceSummariesBatch(
   tickers: string[],
   sourceInterval: string,
-  options?: { forceRefresh?: boolean; noCache?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean },
 ): Promise<Map<string, DivergenceSummaryEntry>> {
   const normalizedSourceInterval = normalizeSourceInterval(sourceInterval);
   const forceRefresh = options?.forceRefresh === true;
   const noCache = options?.noCache === true;
-  const uniqueTickers = Array.from(new Set(
-    tickers
-      .map((ticker) => normalizeTicker(ticker))
-      .filter(Boolean)
-  ));
+  const uniqueTickers = Array.from(new Set(tickers.map((ticker) => normalizeTicker(ticker)).filter(Boolean)));
   if (uniqueTickers.length === 0) return new Map();
 
   const requestKey = `${normalizedSourceInterval}|${forceRefresh ? 'refresh' : 'cached'}|${noCache ? 'nocache' : 'cache'}|${uniqueTickers.join(',')}`;
@@ -126,7 +123,7 @@ async function fetchDivergenceSummariesBatch(
       params.set('nocache', '1');
     }
     const response = await fetch(`/api/chart/divergence-summary?${params.toString()}`, {
-      cache: 'no-store'
+      cache: 'no-store',
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch divergence summary (HTTP ${response.status})`);
@@ -156,7 +153,7 @@ async function fetchDivergenceSummariesBatch(
 export async function getTickerDivergenceSummary(
   ticker: string,
   sourceInterval?: string,
-  options?: { forceRefresh?: boolean; noCache?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean },
 ): Promise<DivergenceSummaryEntry | null> {
   const normalizedTicker = normalizeTicker(ticker);
   const normalizedSource = sourceInterval
@@ -172,18 +169,14 @@ export async function getTickerDivergenceSummary(
     if (cached) return cached;
   }
 
-  const resultMap = await fetchDivergenceSummariesBatch(
-    [normalizedTicker],
-    normalizedSource,
-    { forceRefresh, noCache }
-  );
+  const resultMap = await fetchDivergenceSummariesBatch([normalizedTicker], normalizedSource, {
+    forceRefresh,
+    noCache,
+  });
   return resultMap.get(normalizedTicker) || null;
 }
 
-export function renderMiniDivergenceRow(
-  root: ParentNode,
-  summary: DivergenceSummaryEntry | null
-): void {
+export function renderMiniDivergenceRow(root: ParentNode, summary: DivergenceSummaryEntry | null): void {
   const nodes = root.querySelectorAll<HTMLElement>('.div-dot, .divergence-mini-cell');
   nodes.forEach((node) => {
     const dayKey = String(node.dataset.days || '').trim();
@@ -197,9 +190,7 @@ export function renderMiniDivergenceRow(
       node.classList.add('is-neutral');
     }
   });
-  const parent = root instanceof HTMLElement
-    ? root
-    : (root as Element | null);
+  const parent = root instanceof HTMLElement ? root : (root as Element | null);
   if (parent instanceof HTMLElement) {
     if (summary?.tradeDate) {
       parent.dataset.tradeDate = summary.tradeDate;
@@ -224,17 +215,19 @@ const DIVERGENCE_SCORE_WEIGHTS: Record<string, number> = {
   '3': 3,
   '7': 2,
   '14': 2,
-  '28': 1
+  '28': 1,
 };
 
 export function computeDivergenceScoreFromStates(
   states?: Record<string, string | DivergenceState | null | undefined>,
-  maStates?: { ema8?: boolean; ema21?: boolean; sma50?: boolean; sma200?: boolean } | null
+  maStates?: { ema8?: boolean; ema21?: boolean; sma50?: boolean; sma200?: boolean } | null,
 ): number {
   let total = 0;
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
     const key = String(days);
-    const raw = String(states?.[key] || '').trim().toLowerCase();
+    const raw = String(states?.[key] || '')
+      .trim()
+      .toLowerCase();
     const weight = Number(DIVERGENCE_SCORE_WEIGHTS[key] || 0);
     if (raw === 'bullish') {
       total += weight;
@@ -251,10 +244,7 @@ export function computeDivergenceScoreFromStates(
   return total;
 }
 
-export function getTickerDivergenceScoreFromCache(
-  ticker: string,
-  sourceInterval?: string
-): number {
+export function getTickerDivergenceScoreFromCache(ticker: string, sourceInterval?: string): number {
   const normalizedTicker = normalizeTicker(ticker);
   if (!normalizedTicker) return 0;
   const normalizedSource = sourceInterval
@@ -265,13 +255,11 @@ export function getTickerDivergenceScoreFromCache(
   return computeDivergenceScoreFromStates(summary.states);
 }
 
-
-
-export function renderAlertCardDivergenceTablesFromCache(
-  container: ParentNode
-): void {
+export function renderAlertCardDivergenceTablesFromCache(container: ParentNode): void {
   const normalizedSource = getPreferredDivergenceSourceInterval();
-  const cells = Array.from(container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'));
+  const cells = Array.from(
+    container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'),
+  );
   for (const cell of cells) {
     const ticker = normalizeTicker(cell.dataset.ticker);
     if (!ticker) continue;
@@ -283,14 +271,18 @@ export function renderAlertCardDivergenceTablesFromCache(
 }
 
 export function primeDivergenceSummaryCacheFromAlerts(
-  alerts: Array<{ ticker?: string; divergence_states?: Record<string, string | null | undefined>; divergence_trade_date?: string | null }>,
-  sourceInterval?: string
+  alerts: Array<{
+    ticker?: string;
+    divergence_states?: Record<string, string | null | undefined>;
+    divergence_trade_date?: string | null;
+  }>,
+  sourceInterval?: string,
 ): void {
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
   const nowMs = Date.now();
-  const expiresAtMs = nowMs + (60 * 60 * 1000);
+  const expiresAtMs = nowMs + 60 * 60 * 1000;
   for (const alert of alerts || []) {
     const ticker = normalizeTicker(alert?.ticker);
     if (!ticker) continue;
@@ -301,11 +293,9 @@ export function primeDivergenceSummaryCacheFromAlerts(
     }
     setCachedSummary(normalizedSource, {
       ticker,
-      tradeDate: typeof alert?.divergence_trade_date === 'string'
-        ? alert.divergence_trade_date
-        : null,
+      tradeDate: typeof alert?.divergence_trade_date === 'string' ? alert.divergence_trade_date : null,
       states,
-      expiresAtMs
+      expiresAtMs,
     });
   }
 }
@@ -313,7 +303,7 @@ export function primeDivergenceSummaryCacheFromAlerts(
 export async function hydrateAlertCardDivergenceTables(
   container: ParentNode,
   sourceInterval?: string,
-  options?: { forceRefresh?: boolean; noCache?: boolean; resetPlaceholders?: boolean }
+  options?: { forceRefresh?: boolean; noCache?: boolean; resetPlaceholders?: boolean },
 ): Promise<void> {
   const forceRefresh = options?.forceRefresh === true;
   const noCache = options?.noCache === true;
@@ -321,17 +311,15 @@ export async function hydrateAlertCardDivergenceTables(
   const normalizedSource = sourceInterval
     ? normalizeSourceInterval(sourceInterval)
     : getPreferredDivergenceSourceInterval();
-  const cells = Array.from(container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'));
+  const cells = Array.from(
+    container.querySelectorAll<HTMLElement>('.div-dot-row[data-ticker], .divergence-mini[data-ticker]'),
+  );
   if (!cells.length) return;
 
   if (resetPlaceholders) {
     renderMiniDivergencePlaceholders(container);
   }
-  const tickers = Array.from(new Set(
-    cells
-      .map((cell) => normalizeTicker(cell.dataset.ticker))
-      .filter(Boolean)
-  ));
+  const tickers = Array.from(new Set(cells.map((cell) => normalizeTicker(cell.dataset.ticker)).filter(Boolean)));
   if (!tickers.length) return;
 
   const batchSize = 60;
@@ -342,7 +330,7 @@ export async function hydrateAlertCardDivergenceTables(
     const fetched = await fetchDivergenceSummariesBatch(
       chunk,
       normalizedSource,
-      shouldForceRefreshChunk ? { forceRefresh: true, noCache } : undefined
+      shouldForceRefreshChunk ? { forceRefresh: true, noCache } : undefined,
     );
     for (const [ticker, summary] of fetched.entries()) {
       fetchedByTicker.set(ticker, summary);

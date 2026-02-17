@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Data API HTTP client — rate limiting, URL construction, JSON fetching,
  * error classification, abort/timeout utilities, and core data-fetching
@@ -18,13 +19,10 @@ const DATA_API_KEY = process.env.DATA_API_KEY || '';
 const DATA_API_BASE = 'https://api.massive.com';
 const DATA_API_TIMEOUT_MS = 15000;
 const DATA_API_REQUESTS_PAUSED = String(process.env.DATA_API_REQUESTS_PAUSED || 'false').toLowerCase() === 'true';
-const DATA_API_MAX_REQUESTS_PER_SECOND = Math.max(
-  1,
-  Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99
-);
+const DATA_API_MAX_REQUESTS_PER_SECOND = Math.max(1, Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99);
 const DATA_API_RATE_BUCKET_CAPACITY = Math.max(
   1,
-  Number(process.env.DATA_API_RATE_BUCKET_CAPACITY) || DATA_API_MAX_REQUESTS_PER_SECOND
+  Number(process.env.DATA_API_RATE_BUCKET_CAPACITY) || DATA_API_MAX_REQUESTS_PER_SECOND,
 );
 
 // ---------------------------------------------------------------------------
@@ -39,10 +37,7 @@ function refillDataApiRateTokens(nowMs) {
   const elapsedMs = Math.max(0, now - dataApiRateLastRefillMs);
   if (elapsedMs <= 0) return;
   const refillPerMs = DATA_API_MAX_REQUESTS_PER_SECOND / 1000;
-  dataApiRateTokens = Math.min(
-    DATA_API_RATE_BUCKET_CAPACITY,
-    dataApiRateTokens + (elapsedMs * refillPerMs)
-  );
+  dataApiRateTokens = Math.min(DATA_API_RATE_BUCKET_CAPACITY, dataApiRateTokens + elapsedMs * refillPerMs);
   dataApiRateLastRefillMs = now;
 }
 
@@ -51,7 +46,10 @@ function refillDataApiRateTokens(nowMs) {
 // ---------------------------------------------------------------------------
 
 const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
-const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000);
+const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(
+  1_000,
+  Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000,
+);
 const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
 
 // ---------------------------------------------------------------------------
@@ -99,13 +97,7 @@ function extractDataApiError(payload) {
   if (String(payload.status || '').toUpperCase() === 'ERROR') {
     return String(payload.error || payload.message || 'DataAPI returned ERROR status').trim();
   }
-  const candidates = [
-    payload.error,
-    payload.message,
-    payload['Error Message'],
-    payload['Error message'],
-    payload.Note
-  ];
+  const candidates = [payload.error, payload.message, payload['Error Message'], payload['Error message'], payload.Note];
   for (const value of candidates) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
@@ -129,7 +121,9 @@ function toArrayPayload(payload) {
 // ---------------------------------------------------------------------------
 
 function normalizeTickerSymbol(rawSymbol) {
-  return String(rawSymbol || '').trim().toUpperCase();
+  return String(rawSymbol || '')
+    .trim()
+    .toUpperCase();
 }
 
 function getDataApiSymbolCandidates(rawSymbol) {
@@ -181,9 +175,7 @@ function isAbortError(err) {
   if (!err) return false;
   const name = String(err.name || '');
   const message = String(err.message || err || '');
-  return name === 'AbortError'
-    || Number(err.httpStatus) === 499
-    || /aborted|aborterror/i.test(message);
+  return name === 'AbortError' || Number(err.httpStatus) === 499 || /aborted|aborterror/i.test(message);
 }
 
 function buildRequestAbortError(message) {
@@ -202,8 +194,10 @@ function buildTaskTimeoutError(message, timeoutMs) {
 
 function isDataApiRateLimitedError(err) {
   const message = String(err && err.message ? err.message : err || '');
-  return /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message)
-    || (err && (err.isDataApiRateLimited === true || Number(err.httpStatus) === 429));
+  return (
+    /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message) ||
+    (err && (err.isDataApiRateLimited === true || Number(err.httpStatus) === 429))
+  );
 }
 
 function buildDataApiRateLimitedError(message) {
@@ -215,8 +209,12 @@ function buildDataApiRateLimitedError(message) {
 
 function isDataApiSubscriptionRestrictedError(err) {
   const message = String(err && err.message ? err.message : err || '');
-  return Boolean(err && err.isDataApiSubscriptionRestricted)
-    || /Restricted Endpoint|Legacy Endpoint|current subscription|plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|data timeframe/i.test(message);
+  return (
+    Boolean(err && err.isDataApiSubscriptionRestricted) ||
+    /Restricted Endpoint|Legacy Endpoint|current subscription|plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|data timeframe/i.test(
+      message,
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +234,8 @@ function sleepWithAbort(ms, signal) {
       }
       fn();
     };
-    const onAbort = () => done(() => reject(buildRequestAbortError('Request aborted while waiting for DataAPI rate-limit slot')));
+    const onAbort = () =>
+      done(() => reject(buildRequestAbortError('Request aborted while waiting for DataAPI rate-limit slot')));
     const timer = setTimeout(() => done(resolve), waitMs);
     if (signal) {
       if (signal.aborted) {
@@ -297,10 +296,7 @@ async function runWithAbortAndTimeout(task, options = {}) {
   });
 
   try {
-    return await Promise.race([
-      task(controller.signal),
-      timeoutPromise
-    ]);
+    return await Promise.race([task(controller.signal), timeoutPromise]);
   } finally {
     if (timeoutTimer) clearTimeout(timeoutTimer);
     unlinkAbort();
@@ -316,7 +312,7 @@ function createProgressStallWatchdog(onStall) {
   let stalled = false;
   const timer = setInterval(() => {
     if (stalled) return;
-    if ((Date.now() - lastProgressMs) < DIVERGENCE_STALL_TIMEOUT_MS) return;
+    if (Date.now() - lastProgressMs < DIVERGENCE_STALL_TIMEOUT_MS) return;
     stalled = true;
     try {
       onStall();
@@ -336,13 +332,13 @@ function createProgressStallWatchdog(onStall) {
     },
     isStalled() {
       return stalled;
-    }
+    },
   };
 }
 
 function getStallRetryBackoffMs(retryAttempt) {
   const attempt = Math.max(1, Math.floor(Number(retryAttempt) || 1));
-  const delay = DIVERGENCE_STALL_RETRY_BASE_MS * (2 ** (attempt - 1));
+  const delay = DIVERGENCE_STALL_RETRY_BASE_MS * 2 ** (attempt - 1);
   return Math.min(60_000, delay);
 }
 
@@ -424,7 +420,10 @@ async function fetchDataApiJson(url, label, options = {}) {
       const details = bodyText || `HTTP ${resp.status}`;
       const error = new Error(`${label} request failed (${resp.status}): ${details}`);
       error.httpStatus = resp.status;
-      if (resp.status === 403 && /plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(details)) {
+      if (
+        resp.status === 403 &&
+        /plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(details)
+      ) {
         error.isDataApiSubscriptionRestricted = true;
       }
       throw error;
@@ -444,7 +443,7 @@ async function fetchDataApiJson(url, label, options = {}) {
     if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
       metricsTracker.recordApiCall({
         latencyMs: Date.now() - requestStartedMs,
-        ok: true
+        ok: true,
       });
     }
     return payload;
@@ -456,7 +455,7 @@ async function fetchDataApiJson(url, label, options = {}) {
         rateLimited: isDataApiRateLimitedError(err),
         timedOut: timedOut === true,
         aborted: isAbortError(err),
-        subscriptionRestricted: isDataApiSubscriptionRestrictedError(err)
+        subscriptionRestricted: isDataApiSubscriptionRestrictedError(err),
       });
     }
     if (isAbortError(err)) {
@@ -524,7 +523,7 @@ const DATA_API_AGG_INTERVAL_MAP = {
   '1hour': { multiplier: 1, timespan: 'hour' },
   '4hour': { multiplier: 4, timespan: 'hour' },
   '1day': { multiplier: 1, timespan: 'day' },
-  '1week': { multiplier: 1, timespan: 'week' }
+  '1week': { multiplier: 1, timespan: 'week' },
 };
 
 function getDataApiAggConfig(interval) {
@@ -543,8 +542,8 @@ function buildDataApiAggregateRangeUrl(symbol, interval, options = {}) {
     {
       adjusted: 'true',
       sort: 'asc',
-      limit: 50000
-    }
+      limit: 50000,
+    },
   );
 }
 
@@ -585,26 +584,28 @@ async function dataApiDailySingle(symbol) {
   const start = addUtcDays(end, -400);
   const url = buildDataApiAggregateRangeUrl(symbol, '1day', {
     from: formatDateUTC(start),
-    to: formatDateUTC(end)
+    to: formatDateUTC(end),
   });
   const rows = await fetchDataApiArrayWithFallback('DataAPI daily', [url]);
-  const normalized = rows.map((row) => {
-    const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
-    const close = toNumberOrNull(row.c ?? row.close ?? row.price);
-    const open = toNumberOrNull(row.o ?? row.open) ?? close;
-    const high = toNumberOrNull(row.h ?? row.high) ?? close;
-    const low = toNumberOrNull(row.l ?? row.low) ?? close;
-    const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
-    const date = Number.isFinite(time) ? etDateStringFromUnixSeconds(time) : '';
+  const normalized = rows
+    .map((row) => {
+      const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
+      const close = toNumberOrNull(row.c ?? row.close ?? row.price);
+      const open = toNumberOrNull(row.o ?? row.open) ?? close;
+      const high = toNumberOrNull(row.h ?? row.high) ?? close;
+      const low = toNumberOrNull(row.l ?? row.low) ?? close;
+      const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
+      const date = Number.isFinite(time) ? etDateStringFromUnixSeconds(time) : '';
 
-    if (!date || close === null || open === null || high === null || low === null) {
-      return null;
-    }
+      if (!date || close === null || open === null || high === null || low === null) {
+        return null;
+      }
 
-    const boundedHigh = Math.max(high, open, close);
-    const boundedLow = Math.min(low, open, close);
-    return { date, open, high: boundedHigh, low: boundedLow, close, volume };
-  }).filter(Boolean);
+      const boundedHigh = Math.max(high, open, close);
+      const boundedLow = Math.min(low, open, close);
+      return { date, open, high: boundedHigh, low: boundedLow, close, volume };
+    })
+    .filter(Boolean);
   return normalized.length ? normalized : null;
 }
 
@@ -649,9 +650,12 @@ function extractLatestIndicatorValue(payload) {
       if (nestedValue !== null) return nestedValue;
     }
   }
-  const values = payload.results && Array.isArray(payload.results.values)
-    ? payload.results.values
-    : (Array.isArray(payload.values) ? payload.values : []);
+  const values =
+    payload.results && Array.isArray(payload.results.values)
+      ? payload.results.values
+      : Array.isArray(payload.values)
+        ? payload.values
+        : [];
   if (values.length > 0) {
     const first = values[0] || {};
     const nestedValue = toNumberOrNull(first.value ?? first.v ?? first.close ?? first.c);
@@ -662,7 +666,9 @@ function extractLatestIndicatorValue(payload) {
 
 async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLength, options = {}) {
   const ticker = normalizeTickerSymbol(symbol);
-  const type = String(indicatorType || '').trim().toLowerCase();
+  const type = String(indicatorType || '')
+    .trim()
+    .toLowerCase();
   const window = Math.max(1, Math.floor(Number(windowLength) || 1));
   if (!ticker || !type) throw new Error('Invalid indicator request');
 
@@ -675,7 +681,7 @@ async function fetchDataApiIndicatorLatestValue(symbol, indicatorType, windowLen
       window: String(window),
       series_type: 'close',
       order: 'desc',
-      limit: '1'
+      limit: '1',
     });
     try {
       const payload = await fetchDataApiJson(url, `DataAPI ${type}${window} ${candidate}`, options);
@@ -709,13 +715,13 @@ async function fetchDataApiMovingAverageStatesForTicker(ticker, latestClose, opt
     fetchDataApiIndicatorLatestValue(ticker, 'ema', 8, { signal, metricsTracker }),
     fetchDataApiIndicatorLatestValue(ticker, 'ema', 21, { signal, metricsTracker }),
     fetchDataApiIndicatorLatestValue(ticker, 'sma', 50, { signal, metricsTracker }),
-    fetchDataApiIndicatorLatestValue(ticker, 'sma', 200, { signal, metricsTracker })
+    fetchDataApiIndicatorLatestValue(ticker, 'sma', 200, { signal, metricsTracker }),
   ]);
   return {
     ema8: close > ema8,
     ema21: close > ema21,
     sma50: close > sma50,
-    sma200: close > sma200
+    sma200: close > sma200,
   };
 }
 

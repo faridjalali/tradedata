@@ -27,11 +27,16 @@ async function fetchBars(symbol, mult, ts, from, to) {
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
-  return (json.results || []).map(r => ({
-    time: Math.floor((r.t || 0) / 1000),
-    open: r.o, high: r.h, low: r.l, close: r.c,
-    volume: r.v || 0
-  })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close));
+  return (json.results || [])
+    .map((r) => ({
+      time: Math.floor((r.t || 0) / 1000),
+      open: r.o,
+      high: r.h,
+      low: r.l,
+      close: r.c,
+      volume: r.v || 0,
+    }))
+    .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close));
 }
 
 async function fetch1mChunked(symbol, from, to) {
@@ -39,7 +44,8 @@ async function fetch1mChunked(symbol, from, to) {
   let cursor = new Date(from);
   const end = new Date(to);
   while (cursor < end) {
-    const cEnd = new Date(cursor); cEnd.setDate(cEnd.getDate() + 25);
+    const cEnd = new Date(cursor);
+    cEnd.setDate(cEnd.getDate() + 25);
     if (cEnd > end) cEnd.setTime(end.getTime());
     const f = cursor.toISOString().split('T')[0];
     const t = cEnd.toISOString().split('T')[0];
@@ -47,28 +53,43 @@ async function fetch1mChunked(symbol, from, to) {
     const bars = await fetchBars(symbol, 1, 'minute', f, t);
     process.stdout.write(` ${bars.length}\n`);
     all.push(...bars);
-    await new Promise(r => setTimeout(r, 250));
-    cursor = new Date(cEnd); cursor.setDate(cursor.getDate() + 1);
+    await new Promise((r) => setTimeout(r, 250));
+    cursor = new Date(cEnd);
+    cursor.setDate(cursor.getDate() + 1);
   }
   const map = new Map();
   for (const b of all) map.set(b.time, b);
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
-function toDate(ts) { return new Date(ts * 1000).toISOString().split('T')[0]; }
+function toDate(ts) {
+  return new Date(ts * 1000).toISOString().split('T')[0];
+}
 
 function linReg(xs, ys) {
   const n = xs.length;
   if (n < 2) return { slope: 0, r2: 0 };
-  let sx = 0, sy = 0, sxx = 0, sxy = 0;
-  for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] ** 2; sxy += xs[i] * ys[i]; }
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    sxy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += xs[i];
+    sy += ys[i];
+    sxx += xs[i] ** 2;
+    sxy += xs[i] * ys[i];
+  }
   const d = n * sxx - sx * sx;
   if (d === 0) return { slope: 0, r2: 0 };
   const slope = (n * sxy - sx * sy) / d;
   const yMean = sy / n;
-  let ssTot = 0, ssRes = 0;
+  let ssTot = 0,
+    ssRes = 0;
   const intercept = (sy - slope * sx) / n;
-  for (let i = 0; i < n; i++) { ssTot += (ys[i] - yMean) ** 2; ssRes += (ys[i] - intercept - slope * xs[i]) ** 2; }
+  for (let i = 0; i < n; i++) {
+    ssTot += (ys[i] - yMean) ** 2;
+    ssRes += (ys[i] - intercept - slope * xs[i]) ** 2;
+  }
   return { slope, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0 };
 }
 
@@ -85,23 +106,45 @@ function aggregateWeekly(bars1m) {
   const dailyMap = new Map();
   for (const b of bars1m) {
     const d = toDate(b.time);
-    if (!dailyMap.has(d)) dailyMap.set(d, { buyVol: 0, sellVol: 0, totalVol: 0, close: 0, open: 0, high: -Infinity, low: Infinity, first: true });
+    if (!dailyMap.has(d))
+      dailyMap.set(d, {
+        buyVol: 0,
+        sellVol: 0,
+        totalVol: 0,
+        close: 0,
+        open: 0,
+        high: -Infinity,
+        low: Infinity,
+        first: true,
+      });
     const day = dailyMap.get(d);
-    const delta = b.close > b.open ? b.volume : (b.close < b.open ? -b.volume : 0);
+    const delta = b.close > b.open ? b.volume : b.close < b.open ? -b.volume : 0;
     if (delta > 0) day.buyVol += b.volume;
     else if (delta < 0) day.sellVol += b.volume;
     day.totalVol += b.volume;
     day.close = b.close;
-    if (day.first) { day.open = b.open; day.first = false; }
+    if (day.first) {
+      day.open = b.open;
+      day.first = false;
+    }
     day.high = Math.max(day.high, b.high);
     day.low = Math.min(day.low, b.low);
   }
 
   const dates = [...dailyMap.keys()].sort();
-  const daily = dates.map(d => {
+  const daily = dates.map((d) => {
     const day = dailyMap.get(d);
-    return { date: d, delta: day.buyVol - day.sellVol, totalVol: day.totalVol, buyVol: day.buyVol, sellVol: day.sellVol,
-             close: day.close, open: day.open, high: day.high, low: day.low };
+    return {
+      date: d,
+      delta: day.buyVol - day.sellVol,
+      totalVol: day.totalVol,
+      buyVol: day.buyVol,
+      sellVol: day.sellVol,
+      close: day.close,
+      open: day.open,
+      high: day.high,
+      low: day.low,
+    };
   });
 
   // Group into weeks (ISO week: Mon-Sun)
@@ -117,25 +160,27 @@ function aggregateWeekly(bars1m) {
     weekMap.get(weekKey).days.push(d);
   }
 
-  const weeks = [...weekMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([weekStart, { days }]) => {
-    const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
-    const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
-    const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
-    return {
-      weekStart,
-      delta: buyVol - sellVol,
-      totalVol,
-      buyVol,
-      sellVol,
-      deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0,
-      priceStart: days[0].open,
-      priceEnd: days[days.length - 1].close,
-      priceHigh: Math.max(...days.map(d => d.high)),
-      priceLow: Math.min(...days.map(d => d.low)),
-      nDays: days.length,
-      priceChangePct: ((days[days.length - 1].close - days[0].open) / days[0].open) * 100,
-    };
-  });
+  const weeks = [...weekMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, { days }]) => {
+      const buyVol = days.reduce((s, d) => s + d.buyVol, 0);
+      const sellVol = days.reduce((s, d) => s + d.sellVol, 0);
+      const totalVol = days.reduce((s, d) => s + d.totalVol, 0);
+      return {
+        weekStart,
+        delta: buyVol - sellVol,
+        totalVol,
+        buyVol,
+        sellVol,
+        deltaPct: totalVol > 0 ? ((buyVol - sellVol) / totalVol) * 100 : 0,
+        priceStart: days[0].open,
+        priceEnd: days[days.length - 1].close,
+        priceHigh: Math.max(...days.map((d) => d.high)),
+        priceLow: Math.min(...days.map((d) => d.low)),
+        nDays: days.length,
+        priceChangePct: ((days[days.length - 1].close - days[0].open) / days[0].open) * 100,
+      };
+    });
 
   return { daily, weeks };
 }
@@ -156,25 +201,36 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
 
   const totalVol = daily.reduce((s, d) => s + d.totalVol, 0);
   const avgDailyVol = totalVol / daily.length;
-  const closes = daily.map(d => d.close);
+  const closes = daily.map((d) => d.close);
   const avgPrice = closes.reduce((s, v) => s + v, 0) / closes.length;
 
   // ── PRICE CHECK: must be declining or flat (not rallying) ──
   const overallPriceChange = ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100;
   if (overallPriceChange > 10) {
-    return { score: 0, detected: false, reason: 'price_rising', weeks: weeks.length, metrics: { priceChangePct: overallPriceChange } };
+    return {
+      score: 0,
+      detected: false,
+      reason: 'price_rising',
+      weeks: weeks.length,
+      metrics: { priceChangePct: overallPriceChange },
+    };
   }
   // Reject crashes (>45% decline — not consolidation)
   if (overallPriceChange < -45) {
-    return { score: 0, detected: false, reason: 'crash', weeks: weeks.length, metrics: { priceChangePct: overallPriceChange } };
+    return {
+      score: 0,
+      detected: false,
+      reason: 'crash',
+      weeks: weeks.length,
+      metrics: { priceChangePct: overallPriceChange },
+    };
   }
 
   // ── PRE-CONTEXT BASELINE ──
   const preAgg = aggregateWeekly(preBars1m);
-  const preAvgDelta = preAgg.daily.length > 0
-    ? preAgg.daily.reduce((s, d) => s + d.delta, 0) / preAgg.daily.length : 0;
-  const preAvgVol = preAgg.daily.length > 0
-    ? preAgg.daily.reduce((s, d) => s + d.totalVol, 0) / preAgg.daily.length : avgDailyVol;
+  const preAvgDelta = preAgg.daily.length > 0 ? preAgg.daily.reduce((s, d) => s + d.delta, 0) / preAgg.daily.length : 0;
+  const preAvgVol =
+    preAgg.daily.length > 0 ? preAgg.daily.reduce((s, d) => s + d.totalVol, 0) / preAgg.daily.length : avgDailyVol;
 
   // =========================================================================
   // WEEKLY-LEVEL METRICS (robust to daily noise)
@@ -189,7 +245,7 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
   const accumWeekRatio = accumWeeks / totalWeeks;
 
   // Weekly delta %s — for trend analysis
-  const weeklyDeltaPcts = weeks.map(w => w.deltaPct);
+  const weeklyDeltaPcts = weeks.map((w) => w.deltaPct);
   const weeklyXs = weeks.map((_, i) => i);
 
   // ── METRIC 1: Net Delta % (whole period) ──
@@ -201,7 +257,10 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
   // Cumulative weekly delta trend — is accumulation building?
   const cumWeeklyDelta = [];
   let cwd = 0;
-  for (const w of weeks) { cwd += w.delta; cumWeeklyDelta.push(cwd); }
+  for (const w of weeks) {
+    cwd += w.delta;
+    cumWeeklyDelta.push(cwd);
+  }
   const weeklyDeltaSlope = linReg(weeklyXs, cumWeeklyDelta);
   const avgWeeklyVol = weeks.reduce((s, w) => s + w.totalVol, 0) / totalWeeks;
   const deltaSlopeNorm = avgWeeklyVol > 0 ? (weeklyDeltaSlope.slope / avgWeeklyVol) * 100 : 0;
@@ -224,28 +283,33 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
   const strongAbsorptionPct = daily.length > 1 ? (strongAbsorptionDays / (daily.length - 1)) * 100 : 0;
 
   // ── METRIC 5: Large buy vs sell day ratio ──
-  const largeBuyDays = daily.filter(d => d.delta > avgDailyVol * 0.10).length;
-  const largeSellDays = daily.filter(d => d.delta < -avgDailyVol * 0.10).length;
+  const largeBuyDays = daily.filter((d) => d.delta > avgDailyVol * 0.1).length;
+  const largeSellDays = daily.filter((d) => d.delta < -avgDailyVol * 0.1).length;
   const largeBuyVsSell = ((largeBuyDays - largeSellDays) / daily.length) * 100;
 
   // ── METRIC 6: Price-cumDelta correlation ──
   // Negative correlation = price down while delta up (divergence)
   const cumDeltas = [];
   let cd = 0;
-  for (const d of daily) { cd += d.delta; cumDeltas.push(cd); }
+  for (const d of daily) {
+    cd += d.delta;
+    cumDeltas.push(cd);
+  }
 
   let priceDeltaCorr = 0;
   {
     const n = daily.length;
     const meanP = closes.reduce((s, v) => s + v, 0) / n;
     const meanD = cumDeltas.reduce((s, v) => s + v, 0) / n;
-    let cov = 0, varP = 0, varD = 0;
+    let cov = 0,
+      varP = 0,
+      varD = 0;
     for (let i = 0; i < n; i++) {
       cov += (closes[i] - meanP) * (cumDeltas[i] - meanD);
       varP += (closes[i] - meanP) ** 2;
       varD += (cumDeltas[i] - meanD) ** 2;
     }
-    priceDeltaCorr = (varP > 0 && varD > 0) ? cov / Math.sqrt(varP * varD) : 0;
+    priceDeltaCorr = varP > 0 && varD > 0 ? cov / Math.sqrt(varP * varD) : 0;
   }
 
   // =========================================================================
@@ -264,10 +328,11 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
 
   if (!gateNetDelta || !gatePriceDecline) {
     return {
-      score: 0, detected: false,
+      score: 0,
+      detected: false,
       reason: !gateNetDelta ? 'concordant_selling' : 'invalid_price_structure',
       weeks: totalWeeks,
-      metrics: { netDeltaPct, overallPriceChange }
+      metrics: { netDeltaPct, overallPriceChange },
     };
   }
 
@@ -302,25 +367,18 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
   const s7 = Math.max(0, Math.min(1, (accumWeekRatio - 0.2) / 0.6));
 
   // ── Weighted composite ──
-  const rawScore =
-    s1 * 0.25 +
-    s2 * 0.20 +
-    s3 * 0.15 +
-    s4 * 0.15 +
-    s5 * 0.10 +
-    s6 * 0.10 +
-    s7 * 0.05;
+  const rawScore = s1 * 0.25 + s2 * 0.2 + s3 * 0.15 + s4 * 0.15 + s5 * 0.1 + s6 * 0.1 + s7 * 0.05;
 
   // ── Duration scaling ──
   // Score grows from 70% at 2 weeks to 100% at 6+ weeks
   // This implements "higher score with longer accumulation"
-  const durationMultiplier = Math.min(1.0, 0.70 + (totalWeeks - 2) * 0.075);
+  const durationMultiplier = Math.min(1.0, 0.7 + (totalWeeks - 2) * 0.075);
 
   // But also: minimum 2 weeks to trigger at all
   const score = totalWeeks >= 2 ? rawScore * durationMultiplier : 0;
 
   // Detection threshold
-  const detected = score >= 0.30;
+  const detected = score >= 0.3;
 
   return {
     score,
@@ -339,7 +397,13 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
       priceDeltaCorr,
       accumWeekRatio,
       overallPriceChange,
-      s1, s2, s3, s4, s5, s6, s7,
+      s1,
+      s2,
+      s3,
+      s4,
+      s5,
+      s6,
+      s7,
     },
   };
 }
@@ -350,14 +414,56 @@ function scoreAccumulationDivergence(consolBars1m, preBars1m) {
 
 const TEST_CASES = [
   // POSITIVE — confirmed accumulation → breakout
-  { symbol: 'RKLB', from: '2025-02-26', to: '2025-04-07', preFrom: '2025-01-26', expected: true, label: 'RKLB Feb 26 - Apr 7 2025 (confirmed)' },
-  { symbol: 'IREN', from: '2025-03-13', to: '2025-04-21', preFrom: '2025-02-13', expected: true, label: 'IREN Mar 13 - Apr 21 2025 (confirmed)' },
+  {
+    symbol: 'RKLB',
+    from: '2025-02-26',
+    to: '2025-04-07',
+    preFrom: '2025-01-26',
+    expected: true,
+    label: 'RKLB Feb 26 - Apr 7 2025 (confirmed)',
+  },
+  {
+    symbol: 'IREN',
+    from: '2025-03-13',
+    to: '2025-04-21',
+    preFrom: '2025-02-13',
+    expected: true,
+    label: 'IREN Mar 13 - Apr 21 2025 (confirmed)',
+  },
 
   // NEGATIVE controls
-  { symbol: 'RKLB', from: '2026-01-06', to: '2026-02-14', preFrom: '2025-12-06', expected: false, label: 'RKLB Jan-Feb 2026 (no breakout)' },
-  { symbol: 'IREN', from: '2026-01-06', to: '2026-02-14', preFrom: '2025-12-06', expected: false, label: 'IREN Jan-Feb 2026 (no breakout)' },
-  { symbol: 'SMCI', from: '2024-10-01', to: '2024-11-15', preFrom: '2024-09-01', expected: false, label: 'SMCI Oct-Nov 2024 (crash)' },
-  { symbol: 'RIVN', from: '2024-10-01', to: '2024-11-15', preFrom: '2024-09-01', expected: false, label: 'RIVN Oct-Nov 2024 (no breakout)' },
+  {
+    symbol: 'RKLB',
+    from: '2026-01-06',
+    to: '2026-02-14',
+    preFrom: '2025-12-06',
+    expected: false,
+    label: 'RKLB Jan-Feb 2026 (no breakout)',
+  },
+  {
+    symbol: 'IREN',
+    from: '2026-01-06',
+    to: '2026-02-14',
+    preFrom: '2025-12-06',
+    expected: false,
+    label: 'IREN Jan-Feb 2026 (no breakout)',
+  },
+  {
+    symbol: 'SMCI',
+    from: '2024-10-01',
+    to: '2024-11-15',
+    preFrom: '2024-09-01',
+    expected: false,
+    label: 'SMCI Oct-Nov 2024 (crash)',
+  },
+  {
+    symbol: 'RIVN',
+    from: '2024-10-01',
+    to: '2024-11-15',
+    preFrom: '2024-09-01',
+    expected: false,
+    label: 'RIVN Oct-Nov 2024 (no breakout)',
+  },
 ];
 
 // =========================================================================
@@ -366,24 +472,32 @@ const TEST_CASES = [
 
 const SLIDING_TESTS = [
   // Test RKLB at different durations from the start of accumulation
-  { symbol: 'RKLB', accumStart: '2025-02-26', preFrom: '2025-01-26', label: 'RKLB accumulation buildup',
+  {
+    symbol: 'RKLB',
+    accumStart: '2025-02-26',
+    preFrom: '2025-01-26',
+    label: 'RKLB accumulation buildup',
     windows: [
       { weeks: 2, to: '2025-03-12' },
       { weeks: 3, to: '2025-03-19' },
       { weeks: 4, to: '2025-03-26' },
       { weeks: 5, to: '2025-04-02' },
       { weeks: 6, to: '2025-04-07' },
-    ]
+    ],
   },
   // Test IREN at different durations
-  { symbol: 'IREN', accumStart: '2025-03-13', preFrom: '2025-02-13', label: 'IREN accumulation buildup',
+  {
+    symbol: 'IREN',
+    accumStart: '2025-03-13',
+    preFrom: '2025-02-13',
+    label: 'IREN accumulation buildup',
     windows: [
       { weeks: 2, to: '2025-03-27' },
       { weeks: 3, to: '2025-04-03' },
       { weeks: 4, to: '2025-04-10' },
       { weeks: 5, to: '2025-04-17' },
       { weeks: 6, to: '2025-04-21' },
-    ]
+    ],
   },
 ];
 
@@ -406,19 +520,27 @@ async function main() {
       const consolStart = new Date(tc.from + 'T00:00:00Z').getTime() / 1000;
       const consolEnd = new Date(tc.to + 'T23:59:59Z').getTime() / 1000;
 
-      const preBars = bars1m.filter(b => b.time < consolStart);
-      const consolBars = bars1m.filter(b => b.time >= consolStart && b.time <= consolEnd);
+      const preBars = bars1m.filter((b) => b.time < consolStart);
+      const consolBars = bars1m.filter((b) => b.time >= consolStart && b.time <= consolEnd);
 
       const result = scoreAccumulationDivergence(consolBars, preBars);
       const correct = result.detected === tc.expected;
       results.push({ ...tc, result, correct });
 
       const m = result.metrics;
-      console.log(`  Score: ${result.score.toFixed(4)} (raw: ${result.rawScore?.toFixed(4) || 'N/A'}) | Weeks: ${result.weeks} | Duration mult: ${result.durationMultiplier?.toFixed(2) || 'N/A'}`);
-      console.log(`  Detected: ${result.detected ? 'YES' : 'NO'} | Expected: ${tc.expected ? 'YES' : 'NO'} | ${correct ? '✅' : '⚠️ MISS'}`);
+      console.log(
+        `  Score: ${result.score.toFixed(4)} (raw: ${result.rawScore?.toFixed(4) || 'N/A'}) | Weeks: ${result.weeks} | Duration mult: ${result.durationMultiplier?.toFixed(2) || 'N/A'}`,
+      );
+      console.log(
+        `  Detected: ${result.detected ? 'YES' : 'NO'} | Expected: ${tc.expected ? 'YES' : 'NO'} | ${correct ? '✅' : '⚠️ MISS'}`,
+      );
       if (m.s1 !== undefined) {
-        console.log(`  Components: s1=${m.s1.toFixed(3)} s2=${m.s2.toFixed(3)} s3=${m.s3.toFixed(3)} s4=${m.s4.toFixed(3)} s5=${m.s5.toFixed(3)} s6=${m.s6.toFixed(3)} s7=${m.s7.toFixed(3)}`);
-        console.log(`  Key metrics: netΔ=${m.netDeltaPct.toFixed(2)}% slope=${m.deltaSlopeNorm.toFixed(2)} shift=${m.deltaShift.toFixed(2)} abs=${m.strongAbsorptionPct.toFixed(1)}% corr=${m.priceDeltaCorr.toFixed(3)} price=${m.overallPriceChange.toFixed(1)}%`);
+        console.log(
+          `  Components: s1=${m.s1.toFixed(3)} s2=${m.s2.toFixed(3)} s3=${m.s3.toFixed(3)} s4=${m.s4.toFixed(3)} s5=${m.s5.toFixed(3)} s6=${m.s6.toFixed(3)} s7=${m.s7.toFixed(3)}`,
+        );
+        console.log(
+          `  Key metrics: netΔ=${m.netDeltaPct.toFixed(2)}% slope=${m.deltaSlopeNorm.toFixed(2)} shift=${m.deltaShift.toFixed(2)} abs=${m.strongAbsorptionPct.toFixed(1)}% corr=${m.priceDeltaCorr.toFixed(3)} price=${m.overallPriceChange.toFixed(1)}%`,
+        );
       }
       if (result.reason && result.reason !== 'accumulation_divergence' && result.reason !== 'below_threshold') {
         console.log(`  Reason: ${result.reason}`);
@@ -429,8 +551,10 @@ async function main() {
     }
   }
 
-  const accuracy = results.filter(r => r.correct).length;
-  console.log(`Fixed-window accuracy: ${accuracy}/${results.length} (${((accuracy / results.length) * 100).toFixed(0)}%)\n`);
+  const accuracy = results.filter((r) => r.correct).length;
+  console.log(
+    `Fixed-window accuracy: ${accuracy}/${results.length} (${((accuracy / results.length) * 100).toFixed(0)}%)\n`,
+  );
 
   // ── Part 2: Sliding-window — duration scaling ──
   console.log(`\n${'═'.repeat(80)}`);
@@ -445,19 +569,23 @@ async function main() {
       const maxTo = st.windows[st.windows.length - 1].to;
       const bars1m = await fetch1mChunked(st.symbol, st.preFrom, maxTo);
       const consolStart = new Date(st.accumStart + 'T00:00:00Z').getTime() / 1000;
-      const preBars = bars1m.filter(b => b.time < consolStart);
+      const preBars = bars1m.filter((b) => b.time < consolStart);
 
       for (const w of st.windows) {
         const windowEnd = new Date(w.to + 'T23:59:59Z').getTime() / 1000;
-        const consolBars = bars1m.filter(b => b.time >= consolStart && b.time <= windowEnd);
+        const consolBars = bars1m.filter((b) => b.time >= consolStart && b.time <= windowEnd);
 
         const result = scoreAccumulationDivergence(consolBars, preBars);
         const m = result.metrics;
 
         const bar = '█'.repeat(Math.round(result.score * 40));
-        console.log(`  ${w.weeks}wk (→${w.to}): score=${result.score.toFixed(4)} ${result.detected ? '✅' : '  '} ${bar}`);
+        console.log(
+          `  ${w.weeks}wk (→${w.to}): score=${result.score.toFixed(4)} ${result.detected ? '✅' : '  '} ${bar}`,
+        );
         if (m.s1 !== undefined) {
-          console.log(`        netΔ=${m.netDeltaPct.toFixed(2)}% slope=${m.deltaSlopeNorm.toFixed(2)} shift=${m.deltaShift.toFixed(2)} abs=${m.strongAbsorptionPct.toFixed(1)}% corr=${m.priceDeltaCorr.toFixed(3)}`);
+          console.log(
+            `        netΔ=${m.netDeltaPct.toFixed(2)}% slope=${m.deltaSlopeNorm.toFixed(2)} shift=${m.deltaShift.toFixed(2)} abs=${m.strongAbsorptionPct.toFixed(1)}% corr=${m.priceDeltaCorr.toFixed(3)}`,
+          );
         }
       }
       console.log();
@@ -469,4 +597,7 @@ async function main() {
   console.log('\nDone.');
 }
 
-main().catch(err => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

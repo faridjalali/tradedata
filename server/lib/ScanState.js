@@ -36,7 +36,7 @@ class ScanState {
       processedTickers: 0,
       errorTickers: 0,
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
     };
     this._extraStatus = {};
   }
@@ -65,7 +65,11 @@ class ScanState {
     this.stopRequested = true;
     this._status = { ...this._status, status: 'stopping', finishedAt: null };
     if (this.abortController && !this.abortController.signal.aborted) {
-      try { this.abortController.abort(); } catch { /* ignore duplicate aborts */ }
+      try {
+        this.abortController.abort();
+      } catch {
+        /* ignore duplicate aborts */
+      }
     }
     return true;
   }
@@ -101,7 +105,7 @@ class ScanState {
       error_tickers: Number(this._status.errorTickers || 0),
       started_at: this._status.startedAt || null,
       finished_at: this._status.finishedAt || null,
-      ...this._extraStatus
+      ...this._extraStatus,
     };
   }
 
@@ -154,7 +158,7 @@ class ScanState {
   /**
    * Save resume state with a rewind-by-concurrency safety margin.
    * In-flight workers that got aborted will be re-processed on resume.
-   * @param {object} data - Resume data (must include tickers/totalTickers/processedTickers)
+   * @param {any} data - Resume data (must include tickers/totalTickers/processedTickers)
    * @param {number} concurrency - Current run concurrency (rewind amount)
    * @returns {number} the safe next index after rewind
    */
@@ -168,7 +172,7 @@ class ScanState {
 
   /**
    * Mark the scan as stopped.
-   * @param {object} statusFields - Fields for the status object
+   * @param {any} statusFields - Fields for the status object
    */
   markStopped(statusFields) {
     this.stopRequested = false;
@@ -178,7 +182,7 @@ class ScanState {
   /**
    * Mark the scan as completed. Clears resume state.
    * Auto-detects 'completed-with-errors' if errorTickers > 0.
-   * @param {object} statusFields - Fields for the status object
+   * @param {any} statusFields - Fields for the status object
    */
   markCompleted(statusFields) {
     this.resumeState = null;
@@ -187,13 +191,13 @@ class ScanState {
     this._status = {
       running: false,
       status: hasErrors ? 'completed-with-errors' : 'completed',
-      ...statusFields
+      ...statusFields,
     };
   }
 
   /**
    * Mark the scan as failed. Clears resume state.
-   * @param {object} statusFields - Fields for the status object
+   * @param {any} statusFields - Fields for the status object
    */
   markFailed(statusFields) {
     this.resumeState = null;
@@ -226,7 +230,7 @@ class ScanState {
       requestStop: () => this.requestStop(),
       canResume: () => this.canResume(),
       run: runFn,
-      getIsRunning: () => this.running
+      getIsRunning: () => this.running,
     };
   }
 }
@@ -242,7 +246,7 @@ class ScanState {
  * @param {function} [opts.onRecovered] - Called when a retry succeeds
  * @param {function} [opts.onStillFailed] - Called when a retry still fails
  * @param {function} [opts.shouldStop] - () => boolean, checked before each pass
- * @param {object} [opts.metricsTracker] - Run metrics tracker with setPhase/recordRetryRecovered
+ * @param {{ setPhase: Function, recordRetryRecovered: Function }} [opts.metricsTracker] - Run metrics tracker
  * @param {function} opts.mapWithConcurrency - The mapWithConcurrency function
  * @returns {Promise<string[]>} Tickers that still failed after all retries
  */
@@ -254,7 +258,7 @@ async function runRetryPasses({
   onStillFailed,
   shouldStop,
   metricsTracker,
-  mapWithConcurrency
+  mapWithConcurrency,
 }) {
   if (!failedTickers || failedTickers.length === 0) return [];
 
@@ -276,7 +280,7 @@ async function runRetryPasses({
       retryBatch,
       retryConcurrency,
       worker,
-      (settled) => {
+      (/** @type {any} */ settled) => {
         if (settled.skipped) return;
         if (settled.error) {
           stillFailed.push(settled.ticker);
@@ -286,7 +290,7 @@ async function runRetryPasses({
           if (metricsTracker) metricsTracker.recordRetryRecovered(settled.ticker);
         }
       },
-      shouldStop
+      shouldStop,
     );
   }
 

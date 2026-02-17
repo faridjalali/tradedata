@@ -1,6 +1,6 @@
 /**
  * Check if a PostgreSQL pool is responsive.
- * @param {object|null} poolInstance - pg Pool instance, or null
+ * @param {{ query: Function }|null} poolInstance - pg Pool instance, or null
  * @returns {Promise<{ ok: boolean|null, error?: string }>}
  */
 async function checkDatabaseReady(poolInstance) {
@@ -8,7 +8,7 @@ async function checkDatabaseReady(poolInstance) {
   try {
     await poolInstance.query('SELECT 1');
     return { ok: true };
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     const message = err && err.message ? err.message : String(err);
     return { ok: false, error: message };
   }
@@ -26,39 +26,32 @@ async function checkDatabaseReady(poolInstance) {
  * @param {NodeJS.MemoryUsage} [options.memoryUsage]
  * @returns {object}
  */
-function buildDebugMetricsPayload(options = {}) {
-  const {
-    startedAtMs,
-    isShuttingDown,
-    httpDebugMetrics,
-    chartCacheSizes,
-    chartDebugMetrics,
-    divergence,
-    memoryUsage
-  } = options;
-  const memory = memoryUsage || {};
+function buildDebugMetricsPayload(options) {
+  const { startedAtMs, isShuttingDown, httpDebugMetrics, chartCacheSizes, chartDebugMetrics, divergence, memoryUsage } =
+    options;
+  const memory = /** @type {any} */ (memoryUsage || {});
   return {
     uptimeSeconds: Math.floor((Date.now() - startedAtMs) / 1000),
     shuttingDown: isShuttingDown,
     http: {
       totalRequests: httpDebugMetrics.totalRequests,
-      apiRequests: httpDebugMetrics.apiRequests
+      apiRequests: httpDebugMetrics.apiRequests,
     },
     chart: {
       cacheSizes: chartCacheSizes,
-      metrics: chartDebugMetrics
+      metrics: chartDebugMetrics,
     },
     divergence: {
       configured: divergence.configured,
       running: divergence.running,
-      lastScanDateEt: divergence.lastScanDateEt
+      lastScanDateEt: divergence.lastScanDateEt,
     },
     process: {
       rss: memory.rss,
       heapTotal: memory.heapTotal,
       heapUsed: memory.heapUsed,
-      external: memory.external
-    }
+      external: memory.external,
+    },
   };
 }
 
@@ -70,46 +63,34 @@ function buildDebugMetricsPayload(options = {}) {
  * @param {number} options.uptimeSeconds
  * @returns {{ status: string, timestamp: string, uptimeSeconds: number, shuttingDown: boolean }}
  */
-function buildHealthPayload(options = {}) {
-  const {
-    isShuttingDown,
-    nowIso,
-    uptimeSeconds
-  } = options;
+function buildHealthPayload(options) {
+  const { isShuttingDown, nowIso, uptimeSeconds } = options;
   return {
     status: 'ok',
     timestamp: nowIso,
     uptimeSeconds,
-    shuttingDown: isShuttingDown
+    shuttingDown: isShuttingDown,
   };
 }
 
 /**
  * Build the /readyz response payload with database connectivity checks.
  * @param {object} options
- * @param {object} options.pool - Primary pg Pool
- * @param {object} [options.divergencePool] - Divergence pg Pool
+ * @param {{ query: Function }} options.pool - Primary pg Pool
+ * @param {{ query: Function }} [options.divergencePool] - Divergence pg Pool
  * @param {Function} options.isDivergenceConfigured
  * @param {boolean} options.isShuttingDown
  * @param {boolean} options.divergenceScanRunning
  * @param {string|null} options.lastScanDateEt
  * @returns {Promise<{ statusCode: number, body: object }>}
  */
-async function buildReadyPayload(options = {}) {
-  const {
-    pool,
-    divergencePool,
-    isDivergenceConfigured,
-    isShuttingDown,
-    divergenceScanRunning,
-    lastScanDateEt
-  } = options;
+async function buildReadyPayload(options) {
+  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt } =
+    options;
 
   const primaryDb = await checkDatabaseReady(pool);
   const divergenceConfigured = isDivergenceConfigured();
-  const divergenceDb = divergenceConfigured
-    ? await checkDatabaseReady(divergencePool)
-    : { ok: null };
+  const divergenceDb = divergenceConfigured ? await checkDatabaseReady(divergencePool || null) : { ok: null };
   const ready = !isShuttingDown && primaryDb.ok === true;
   const statusCode = ready ? 200 : 503;
 
@@ -125,9 +106,9 @@ async function buildReadyPayload(options = {}) {
       lastScanDateEt,
       errors: {
         primaryDb: primaryDb.error || null,
-        divergenceDb: divergenceDb.error || null
-      }
-    }
+        divergenceDb: divergenceDb.error || null,
+      },
+    },
   };
 }
 

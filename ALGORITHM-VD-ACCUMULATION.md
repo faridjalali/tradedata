@@ -19,6 +19,7 @@ Validated across 19 tickers with confirmed breakouts + 18-ticker 1-year LLM cros
 ## Core Concept
 
 **Volume Delta** per 1-minute bar:
+
 ```
 delta = close > open ? +volume : (close < open ? -volume : 0)
 ```
@@ -57,6 +58,7 @@ In a "concordant" decline, selling pressure matches the price drop — cumulativ
 ### Daily Aggregation
 
 Per trading day, compute from 1-minute bars:
+
 ```javascript
 buyVol   = sum of volumes where bar.close > bar.open
 sellVol  = sum of volumes where bar.close < bar.open
@@ -69,9 +71,11 @@ deltaPct = delta / totalVol * 100
 Before scoring, cap daily deltas at mean ± 3 standard deviations. This prevents single anomalous events (e.g., INSM's +5738K day, 29.7x average) from dominating the entire score. The anomaly is still detected separately by the proximity system.
 
 ```javascript
-const m = mean(deltas), s = std(deltas);
-const cap = m + 3 * s, floor = m - 3 * s;
-effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
+const m = mean(deltas),
+  s = std(deltas);
+const cap = m + 3 * s,
+  floor = m - 3 * s;
+effectiveDeltas = deltas.map((d) => Math.max(floor, Math.min(cap, d)));
 ```
 
 ### Hard Gates (Must Pass All)
@@ -79,22 +83,22 @@ effectiveDeltas = deltas.map(d => Math.max(floor, Math.min(cap, d)));
 1. **Price Direction**: Price change must be between **-45% and +3%**. Crashes (>45%) are not consolidation. Rallies (>3%) don't need accumulation detection.
 2. **Net Delta Positive**: Net delta % must be **> 0%**. Accumulation requires net buying — if there's no positive net delta, there's no hidden institutional accumulation. Previously allowed down to -1.5%, but META (1/9→2/11, -0.1% net delta) proved that secondary metrics (absorption, accum ratio) can carry a score above threshold even with zero buying signal.
 3. **Delta Slope Gate**: Normalized cumulative weekly delta slope must be **> -0.5**. Prevents scoring windows where delta is actively declining.
-4. **Concordant-Dominated Gate** *(standalone)*: If **concordantFrac > 65%** of all positive delta comes from concordant-up days (price↑ + delta↑) → reject. This is the **core quality gate**: true accumulation requires divergence (price↓ + delta↑), not concordance. Applied whenever `netDeltaPct > 0`, regardless of intra-window rally magnitude — even windows starting near a price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days within the decline. Lowered from 70% to 65% based on 18-ticker LLM cross-validation: zones at 0.65–0.69 concordantFrac (CRDO Z3=0.691, INSM Z5=0.680, EOSE Z1=0.682, WULF Z3=0.694) had near-zero divergence scores and were flagged as false positives by expert review. See [DAVE false positive case study](#dave-false-positive-case-study) below.
+4. **Concordant-Dominated Gate** _(standalone)_: If **concordantFrac > 65%** of all positive delta comes from concordant-up days (price↑ + delta↑) → reject. This is the **core quality gate**: true accumulation requires divergence (price↓ + delta↑), not concordance. Applied whenever `netDeltaPct > 0`, regardless of intra-window rally magnitude — even windows starting near a price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days within the decline. Lowered from 70% to 65% based on 18-ticker LLM cross-validation: zones at 0.65–0.69 concordantFrac (CRDO Z3=0.691, INSM Z5=0.680, EOSE Z1=0.682, WULF Z3=0.694) had near-zero divergence scores and were flagged as false positives by expert review. See [DAVE false positive case study](#dave-false-positive-case-study) below.
 5. **Combined Price + Concordance Gate**: If **price > 0% AND concordantFrac > 0.60** → reject as `concordant_flat_market`. True accumulation during price declines can tolerate moderate concordance from bounce days, but when price is flat/rising AND most buying is concordant, there is no divergence — just normal market behavior. Catches: BE Z4 (+0.87%, 0.663).
 6. **Divergence Floor Gate**: If **s8 < 0.05 AND concordantFrac > 0.55** → reject as `no_divergence`. Catches zones where non-divergence metrics (s1, s4, s6) carry the score above 0.30 despite zero actual price-delta divergence. Cross-ticker analysis found 8 false positives with this pattern: all had s8 < 0.05 and concordantFrac > 0.55. True accumulation zones have s8 >> 0.10.
 
 ### 8-Component Scoring System
 
-| # | Metric | Weight | What It Measures | Formula |
-|---|--------|--------|-----------------|---------|
-| S1 | **Net Delta %** | 20% | Total net buying as % of total volume | `clamp((netDeltaPct + 1.5) / 5, 0, 1)` |
-| S2 | **Delta Slope** | 15% | Trend of cumulative weekly delta (rising = building) | `clamp((deltaSlopeNorm + 0.5) / 4, 0, 1)` |
-| S3 | **Delta Shift vs Pre** | 10% | Is buying stronger now than before consolidation? | `clamp((deltaShift + 1) / 8, 0, 1)` |
-| S4 | **Accum Week Ratio** | 10% | Fraction of weeks with positive delta | `clamp((ratio - 0.2) / 0.6, 0, 1)` |
-| S5 | **Large Buy vs Sell** | 5% | More big-buy days than big-sell days? | `clamp((largeBuyVsSell + 3) / 12, 0, 1)` |
-| S6 | **Absorption %** | 18% | % of days where price down but delta positive | `clamp(absorptionPct / 15, 0, 1)` |
-| S7 | **Volume Decline** | 5% | Volume drying up (typical of late-stage consolidation) | First-third vs last-third volume ratio |
-| S8 | **Divergence** | 17% | Reward price-down + delta-up divergence | `priceFactor × deltaFactor` (see below) |
+| #   | Metric                 | Weight | What It Measures                                       | Formula                                   |
+| --- | ---------------------- | ------ | ------------------------------------------------------ | ----------------------------------------- |
+| S1  | **Net Delta %**        | 20%    | Total net buying as % of total volume                  | `clamp((netDeltaPct + 1.5) / 5, 0, 1)`    |
+| S2  | **Delta Slope**        | 15%    | Trend of cumulative weekly delta (rising = building)   | `clamp((deltaSlopeNorm + 0.5) / 4, 0, 1)` |
+| S3  | **Delta Shift vs Pre** | 10%    | Is buying stronger now than before consolidation?      | `clamp((deltaShift + 1) / 8, 0, 1)`       |
+| S4  | **Accum Week Ratio**   | 10%    | Fraction of weeks with positive delta                  | `clamp((ratio - 0.2) / 0.6, 0, 1)`        |
+| S5  | **Large Buy vs Sell**  | 5%     | More big-buy days than big-sell days?                  | `clamp((largeBuyVsSell + 3) / 12, 0, 1)`  |
+| S6  | **Absorption %**       | 18%    | % of days where price down but delta positive          | `clamp(absorptionPct / 15, 0, 1)`         |
+| S7  | **Volume Decline**     | 5%     | Volume drying up (typical of late-stage consolidation) | First-third vs last-third volume ratio    |
+| S8  | **Divergence**         | 17%    | Reward price-down + delta-up divergence                | `priceFactor × deltaFactor` (see below)   |
 
 **S8 Divergence formula**: Only fires when `netDeltaPct > 0`. `priceFactor = clamp((3 - overallPriceChange) / 8, 0, 1)` — rewards price decline (1.0 at -5%, 0.0 at +3%). `deltaFactor = clamp(netDeltaPct / 3, 0, 1)` — rewards positive delta (1.0 at +3%). S8 = priceFactor × deltaFactor. Penalizes concordant movement (price and delta both positive).
 
@@ -111,6 +115,7 @@ If concordantFrac > 0.55:
 ```
 
 Where:
+
 - **concordantFrac** = `concordant_up_delta / (concordant_up_delta + absorption_delta)` — fraction of all positive delta from concordant-up days (price↑ AND delta↑) vs true absorption days (price↓ AND delta↑). Always computed when `netDeltaPct > 0`.
 - **intraRally** = `(max_close_in_window - start_close) / start_close × 100` — computed but no longer used as a guard condition (kept for diagnostics)
 
@@ -126,14 +131,14 @@ finalScore = rawScore × concordancePenalty × durationMultiplier
 ```
 
 | Weeks | Multiplier | Max Final Score |
-|-------|-----------|-----------------|
-| 2 | 0.70 | 0.70 |
-| 3 | 0.775 | 0.775 |
-| 4 | 0.85 | 0.85 |
-| 5 | 0.925 | 0.925 |
-| 6 | 1.00 | 1.00 |
-| 7 | 1.075 | 1.075 |
-| 8+ | 1.15 | 1.15 |
+| ----- | ---------- | --------------- |
+| 2     | 0.70       | 0.70            |
+| 3     | 0.775      | 0.775           |
+| 4     | 0.85       | 0.85            |
+| 5     | 0.925      | 0.925           |
+| 6     | 1.00       | 1.00            |
+| 7     | 1.075      | 1.075           |
+| 8+    | 1.15       | 1.15            |
 
 ### Subwindow Scanner
 
@@ -165,13 +170,13 @@ This allows detecting multiple accumulation phases (e.g., MOD had two pre-breako
 
 ### Score Interpretation
 
-| Score Range | Interpretation |
-|-------------|---------------|
-| 0.00–0.29 | Not detected / below threshold |
-| 0.30–0.59 | Weak accumulation (short duration or mixed signals) |
-| 0.60–0.79 | Moderate accumulation (clear divergence, multiple confirming metrics) |
-| 0.80–0.99 | Strong accumulation (high confidence, multiple weeks, strong divergence) |
-| 1.00+ | Extreme accumulation (max duration, nearly all metrics maxed) |
+| Score Range | Interpretation                                                           |
+| ----------- | ------------------------------------------------------------------------ |
+| 0.00–0.29   | Not detected / below threshold                                           |
+| 0.30–0.59   | Weak accumulation (short duration or mixed signals)                      |
+| 0.60–0.79   | Moderate accumulation (clear divergence, multiple confirming metrics)    |
+| 0.80–0.99   | Strong accumulation (high confidence, multiple weeks, strong divergence) |
+| 1.00+       | Extreme accumulation (max duration, nearly all metrics maxed)            |
 
 ---
 
@@ -193,17 +198,18 @@ The clearest example is MOD post-breakout (4/22/25): price surged from $68.70 �
 
 **Scoring** — Inverse of accumulation:
 
-| Component | Accumulation | Distribution |
-|-----------|-------------|--------------|
-| Net delta | Positive (buying) | Negative (selling) |
-| Delta slope | Rising | Falling |
-| Delta shift | Buying stronger than before | Selling stronger than before |
-| Absorption | Price down, delta positive | **Price up, delta negative** (reverse absorption) |
-| Large buy vs sell | More buy days | More sell days |
-| Price direction gate | -45% to +10% | **-10% to +45%** |
-| Net delta gate | > -1.5% | **< +1.5%** |
+| Component            | Accumulation                | Distribution                                      |
+| -------------------- | --------------------------- | ------------------------------------------------- |
+| Net delta            | Positive (buying)           | Negative (selling)                                |
+| Delta slope          | Rising                      | Falling                                           |
+| Delta shift          | Buying stronger than before | Selling stronger than before                      |
+| Absorption           | Price down, delta positive  | **Price up, delta negative** (reverse absorption) |
+| Large buy vs sell    | More buy days               | More sell days                                    |
+| Price direction gate | -45% to +10%                | **-10% to +45%**                                  |
+| Net delta gate       | > -1.5%                     | **< +1.5%**                                       |
 
 **Visual Representation on Chart:**
+
 - Accumulation zones: **green** shaded regions on price chart
 - Distribution zones: **red** shaded regions on price chart
 - This creates an immediate visual language: green = accumulating, red = distributing, unshaded = neutral
@@ -237,9 +243,11 @@ While accumulation zones provide **weeks** of lead time (10–35 trading days be
 Compiled from analysis of 19 confirmed breakout tickers:
 
 #### Signal 1: Seller Exhaustion Sequence
+
 **Source**: PL, INSM, MOD, GRAL, COHR
 **Lead time**: 5–10 trading days
 **Pattern**: 3+ consecutive red delta days, often with increasing magnitude (intensifying), followed by reversal. Indicates selling pressure is peaking and about to exhaust.
+
 ```
 Detection:
   - 3+ consecutive days with delta < 0
@@ -248,9 +256,11 @@ Detection:
 ```
 
 #### Signal 2: Delta Anomaly (Smoking Gun) — POSITIVE only
+
 **Source**: IMNM, INSM, COHR
 **Lead time**: 4–25 trading days
 **Pattern**: Single day where **positive** delta > 4x the rolling 20-day average. Only POSITIVE delta anomalies count — sell anomalies (large negative delta) are BEARISH signals that should NOT contribute to breakout proximity. CRDO's 6.8x sell anomaly on Feb 4 was incorrectly adding 25pts toward "imminent breakout" before this fix.
+
 ```
 Detection:
   - delta_today > 0 (must be positive — skip sell anomalies)
@@ -259,9 +269,11 @@ Detection:
 ```
 
 #### Signal 3: Green Delta Streak
+
 **Source**: IMNM, INSM, MOD, GRAL, COHR
 **Lead time**: 3–7 trading days
 **Pattern**: 4+ consecutive days with positive delta, especially when accompanied by absorption days (price down but delta positive). Shows buyers have taken control.
+
 ```
 Detection:
   - 4+ consecutive days with delta > 0
@@ -270,9 +282,11 @@ Detection:
 ```
 
 #### Signal 4: Absorption Clustering
+
 **Source**: IMNM, MOD, COHR
 **Lead time**: 3–7 trading days
 **Pattern**: Multiple absorption days (price down, delta positive) clustered in a short window. When 3+ of 5 consecutive days are absorption days, buyers are overwhelming sellers on every dip.
+
 ```
 Detection:
   - ≥3 absorption days in a 5-day window
@@ -280,9 +294,11 @@ Detection:
 ```
 
 #### Signal 5: Final Capitulation Dump
+
 **Source**: PL, INSM, MOD, GRAL, COHR
 **Lead time**: 1–2 trading days
 **Pattern**: A single large negative delta day right before breakout. The last sellers dumping their shares. Often the sharpest red day in the recent window.
+
 ```
 Detection:
   - Day with |delta| > 2x recent average AND delta negative
@@ -292,9 +308,11 @@ Detection:
 ```
 
 #### Signal 6: Post-Anomaly Digestion
+
 **Source**: INSM
 **Lead time**: 15–25 trading days
 **Pattern**: After a massive delta anomaly (>10x avg), the stock sells off as the market digests the event. Then seller exhaustion → green streak → breakout.
+
 ```
 Sequence:
   1. Delta anomaly day (>10x rolling 20d avg)
@@ -305,9 +323,11 @@ Sequence:
 ```
 
 #### Signal 7: Multi-Zone Sequence
+
 **Source**: MOD
 **Lead time**: 5–15 trading days after Zone 2 completes
 **Pattern**: Two distinct accumulation zones separated by a short distribution gap (<3 weeks). When the second zone completes, breakout is imminent.
+
 ```
 Detection:
   - Zone A detected (score ≥ 0.50)
@@ -317,9 +337,11 @@ Detection:
 ```
 
 #### Signal 8: Extreme Absorption Rate (recency-gated)
+
 **Source**: MOD, COHR
 **Lead time**: 5–10 trading days
 **Pattern**: When absorption exceeds 40% in any **recent** detected zone (within last 90 trading days), buyers are absorbing nearly every dip. This indicates demand has overwhelmed supply. Recency gate added because historical absorption (e.g., CRDO Z1 from 10 months ago) doesn't predict current breakout timing.
+
 ```
 Detection:
   - absorption_pct > 40% in any zone
@@ -329,9 +351,11 @@ Detection:
 ```
 
 #### Signal 9: Delta Anomaly Cluster
+
 **Source**: BW
 **Lead time**: 7–19 trading days
 **Pattern**: 3+ delta anomalies (>4x rolling average) clustered within 15 trading days near price lows. Unlike a single smoking gun (Signal 2), a cluster reveals repeated institutional entries at the bottom — not a one-off event but a systematic accumulation campaign.
+
 ```
 Detection:
   - 3+ days where |delta| > 4x mean(|delta| over past 20 days)
@@ -342,9 +366,11 @@ Detection:
 ```
 
 #### Signal 10: Distribution → Accumulation Transition
+
 **Source**: BW
 **Lead time**: Weeks (strategic, not tactical)
 **Pattern**: A detected distribution zone (price rising, delta negative) gives way to a detected accumulation zone (price declining, delta positive). This transition marks the completion of institutional selling and the beginning of institutional buying — the "Wyckoff turn."
+
 ```
 Detection:
   - Distribution zone detected (score ≥ 0.30) in recent past
@@ -354,9 +380,11 @@ Detection:
 ```
 
 #### Signal 11: Intensifying Capitulation Streak
+
 **Source**: BW
 **Lead time**: 15–20 trading days
 **Pattern**: 6+ consecutive red delta days where magnitude INCREASES day-over-day. Unlike simple seller exhaustion (Signal 1), this captures the extreme panic selling that marks a true capitulation bottom. The intensification is key — each day's sellers are more desperate than the last.
+
 ```
 Detection:
   - 6+ consecutive days with delta < 0
@@ -369,22 +397,23 @@ Detection:
 
 Each signal that fires contributes to a composite breakout proximity score:
 
-| Signal | Points | Max Concurrent |
-|--------|--------|----------------|
-| Seller exhaustion (3+ red days, intensifying) | +15 | 1 |
-| Delta anomaly (>4x avg) | +25 | 1 |
-| Green delta streak (4+ days) | +20 | 1 |
-| Absorption cluster (3/5 days) | +15 | 1 |
-| Final capitulation dump | +10 | 1 |
-| Multi-zone sequence complete | +20 | 1 |
-| Extreme absorption rate (>40%) | +15 | 1 |
-| Delta anomaly cluster (3+ in 15 days) | +30 | 1 |
-| Distribution → Accumulation transition | +20 | 1 |
-| Intensifying capitulation (6+ days) | +20 | 1 |
+| Signal                                        | Points | Max Concurrent |
+| --------------------------------------------- | ------ | -------------- |
+| Seller exhaustion (3+ red days, intensifying) | +15    | 1              |
+| Delta anomaly (>4x avg)                       | +25    | 1              |
+| Green delta streak (4+ days)                  | +20    | 1              |
+| Absorption cluster (3/5 days)                 | +15    | 1              |
+| Final capitulation dump                       | +10    | 1              |
+| Multi-zone sequence complete                  | +20    | 1              |
+| Extreme absorption rate (>40%)                | +15    | 1              |
+| Delta anomaly cluster (3+ in 15 days)         | +30    | 1              |
+| Distribution → Accumulation transition        | +20    | 1              |
+| Intensifying capitulation (6+ days)           | +20    | 1              |
 
 **Rally Context Suppression**: If the stock has rallied >20% in the last 20 trading days, proximity is capped at **40 pts** ("elevated" maximum). A stock that has already broken out and rallied significantly is NOT approaching a breakout — it IS the breakout. This prevents misleading signals like MOD at 80pts "imminent" while already up 73% in a month, or STX at 50pts "high" while at +310% YTD.
 
 **Thresholds**:
+
 - 30+ points → **Elevated** — breakout possible within 1-2 weeks
 - 50+ points → **High** — breakout likely within 1 week
 - 70+ points → **Imminent** — breakout likely within 1-3 days
@@ -419,6 +448,7 @@ Delta: ──╲                ╱╲               ╱╲    ╱╲╱╲     
 ### 5-Stage Detection Framework
 
 #### Stage 1: Distribution Alert
+
 Institutions begin selling into a rally or flat period. Price stable or rising, delta cumulative declining.
 
 ```
@@ -431,6 +461,7 @@ Detection:
 ```
 
 #### Stage 2: Accumulation in Decline
+
 After distribution triggers a markdown phase, institutions begin accumulating at lower prices. This is the core divergence — price declining but delta positive or rising.
 
 ```
@@ -443,6 +474,7 @@ Detection:
 ```
 
 #### Stage 3: Seller Exhaustion
+
 The natural sellers are running out. Capitulation streaks intensify then dissipate. Volume dries up. The stock feels "dead."
 
 ```
@@ -455,6 +487,7 @@ Detection:
 ```
 
 #### Stage 4: Anomaly Cluster (Final Loading)
+
 Institutions make their final, most aggressive purchases. Multiple delta anomalies appear at the lows — massive volume days with positive delta near 52-week lows.
 
 ```
@@ -466,6 +499,7 @@ Detection:
 ```
 
 #### Stage 5: Breakout Confirmation
+
 Price breaks above consolidation range on strong positive delta. Unlike distribution-fueled breakouts (MOD), cycle-bottom breakouts tend to show sustained positive delta through the markup phase.
 
 ```
@@ -480,17 +514,18 @@ Detection:
 
 When multiple stages are confirmed in sequence, confidence compounds:
 
-| Stages Confirmed | Confidence | Implication |
-|-----------------|------------|-------------|
-| 1 only | Low | Distribution exists but could be noise |
-| 1 + 2 | Moderate | Classic Wyckoff structure forming |
-| 1 + 2 + 3 | High | Sellers exhausted after institutional accumulation |
-| 1 + 2 + 3 + 4 | Very High | Anomaly cluster at lows = final loading |
-| All 5 | Confirmed | Full cycle complete — validates the framework |
+| Stages Confirmed | Confidence | Implication                                        |
+| ---------------- | ---------- | -------------------------------------------------- |
+| 1 only           | Low        | Distribution exists but could be noise             |
+| 1 + 2            | Moderate   | Classic Wyckoff structure forming                  |
+| 1 + 2 + 3        | High       | Sellers exhausted after institutional accumulation |
+| 1 + 2 + 3 + 4    | Very High  | Anomaly cluster at lows = final loading            |
+| All 5            | Confirmed  | Full cycle complete — validates the framework      |
 
 ### Why This Repeats
 
 This pattern recurs because it reflects structural market dynamics:
+
 1. Institutions can't buy all at once (would move price against them)
 2. They engineer or exploit fear (tariffs, macro events) to create supply
 3. Retail panic-sells into institutional bids
@@ -512,14 +547,14 @@ Derived from COHR's 16-month lifecycle analysis (10/24–2/26) which demonstrate
 
 ### Position States
 
-| State | Trigger | Action |
-|-------|---------|--------|
-| **ENTER** | Accumulation zone ≥ 0.70 AND proximity ≥ 30 | Open position (initial size) |
-| **ADD** | New accumulation zone starts while holding | Add to position (scale in) |
-| **HOLD** | Post-breakout DURABLE (3+/4 weeks positive delta) | Maintain full position |
-| **REDUCE** | Post-breakout MIXED (2/4 weeks positive) | Take partial profits |
-| **EXIT** | Post-breakout FRAGILE (≤1/4 weeks positive) OR distribution cluster detected | Close position |
-| **STAY OUT** | Distribution cluster active (price rising, delta deeply negative) | No new entries |
+| State        | Trigger                                                                      | Action                       |
+| ------------ | ---------------------------------------------------------------------------- | ---------------------------- |
+| **ENTER**    | Accumulation zone ≥ 0.70 AND proximity ≥ 30                                  | Open position (initial size) |
+| **ADD**      | New accumulation zone starts while holding                                   | Add to position (scale in)   |
+| **HOLD**     | Post-breakout DURABLE (3+/4 weeks positive delta)                            | Maintain full position       |
+| **REDUCE**   | Post-breakout MIXED (2/4 weeks positive)                                     | Take partial profits         |
+| **EXIT**     | Post-breakout FRAGILE (≤1/4 weeks positive) OR distribution cluster detected | Close position               |
+| **STAY OUT** | Distribution cluster active (price rising, delta deeply negative)            | No new entries               |
 
 ### Post-Breakout Delta Polarity (Primary Exit Signal)
 
@@ -532,6 +567,7 @@ FRAGILE:   0/4 or 1/4 weeks positive delta → EXIT — institutions selling int
 ```
 
 **COHR validation** (100% accuracy across 10 breakouts):
+
 - FRAGILE breakouts (Jan 17/25, Feb 6/25, Aug 7/25): ALL crashed 10–50% within weeks
 - DURABLE breakouts (Nov 6/24, Apr 9/25, May 13/25, Jun 26/25, Jan 13/26): ALL held and extended
 
@@ -583,14 +619,14 @@ Cumulative: ~+195% over 10 months, avoided the 50% crash (Jan-Apr 2025)
 
 For long-duration holdings, classify each 20-day rolling window by institutional flow:
 
-| Symbol | Phase | Detection |
-|--------|-------|-----------|
-| ★ ACCUM | Accumulation in decline | Price <-3%, delta >+3% |
-| ⚠ DISTRIB | Distribution into rally | Price >+3%, delta <-3% |
-| ↑ confirmed | Confirmed rally | Price >+3%, delta >+3% |
-| ↓ concordant | Concordant decline | Price <-3%, delta <-3% |
-| ◆ absorbing | Absorption | Price flat (±3%), delta >+3% |
-| — neutral | Neutral | All other conditions |
+| Symbol       | Phase                   | Detection                    |
+| ------------ | ----------------------- | ---------------------------- |
+| ★ ACCUM      | Accumulation in decline | Price <-3%, delta >+3%       |
+| ⚠ DISTRIB    | Distribution into rally | Price >+3%, delta <-3%       |
+| ↑ confirmed  | Confirmed rally         | Price >+3%, delta >+3%       |
+| ↓ concordant | Concordant decline      | Price <-3%, delta <-3%       |
+| ◆ absorbing  | Absorption              | Price flat (±3%), delta >+3% |
+| — neutral    | Neutral                 | All other conditions         |
 
 This provides a high-level "institutional weather map" — when phases transition from ⚠DISTRIB to ★ACCUM, the Wyckoff turn is in progress.
 
@@ -600,82 +636,84 @@ This provides a high-level "institutional weather map" — when phases transitio
 
 ### All-Time Scores (Best Zone Per Ticker)
 
-| Ticker | Score | Window | Days | Net ∂% | Absorption | Type |
-|--------|-------|--------|------|--------|------------|------|
-| IMNM | 1.09 | 7/28→9/15/25 | 35d | +12.46% | 35% | Strong conviction (extreme) |
-| INSM | 1.07 | 4/7→5/27/25 | 35d | +6.71% | 14.7% | Strong conviction + smoking gun |
-| BW | 1.04 | 3/28→5/16/25 | 35d | ~5% | ~18% | Bottom accumulation + 3 anomalies |
-| BE | 1.02 | 9/20→11/7/24 | 35d | ~5% | ~20% | Strong conviction |
-| SATS | 0.96 | 3/3→4/21/25 | 35d | ~4% | ~18% | Multi-phase |
-| BW-Z2 | 0.95 | 11/8→12/30/24 | 35d | ~4% | 32.4% | Crash accumulation (corr -0.74) |
-| MOD | 0.94 | 5/14→7/3/25 | 35d | +2.23% | 20.6% | Post-breakout re-accum |
-| IREN | 0.94 | 3/19→5/7/25 | 35d | +2.35% | ~15% | Concentrated bursts |
-| GRAL | 0.88 | 7/21→8/27/25 | 28d | ~5% | ~15% | Quiet conviction — no catalyst |
-| COHR | 0.88 | 5/13→7/2/25 | 35d | ~5% | ~18% | Smoking gun + 7/8 wk positive |
-| CRDO | 0.87 | 3/27→4/30/25 | 24d | ~3% | ~12% | Strong conviction |
-| PL | 0.86 | 3/26→5/5/25 | 28d | ~3% | 37% | Strong conviction |
-| MOD-Z2 | 0.85 | 2/15→3/10/25 | 17d | +3.89% | 25% | Classic divergence |
-| WULF | 0.83 | 2/22→3/24/25 | 24d | ~2% | ~15% | Strong conviction |
-| MOD-Z3 | 0.81 | 3/28→4/16/25 | 14d | +3.92% | 46.2% | Extreme absorption |
-| COHR-Z2 | 0.79 | 11/6→12/17/25 | 35d | ~3% | ~15% | Post-pullback re-accumulation |
-| EOSE | 0.78 | 2/15→3/7/25 | 17d | ~2% | ~12% | Multi-phase |
-| ALAB | 0.78 | 3/12→4/30/25 | 35d | ~2% | ~10% | Concentrated |
-| BW-Z3 | 0.75 | 1/13→2/5/26 | 20d | ~2% | ~12% | Late re-accumulation |
-| COHR-Z3 | 0.75 | 1/7→2/5/26 | 24d | ~2% | ~12% | 2 anomalies in 7 days |
-| COHR-Z4 | 0.72 | 3/13→4/1/25 | 14d | ~3% | **53.8%** | Extreme absorption (ALL-TIME HIGHEST) |
-| STX | 0.71 | 3/6→3/19/25 | 10d | ~2% | ~10% | Slow drip |
-| COHR-Z5 | 0.70 | 7/17→8/5/25 | 14d | ~2% | ~10% | 9 green days nearby |
-| RKLB | 0.65 | 3/20→4/2/25 | 10d | +0.84% | ~8% | Episodic |
-| HUT | 0.64 | 4/24→5/7/25 | 10d | ~1% | ~8% | Hidden in decline |
-| UUUU | 0.59 | 11/14→12/4/25 | 17d | ~1% | ~10% | Bottoming |
-| AFRM | 0.47 | 5/12→6/4/24 | 17d | ~1% | ~8% | Concentrated bursts |
+| Ticker  | Score | Window        | Days | Net ∂%  | Absorption | Type                                  |
+| ------- | ----- | ------------- | ---- | ------- | ---------- | ------------------------------------- |
+| IMNM    | 1.09  | 7/28→9/15/25  | 35d  | +12.46% | 35%        | Strong conviction (extreme)           |
+| INSM    | 1.07  | 4/7→5/27/25   | 35d  | +6.71%  | 14.7%      | Strong conviction + smoking gun       |
+| BW      | 1.04  | 3/28→5/16/25  | 35d  | ~5%     | ~18%       | Bottom accumulation + 3 anomalies     |
+| BE      | 1.02  | 9/20→11/7/24  | 35d  | ~5%     | ~20%       | Strong conviction                     |
+| SATS    | 0.96  | 3/3→4/21/25   | 35d  | ~4%     | ~18%       | Multi-phase                           |
+| BW-Z2   | 0.95  | 11/8→12/30/24 | 35d  | ~4%     | 32.4%      | Crash accumulation (corr -0.74)       |
+| MOD     | 0.94  | 5/14→7/3/25   | 35d  | +2.23%  | 20.6%      | Post-breakout re-accum                |
+| IREN    | 0.94  | 3/19→5/7/25   | 35d  | +2.35%  | ~15%       | Concentrated bursts                   |
+| GRAL    | 0.88  | 7/21→8/27/25  | 28d  | ~5%     | ~15%       | Quiet conviction — no catalyst        |
+| COHR    | 0.88  | 5/13→7/2/25   | 35d  | ~5%     | ~18%       | Smoking gun + 7/8 wk positive         |
+| CRDO    | 0.87  | 3/27→4/30/25  | 24d  | ~3%     | ~12%       | Strong conviction                     |
+| PL      | 0.86  | 3/26→5/5/25   | 28d  | ~3%     | 37%        | Strong conviction                     |
+| MOD-Z2  | 0.85  | 2/15→3/10/25  | 17d  | +3.89%  | 25%        | Classic divergence                    |
+| WULF    | 0.83  | 2/22→3/24/25  | 24d  | ~2%     | ~15%       | Strong conviction                     |
+| MOD-Z3  | 0.81  | 3/28→4/16/25  | 14d  | +3.92%  | 46.2%      | Extreme absorption                    |
+| COHR-Z2 | 0.79  | 11/6→12/17/25 | 35d  | ~3%     | ~15%       | Post-pullback re-accumulation         |
+| EOSE    | 0.78  | 2/15→3/7/25   | 17d  | ~2%     | ~12%       | Multi-phase                           |
+| ALAB    | 0.78  | 3/12→4/30/25  | 35d  | ~2%     | ~10%       | Concentrated                          |
+| BW-Z3   | 0.75  | 1/13→2/5/26   | 20d  | ~2%     | ~12%       | Late re-accumulation                  |
+| COHR-Z3 | 0.75  | 1/7→2/5/26    | 24d  | ~2%     | ~12%       | 2 anomalies in 7 days                 |
+| COHR-Z4 | 0.72  | 3/13→4/1/25   | 14d  | ~3%     | **53.8%**  | Extreme absorption (ALL-TIME HIGHEST) |
+| STX     | 0.71  | 3/6→3/19/25   | 10d  | ~2%     | ~10%       | Slow drip                             |
+| COHR-Z5 | 0.70  | 7/17→8/5/25   | 14d  | ~2%     | ~10%       | 9 green days nearby                   |
+| RKLB    | 0.65  | 3/20→4/2/25   | 10d  | +0.84%  | ~8%        | Episodic                              |
+| HUT     | 0.64  | 4/24→5/7/25   | 10d  | ~1%     | ~8%        | Hidden in decline                     |
+| UUUU    | 0.59  | 11/14→12/4/25 | 17d  | ~1%     | ~10%       | Bottoming                             |
+| AFRM    | 0.47  | 5/12→6/4/24   | 17d  | ~1%     | ~8%        | Concentrated bursts                   |
 
 ### Accumulation Archetypes
 
-| Archetype | Description | Typical Score | Examples |
-|-----------|-------------|---------------|----------|
-| **Strong conviction** | Persistent positive delta across most weeks, steady accumulation | 0.80–1.10 | IMNM, INSM, BE, CRDO, PL, WULF, COHR |
-| **Concentrated bursts** | A few massive buying days drive the score, other days neutral | 0.50–0.95 | IREN, ALAB, AFRM |
-| **Multi-phase** | Multiple distinct accumulation waves with distribution gaps | 0.80–0.95 | MOD, SATS, EOSE, COHR |
-| **Slow drip** | Barely-above-zero net delta, many neutral days, needs duration | 0.50–0.75 | STX, UUUU |
-| **Hidden in decline** | Price actively declining but accumulation signal still emerges | 0.50–0.70 | HUT |
-| **Quiet conviction** | No delta anomalies, no exogenous catalyst — pure steady accumulation + volume collapse | 0.80–0.90 | GRAL |
-| **Orchestrated cycle** | Full Wyckoff: distribution → crash → accumulation → anomaly cluster → breakout | 0.95–1.05 | BW |
-| **Full lifecycle** | Multi-zone accumulation across months, with distribution clusters and breakout cycling | 0.70–0.90 | COHR |
+| Archetype               | Description                                                                            | Typical Score | Examples                             |
+| ----------------------- | -------------------------------------------------------------------------------------- | ------------- | ------------------------------------ |
+| **Strong conviction**   | Persistent positive delta across most weeks, steady accumulation                       | 0.80–1.10     | IMNM, INSM, BE, CRDO, PL, WULF, COHR |
+| **Concentrated bursts** | A few massive buying days drive the score, other days neutral                          | 0.50–0.95     | IREN, ALAB, AFRM                     |
+| **Multi-phase**         | Multiple distinct accumulation waves with distribution gaps                            | 0.80–0.95     | MOD, SATS, EOSE, COHR                |
+| **Slow drip**           | Barely-above-zero net delta, many neutral days, needs duration                         | 0.50–0.75     | STX, UUUU                            |
+| **Hidden in decline**   | Price actively declining but accumulation signal still emerges                         | 0.50–0.70     | HUT                                  |
+| **Quiet conviction**    | No delta anomalies, no exogenous catalyst — pure steady accumulation + volume collapse | 0.80–0.90     | GRAL                                 |
+| **Orchestrated cycle**  | Full Wyckoff: distribution → crash → accumulation → anomaly cluster → breakout         | 0.95–1.05     | BW                                   |
+| **Full lifecycle**      | Multi-zone accumulation across months, with distribution clusters and breakout cycling | 0.70–0.90     | COHR                                 |
 
 ### Breakout Proximity Signals Observed
 
-| Ticker | Proximity Signals Before Breakout | Lead Time |
-|--------|----------------------------------|-----------|
-| **IMNM** | Delta anomaly (9/12, 6.8x vol) + 5 green days + absorption cluster | 4–7 days |
-| **INSM** | Smoking gun (4/25, 29.7x avg) → sell-off → seller exhaustion → 4 green days + final dump | 19 days (anomaly), 4 days (green streak) |
-| **PL** | Capitulation selling (3 red days, 5/28→5/30) → breakout | 5–7 days |
-| **MOD** | Multi-zone sequence (Z2 + Z3) + 46.2% absorption + final dump (4/17–4/21) + Wyckoff spring | 4–6 days |
-| **BW** | Distribution (Oct-Nov '24) → crash accumulation (corr -0.74) → 6-day intensifying capitulation → 3 delta anomalies in 12 days (4/2, 4/9, 4/14) → breakout 4/21. Full 5-stage Wyckoff cycle. | 19 days (anomaly cluster), 7 days (last anomaly) |
-| **GRAL** | All red streaks FADING (not intensifying) + 4 green days (8/11–8/14) + extreme volume collapse (1.55M→0.33M) + final capitulation dump 9/2 (-62K, -3.2%). No anomalies, no catalyst — pure "quiet conviction." Score 0.88, 6/7 components maxed. | 7 days (green streak), 1 day (final dump) |
-| **COHR** | 10 auto-detected breakouts, 5 accumulation zones, 3 distribution clusters, 6 delta anomalies across 357 trading days. Proximity scores: 85 pts (4/10/25), 80 pts (1/14/26), **100 pts** (2/10/26 — all-time highest). Smoking gun 5/13/25 (+1,488K, 9.7x avg). FRAGILE post-breakout = 100% accurate exit signal. | Varies: days to weeks per breakout |
+| Ticker   | Proximity Signals Before Breakout                                                                                                                                                                                                                                                                                 | Lead Time                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **IMNM** | Delta anomaly (9/12, 6.8x vol) + 5 green days + absorption cluster                                                                                                                                                                                                                                                | 4–7 days                                         |
+| **INSM** | Smoking gun (4/25, 29.7x avg) → sell-off → seller exhaustion → 4 green days + final dump                                                                                                                                                                                                                          | 19 days (anomaly), 4 days (green streak)         |
+| **PL**   | Capitulation selling (3 red days, 5/28→5/30) → breakout                                                                                                                                                                                                                                                           | 5–7 days                                         |
+| **MOD**  | Multi-zone sequence (Z2 + Z3) + 46.2% absorption + final dump (4/17–4/21) + Wyckoff spring                                                                                                                                                                                                                        | 4–6 days                                         |
+| **BW**   | Distribution (Oct-Nov '24) → crash accumulation (corr -0.74) → 6-day intensifying capitulation → 3 delta anomalies in 12 days (4/2, 4/9, 4/14) → breakout 4/21. Full 5-stage Wyckoff cycle.                                                                                                                       | 19 days (anomaly cluster), 7 days (last anomaly) |
+| **GRAL** | All red streaks FADING (not intensifying) + 4 green days (8/11–8/14) + extreme volume collapse (1.55M→0.33M) + final capitulation dump 9/2 (-62K, -3.2%). No anomalies, no catalyst — pure "quiet conviction." Score 0.88, 6/7 components maxed.                                                                  | 7 days (green streak), 1 day (final dump)        |
+| **COHR** | 10 auto-detected breakouts, 5 accumulation zones, 3 distribution clusters, 6 delta anomalies across 357 trading days. Proximity scores: 85 pts (4/10/25), 80 pts (1/14/26), **100 pts** (2/10/26 — all-time highest). Smoking gun 5/13/25 (+1,488K, 9.7x avg). FRAGILE post-breakout = 100% accurate exit signal. | Varies: days to weeks per breakout               |
 
 ### Negative Controls (Correctly Rejected)
 
-| Ticker | Period | Price Change | Net Delta % | Score | Why Rejected |
-|--------|--------|-------------|-------------|-------|------------|
-| RKLB | Jan 6 – Feb 14, 2026 | -20.0% | -0.35% | 0.07 | Concordant selling, negative delta shift |
-| IREN | Jan 6 – Feb 14, 2026 | -9.2% | -1.48% | 0.02 | Concordant selling |
-| SMCI | Oct 1 – Nov 15, 2024 | -46.4% | +0.34% | 0.00 | Crash gate: >45% decline |
-| RIVN | Oct 1 – Nov 15, 2024 | -4.4% | -2.06% | 0.00 | Concordant selling gate: delta < -1.5% |
-| DAVE | Dec 11 – Jan 21, 2026 | -8.9% | +3.44% | 0.00 | Concordant-dominated gate: 78% concordant fraction |
-| DAVE | Nov 5 – Dec 23, 2025 | -10.6% | +1.8% | 0.00 | Concordant-dominated gate: 74.3% concordant fraction |
-| META | Jan 9 – Feb 11, 2026 | +2.1% | -0.1% | 0.00 | Net delta positive gate: no net buying (-0.1%). Earnings rally + selloff = concordant cycle, not accumulation |
+| Ticker | Period                | Price Change | Net Delta % | Score | Why Rejected                                                                                                  |
+| ------ | --------------------- | ------------ | ----------- | ----- | ------------------------------------------------------------------------------------------------------------- |
+| RKLB   | Jan 6 – Feb 14, 2026  | -20.0%       | -0.35%      | 0.07  | Concordant selling, negative delta shift                                                                      |
+| IREN   | Jan 6 – Feb 14, 2026  | -9.2%        | -1.48%      | 0.02  | Concordant selling                                                                                            |
+| SMCI   | Oct 1 – Nov 15, 2024  | -46.4%       | +0.34%      | 0.00  | Crash gate: >45% decline                                                                                      |
+| RIVN   | Oct 1 – Nov 15, 2024  | -4.4%        | -2.06%      | 0.00  | Concordant selling gate: delta < -1.5%                                                                        |
+| DAVE   | Dec 11 – Jan 21, 2026 | -8.9%        | +3.44%      | 0.00  | Concordant-dominated gate: 78% concordant fraction                                                            |
+| DAVE   | Nov 5 – Dec 23, 2025  | -10.6%       | +1.8%       | 0.00  | Concordant-dominated gate: 74.3% concordant fraction                                                          |
+| META   | Jan 9 – Feb 11, 2026  | +2.1%        | -0.1%       | 0.00  | Net delta positive gate: no net buying (-0.1%). Earnings rally + selloff = concordant cycle, not accumulation |
 
 ### DAVE False Positive Case Study
 
 **The Problem**: DAVE Zone 1 (12/11/25→1/21/26) scored 0.92 (Strong) before the fix. The window showed price -8.9% with net delta +3.44% — textbook divergence metrics. But the detection was a false positive.
 
 **Why it was false**: The 28-day window spanned a **rally-then-crash**:
+
 - **Sub-period A (12/11→1/9, 20 days)**: Price rallied from $204 to $239 (+17.2%) with positive delta (+2.84%). This is **concordant** — price up + delta positive = normal rally behavior, nothing hidden.
 - **Sub-period B (1/9→1/21, 9 days)**: Price crashed from $239 to $186 (-22.3%). Delta was mixed, with the biggest positive delta day (1/15, +131K) being a concordant bounce, not absorption.
 
 **The numbers**:
+
 - Concordant-up delta (price up + delta positive days): **+478K**
 - True absorption delta (price down + delta positive days): **+136K**
 - Concordant fraction: **78%** — concordant-up days contribute 78% of all positive delta
@@ -685,6 +723,7 @@ This provides a high-level "institutional weather map" — when phases transitio
 **The pattern**: The algorithm sees "price down start-to-end + delta positive = divergence" but the delta positivity is a **byproduct of the rally**, not evidence of hidden buying during a decline. The window captures a price reversal (rally → crash), not accumulation during consolidation.
 
 **The fix**: Standalone concordantFrac as the core quality gate:
+
 1. **Hard gate**: If concordantFrac > 65% → reject (score = 0). Lowered from 70% after 18-ticker cross-validation. No intraRally requirement — this is a standalone quality metric. Even windows starting at the price peak (intraRally ≈ 0%) can be concordant-dominated from bounce days.
 2. **Combined gate**: If price > 0% AND concordantFrac > 60% → reject. Flat/rising price with moderate concordance = no divergence.
 3. **Soft penalty**: If concordantFrac > 55% → scale score down proportionally (`1.0 - (concordantFrac - 0.55) × 1.5`)
@@ -699,13 +738,13 @@ This provides a high-level "institutional weather map" — when phases transitio
 
 ### What Doesn't Work (Tested and Rejected)
 
-| Feature | Tested Across | Result | Conclusion |
-|---------|---------------|--------|------------|
-| RED delta contraction | 12 tickers | R²=0.084 | NOT predictive — top scorers (BE, SATS) actually expand |
-| Delta volatility contraction (std of deltaPct) | 12 tickers | R²=0.006 | NOT predictive — 10/12 contract but no quality correlation |
-| Price volatility contraction | 12 tickers | Only 5/12 contract | NOT useful |
-| Classic HTF metrics (YZ vol, range decay, VWAP) | 6 tickers | Near-zero scores | Designed for "dead zone" consolidation, not active accumulation |
-| VD RSI divergence alone | 6 tickers | Mixed results | Some positives show concordant VD RSI decline — bonus only |
+| Feature                                         | Tested Across | Result             | Conclusion                                                      |
+| ----------------------------------------------- | ------------- | ------------------ | --------------------------------------------------------------- |
+| RED delta contraction                           | 12 tickers    | R²=0.084           | NOT predictive — top scorers (BE, SATS) actually expand         |
+| Delta volatility contraction (std of deltaPct)  | 12 tickers    | R²=0.006           | NOT predictive — 10/12 contract but no quality correlation      |
+| Price volatility contraction                    | 12 tickers    | Only 5/12 contract | NOT useful                                                      |
+| Classic HTF metrics (YZ vol, range decay, VWAP) | 6 tickers     | Near-zero scores   | Designed for "dead zone" consolidation, not active accumulation |
+| VD RSI divergence alone                         | 6 tickers     | Mixed results      | Some positives show concordant VD RSI decline — bonus only      |
 
 ### What Does Work (Confirmed Predictive)
 
@@ -730,16 +769,16 @@ The algorithm is deployed as a full-stack feature: detector service → database
 
 ### File Map
 
-| File | Role |
-|------|------|
+| File                             | Role                                                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `server/services/vdfDetector.js` | Core algorithm — subwindow scanner, 7-component scoring, multi-zone clustering, distribution detection, proximity signals |
-| `index.js` | DB schema, scan orchestration (`getVDFStatus`, `runVDFScan`), alert enrichment, result storage/retrieval |
-| `server/routes/chartRoutes.js` | `/api/chart/vdf-status` endpoint — passes full result to frontend |
-| `src/chart.ts` | Zone overlay rendering, VDF button with score, rich tooltip, browser-side cache |
-| `src/components.ts` | Alert card score badge (replaces plain "VDF" tag) |
-| `src/types.ts` | `Alert` interface with `vdf_score`, `vdf_proximity` fields |
-| `src/utils.ts` | Score-based sort boost (0-10 range from 0-100 score) |
-| `public/style.css` | `.vdf-score-badge`, `.vdf-high`, `.vdf-imminent` with pulse animation |
+| `index.js`                       | DB schema, scan orchestration (`getVDFStatus`, `runVDFScan`), alert enrichment, result storage/retrieval                  |
+| `server/routes/chartRoutes.js`   | `/api/chart/vdf-status` endpoint — passes full result to frontend                                                         |
+| `src/chart.ts`                   | Zone overlay rendering, VDF button with score, rich tooltip, browser-side cache                                           |
+| `src/components.ts`              | Alert card score badge (replaces plain "VDF" tag)                                                                         |
+| `src/types.ts`                   | `Alert` interface with `vdf_score`, `vdf_proximity` fields                                                                |
+| `src/utils.ts`                   | Score-based sort boost (0-10 range from 0-100 score)                                                                      |
+| `public/style.css`               | `.vdf-score-badge`, `.vdf-high`, `.vdf-imminent` with pulse animation                                                     |
 
 ### Database Schema
 
@@ -804,6 +843,7 @@ Exports:
 ```
 
 **Scan Flow:**
+
 1. Fetch 1-minute data for 130 calendar days (90-day scan + 30-day pre-context + 10-day buffer)
 2. Build daily aggregates with 3σ outlier capping
 3. Run subwindow scanner across 7 window sizes [10, 14, 17, 20, 24, 28, 35] → greedy clustering → up to 3 accumulation zones
@@ -812,6 +852,7 @@ Exports:
 6. Upsert result to `vdf_results` table (one row per ticker per trading day)
 
 **Scan Triggers:**
+
 - **Manual scan**: "VDF Scan" button in UI → `runVDFScan()` → iterates all tickers with adaptive concurrency
 - **Per-ticker on-demand**: Opening a chart → `getVDFStatus()` → computes if no cached result for today
 - **Force refresh**: Long-press VDF button on chart → bypasses both caches, re-runs detection
@@ -836,6 +877,7 @@ Exports:
 ```
 
 **Cache flow when loading a chart:**
+
 1. Check browser memory for `${ticker}|${todayET}` → if hit, use cached result
 2. If miss, fetch `/api/chart/vdf-status?ticker=X`
 3. Server checks DB for `(ticker, todayET)` → if cached, return stored result
@@ -843,6 +885,7 @@ Exports:
 5. Browser caches the response in memory
 
 **Cache invalidation:**
+
 - Automatic: cache keys include the ET date, so results expire at midnight ET
 - Manual: force-click on VDF button sends `force=true`, bypassing both layers
 - Full scan: `runVDFScan()` passes `force: false`, so same-day results are reused from DB
@@ -850,6 +893,7 @@ Exports:
 ### Frontend Visualization
 
 #### Chart Zone Overlay (`src/chart.ts`)
+
 - Absolutely positioned `<div>` overlay behind candles (z-index: 5, below month grid at 6)
 - **Green shaded rectangles** for accumulation zones — opacity scales with score: `0.04 + score * 0.08`
 - **Red shaded rectangles** for distribution clusters — fixed `rgba(239,83,80,0.08)`
@@ -859,6 +903,7 @@ Exports:
 - X coordinates mapped via `priceChart.timeScale().timeToCoordinate()` — zones off-screen are skipped
 
 #### VDF Button (Chart Header)
+
 - Shows numeric score (0-100) instead of "VDF" text when detected
 - Score color tiers: ≥80 teal (`#26a69a`), ≥60 lime (`#8bc34a`), <60 gray (`#c9d1d9`)
 - Border color indicates proximity level:
@@ -868,6 +913,7 @@ Exports:
 - Rich tooltip on hover showing zone details, absorption %, proximity signals with checkmarks
 
 #### Alert Cards (`src/components.ts`)
+
 - Score badge replaces plain "VDF" tag: `<span class="vdf-score-badge">87</span>`
 - CSS classes for proximity levels:
   - `.vdf-high` — orange border and text
@@ -875,6 +921,7 @@ Exports:
 - Fallback: if `vdf_detected` is true but no score, shows original "VDF" tag
 
 #### Score Sorting (`src/utils.ts`)
+
 - Score sort mode adds `Math.round(vdf_score / 10)` to divergence score (0-10 range)
 - Fallback: if `vdf_detected` but no score, adds flat +10 (backward compatible)
 - Tiebreaker chain: divergence+VDF score → volume → timestamp
@@ -929,28 +976,28 @@ Exports:
 
 ## Analysis Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `analysis-htf-rklb-asts.js` | First attempt: ran existing HTF algo on RKLB episodes (0/7 detected) |
-| `analysis-htf-deep.js` | Daily-timeframe pattern analysis of RKLB/ASTS consolidations |
-| `analysis-asts-consol-vd.js` | VD + VD RSI analysis of 6 consolidation periods |
-| `analysis-vd-divergence-algo.js` | v1 algorithm prototype (40% accuracy) |
-| `analysis-vd-v2.js` | v2 feature engineering — 25+ features, discrimination analysis |
-| `analysis-vd-v3.js` | v3 production algorithm — 100% accuracy, weekly-smoothed |
-| `analysis-vdf-multizones.js` | Multi-zone scanner — subwindow scanning across window sizes |
-| `analysis-vdf-sats.js` | SATS deep analysis with RED delta contraction |
-| `analysis-vdf-cross-ticker.js` | Cross-ticker comprehensive analysis (12 tickers) |
-| `analysis-vdf-pl.js` | PL analysis with breakout proximity |
-| `analysis-vdf-imnm.js` | IMNM analysis — all-time highest score (1.09), delta anomaly detection |
-| `analysis-vdf-insm.js` | INSM analysis — smoking gun event (29.7x avg), multi-phase |
-| `analysis-vdf-mod.js` | MOD analysis — Wyckoff textbook, extreme absorption (46.2%) |
-| `analysis-vdf-bw.js` | BW analysis — full Wyckoff cycle, delta anomaly cluster, 39.6x from bottom |
-| `analysis-vdf-gral.js` | GRAL analysis — quiet conviction pattern, no exogenous catalyst, 264% from low |
-| `analysis-vdf-cohr.js` | COHR full lifecycle — 16-month analysis, auto-detect breakouts, distribution clusters, position management, 100pt proximity |
-| `analysis-vdf-full-year.js` | 18-ticker 1-year batch analysis — fetches 1m data from Massive API, runs JS algo, outputs LLM data (daily/weekly/phases) |
-| `analysis-vdf-extract.js` | Extracts condensed human-readable analysis from full-year results JSON |
-| `analysis-vdf-rerun.js` | Re-runs algo on cached daily data (no API calls) for before/after comparison |
-| `analysis-vdf-compare.js` | Before/after comparison of algorithm improvements across all 18 tickers |
+| Script                           | Purpose                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `analysis-htf-rklb-asts.js`      | First attempt: ran existing HTF algo on RKLB episodes (0/7 detected)                                                        |
+| `analysis-htf-deep.js`           | Daily-timeframe pattern analysis of RKLB/ASTS consolidations                                                                |
+| `analysis-asts-consol-vd.js`     | VD + VD RSI analysis of 6 consolidation periods                                                                             |
+| `analysis-vd-divergence-algo.js` | v1 algorithm prototype (40% accuracy)                                                                                       |
+| `analysis-vd-v2.js`              | v2 feature engineering — 25+ features, discrimination analysis                                                              |
+| `analysis-vd-v3.js`              | v3 production algorithm — 100% accuracy, weekly-smoothed                                                                    |
+| `analysis-vdf-multizones.js`     | Multi-zone scanner — subwindow scanning across window sizes                                                                 |
+| `analysis-vdf-sats.js`           | SATS deep analysis with RED delta contraction                                                                               |
+| `analysis-vdf-cross-ticker.js`   | Cross-ticker comprehensive analysis (12 tickers)                                                                            |
+| `analysis-vdf-pl.js`             | PL analysis with breakout proximity                                                                                         |
+| `analysis-vdf-imnm.js`           | IMNM analysis — all-time highest score (1.09), delta anomaly detection                                                      |
+| `analysis-vdf-insm.js`           | INSM analysis — smoking gun event (29.7x avg), multi-phase                                                                  |
+| `analysis-vdf-mod.js`            | MOD analysis — Wyckoff textbook, extreme absorption (46.2%)                                                                 |
+| `analysis-vdf-bw.js`             | BW analysis — full Wyckoff cycle, delta anomaly cluster, 39.6x from bottom                                                  |
+| `analysis-vdf-gral.js`           | GRAL analysis — quiet conviction pattern, no exogenous catalyst, 264% from low                                              |
+| `analysis-vdf-cohr.js`           | COHR full lifecycle — 16-month analysis, auto-detect breakouts, distribution clusters, position management, 100pt proximity |
+| `analysis-vdf-full-year.js`      | 18-ticker 1-year batch analysis — fetches 1m data from Massive API, runs JS algo, outputs LLM data (daily/weekly/phases)    |
+| `analysis-vdf-extract.js`        | Extracts condensed human-readable analysis from full-year results JSON                                                      |
+| `analysis-vdf-rerun.js`          | Re-runs algo on cached daily data (no API calls) for before/after comparison                                                |
+| `analysis-vdf-compare.js`        | Before/after comparison of algorithm improvements across all 18 tickers                                                     |
 
 ---
 
@@ -969,27 +1016,27 @@ Exports:
 
 ### False Positives Eliminated
 
-| Ticker | Zone | Score | ConcordantFrac | Price | s8 | Reason |
-|--------|------|-------|----------------|-------|-----|--------|
-| BE | Z4 | 0.356 | 0.663 | +0.87% | 0.097 | Combined gate (price>0, conc>0.60) |
-| CRDO | Z3 | 0.356 | 0.691 | +1.18% | 0.113 | Concordant gate (>0.65) |
-| EOSE | Z1 | 0.361 | 0.682 | +2.99% | 0.001 | Concordant gate + no divergence |
-| HUT | Z2 | 0.494 | 0.653 | -9.91% | 0.605 | Concordant gate (>0.65) |
-| INSM | Z5 | 0.408 | 0.680 | +2.87% | 0.009 | Concordant gate + no divergence |
-| WULF | Z4 | 0.591 | 0.651 | -14.55% | 1.000 | Concordant gate (>0.65) |
-| META | Z2 | 0.431 | 0.671 | -2.11% | 0.361 | Concordant gate (>0.65) |
+| Ticker | Zone | Score | ConcordantFrac | Price   | s8    | Reason                             |
+| ------ | ---- | ----- | -------------- | ------- | ----- | ---------------------------------- |
+| BE     | Z4   | 0.356 | 0.663          | +0.87%  | 0.097 | Combined gate (price>0, conc>0.60) |
+| CRDO   | Z3   | 0.356 | 0.691          | +1.18%  | 0.113 | Concordant gate (>0.65)            |
+| EOSE   | Z1   | 0.361 | 0.682          | +2.99%  | 0.001 | Concordant gate + no divergence    |
+| HUT    | Z2   | 0.494 | 0.653          | -9.91%  | 0.605 | Concordant gate (>0.65)            |
+| INSM   | Z5   | 0.408 | 0.680          | +2.87%  | 0.009 | Concordant gate + no divergence    |
+| WULF   | Z4   | 0.591 | 0.651          | -14.55% | 1.000 | Concordant gate (>0.65)            |
+| META   | Z2   | 0.431 | 0.671          | -2.11%  | 0.361 | Concordant gate (>0.65)            |
 
 ### Proximity Corrections
 
-| Ticker | Before | After | Change | Fix |
-|--------|--------|-------|--------|-----|
-| BE | 70 (imminent) | 45 (elevated) | -25 | Sell anomaly removed |
-| BW | 45 (elevated) | 20 (none) | -25 | Sell anomaly removed |
-| CRDO | 100 (imminent) | 75 (imminent) | -25 | Sell anomaly removed |
-| MOD | 80 (imminent) | 40 (elevated) | -40 | Rally suppression |
-| SATS | 55 (high) | 35 (elevated) | -20 | Multi-zone gap too wide |
-| STX | 50 (high) | 35 (elevated) | -15 | Stale absorption zone |
-| WULF | 110 (imminent) | 95 (imminent) | -15 | Stale absorption zone |
+| Ticker | Before         | After         | Change | Fix                     |
+| ------ | -------------- | ------------- | ------ | ----------------------- |
+| BE     | 70 (imminent)  | 45 (elevated) | -25    | Sell anomaly removed    |
+| BW     | 45 (elevated)  | 20 (none)     | -25    | Sell anomaly removed    |
+| CRDO   | 100 (imminent) | 75 (imminent) | -25    | Sell anomaly removed    |
+| MOD    | 80 (imminent)  | 40 (elevated) | -40    | Rally suppression       |
+| SATS   | 55 (high)      | 35 (elevated) | -20    | Multi-zone gap too wide |
+| STX    | 50 (high)      | 35 (elevated) | -15    | Stale absorption zone   |
+| WULF   | 110 (imminent) | 95 (imminent) | -15    | Stale absorption zone   |
 
 ---
 

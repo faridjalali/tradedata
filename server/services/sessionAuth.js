@@ -75,9 +75,7 @@ function parseCookieValue(req) {
  */
 function setSessionCookie(res, token) {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-  res.setHeader('Set-Cookie',
-    `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`
-  );
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
 }
 
 /**
@@ -85,9 +83,7 @@ function setSessionCookie(res, token) {
  * @param {import('express').Response} res
  */
 function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie',
-    `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
-  );
+  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
 /** @returns {number} Number of currently active sessions */
@@ -95,4 +91,14 @@ function getActiveSessionCount() {
   return activeSessions.size;
 }
 
-export { COOKIE_NAME, createSession, validateSession, destroySession, cleanupExpiredSessions, parseCookieValue, setSessionCookie, clearSessionCookie, getActiveSessionCount };
+export {
+  COOKIE_NAME,
+  createSession,
+  validateSession,
+  destroySession,
+  cleanupExpiredSessions,
+  parseCookieValue,
+  setSessionCookie,
+  clearSessionCookie,
+  getActiveSessionCount,
+};

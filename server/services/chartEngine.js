@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Chart Engine — LRU caches, intraday data fetching with SWR,
  * RSI / RMA / volume-delta calculations, chart result building,
@@ -54,7 +55,10 @@ const VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_
 const VD_RSI_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_RESULT_CACHE_MAX_ENTRIES) || 6000);
 const CHART_DATA_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_DATA_CACHE_MAX_ENTRIES) || 6000);
 const CHART_QUOTE_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_QUOTE_CACHE_MAX_ENTRIES) || 4000);
-const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_FINAL_RESULT_CACHE_MAX_ENTRIES) || 4000);
+const CHART_FINAL_RESULT_CACHE_MAX_ENTRIES = Math.max(
+  1,
+  Number(process.env.CHART_FINAL_RESULT_CACHE_MAX_ENTRIES) || 4000,
+);
 
 // ---------------------------------------------------------------------------
 // LRU cache instances
@@ -75,8 +79,14 @@ const CHART_IN_FLIGHT_MAX = 500;
 const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
 const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
 const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
-const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 64);
-const DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS = Math.max(0, Number(process.env.DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS) || (5 * 60 * 1000));
+const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 64,
+);
+const DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS = Math.max(
+  0,
+  Number(process.env.DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS) || 5 * 60 * 1000,
+);
 
 // ---------------------------------------------------------------------------
 // Timed cache helpers (SWR-style fresh / stale / miss)
@@ -100,13 +110,13 @@ function getTimedCacheValue(cacheMap, key) {
 
 function setTimedCacheValue(cacheMap, key, value, freshUntil, staleUntil) {
   const now = Date.now();
-  const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : (now + 60000);
-  const safeStaleUntil = Number.isFinite(staleUntil) ? staleUntil : (safeFreshUntil + 300000);
+  const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : now + 60000;
+  const safeStaleUntil = Number.isFinite(staleUntil) ? staleUntil : safeFreshUntil + 300000;
 
   cacheMap.set(key, {
     value,
     freshUntil: safeFreshUntil,
-    staleUntil: safeStaleUntil
+    staleUntil: safeStaleUntil,
   });
 }
 
@@ -120,13 +130,16 @@ function sweepExpiredTimedCache(cacheMap) {
 }
 
 // Periodic cache cleanup
-const vdRsiCacheCleanupTimer = setInterval(() => {
-  sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
-  sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
-  sweepExpiredTimedCache(CHART_DATA_CACHE);
-  sweepExpiredTimedCache(CHART_QUOTE_CACHE);
-  sweepExpiredTimedCache(CHART_FINAL_RESULT_CACHE);
-}, 15 * 60 * 1000);
+const vdRsiCacheCleanupTimer = setInterval(
+  () => {
+    sweepExpiredTimedCache(VD_RSI_LOWER_TF_CACHE);
+    sweepExpiredTimedCache(VD_RSI_RESULT_CACHE);
+    sweepExpiredTimedCache(CHART_DATA_CACHE);
+    sweepExpiredTimedCache(CHART_QUOTE_CACHE);
+    sweepExpiredTimedCache(CHART_FINAL_RESULT_CACHE);
+  },
+  15 * 60 * 1000,
+);
 if (typeof vdRsiCacheCleanupTimer.unref === 'function') {
   vdRsiCacheCleanupTimer.unref();
 }
@@ -142,7 +155,7 @@ function isEtRegularHours(dateEt) {
   if (tradingCalendar.isEarlyClose(dateStr)) {
     const closeTime = tradingCalendar.getCloseTimeEt(dateStr) || '13:00';
     const [ch, cm] = closeTime.split(':').map(Number);
-    return totalMinutes >= 570 && totalMinutes < (ch * 60 + cm);
+    return totalMinutes >= 570 && totalMinutes < ch * 60 + cm;
   }
   return totalMinutes >= 570 && totalMinutes < 960;
 }
@@ -152,7 +165,8 @@ function nextEtMarketOpenUtcMs(nowUtc = new Date()) {
   const candidate = new Date(nowEt);
   const totalMinutes = candidate.getHours() * 60 + candidate.getMinutes();
 
-  const candidateDateStr = () => `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
+  const candidateDateStr = () =>
+    `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
 
   if (!(tradingCalendar.isTradingDay(candidateDateStr()) && totalMinutes < 570)) {
     candidate.setDate(candidate.getDate() + 1);
@@ -161,24 +175,12 @@ function nextEtMarketOpenUtcMs(nowUtc = new Date()) {
     }
   }
 
-  return easternLocalToUtcMs(
-    candidate.getFullYear(),
-    candidate.getMonth() + 1,
-    candidate.getDate(),
-    9,
-    30
-  );
+  return easternLocalToUtcMs(candidate.getFullYear(), candidate.getMonth() + 1, candidate.getDate(), 9, 30);
 }
 
 function todayEtMarketCloseUtcMs(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  return easternLocalToUtcMs(
-    nowEt.getFullYear(),
-    nowEt.getMonth() + 1,
-    nowEt.getDate(),
-    16,
-    0
-  );
+  return easternLocalToUtcMs(nowEt.getFullYear(), nowEt.getMonth() + 1, nowEt.getDate(), 16, 0);
 }
 
 function getVdRsiCacheExpiryMs(nowUtc = new Date()) {
@@ -199,7 +201,8 @@ function nextPacificDivergenceRefreshUtcMs(nowUtc = new Date()) {
   const candidate = new Date(nowPacific);
   candidate.setHours(13, 1, 0, 0);
 
-  const candidateDateStr = () => `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
+  const candidateDateStr = () =>
+    `${candidate.getFullYear()}-${String(candidate.getMonth() + 1).padStart(2, '0')}-${String(candidate.getDate()).padStart(2, '0')}`;
 
   if (!tradingCalendar.isTradingDay(candidateDateStr()) || nowPacific.getTime() >= candidate.getTime()) {
     candidate.setDate(candidate.getDate() + 1);
@@ -208,13 +211,7 @@ function nextPacificDivergenceRefreshUtcMs(nowUtc = new Date()) {
     }
   }
 
-  return pacificLocalToUtcMs(
-    candidate.getFullYear(),
-    candidate.getMonth() + 1,
-    candidate.getDate(),
-    13,
-    1
-  );
+  return pacificLocalToUtcMs(candidate.getFullYear(), candidate.getMonth() + 1, candidate.getDate(), 13, 1);
 }
 
 function latestCompletedPacificTradeDateKey(nowUtc = new Date()) {
@@ -223,8 +220,8 @@ function latestCompletedPacificTradeDateKey(nowUtc = new Date()) {
     return '';
   }
   const todayKey = dateKeyFromYmdParts(pt.year, pt.month, pt.day);
-  const minutesSinceMidnight = (Number(pt.hour) * 60) + Number(pt.minute);
-  const refreshMinute = (13 * 60) + 1;
+  const minutesSinceMidnight = Number(pt.hour) * 60 + Number(pt.minute);
+  const refreshMinute = 13 * 60 + 1;
   if (tradingCalendar.isTradingDay(todayKey) && minutesSinceMidnight >= refreshMinute) {
     return todayKey;
   }
@@ -242,7 +239,7 @@ const CHART_INTRADAY_SLICE_DAYS = {
   '15min': 150,
   '30min': 45,
   '1hour': 45,
-  '4hour': 45
+  '4hour': 45,
 };
 
 function getIntradayLookbackDays(_interval) {
@@ -251,13 +248,7 @@ function getIntradayLookbackDays(_interval) {
 }
 
 async function dataApiIntraday(symbol, interval, options = {}) {
-  const {
-    from,
-    to,
-    signal,
-    noCache = false,
-    metricsTracker = null
-  } = options;
+  const { from, to, signal, noCache = false, metricsTracker = null } = options;
 
   const cacheKey = `${symbol}|${interval}|${from || ''}|${to || ''}`;
   let cached = { status: 'miss', value: null };
@@ -273,7 +264,7 @@ async function dataApiIntraday(symbol, interval, options = {}) {
     const CHUNK_SIZE_DAYS = {
       '1min': 30,
       '5min': 150,
-      '15min': 150
+      '15min': 150,
     };
 
     const maxDays = CHUNK_SIZE_DAYS[interval];
@@ -292,46 +283,50 @@ async function dataApiIntraday(symbol, interval, options = {}) {
         ranges.push({ from: formatDateUTC(current), to: formatDateUTC(chunkEnd) });
         current = addUtcDays(chunkEnd, 1);
       }
-      urls = ranges.map(r => buildDataApiAggregateRangeUrl(symbol, interval, r));
+      urls = ranges.map((r) => buildDataApiAggregateRangeUrl(symbol, interval, r));
     } else {
       urls = [buildDataApiAggregateRangeUrl(symbol, interval, { from, to })];
     }
 
     let rows = [];
     if (urls.length > 1) {
-      const results = await Promise.all(urls.map(url =>
-        fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
-          .then(payload => toArrayPayload(payload) || [])
-          .catch(err => {
-            console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
-            throw err;
-          })
-      ));
+      const results = await Promise.all(
+        urls.map((url) =>
+          fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
+            .then((payload) => toArrayPayload(payload) || [])
+            .catch((err) => {
+              console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
+              throw err;
+            }),
+        ),
+      );
       rows = results.flat();
     } else {
       rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
     }
 
-    const normalized = rows.map((row) => {
-      const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
-      const close = toNumberOrNull(row.c ?? row.close ?? row.price);
-      const open = toNumberOrNull(row.o ?? row.open) ?? close;
-      const high = toNumberOrNull(row.h ?? row.high) ?? close;
-      const low = toNumberOrNull(row.l ?? row.low) ?? close;
-      const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
+    const normalized = rows
+      .map((row) => {
+        const time = normalizeUnixSeconds(row.t ?? row.timestamp ?? row.time);
+        const close = toNumberOrNull(row.c ?? row.close ?? row.price);
+        const open = toNumberOrNull(row.o ?? row.open) ?? close;
+        const high = toNumberOrNull(row.h ?? row.high) ?? close;
+        const low = toNumberOrNull(row.l ?? row.low) ?? close;
+        const volume = toNumberOrNull(row.v ?? row.volume) ?? 0;
 
-      if (!Number.isFinite(time) || close === null || open === null || high === null || low === null) {
-        return null;
-      }
+        if (!Number.isFinite(time) || close === null || open === null || high === null || low === null) {
+          return null;
+        }
 
-      return { time, open, high, low, close, volume };
-    }).filter(Boolean);
+        return { time, open, high, low, close, volume };
+      })
+      .filter(Boolean);
 
     const result = normalized.length ? normalized : null;
 
     if (result && !noCache) {
       const freshExpiryMs = getVdRsiCacheExpiryMs(new Date());
-      const staleExpiryMs = freshExpiryMs + (10 * 60 * 1000);
+      const staleExpiryMs = freshExpiryMs + 10 * 60 * 1000;
       setTimedCacheValue(CHART_DATA_CACHE, cacheKey, result, freshExpiryMs, staleExpiryMs);
     }
     return result;
@@ -347,7 +342,12 @@ async function dataApiIntraday(symbol, interval, options = {}) {
   return await executeFetch();
 }
 
-async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
+async function dataApiIntradayChartHistorySingle(
+  symbol,
+  interval,
+  lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS,
+  options = {},
+) {
   const signal = options && options.signal ? options.signal : null;
   const noCache = options && options.noCache === true;
   const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
@@ -355,7 +355,7 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
   const endDate = new Date();
   endDate.setUTCHours(0, 0, 0, 0);
   const startDate = addUtcDays(endDate, -Math.max(1, lookbackDays));
-  const shouldTrySingleRequest = Math.max(1, lookbackDays) <= (sliceDays + 7);
+  const shouldTrySingleRequest = Math.max(1, lookbackDays) <= sliceDays + 7;
 
   if (shouldTrySingleRequest) {
     try {
@@ -364,7 +364,7 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
         to: formatDateUTC(endDate),
         signal,
         noCache,
-        metricsTracker
+        metricsTracker,
       });
       if (Array.isArray(rows) && rows.length > 0 && rows.length < 50000) {
         return rows.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
@@ -376,7 +376,12 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
         console.warn(`DataAPI ${interval} single-range payload hit cap for ${symbol}; retrying with slices`);
       }
     } catch (err) {
-      if (isAbortError(err) || isDataApiRateLimitedError(err) || isDataApiPausedError(err) || isDataApiSubscriptionRestrictedError(err)) {
+      if (
+        isAbortError(err) ||
+        isDataApiRateLimitedError(err) ||
+        isDataApiPausedError(err) ||
+        isDataApiSubscriptionRestrictedError(err)
+      ) {
         throw err;
       }
       const message = err && err.message ? err.message : String(err);
@@ -402,7 +407,7 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
         to: formatDateUTC(sliceEnd),
         signal,
         noCache,
-        metricsTracker
+        metricsTracker,
       });
       if (rows && rows.length > 0) {
         for (const row of rows) {
@@ -419,7 +424,9 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
         throw err;
       }
       const message = err && err.message ? err.message : String(err);
-      console.error(`DataAPI ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`);
+      console.error(
+        `DataAPI ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`,
+      );
       if (isDataApiSubscriptionRestrictedError(err) || isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
         throw err;
       }
@@ -444,7 +451,12 @@ async function dataApiIntradayChartHistorySingle(symbol, interval, lookbackDays 
   return Array.from(byDateTime.values()).sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
 }
 
-async function dataApiIntradayChartHistory(symbol, interval, lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS, options = {}) {
+async function dataApiIntradayChartHistory(
+  symbol,
+  interval,
+  lookbackDays = CHART_INTRADAY_LOOKBACK_DAYS,
+  options = {},
+) {
   const requestedInterval = String(interval || '').trim();
   const intervalCandidates = [requestedInterval];
   let lastError = null;
@@ -522,12 +534,12 @@ function calculateRSI(closePrices, period = 14) {
       avgGain = gainSum / period;
       avgLoss = lossSum / period;
     } else {
-      avgGain = ((avgGain * (period - 1)) + gain) / period;
-      avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+      avgGain = (avgGain * (period - 1) + gain) / period;
+      avgLoss = (avgLoss * (period - 1) + loss) / period;
     }
 
     const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    const rsi = 100 - (100 / (1 + rs));
+    const rsi = 100 - 100 / (1 + rs);
     rsiValues[i] = Number.isFinite(rsi) ? rsi : rsiValues[i - 1];
   }
 
@@ -570,7 +582,7 @@ function calculateRMA(values, length = 14) {
       continue;
     }
 
-    rma = ((rma * (period - 1)) + value) / period;
+    rma = (rma * (period - 1) + value) / period;
     out[i] = rma;
   }
 
@@ -586,7 +598,7 @@ function getIntervalSeconds(interval) {
     '1hour': 60 * 60,
     '4hour': 4 * 60 * 60,
     '1day': 24 * 60 * 60,
-    '1week': 7 * 24 * 60 * 60
+    '1week': 7 * 24 * 60 * 60,
   };
   return map[interval] || 60;
 }
@@ -623,7 +635,7 @@ function normalizeIntradayVolumesFromCumulativeIfNeeded(bars) {
     const avgDiff = positiveDiffs.reduce((sum, value) => sum + value, 0) / positiveDiffs.length;
     if (!Number.isFinite(avgDiff) || avgDiff <= 0) return;
 
-    if ((maxVolume / avgDiff) < 6) return;
+    if (maxVolume / avgDiff < 6) return;
 
     for (let i = startIndex + 1; i <= endIndex; i++) {
       const prev = Number(normalized[i - 1].volume) || 0;
@@ -668,7 +680,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
 
     const currentParentStart = parentTimes[parentIndex];
     if (!Number.isFinite(currentParentStart)) continue;
-    if (t < currentParentStart || t >= (currentParentStart + intervalSeconds)) continue;
+    if (t < currentParentStart || t >= currentParentStart + intervalSeconds) continue;
 
     const open = Number(bar.open);
     const close = Number(bar.close);
@@ -695,9 +707,9 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
 
     for (let j = 0; j < stream.length; j++) {
       const ib = stream[j];
-      let isBull = ib.close > ib.open ? true : (ib.close < ib.open ? false : null);
+      let isBull = ib.close > ib.open ? true : ib.close < ib.open ? false : null;
       if (isBull === null) {
-        const prevClose = (j === 0) ? streamLastClose : stream[j - 1].close;
+        const prevClose = j === 0 ? streamLastClose : stream[j - 1].close;
         if (Number.isFinite(prevClose)) {
           if (ib.close > prevClose) {
             isBull = true;
@@ -715,7 +727,7 @@ function computeVolumeDeltaByParentBars(parentBars, lowerTimeframeBars, interval
         isBull = runningDelta > 0;
       }
       if (isBull !== null) streamLastBull = isBull;
-      runningDelta += isBull === true ? ib.volume : (isBull === false ? -ib.volume : 0);
+      runningDelta += isBull === true ? ib.volume : isBull === false ? -ib.volume : 0;
       if (j === stream.length - 1) {
         streamLastClose = ib.close;
       }
@@ -752,8 +764,8 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
     if (!Number.isFinite(avgGain) || !Number.isFinite(avgLoss)) {
       continue;
     }
-    const rs = avgLoss === 0 ? 100 : (avgGain / avgLoss);
-    const value = 100 - (100 / (1 + rs));
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    const value = 100 - 100 / (1 + rs);
     vdRsiRaw[i] = Number.isFinite(value) ? value : null;
   }
 
@@ -766,9 +778,9 @@ function calculateVolumeDeltaRsiSeries(parentBars, lowerTimeframeBars, interval,
     }
   }
 
-  const deltaValues = deltaByBar.map(d => ({
+  const deltaValues = deltaByBar.map((d) => ({
     time: d.time,
-    delta: Number.isFinite(d.delta) ? d.delta : 0
+    delta: Number.isFinite(d.delta) ? d.delta : 0,
   }));
 
   return { rsi, deltaValues };
@@ -788,7 +800,7 @@ function parseDataApiDateTime(datetimeValue) {
     month: Number(match[2]),
     day: Number(match[3]),
     hour: Number(match[4]),
-    minute: Number(match[5])
+    minute: Number(match[5]),
   };
 }
 
@@ -799,10 +811,14 @@ function parseBarTimeToUnixSeconds(bar) {
   if (!parts) return null;
   const { year, month, day, hour, minute } = parts;
   const probeDate = new Date(Date.UTC(year, month - 1, day, Math.max(hour, 0), minute, 0));
-  const etOffset = probeDate.toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    timeZoneName: 'short'
-  }).includes('EST') ? -5 : -4;
+  const etOffset = probeDate
+    .toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    })
+    .includes('EST')
+    ? -5
+    : -4;
   return Math.floor(Date.UTC(year, month - 1, day, hour - etOffset, minute, 0) / 1000);
 }
 
@@ -820,7 +836,7 @@ function convertToLATime(bars, interval) {
       high: bar.high,
       low: bar.low,
       close: bar.close,
-      volume: bar.volume
+      volume: bar.volume,
     });
   }
 
@@ -850,7 +866,7 @@ function patchLatestBarCloseWithQuote(result, quote) {
     ...last,
     close: quotePrice,
     high: boundedHigh,
-    low: boundedLow
+    low: boundedLow,
   };
 
   const closePrices = bars.map((bar) => Number(bar.close));
@@ -861,7 +877,7 @@ function patchLatestBarCloseWithQuote(result, quote) {
     if (!Number.isFinite(raw)) continue;
     patchedRsi.push({
       time: bars[i].time,
-      value: Math.round(raw * 100) / 100
+      value: Math.round(raw * 100) / 100,
     });
   }
   result.rsi = patchedRsi;
@@ -884,7 +900,7 @@ function buildChartRequestKey(params) {
     params.vdRsiLength,
     params.vdSourceInterval,
     params.vdRsiSourceInterval,
-    params.lookbackDays
+    params.lookbackDays,
   ].join('|');
 }
 
@@ -910,7 +926,7 @@ function createChartStageTimer() {
       const totalMs = toMs(process.hrtime.bigint() - startedNs);
       const stageSummary = stages.map((stage) => `${stage.name}=${fmt(stage.ms)}ms`).join(' ');
       return `${stageSummary}${stageSummary ? ' ' : ''}total=${fmt(totalMs)}ms`;
-    }
+    },
   };
 }
 
@@ -922,7 +938,7 @@ function getChartCacheControlHeaderValue() {
 
 function getChartResultCacheExpiryMs(nowUtc = new Date()) {
   if (CHART_RESULT_CACHE_TTL_SECONDS > 0) {
-    return nowUtc.getTime() + (CHART_RESULT_CACHE_TTL_SECONDS * 1000);
+    return nowUtc.getTime() + CHART_RESULT_CACHE_TTL_SECONDS * 1000;
   }
   return getVdRsiCacheExpiryMs(nowUtc);
 }
@@ -964,8 +980,8 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
     try {
       const compressed = await brotliCompressAsync(bodyBuffer, {
         params: {
-          [zlib.constants.BROTLI_PARAM_QUALITY]: 4
-        }
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+        },
       });
       res.setHeader('Content-Encoding', 'br');
       return res.status(200).send(compressed);
@@ -978,7 +994,7 @@ async function sendChartJsonResponse(req, res, payload, serverTimingHeader) {
   if (shouldCompress && accepts.includes('gzip')) {
     try {
       const compressed = await gzipAsync(bodyBuffer, {
-        level: zlib.constants.Z_BEST_SPEED
+        level: zlib.constants.Z_BEST_SPEED,
       });
       res.setHeader('Content-Encoding', 'gzip');
       return res.status(200).send(compressed);
@@ -1004,7 +1020,8 @@ function buildChartResultFromRows(options = {}) {
   const vdRsiSourceInterval = toVolumeDeltaSourceInterval(options.vdRsiSourceInterval, '1min');
   const timer = options.timer || null;
 
-  const convertBarsForInterval = (rows, tf) => convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time));
+  const convertBarsForInterval = (rows, tf) =>
+    convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time));
   const directIntervalRows = rowsByInterval.get(interval) || [];
   const convertedBars = convertBarsForInterval(directIntervalRows, interval);
   if (timer) timer.step('parent_bars');
@@ -1024,18 +1041,20 @@ function buildChartResultFromRows(options = {}) {
     if (!Number.isFinite(raw)) continue;
     rsi.push({
       time: convertedBars[i].time,
-      value: Math.round(raw * 100) / 100
+      value: Math.round(raw * 100) / 100,
     });
   }
   if (timer) timer.step('rsi');
 
-  const normalizeSourceBars = (rows, tf) => normalizeIntradayVolumesFromCumulativeIfNeeded(
-    convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time))
-  );
+  const normalizeSourceBars = (rows, tf) =>
+    normalizeIntradayVolumesFromCumulativeIfNeeded(
+      convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time)),
+    );
   const vdSourceBars = normalizeSourceBars(rowsByInterval.get(vdSourceInterval) || [], vdSourceInterval);
-  const vdRsiSourceBars = vdRsiSourceInterval === vdSourceInterval
-    ? vdSourceBars
-    : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
+  const vdRsiSourceBars =
+    vdRsiSourceInterval === vdSourceInterval
+      ? vdSourceBars
+      : normalizeSourceBars(rowsByInterval.get(vdRsiSourceInterval) || [], vdRsiSourceInterval);
   if (timer) timer.step('source_bars');
 
   let volumeDeltaRsi = { rsi: [] };
@@ -1047,10 +1066,10 @@ function buildChartResultFromRows(options = {}) {
   const lastParentTime = Number(lastBarTime);
   const warmUpBufferSeconds = getIntervalSeconds(interval) * 20;
   const parentWindowStart = Number.isFinite(firstParentTime)
-    ? (firstParentTime - warmUpBufferSeconds)
+    ? firstParentTime - warmUpBufferSeconds
     : Number.NEGATIVE_INFINITY;
   const parentWindowEndExclusive = Number.isFinite(lastParentTime)
-    ? (lastParentTime + getIntervalSeconds(interval))
+    ? lastParentTime + getIntervalSeconds(interval)
     : Number.POSITIVE_INFINITY;
   const vdSourceBarsInParentRange = vdSourceBars.filter((bar) => {
     const t = Number(bar.time);
@@ -1060,14 +1079,12 @@ function buildChartResultFromRows(options = {}) {
     const t = Number(bar.time);
     return Number.isFinite(t) && t >= parentWindowStart && t < parentWindowEndExclusive;
   });
-  const volumeDelta = computeVolumeDeltaByParentBars(
-    convertedBars,
-    vdSourceBarsInParentRange,
-    interval
-  ).map((point) => ({
-    time: point.time,
-    delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0
-  }));
+  const volumeDelta = computeVolumeDeltaByParentBars(convertedBars, vdSourceBarsInParentRange, interval).map(
+    (point) => ({
+      time: point.time,
+      delta: Number.isFinite(Number(point.delta)) ? Number(point.delta) : 0,
+    }),
+  );
   if (timer) timer.step('volume_delta');
 
   const cachedVolumeDeltaRsi = getTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey);
@@ -1076,16 +1093,13 @@ function buildChartResultFromRows(options = {}) {
   } else {
     try {
       if (vdRsiSourceBarsInParentRange.length > 0) {
-        volumeDeltaRsi = calculateVolumeDeltaRsiSeries(
-          convertedBars,
-          vdRsiSourceBarsInParentRange,
-          interval,
-          { rsiLength: vdRsiLength }
-        );
+        volumeDeltaRsi = calculateVolumeDeltaRsiSeries(convertedBars, vdRsiSourceBarsInParentRange, interval, {
+          rsiLength: vdRsiLength,
+        });
       } else {
         volumeDeltaRsi = {
           rsi: [],
-          deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval)
+          deltaValues: computeVolumeDeltaByParentBars(convertedBars, [], interval),
         };
       }
       setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
@@ -1104,12 +1118,12 @@ function buildChartResultFromRows(options = {}) {
     volumeDeltaRsi,
     volumeDelta,
     volumeDeltaConfig: {
-      sourceInterval: vdSourceInterval
+      sourceInterval: vdSourceInterval,
     },
     volumeDeltaRsiConfig: {
       sourceInterval: vdRsiSourceInterval,
-      length: vdRsiLength
-    }
+      length: vdRsiLength,
+    },
   };
   if (timer) timer.step('assemble');
   return result;
@@ -1128,7 +1142,7 @@ async function getOrBuildChartResult(params, deps = {}) {
     vdRsiSourceInterval,
     lookbackDays,
     requestKey,
-    skipFollowUpPrewarm = false
+    skipFollowUpPrewarm = false,
   } = params;
 
   const chartDebugMetrics = deps.chartDebugMetrics || {};
@@ -1147,7 +1161,7 @@ async function getOrBuildChartResult(params, deps = {}) {
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays
+          lookbackDays,
         });
       }
       if (interval === '1day') {
@@ -1159,7 +1173,7 @@ async function getOrBuildChartResult(params, deps = {}) {
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays
+          lookbackDays,
         });
       }
     }
@@ -1194,7 +1208,7 @@ async function getOrBuildChartResult(params, deps = {}) {
       Array.from(intervalsToFetch).map(async (tf) => {
         const rows = await dataApiIntradayChartHistory(ticker, tf, lookbackDays);
         rowsByInterval.set(tf, rows || []);
-      })
+      }),
     );
     if (timer) timer.step('fetch_all');
 
@@ -1205,11 +1219,11 @@ async function getOrBuildChartResult(params, deps = {}) {
       vdRsiLength,
       vdSourceInterval,
       vdRsiSourceInterval,
-      timer
+      timer,
     });
 
     const freshExpiryMs = getChartResultCacheExpiryMs(new Date());
-    const staleExpiryMs = freshExpiryMs + (10 * 60 * 1000);
+    const staleExpiryMs = freshExpiryMs + 10 * 60 * 1000;
     setTimedCacheValue(CHART_FINAL_RESULT_CACHE, requestKey, result, freshExpiryMs, staleExpiryMs);
 
     if (!skipFollowUpPrewarm && (interval === '4hour' || interval === '1day')) {
@@ -1222,7 +1236,7 @@ async function getOrBuildChartResult(params, deps = {}) {
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays
+          lookbackDays,
         });
       }
       if (interval === '1day') {
@@ -1234,7 +1248,7 @@ async function getOrBuildChartResult(params, deps = {}) {
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays
+          lookbackDays,
         });
       }
       if (interval === '4hour') {
@@ -1246,7 +1260,7 @@ async function getOrBuildChartResult(params, deps = {}) {
           vdRsiLength,
           vdSourceInterval,
           vdRsiSourceInterval,
-          lookbackDays
+          lookbackDays,
         });
       }
     }
@@ -1327,7 +1341,7 @@ function isRegularHoursEt(dateTimeStr) {
       timeZone: 'America/New_York',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false
+      hour12: false,
     }).formatToParts(new Date(Number(numeric) * 1000));
     const partMap = {};
     for (const part of parts) partMap[part.type] = part.value;
@@ -1377,7 +1391,9 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   const spyDayByTs = new Map();
   for (const bar of spyBars || []) {
     const unixSeconds = parseBarTimeToUnixSeconds(bar);
-    const day = Number.isFinite(unixSeconds) ? etDateStringFromUnixSeconds(unixSeconds) : String(bar.datetime || '').slice(0, 10);
+    const day = Number.isFinite(unixSeconds)
+      ? etDateStringFromUnixSeconds(unixSeconds)
+      : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
     if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;
     const ts = roundEtTo30MinEpochMs(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime);
@@ -1389,7 +1405,9 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
   const compDayByTs = new Map();
   for (const bar of compBars || []) {
     const unixSeconds = parseBarTimeToUnixSeconds(bar);
-    const day = Number.isFinite(unixSeconds) ? etDateStringFromUnixSeconds(unixSeconds) : String(bar.datetime || '').slice(0, 10);
+    const day = Number.isFinite(unixSeconds)
+      ? etDateStringFromUnixSeconds(unixSeconds)
+      : String(bar.datetime || '').slice(0, 10);
     if (!day) continue;
     if (!isRegularHoursEt(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime)) continue;
     const ts = roundEtTo30MinEpochMs(Number.isFinite(unixSeconds) ? unixSeconds : bar.datetime);
@@ -1397,13 +1415,13 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
     compDayByTs.set(ts, day);
   }
 
-  const commonKeys = [...spyMap.keys()]
-    .filter((k) => compMap.has(k))
-    .sort((a, b) => a - b);
+  const commonKeys = [...spyMap.keys()].filter((k) => compMap.has(k)).sort((a, b) => a - b);
 
   if (commonKeys.length === 0) return [];
 
-  const commonDays = Array.from(new Set(commonKeys.map((k) => spyDayByTs.get(k) || compDayByTs.get(k)).filter(Boolean))).sort();
+  const commonDays = Array.from(
+    new Set(commonKeys.map((k) => spyDayByTs.get(k) || compDayByTs.get(k)).filter(Boolean)),
+  ).sort();
   let selectedDaySet;
   if (days === 1) {
     selectedDaySet = new Set([todayStr]);
@@ -1416,7 +1434,7 @@ function buildIntradayBreadthPoints(spyBars, compBars, days) {
     .map((k) => ({
       date: new Date(k).toISOString(),
       spy: Math.round(spyMap.get(k) * 100) / 100,
-      comparison: Math.round(compMap.get(k) * 100) / 100
+      comparison: Math.round(compMap.get(k) * 100) / 100,
     }));
 }
 

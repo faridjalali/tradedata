@@ -13,7 +13,7 @@ export interface RSIChartOptions {
   container: HTMLElement;
   data: RSIPoint[];
   displayMode: RSIDisplayMode;
-  priceData?: Array<{time: string | number, close: number}>; // For divergence detection
+  priceData?: Array<{ time: string | number; close: number }>; // For divergence detection
   lineColor?: string;
   midlineColor?: string;
   midlineStyle?: 'dotted' | 'solid';
@@ -45,20 +45,21 @@ export class RSIChart {
   private midlineStyle: 'dotted' | 'solid' = 'dotted';
   private data: RSIPoint[];
   private seriesData: any[] = [];
-  private referenceLines: Array<{value: number, label: string, color: string, lineStyle: number}> = [];
+  private referenceLines: Array<{ value: number; label: string; color: string; lineStyle: number }> = [];
   private midlinePriceLine: any = null;
-  private priceData: Array<{time: string | number, close: number}> = [];
+  private priceData: Array<{ time: string | number; close: number }> = [];
   private priceByTime = new Map<string, number>();
   private indexByTime = new Map<string, number>();
   private divergencePointTimeKeys = new Set<string>();
   private divergenceToolActive: boolean = false;
   private highlightSeries: any = null;
-  private firstPoint: {time: string | number, rsi: number, price: number, index: number} | null = null;
+  private firstPoint: { time: string | number; rsi: number; price: number; index: number } | null = null;
   private divergencePoints: RSIPoint[] = [];
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
   private static readonly FUTURE_TIMELINE_TRADING_DAYS = 252;
   private trendLineSeriesList: any[] = [];
-  private trendlineCrossLabels: Array<{ element: HTMLDivElement, anchorTime: string | number, anchorValue: number }> = [];
+  private trendlineCrossLabels: Array<{ element: HTMLDivElement; anchorTime: string | number; anchorValue: number }> =
+    [];
   private trendlineDefinitions: RSIPersistedTrendline[] = [];
   private timelineSeries: any = null;
   private suppressExternalSync: boolean = false;
@@ -84,11 +85,11 @@ export class RSIChart {
         background: { color: themeColors.bgColor },
         textColor: themeColors.textPrimary,
         fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
-        attributionLogo: false
+        attributionLogo: false,
       },
       grid: {
         vertLines: { visible: false },
-        horzLines: { visible: false }
+        horzLines: { visible: false },
       },
       timeScale: {
         visible: true,
@@ -100,7 +101,7 @@ export class RSIChart {
         rightBarStaysOnScroll: false,
         rightOffset: 10,
         tickMarkFormatter: (time: any, tickMarkType: number) => this.formatTickMark(time, tickMarkType),
-        borderColor: themeColors.surfaceElevated  // Show time scale at bottom of RSI chart
+        borderColor: themeColors.surfaceElevated, // Show time scale at bottom of RSI chart
       },
       rightPriceScale: {
         borderColor: themeColors.surfaceElevated,
@@ -109,12 +110,12 @@ export class RSIChart {
         // Default view: 20-80 range (20% margin top + 20% margin bottom)
         // User can adjust but won't go beyond 0-100 data bounds
         scaleMargins: {
-          top: 0.2,    // 20% margin = hides 0-20 by default
-          bottom: 0.2  // 20% margin = hides 80-100 by default
-        }
+          top: 0.2, // 20% margin = hides 0-20 by default
+          bottom: 0.2, // 20% margin = hides 80-100 by default
+        },
       },
       crosshair: {
-        mode: 1 // CrosshairMode.Magnet — snaps to nearest data point
+        mode: 1, // CrosshairMode.Magnet — snaps to nearest data point
       },
       kineticScroll: {
         touch: false,
@@ -124,20 +125,20 @@ export class RSIChart {
         pressedMouseMove: true,
         horzTouchDrag: true,
         vertTouchDrag: isMobileTouch,
-        mouseWheel: true
+        mouseWheel: true,
       },
       handleScale: {
         mouseWheel: true,
         pinch: true,
         axisPressedMouseMove: {
           time: true,
-          price: false
+          price: false,
         },
         axisDoubleClickReset: {
           time: true,
-          price: false
-        }
-      }
+          price: false,
+        },
+      },
     });
 
     // Add midline at 50
@@ -167,26 +168,22 @@ export class RSIChart {
 
   private normalizeRSIData(data: RSIPoint[]): RSIPoint[] {
     return data
-      .filter((point) => (
-        point &&
-        (typeof point.time === 'string' || typeof point.time === 'number') &&
-        Number.isFinite(Number(point.value))
-      ))
+      .filter(
+        (point) =>
+          point &&
+          (typeof point.time === 'string' || typeof point.time === 'number') &&
+          Number.isFinite(Number(point.value)),
+      )
       .map((point) => ({
         ...point,
-        value: Math.max(
-          RSIChart.RSI_DATA_MIN,
-          Math.min(RSIChart.RSI_DATA_MAX, Number(point.value))
-        )
+        value: Math.max(RSIChart.RSI_DATA_MIN, Math.min(RSIChart.RSI_DATA_MAX, Number(point.value))),
       }));
   }
 
   private formatRSIScaleLabel(value: number): string {
     if (!Number.isFinite(value)) return '';
     const label = Number(value).toFixed(1);
-    return label.length >= RSIChart.SCALE_LABEL_CHARS
-      ? label
-      : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
+    return label.length >= RSIChart.SCALE_LABEL_CHARS ? label : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
   }
 
   private fixedRSIAutoscaleInfoProvider(): any {
@@ -194,9 +191,9 @@ export class RSIChart {
     // Combined with scaleMargins, this creates the proper Y-axis bounds
     return {
       priceRange: {
-        minValue: RSIChart.RSI_AXIS_MIN,  // 20
-        maxValue: RSIChart.RSI_AXIS_MAX   // 80
-      }
+        minValue: RSIChart.RSI_AXIS_MIN, // 20
+        maxValue: RSIChart.RSI_AXIS_MAX, // 80
+      },
     };
   }
 
@@ -232,7 +229,13 @@ export class RSIChart {
       return Number.isFinite(parsed.getTime()) ? parsed : null;
     }
 
-    if (time && typeof time === 'object' && Number.isFinite(time.year) && Number.isFinite(time.month) && Number.isFinite(time.day)) {
+    if (
+      time &&
+      typeof time === 'object' &&
+      Number.isFinite(time.year) &&
+      Number.isFinite(time.month) &&
+      Number.isFinite(time.day)
+    ) {
       // BusinessDay-like object
       return new Date(Date.UTC(Number(time.year), Number(time.month) - 1, Number(time.day), 0, 0, 0));
     }
@@ -263,21 +266,21 @@ export class RSIChart {
     if (tickMarkType === 0) {
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
-        timeZone: getAppTimeZone()
+        timeZone: getAppTimeZone(),
       });
     }
 
     if (tickMarkType === 1) {
       return date.toLocaleDateString('en-US', {
         month: 'short',
-        timeZone: getAppTimeZone()
+        timeZone: getAppTimeZone(),
       });
     }
 
     // Zoomed in (day/time): show day-of-month only.
     return date.toLocaleDateString('en-US', {
       day: 'numeric',
-      timeZone: getAppTimeZone()
+      timeZone: getAppTimeZone(),
     });
   }
 
@@ -331,7 +334,7 @@ export class RSIChart {
       pointMarkersVisible: false,
       priceLineVisible: false,
       lastValueVisible: false,
-      crosshairMarkerVisible: false
+      crosshairMarkerVisible: false,
     });
   }
 
@@ -356,10 +359,7 @@ export class RSIChart {
     this.timelineSeries.setData(timelinePoints);
   }
 
-  private buildSeriesData(
-    data: RSIPoint[],
-    priceData: Array<{time: string | number, close: number}>
-  ): any[] {
+  private buildSeriesData(data: RSIPoint[], priceData: Array<{ time: string | number; close: number }>): any[] {
     if (!priceData || priceData.length === 0) return data;
 
     const rsiByTime = new Map<string, number>();
@@ -389,7 +389,7 @@ export class RSIChart {
         lineWidth: 1,
         lineStyle,
         axisLabelVisible: false,
-        title: label
+        title: label,
       });
       if (label === 'Midline') {
         this.midlinePriceLine = priceLine;
@@ -412,11 +412,11 @@ export class RSIChart {
         priceFormat: {
           type: 'custom',
           minMove: 1,
-          formatter: (value: number) => this.formatRSIScaleLabel(Number(value))
+          formatter: (value: number) => this.formatRSIScaleLabel(Number(value)),
         },
         autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
-        lastValueVisible: false
+        lastValueVisible: false,
       });
     } else {
       // Points mode - using histogram with very thin bars to simulate points
@@ -425,11 +425,11 @@ export class RSIChart {
         priceFormat: {
           type: 'custom',
           minMove: 1,
-          formatter: (value: number) => this.formatRSIScaleLabel(Number(value))
+          formatter: (value: number) => this.formatRSIScaleLabel(Number(value)),
         },
         autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
-        lastValueVisible: false
+        lastValueVisible: false,
       });
     }
 
@@ -438,27 +438,29 @@ export class RSIChart {
       this.series.setData(this.seriesData);
     } else {
       // For histogram (points mode), convert to histogram format
-      this.series.setData(this.seriesData.map(d => {
-        if (Number.isFinite(Number(d.value))) {
-          return {
-            time: d.time,
-            value: d.value,
-            color: this.lineColor
-          };
-        }
-        return { time: d.time };
-      }));
+      this.series.setData(
+        this.seriesData.map((d) => {
+          if (Number.isFinite(Number(d.value))) {
+            return {
+              time: d.time,
+              value: d.value,
+              color: this.lineColor,
+            };
+          }
+          return { time: d.time };
+        }),
+      );
     }
 
     // Add reference lines (midline) to the new series
-    this.referenceLines.forEach(config => {
+    this.referenceLines.forEach((config) => {
       const priceLine = this.series.createPriceLine({
         price: config.value,
         color: config.color,
         lineWidth: 1,
         lineStyle: config.lineStyle,
         axisLabelVisible: false,
-        title: config.label
+        title: config.label,
       });
       if (config.label === 'Midline') {
         this.midlinePriceLine = priceLine;
@@ -480,16 +482,18 @@ export class RSIChart {
       this.series.applyOptions({ color });
     } else if (this.displayMode !== 'line' && this.series) {
       this.series.applyOptions({ color });
-      this.series.setData(this.seriesData.map(d => {
-        if (Number.isFinite(Number(d.value))) {
-          return {
-            time: d.time,
-            value: d.value,
-            color: this.lineColor
-          };
-        }
-        return { time: d.time };
-      }));
+      this.series.setData(
+        this.seriesData.map((d) => {
+          if (Number.isFinite(Number(d.value))) {
+            return {
+              time: d.time,
+              value: d.value,
+              color: this.lineColor,
+            };
+          }
+          return { time: d.time };
+        }),
+      );
     }
   }
 
@@ -504,12 +508,12 @@ export class RSIChart {
     if (this.midlinePriceLine) {
       this.midlinePriceLine.applyOptions({
         color: this.midlineColor,
-        lineStyle
+        lineStyle,
       });
     }
   }
 
-  setData(data: RSIPoint[], priceData?: Array<{time: string | number, close: number}>): void {
+  setData(data: RSIPoint[], priceData?: Array<{ time: string | number; close: number }>): void {
     this.clearDivergence();
     this.data = this.normalizeRSIData(data);
     if (priceData) {
@@ -522,16 +526,18 @@ export class RSIChart {
       if (this.displayMode === 'line') {
         this.series.setData(this.seriesData);
       } else {
-        this.series.setData(this.seriesData.map(d => {
-          if (Number.isFinite(Number(d.value))) {
-            return {
-              time: d.time,
-              value: d.value,
-              color: this.lineColor
-            };
-          }
-          return { time: d.time };
-        }));
+        this.series.setData(
+          this.seriesData.map((d) => {
+            if (Number.isFinite(Number(d.value))) {
+              return {
+                time: d.time,
+                value: d.value,
+                color: this.lineColor,
+              };
+            }
+            return { time: d.time };
+          }),
+        );
       }
     }
 
@@ -539,10 +545,7 @@ export class RSIChart {
     this.refreshTrendlineCrossLabels();
   }
 
-  updateLatestPoint(
-    point: RSIPoint,
-    latestPricePoint?: { time: string | number, close: number }
-  ): boolean {
+  updateLatestPoint(point: RSIPoint, latestPricePoint?: { time: string | number; close: number }): boolean {
     if (!point || (typeof point.time !== 'string' && typeof point.time !== 'number')) return false;
     const nextValueRaw = Number(point.value);
     if (!Number.isFinite(nextValueRaw)) return false;
@@ -554,13 +557,10 @@ export class RSIChart {
     const nextKey = this.timeKey(point.time);
     if (lastKey !== nextKey) return false;
 
-    const nextValue = Math.max(
-      RSIChart.RSI_DATA_MIN,
-      Math.min(RSIChart.RSI_DATA_MAX, nextValueRaw)
-    );
+    const nextValue = Math.max(RSIChart.RSI_DATA_MIN, Math.min(RSIChart.RSI_DATA_MAX, nextValueRaw));
     this.data[lastIndex] = {
       ...this.data[lastIndex],
-      value: nextValue
+      value: nextValue,
     };
 
     if (latestPricePoint && this.timeKey(latestPricePoint.time) === lastKey) {
@@ -569,7 +569,7 @@ export class RSIChart {
         if (this.priceData.length > 0 && this.timeKey(this.priceData[this.priceData.length - 1].time) === lastKey) {
           this.priceData[this.priceData.length - 1] = {
             ...this.priceData[this.priceData.length - 1],
-            close: nextClose
+            close: nextClose,
           };
         }
         this.priceByTime.set(lastKey, nextClose);
@@ -579,7 +579,7 @@ export class RSIChart {
     if (this.seriesData.length > 0 && this.timeKey(this.seriesData[this.seriesData.length - 1].time) === lastKey) {
       this.seriesData[this.seriesData.length - 1] = {
         time: lastTime,
-        value: nextValue
+        value: nextValue,
       };
     } else {
       this.seriesData = this.buildSeriesData(this.data, this.priceData);
@@ -617,7 +617,11 @@ export class RSIChart {
       const time2 = line.time2;
       const value1 = Number(line.value1);
       const value2 = Number(line.value2);
-      if ((typeof time1 !== 'string' && typeof time1 !== 'number') || (typeof time2 !== 'string' && typeof time2 !== 'number')) continue;
+      if (
+        (typeof time1 !== 'string' && typeof time1 !== 'number') ||
+        (typeof time2 !== 'string' && typeof time2 !== 'number')
+      )
+        continue;
       if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
       this.drawTrendLine(time1, value1, time2, value2, true);
     }
@@ -626,8 +630,6 @@ export class RSIChart {
   refreshTrendlineLabels(): void {
     this.refreshTrendlineCrossLabels();
   }
-
-
 
   getLineTools(): any {
     return this.lineTools;
@@ -681,7 +683,7 @@ export class RSIChart {
         time: clickedTime,
         rsi: clickedRSI,
         price: clickedPriceValue,
-        index: clickedIndex
+        index: clickedIndex,
       };
 
       // Find all future points with divergence in either direction:
@@ -707,7 +709,9 @@ export class RSIChart {
         }
       }
 
-      console.log(`Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPriceValue.toFixed(2)})`);
+      console.log(
+        `Found ${this.divergencePoints.length} divergence points from origin (RSI: ${clickedRSI.toFixed(2)}, Price: ${clickedPriceValue.toFixed(2)})`,
+      );
 
       // Highlight the divergence points
       this.highlightPoints(this.divergencePoints);
@@ -720,7 +724,9 @@ export class RSIChart {
         return;
       }
 
-      console.log(`Drawing trend line from (RSI: ${this.firstPoint.rsi.toFixed(2)}) to (RSI: ${clickedRSI.toFixed(2)})`);
+      console.log(
+        `Drawing trend line from (RSI: ${this.firstPoint.rsi.toFixed(2)}) to (RSI: ${clickedRSI.toFixed(2)})`,
+      );
 
       // Draw trend line from first point through second point, extending to the right
       this.drawTrendLine(this.firstPoint.time, this.firstPoint.rsi, clickedTime, clickedRSI);
@@ -744,14 +750,14 @@ export class RSIChart {
 
     // Add a marker series to highlight divergence points
     this.highlightSeries = this.chart.addLineSeries({
-      color: '#ff6b6b',  // Red color for bearish divergence
+      color: '#ff6b6b', // Red color for bearish divergence
       lineVisible: false,
       pointMarkersVisible: true,
       pointMarkersRadius: 2,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
-      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider()
+      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
     });
 
     const step = Math.max(1, Math.ceil(points.length / RSIChart.MAX_HIGHLIGHT_POINTS));
@@ -771,7 +777,7 @@ export class RSIChart {
     return getAppTimeZoneFormatter('en-US', {
       month: '2-digit',
       day: '2-digit',
-      year: '2-digit'
+      year: '2-digit',
     }).format(new Date(Math.round(Number(unixSeconds)) * 1000));
   }
 
@@ -843,13 +849,15 @@ export class RSIChart {
       const wholeTime = Math.floor(d.getTime() / 1000);
       if (fraction > 0) {
         const nextD = new Date(d);
-        do { nextD.setUTCDate(nextD.getUTCDate() + 1); } while (nextD.getUTCDay() === 0 || nextD.getUTCDay() === 6);
+        do {
+          nextD.setUTCDate(nextD.getUTCDate() + 1);
+        } while (nextD.getUTCDay() === 0 || nextD.getUTCDay() === 6);
         const nextTime = Math.floor(nextD.getTime() / 1000);
         return wholeTime + fraction * (nextTime - wholeTime);
       }
       return wholeTime;
     }
-    return lastTimeSeconds + (futureBars * stepSeconds);
+    return lastTimeSeconds + futureBars * stepSeconds;
   }
 
   private indexToUnixSeconds(
@@ -857,7 +865,7 @@ export class RSIChart {
     lastHistoricalIndex: number,
     firstHistoricalTimeSeconds: number | null,
     lastHistoricalTimeSeconds: number | null,
-    stepSeconds: number
+    stepSeconds: number,
   ): number | null {
     if (!Number.isFinite(index)) return null;
 
@@ -868,7 +876,7 @@ export class RSIChart {
 
     if (index < 0) {
       if (firstHistoricalTimeSeconds === null) return null;
-      return firstHistoricalTimeSeconds + (index * stepSeconds);
+      return firstHistoricalTimeSeconds + index * stepSeconds;
     }
 
     const lowerIndex = Math.max(0, Math.floor(index));
@@ -878,11 +886,11 @@ export class RSIChart {
     if (lowerIndex === upperIndex) return lowerTime;
     if (Number.isFinite(lowerTime) && Number.isFinite(upperTime)) {
       const ratio = index - lowerIndex;
-      return Number(lowerTime) + ((Number(upperTime) - Number(lowerTime)) * ratio);
+      return Number(lowerTime) + (Number(upperTime) - Number(lowerTime)) * ratio;
     }
-    if (Number.isFinite(lowerTime)) return Number(lowerTime) + ((index - lowerIndex) * stepSeconds);
+    if (Number.isFinite(lowerTime)) return Number(lowerTime) + (index - lowerIndex) * stepSeconds;
     if (firstHistoricalTimeSeconds === null) return null;
-    return firstHistoricalTimeSeconds + (index * stepSeconds);
+    return firstHistoricalTimeSeconds + index * stepSeconds;
   }
 
   private computeTrendlineMidlineCrossUnixSeconds(
@@ -892,17 +900,17 @@ export class RSIChart {
     lastHistoricalIndex: number,
     firstHistoricalTimeSeconds: number | null,
     lastHistoricalTimeSeconds: number | null,
-    stepSeconds: number
+    stepSeconds: number,
   ): number | null {
     if (!Number.isFinite(slope) || Math.abs(slope) < 1e-12) return null;
-    const crossIndex = index1 + ((RSIChart.MIDLINE_VALUE - value1) / slope);
+    const crossIndex = index1 + (RSIChart.MIDLINE_VALUE - value1) / slope;
     if (!Number.isFinite(crossIndex)) return null;
     return this.indexToUnixSeconds(
       crossIndex,
       lastHistoricalIndex,
       firstHistoricalTimeSeconds,
       lastHistoricalTimeSeconds,
-      stepSeconds
+      stepSeconds,
     );
   }
 
@@ -911,89 +919,93 @@ export class RSIChart {
     value1: number,
     time2: string | number,
     value2: number,
-    recordDefinition: boolean = true
+    recordDefinition: boolean = true,
   ): void {
     const visibleRangeBeforeDraw = this.chart.timeScale().getVisibleLogicalRange?.();
     this.suppressExternalSync = true;
     try {
-    // Find the indices of the two points
-    const index1 = this.indexByTime.get(this.timeKey(time1));
-    const index2 = this.indexByTime.get(this.timeKey(time2));
+      // Find the indices of the two points
+      const index1 = this.indexByTime.get(this.timeKey(time1));
+      const index2 = this.indexByTime.get(this.timeKey(time2));
 
-    if (index1 === undefined || index2 === undefined) {
-      console.error('Could not find indices for trend line points');
-      return;
-    }
-
-    // Calculate slope: (y2 - y1) / (x2 - x1)
-    if (index2 === index1) {
-      return;
-    }
-    const slope = (value2 - value1) / (index2 - index1);
-
-    // Create trend line data points extending one year into future bars
-    const trendLineData: RSIPoint[] = [];
-    const futureBars = this.futureBarsForOneYear();
-    const lastHistoricalIndex = this.data.length - 1;
-    const maxIndex = lastHistoricalIndex + futureBars;
-    const stepSeconds = this.inferBarStepSeconds();
-    const firstHistoricalTimeSeconds = this.toUnixSeconds(this.data[0]?.time);
-    const lastHistoricalTime = this.data[lastHistoricalIndex]?.time;
-    const lastHistoricalTimeSeconds = this.toUnixSeconds(lastHistoricalTime);
-
-    // Start from first point and extend to historical + future points.
-    for (let i = index1; i <= maxIndex; i++) {
-      const projectedValue = value1 + slope * (i - index1);
-      // Prevent this helper line from blowing out RSI autoscale.
-      if (projectedValue < RSIChart.RSI_DATA_MIN || projectedValue > RSIChart.RSI_DATA_MAX) {
-        break;
+      if (index1 === undefined || index2 === undefined) {
+        console.error('Could not find indices for trend line points');
+        return;
       }
-      let pointTime: string | number | null = null;
-      if (i <= lastHistoricalIndex) {
-        pointTime = this.data[i]?.time ?? null;
-      } else if (lastHistoricalTimeSeconds !== null) {
-        pointTime = this.projectFutureTradingUnixSeconds(lastHistoricalTimeSeconds, i - lastHistoricalIndex, stepSeconds);
+
+      // Calculate slope: (y2 - y1) / (x2 - x1)
+      if (index2 === index1) {
+        return;
       }
-      if (pointTime === null || pointTime === undefined) continue;
-      trendLineData.push({
-        time: pointTime,
-        value: projectedValue
+      const slope = (value2 - value1) / (index2 - index1);
+
+      // Create trend line data points extending one year into future bars
+      const trendLineData: RSIPoint[] = [];
+      const futureBars = this.futureBarsForOneYear();
+      const lastHistoricalIndex = this.data.length - 1;
+      const maxIndex = lastHistoricalIndex + futureBars;
+      const stepSeconds = this.inferBarStepSeconds();
+      const firstHistoricalTimeSeconds = this.toUnixSeconds(this.data[0]?.time);
+      const lastHistoricalTime = this.data[lastHistoricalIndex]?.time;
+      const lastHistoricalTimeSeconds = this.toUnixSeconds(lastHistoricalTime);
+
+      // Start from first point and extend to historical + future points.
+      for (let i = index1; i <= maxIndex; i++) {
+        const projectedValue = value1 + slope * (i - index1);
+        // Prevent this helper line from blowing out RSI autoscale.
+        if (projectedValue < RSIChart.RSI_DATA_MIN || projectedValue > RSIChart.RSI_DATA_MAX) {
+          break;
+        }
+        let pointTime: string | number | null = null;
+        if (i <= lastHistoricalIndex) {
+          pointTime = this.data[i]?.time ?? null;
+        } else if (lastHistoricalTimeSeconds !== null) {
+          pointTime = this.projectFutureTradingUnixSeconds(
+            lastHistoricalTimeSeconds,
+            i - lastHistoricalIndex,
+            stepSeconds,
+          );
+        }
+        if (pointTime === null || pointTime === undefined) continue;
+        trendLineData.push({
+          time: pointTime,
+          value: projectedValue,
+        });
+      }
+
+      if (!trendLineData.length) return;
+
+      // Create new trend line series (keep existing lines on chart)
+      const trendLineSeries = this.chart.addLineSeries({
+        color: '#ffa500', // Orange color for trend line
+        lineWidth: 1,
+        lineStyle: 0, // Solid line
+        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
       });
-    }
+      this.trendLineSeriesList.push(trendLineSeries);
 
-    if (!trendLineData.length) return;
-
-    // Create new trend line series (keep existing lines on chart)
-    const trendLineSeries = this.chart.addLineSeries({
-      color: '#ffa500',  // Orange color for trend line
-      lineWidth: 1,
-      lineStyle: 0, // Solid line
-      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false
-    });
-    this.trendLineSeriesList.push(trendLineSeries);
-
-    trendLineSeries.setData(trendLineData);
-    const crossUnixSeconds = this.computeTrendlineMidlineCrossUnixSeconds(
-      index1,
-      value1,
-      slope,
-      lastHistoricalIndex,
-      firstHistoricalTimeSeconds,
-      lastHistoricalTimeSeconds,
-      stepSeconds
-    );
-    this.addTrendlineCrossLabel(time1, value1, this.formatMmDdYyFromUnixSeconds(crossUnixSeconds));
-    if (recordDefinition) {
-      this.trendlineDefinitions.push({
-        time1,
-        value1: Number(value1),
-        time2,
-        value2: Number(value2)
-      });
-    }
+      trendLineSeries.setData(trendLineData);
+      const crossUnixSeconds = this.computeTrendlineMidlineCrossUnixSeconds(
+        index1,
+        value1,
+        slope,
+        lastHistoricalIndex,
+        firstHistoricalTimeSeconds,
+        lastHistoricalTimeSeconds,
+        stepSeconds,
+      );
+      this.addTrendlineCrossLabel(time1, value1, this.formatMmDdYyFromUnixSeconds(crossUnixSeconds));
+      if (recordDefinition) {
+        this.trendlineDefinitions.push({
+          time1,
+          value1: Number(value1),
+          time2,
+          value2: Number(value2),
+        });
+      }
     } finally {
       if (visibleRangeBeforeDraw) {
         try {
@@ -1007,9 +1019,7 @@ export class RSIChart {
   }
 
   clearDivergence(preserveViewport: boolean = false): void {
-    const visibleRangeBeforeClear = preserveViewport
-      ? this.chart.timeScale().getVisibleLogicalRange?.()
-      : null;
+    const visibleRangeBeforeClear = preserveViewport ? this.chart.timeScale().getVisibleLogicalRange?.() : null;
 
     if (preserveViewport) {
       this.suppressExternalSync = true;

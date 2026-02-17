@@ -1,7 +1,23 @@
 // Chart API types and client
 
-export type { ChartInterval, CandleBar, RSIPoint, CandleBarTuple, RSIPointTuple, ChartData, ChartLatestData } from '../shared/api-types';
-import type { ChartInterval, CandleBar, RSIPoint, CandleBarTuple, RSIPointTuple, ChartData, ChartLatestData } from '../shared/api-types';
+export type {
+  ChartInterval,
+  CandleBar,
+  RSIPoint,
+  CandleBarTuple,
+  RSIPointTuple,
+  ChartData,
+  ChartLatestData,
+} from '../shared/api-types';
+import type {
+  ChartInterval,
+  CandleBar,
+  RSIPoint,
+  CandleBarTuple,
+  RSIPointTuple,
+  ChartData,
+  ChartLatestData,
+} from '../shared/api-types';
 export type RSIDisplayMode = 'line' | 'points';
 export type VolumeDeltaSourceInterval = '1min' | '5min' | '15min' | '30min' | '1hour' | '4hour';
 
@@ -15,7 +31,10 @@ interface ChartDataRaw extends Omit<ChartData, 'bars' | 'rsi' | 'volumeDeltaRsi'
   volumeDelta?: Array<{ time: string | number; delta: number }> | RSIPointTuple[];
 }
 
-interface ChartLatestDataRaw extends Omit<ChartLatestData, 'latestBar' | 'latestRsi' | 'latestVolumeDeltaRsi' | 'latestVolumeDelta'> {
+interface ChartLatestDataRaw extends Omit<
+  ChartLatestData,
+  'latestBar' | 'latestRsi' | 'latestVolumeDeltaRsi' | 'latestVolumeDelta'
+> {
   latestBar: CandleBar | CandleBarTuple | null;
   latestRsi: RSIPoint | RSIPointTuple | null;
   latestVolumeDeltaRsi: RSIPoint | RSIPointTuple | null;
@@ -32,66 +51,97 @@ export interface ChartFetchOptions {
 
 function normalizeTupleData(data: ChartDataRaw): ChartData {
   if (!data) return data as any;
-  
+
   const barFromTuple = (t: CandleBarTuple): CandleBar => ({
-    time: t[0], open: t[1], high: t[2], low: t[3], close: t[4], volume: t[5]
+    time: t[0],
+    open: t[1],
+    high: t[2],
+    low: t[3],
+    close: t[4],
+    volume: t[5],
   });
-  
+
   const pointFromTuple = (t: RSIPointTuple, valueKey = 'value'): RSIPoint | any => ({
-    time: t[0], [valueKey]: t[1]
+    time: t[0],
+    [valueKey]: t[1],
   });
 
-  const bars = (Array.isArray(data.bars) && data.bars.length > 0 && Array.isArray(data.bars[0]))
-    ? (data.bars as CandleBarTuple[]).map(barFromTuple)
-    : (data.bars as CandleBar[]);
+  const bars =
+    Array.isArray(data.bars) && data.bars.length > 0 && Array.isArray(data.bars[0])
+      ? (data.bars as CandleBarTuple[]).map(barFromTuple)
+      : (data.bars as CandleBar[]);
 
-  const rsi = (Array.isArray(data.rsi) && data.rsi.length > 0 && Array.isArray(data.rsi[0]))
-    ? (data.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
-    : (data.rsi as RSIPoint[]);
+  const rsi =
+    Array.isArray(data.rsi) && data.rsi.length > 0 && Array.isArray(data.rsi[0])
+      ? (data.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
+      : (data.rsi as RSIPoint[]);
 
-  const vdRsiPoints = (data.volumeDeltaRsi && Array.isArray(data.volumeDeltaRsi.rsi) && data.volumeDeltaRsi.rsi.length > 0 && Array.isArray(data.volumeDeltaRsi.rsi[0]))
-    ? (data.volumeDeltaRsi.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
-    : (data.volumeDeltaRsi?.rsi as RSIPoint[] || []);
+  const vdRsiPoints =
+    data.volumeDeltaRsi &&
+    Array.isArray(data.volumeDeltaRsi.rsi) &&
+    data.volumeDeltaRsi.rsi.length > 0 &&
+    Array.isArray(data.volumeDeltaRsi.rsi[0])
+      ? (data.volumeDeltaRsi.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
+      : (data.volumeDeltaRsi?.rsi as RSIPoint[]) || [];
 
-  const volumeDelta = (Array.isArray(data.volumeDelta) && data.volumeDelta.length > 0 && Array.isArray(data.volumeDelta[0]))
-    ? (data.volumeDelta as RSIPointTuple[]).map((p) => pointFromTuple(p, 'delta'))
-    : (data.volumeDelta as Array<{ time: string | number; delta: number }>);
+  const volumeDelta =
+    Array.isArray(data.volumeDelta) && data.volumeDelta.length > 0 && Array.isArray(data.volumeDelta[0])
+      ? (data.volumeDelta as RSIPointTuple[]).map((p) => pointFromTuple(p, 'delta'))
+      : (data.volumeDelta as Array<{ time: string | number; delta: number }>);
 
   return {
     ...data,
     bars,
     rsi,
     volumeDeltaRsi: { rsi: vdRsiPoints },
-    volumeDelta
+    volumeDelta,
   };
 }
 
 function normalizeLatestTupleData(data: ChartLatestDataRaw): ChartLatestData {
   if (!data) return data as any;
-  
+
   const barFromTuple = (t: CandleBarTuple): CandleBar => ({
-    time: t[0], open: t[1], high: t[2], low: t[3], close: t[4], volume: t[5]
-  });
-  
-  const pointFromTuple = (t: RSIPointTuple, valueKey = 'value'): RSIPoint | any => ({
-    time: t[0], [valueKey]: t[1]
+    time: t[0],
+    open: t[1],
+    high: t[2],
+    low: t[3],
+    close: t[4],
+    volume: t[5],
   });
 
-  const latestBar = Array.isArray(data.latestBar) ? barFromTuple(data.latestBar as CandleBarTuple) : (data.latestBar as CandleBar);
-  const latestRsi = Array.isArray(data.latestRsi) ? pointFromTuple(data.latestRsi as RSIPointTuple) : (data.latestRsi as RSIPoint);
-  const latestVolumeDeltaRsi = Array.isArray(data.latestVolumeDeltaRsi) ? pointFromTuple(data.latestVolumeDeltaRsi as RSIPointTuple) : (data.latestVolumeDeltaRsi as RSIPoint);
-  const latestVolumeDelta = Array.isArray(data.latestVolumeDelta) ? pointFromTuple(data.latestVolumeDelta as RSIPointTuple, 'delta') : (data.latestVolumeDelta as any);
+  const pointFromTuple = (t: RSIPointTuple, valueKey = 'value'): RSIPoint | any => ({
+    time: t[0],
+    [valueKey]: t[1],
+  });
+
+  const latestBar = Array.isArray(data.latestBar)
+    ? barFromTuple(data.latestBar as CandleBarTuple)
+    : (data.latestBar as CandleBar);
+  const latestRsi = Array.isArray(data.latestRsi)
+    ? pointFromTuple(data.latestRsi as RSIPointTuple)
+    : (data.latestRsi as RSIPoint);
+  const latestVolumeDeltaRsi = Array.isArray(data.latestVolumeDeltaRsi)
+    ? pointFromTuple(data.latestVolumeDeltaRsi as RSIPointTuple)
+    : (data.latestVolumeDeltaRsi as RSIPoint);
+  const latestVolumeDelta = Array.isArray(data.latestVolumeDelta)
+    ? pointFromTuple(data.latestVolumeDelta as RSIPointTuple, 'delta')
+    : (data.latestVolumeDelta as any);
 
   return {
     ...data,
     latestBar,
     latestRsi,
     latestVolumeDeltaRsi,
-    latestVolumeDelta
+    latestVolumeDelta,
   };
 }
 
-export async function fetchChartData(ticker: string, interval: ChartInterval, options: ChartFetchOptions = {}): Promise<ChartData> {
+export async function fetchChartData(
+  ticker: string,
+  interval: ChartInterval,
+  options: ChartFetchOptions = {},
+): Promise<ChartData> {
   const params = new URLSearchParams();
   params.set('format', 'tuple');
   if (Number.isFinite(options.vdRsiLength)) {
@@ -109,7 +159,7 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
   if (typeof options.onResponseMeta === 'function') {
     options.onResponseMeta({
       status: response.status,
-      chartCacheHeader: response.headers.get('x-chart-cache')
+      chartCacheHeader: response.headers.get('x-chart-cache'),
     });
   }
 
@@ -125,7 +175,7 @@ export async function fetchChartData(ticker: string, interval: ChartInterval, op
 export async function fetchChartLatestData(
   ticker: string,
   interval: ChartInterval,
-  options: ChartFetchOptions = {}
+  options: ChartFetchOptions = {},
 ): Promise<ChartLatestData> {
   const params = new URLSearchParams();
   params.set('format', 'tuple');
@@ -144,7 +194,7 @@ export async function fetchChartLatestData(
   if (typeof options.onResponseMeta === 'function') {
     options.onResponseMeta({
       status: response.status,
-      chartCacheHeader: response.headers.get('x-chart-cache')
+      chartCacheHeader: response.headers.get('x-chart-cache'),
     });
   }
 

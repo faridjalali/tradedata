@@ -7,11 +7,15 @@
  * - False positives eliminated
  * - True positives preserved
  */
-"use strict";
+'use strict';
 const fs = require('fs');
 
-const before = JSON.parse(fs.readFileSync('/Users/home/Antigravity/tradedata/analysis-vdf-full-year-results-BEFORE.json', 'utf8'));
-const after = JSON.parse(fs.readFileSync('/Users/home/Antigravity/tradedata/analysis-vdf-full-year-results.json', 'utf8'));
+const before = JSON.parse(
+  fs.readFileSync('/Users/home/Antigravity/tradedata/analysis-vdf-full-year-results-BEFORE.json', 'utf8'),
+);
+const after = JSON.parse(
+  fs.readFileSync('/Users/home/Antigravity/tradedata/analysis-vdf-full-year-results.json', 'utf8'),
+);
 
 const tickers = Object.keys(before);
 
@@ -27,8 +31,10 @@ console.log(`  5. Extreme absorption: 90-day recency gate`);
 console.log(`  6. Rally suppression: cap proximity at 40pts if stock rallied >20% in 20d`);
 console.log('');
 
-let totalZonesBefore = 0, totalZonesAfter = 0;
-let zonesRemoved = 0, zonesAdded = 0;
+let totalZonesBefore = 0,
+  totalZonesAfter = 0;
+let zonesRemoved = 0,
+  zonesAdded = 0;
 let proxChanges = [];
 let removedZones = [];
 let preservedZones = [];
@@ -116,7 +122,9 @@ if (removedZones.length > 0) {
   console.log('─'.repeat(100));
   for (const r of removedZones) {
     const z = r.zone;
-    console.log(`  ${r.ticker} Z${z.rank}: ${z.startDate} → ${z.endDate} | ${z.windowDays}d | score=${z.score} | concordant=${z.concordantFrac} | price=${z.overallPriceChange}% | s8=${z.components?.s8_divergence || 'n/a'}`);
+    console.log(
+      `  ${r.ticker} Z${z.rank}: ${z.startDate} → ${z.endDate} | ${z.windowDays}d | score=${z.score} | concordant=${z.concordantFrac} | price=${z.overallPriceChange}% | s8=${z.components?.s8_divergence || 'n/a'}`,
+    );
   }
 }
 
@@ -127,7 +135,9 @@ if (newZones.length > 0) {
   console.log('─'.repeat(100));
   for (const n of newZones) {
     const z = n.zone;
-    console.log(`  ${n.ticker} Z${z.rank}: ${z.startDate} → ${z.endDate} | ${z.windowDays}d | score=${z.score} | concordant=${z.concordantFrac} | price=${z.overallPriceChange}% | s8=${z.components?.s8_divergence || 'n/a'}`);
+    console.log(
+      `  ${n.ticker} Z${z.rank}: ${z.startDate} → ${z.endDate} | ${z.windowDays}d | score=${z.score} | concordant=${z.concordantFrac} | price=${z.overallPriceChange}% | s8=${z.components?.s8_divergence || 'n/a'}`,
+    );
   }
 }
 
@@ -140,7 +150,9 @@ for (const p of preservedZones) {
   const a = p.after;
   const scoreDiff = (a.score - b.score).toFixed(3);
   const marker = scoreDiff > 0 ? '↑' : scoreDiff < 0 ? '↓' : '=';
-  console.log(`  ${p.ticker} Z${b.rank}→Z${a.rank}: ${b.startDate}→${b.endDate} | score ${b.score} → ${a.score} (${marker}${scoreDiff}) | concordant=${b.concordantFrac}→${a.concordantFrac}`);
+  console.log(
+    `  ${p.ticker} Z${b.rank}→Z${a.rank}: ${b.startDate}→${b.endDate} | score ${b.score} → ${a.score} (${marker}${scoreDiff}) | concordant=${b.concordantFrac}→${a.concordantFrac}`,
+  );
 }
 
 // Proximity changes
@@ -151,11 +163,13 @@ if (proxChanges.length > 0) {
   for (const p of proxChanges) {
     const diff = p.after.compositeScore - p.before.compositeScore;
     const marker = diff > 0 ? '↑' : diff < 0 ? '↓' : '=';
-    console.log(`  ${p.ticker}: ${p.before.compositeScore}pts (${p.before.level}) → ${p.after.compositeScore}pts (${p.after.level}) [${marker}${diff}pts]`);
+    console.log(
+      `  ${p.ticker}: ${p.before.compositeScore}pts (${p.before.level}) → ${p.after.compositeScore}pts (${p.after.level}) [${marker}${diff}pts]`,
+    );
 
     // Show signal differences
-    const bSignals = new Set(p.before.signals.map(s => s.type));
-    const aSignals = new Set(p.after.signals.map(s => s.type));
+    const bSignals = new Set(p.before.signals.map((s) => s.type));
+    const aSignals = new Set(p.after.signals.map((s) => s.type));
     for (const s of p.before.signals) {
       if (!aSignals.has(s.type)) {
         console.log(`    REMOVED: ${s.type} (${s.points}pts) — ${s.detail}`);
@@ -168,7 +182,7 @@ if (proxChanges.length > 0) {
     }
     // Show signals with different point values
     for (const bs of p.before.signals) {
-      const as = p.after.signals.find(s => s.type === bs.type);
+      const as = p.after.signals.find((s) => s.type === bs.type);
       if (as && as.points !== bs.points) {
         console.log(`    CHANGED: ${bs.type} ${bs.points}pts → ${as.points}pts`);
       }
@@ -185,16 +199,24 @@ console.log('--------|-----------|------------------|------------------|--------
 for (const ticker of tickers) {
   const b = before[ticker];
   const a = after[ticker];
-  if (b.error || a.error) { console.log(`${ticker.padEnd(8)}| ERROR`); continue; }
+  if (b.error || a.error) {
+    console.log(`${ticker.padEnd(8)}| ERROR`);
+    continue;
+  }
 
   const bz = b.jsAlgorithm.zones.length;
   const az = a.jsAlgorithm.zones.length;
-  const bBest = bz > 0 ? Math.max(...b.jsAlgorithm.zones.map(z => z.score)).toFixed(2) : '—';
-  const aBest = az > 0 ? Math.max(...a.jsAlgorithm.zones.map(z => z.score)).toFixed(2) : '—';
-  const bProx = `${b.jsAlgorithm.proximity.compositeScore}(${b.jsAlgorithm.proximity.level.slice(0,4)})`;
-  const aProx = `${a.jsAlgorithm.proximity.compositeScore}(${a.jsAlgorithm.proximity.level.slice(0,4)})`;
+  const bBest = bz > 0 ? Math.max(...b.jsAlgorithm.zones.map((z) => z.score)).toFixed(2) : '—';
+  const aBest = az > 0 ? Math.max(...a.jsAlgorithm.zones.map((z) => z.score)).toFixed(2) : '—';
+  const bProx = `${b.jsAlgorithm.proximity.compositeScore}(${b.jsAlgorithm.proximity.level.slice(0, 4)})`;
+  const aProx = `${a.jsAlgorithm.proximity.compositeScore}(${a.jsAlgorithm.proximity.level.slice(0, 4)})`;
   const bDist = b.jsAlgorithm.distribution.length;
   const aDist = a.jsAlgorithm.distribution.length;
 
-  console.log(`${ticker.padEnd(8)}| ${bz} → ${az}`.padEnd(20) + `| ${bBest} → ${aBest}`.padEnd(19) + `| ${bProx} → ${aProx}`.padEnd(19) + `| ${bDist} → ${aDist}`);
+  console.log(
+    `${ticker.padEnd(8)}| ${bz} → ${az}`.padEnd(20) +
+      `| ${bBest} → ${aBest}`.padEnd(19) +
+      `| ${bProx} → ${aProx}`.padEnd(19) +
+      `| ${bDist} → ${aDist}`,
+  );
 }

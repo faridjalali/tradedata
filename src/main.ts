@@ -1,804 +1,797 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
+import { initLogsView, refreshLogsView, startLogsPolling, stopLogsPolling } from './logs';
 import {
-    initLogsView,
-    refreshLogsView,
-    startLogsPolling,
-    stopLogsPolling
-} from './logs';
-import {
-    fetchDivergenceSignals,
-    renderDivergenceOverview,
-    setupDivergenceFeedDelegation,
-    runManualDivergenceFetchDailyData,
-    stopManualDivergenceFetchDailyData,
-    runManualDivergenceFetchWeeklyData,
-    stopManualDivergenceFetchWeeklyData,
-    runManualVDFScan,
-    stopManualVDFScan,
-    syncDivergenceScanUiState,
-    initializeDivergenceSortDefaults,
-    setColumnFeedMode,
-    setColumnCustomDates,
-    ColumnFeedMode
+  fetchDivergenceSignals,
+  renderDivergenceOverview,
+  setupDivergenceFeedDelegation,
+  runManualDivergenceFetchDailyData,
+  stopManualDivergenceFetchDailyData,
+  runManualDivergenceFetchWeeklyData,
+  stopManualDivergenceFetchWeeklyData,
+  runManualVDFScan,
+  stopManualVDFScan,
+  syncDivergenceScanUiState,
+  initializeDivergenceSortDefaults,
+  setColumnFeedMode,
+  setColumnCustomDates,
+  ColumnFeedMode,
 } from './divergenceFeed';
 import { SortMode, TickerListContext } from './types';
-import {
-    getAppTimeZone,
-    getAppTimeZoneOptions,
-    onAppTimeZoneChange,
-    setAppTimeZone
-} from './timezone';
+import { getAppTimeZone, getAppTimeZoneOptions, onAppTimeZoneChange, setAppTimeZone } from './timezone';
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 
-let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence'; 
+let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence';
 let divergenceDashboardScrollY = 0;
 let tickerOriginView: 'divergence' = 'divergence';
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 
 const SITE_LOCK_LENGTH = 8;
- 
 
 // Expose globals for HTML onclick attributes
-// Note: We declared the Window interface in liveFeed.ts (or global.d.ts ideally), 
+// Note: We declared the Window interface in liveFeed.ts (or global.d.ts ideally),
 // but we need to assign them here.
 window.setTickerDailySort = setTickerDailySort;
 window.setTickerWeeklySort = setTickerWeeklySort;
 
 export function getTickerListContext(): TickerListContext {
-    return tickerListContext;
+  return tickerListContext;
 }
 
 export function getTickerOriginView(): 'divergence' {
-    return tickerOriginView;
+  return tickerOriginView;
 }
 
-window.showTickerView = function(ticker: string, sourceView: 'divergence' = 'divergence', listContext: TickerListContext = null) {
-    tickerOriginView = sourceView;
-    tickerListContext = listContext;
+window.showTickerView = function (
+  ticker: string,
+  sourceView: 'divergence' = 'divergence',
+  listContext: TickerListContext = null,
+) {
+  tickerOriginView = sourceView;
+  tickerListContext = listContext;
 
-    divergenceDashboardScrollY = window.scrollY;
+  divergenceDashboardScrollY = window.scrollY;
 
-    if (currentView !== 'divergence') {
-        switchView('divergence');
-    }
-    setActiveNavTab('divergence');
-
-    const tickerView = document.getElementById('ticker-view');
-    if (tickerView) {
-        cancelChartLoading();
-        tickerView.dataset.ticker = ticker;
-        document.getElementById('dashboard-view')?.classList.add('hidden');
-        document.getElementById('view-divergence')?.classList.add('hidden');
-        tickerView.classList.remove('hidden');
-        renderTickerView(ticker);
-        window.scrollTo(0, 0);
-    }
-}
-
-window.showOverview = function() {
-    cancelChartLoading();
-    const tickerView = document.getElementById('ticker-view');
-    if (tickerView) delete tickerView.dataset.ticker;
-
+  if (currentView !== 'divergence') {
     switchView('divergence');
-    window.scrollTo(0, divergenceDashboardScrollY);
-}
+  }
+  setActiveNavTab('divergence');
+
+  const tickerView = document.getElementById('ticker-view');
+  if (tickerView) {
+    cancelChartLoading();
+    tickerView.dataset.ticker = ticker;
+    document.getElementById('dashboard-view')?.classList.add('hidden');
+    document.getElementById('view-divergence')?.classList.add('hidden');
+    tickerView.classList.remove('hidden');
+    renderTickerView(ticker);
+    window.scrollTo(0, 0);
+  }
+};
+
+window.showOverview = function () {
+  cancelChartLoading();
+  const tickerView = document.getElementById('ticker-view');
+  if (tickerView) delete tickerView.dataset.ticker;
+
+  switchView('divergence');
+  window.scrollTo(0, divergenceDashboardScrollY);
+};
 
 function switchView(view: 'logs' | 'divergence' | 'breadth') {
-    currentView = view;
-    setActiveNavTab(view);
+  currentView = view;
+  setActiveNavTab(view);
 
-    // Hide all views
-    document.getElementById('view-logs')?.classList.add('hidden');
-    document.getElementById('view-divergence')?.classList.add('hidden');
-    document.getElementById('view-breadth')?.classList.add('hidden');
+  // Hide all views
+  document.getElementById('view-logs')?.classList.add('hidden');
+  document.getElementById('view-divergence')?.classList.add('hidden');
+  document.getElementById('view-breadth')?.classList.add('hidden');
 
-    // Also hide ticker view when switching main views
-    document.getElementById('ticker-view')?.classList.add('hidden');
-    cancelChartLoading();
+  // Also hide ticker view when switching main views
+  document.getElementById('ticker-view')?.classList.add('hidden');
+  cancelChartLoading();
 
-    stopLogsPolling();
+  stopLogsPolling();
 
-    // Close any open dropdowns
-    closeAllHeaderDropdowns();
+  // Close any open dropdowns
+  closeAllHeaderDropdowns();
 
-    // Show the selected view and controls
-    if (view === 'logs') {
-        document.getElementById('view-logs')?.classList.remove('hidden');
-        refreshLogsView().catch(() => {});
-        startLogsPolling();
-    } else if (view === 'divergence') {
-        document.getElementById('view-divergence')?.classList.remove('hidden');
-        fetchDivergenceSignals(true).then(renderDivergenceOverview);
-        syncDivergenceScanUiState();
-    } else if (view === 'breadth') {
-        document.getElementById('view-breadth')?.classList.remove('hidden');
-        initBreadth();
-    }
+  // Show the selected view and controls
+  if (view === 'logs') {
+    document.getElementById('view-logs')?.classList.remove('hidden');
+    refreshLogsView().catch(() => {});
+    startLogsPolling();
+  } else if (view === 'divergence') {
+    document.getElementById('view-divergence')?.classList.remove('hidden');
+    fetchDivergenceSignals(true).then(renderDivergenceOverview);
+    syncDivergenceScanUiState();
+  } else if (view === 'breadth') {
+    document.getElementById('view-breadth')?.classList.remove('hidden');
+    initBreadth();
+  }
 }
 
 function closeAllHeaderDropdowns(): void {
-    document.getElementById('header-nav-dropdown')?.classList.add('hidden');
-    document.getElementById('header-nav-dropdown')?.classList.remove('open');
+  document.getElementById('header-nav-dropdown')?.classList.add('hidden');
+  document.getElementById('header-nav-dropdown')?.classList.remove('open');
 }
 
 function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'breadth'): void {
-    document.querySelectorAll('.header-nav-item').forEach((b) => b.classList.remove('active'));
-    document.querySelector(`.header-nav-item[data-view="${view}"]`)?.classList.add('active');
+  document.querySelectorAll('.header-nav-item').forEach((b) => b.classList.remove('active'));
+  document.querySelector(`.header-nav-item[data-view="${view}"]`)?.classList.add('active');
 }
-
 
 function initSearch() {
-    const toggleBtn = document.getElementById('search-toggle');
-    const input = document.getElementById('search-input') as HTMLInputElement;
-    const container = document.getElementById('search-container');
-    
-    if (!toggleBtn || !input || !container) return;
-    
-    toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isActive = input.classList.contains('active');
-        if (isActive) {
-            input.classList.remove('active');
-            input.blur();
-        } else {
-            input.classList.add('active');
-            input.focus();
-        }
-    });
+  const toggleBtn = document.getElementById('search-toggle');
+  const input = document.getElementById('search-input') as HTMLInputElement;
+  const container = document.getElementById('search-container');
 
-    container.addEventListener('click', () => {
-        if (!input.classList.contains('active')) {
-            input.classList.add('active');
-            input.focus();
-        }
-    });
+  if (!toggleBtn || !input || !container) return;
 
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            const ticker = input.value.trim().toUpperCase();
-            if (ticker) {
-                window.showTickerView(ticker);
-                input.value = ''; 
-                input.blur();
-                input.classList.remove('active'); 
-            }
-        }
-    });
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isActive = input.classList.contains('active');
+    if (isActive) {
+      input.classList.remove('active');
+      input.blur();
+    } else {
+      input.classList.add('active');
+      input.focus();
+    }
+  });
 
-    // Type-to-search functionality
-    document.addEventListener('keydown', (e) => {
-        // Ignore if focus is already on an input or other editable element
-        if (document.activeElement instanceof HTMLInputElement || 
-            document.activeElement instanceof HTMLTextAreaElement ||
-            (document.activeElement as HTMLElement).isContentEditable) {
-            return;
-        }
-        
-        // Ignore modifier keys and non-character keys
-        if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
+  container.addEventListener('click', () => {
+    if (!input.classList.contains('active')) {
+      input.classList.add('active');
+      input.focus();
+    }
+  });
 
-        // Check for alphanumeric characters
-        if (/^[a-zA-Z0-9]$/.test(e.key)) {
-            if (!input.classList.contains('active')) {
-                input.classList.add('active');
-            }
-            input.focus();
-            // Note: Focusing during keydown usually allows the keypress to naturally enter the input.
-        }
-    });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const ticker = input.value.trim().toUpperCase();
+      if (ticker) {
+        window.showTickerView(ticker);
+        input.value = '';
+        input.blur();
+        input.classList.remove('active');
+      }
+    }
+  });
+
+  // Type-to-search functionality
+  document.addEventListener('keydown', (e) => {
+    // Ignore if focus is already on an input or other editable element
+    if (
+      document.activeElement instanceof HTMLInputElement ||
+      document.activeElement instanceof HTMLTextAreaElement ||
+      (document.activeElement as HTMLElement).isContentEditable
+    ) {
+      return;
+    }
+
+    // Ignore modifier keys and non-character keys
+    if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1) return;
+
+    // Check for alphanumeric characters
+    if (/^[a-zA-Z0-9]$/.test(e.key)) {
+      if (!input.classList.contains('active')) {
+        input.classList.add('active');
+      }
+      input.focus();
+      // Note: Focusing during keydown usually allows the keypress to naturally enter the input.
+    }
+  });
 }
 
-
 declare global {
-    interface Window {
-        setTickerDailySort: (mode: SortMode) => void;
-        setTickerWeeklySort: (mode: SortMode) => void;
-        showTickerView: (ticker: string, sourceView?: 'divergence', listContext?: TickerListContext) => void;
-        showOverview: () => void;
-    }
+  interface Window {
+    setTickerDailySort: (mode: SortMode) => void;
+    setTickerWeeklySort: (mode: SortMode) => void;
+    showTickerView: (ticker: string, sourceView?: 'divergence', listContext?: TickerListContext) => void;
+    showOverview: () => void;
+  }
 }
 
 async function refreshViewAfterTimeZoneChange(): Promise<void> {
-    if (currentView === 'divergence') {
-        await fetchDivergenceSignals(true);
-        renderDivergenceOverview();
-        return;
-    }
+  if (currentView === 'divergence') {
+    await fetchDivergenceSignals(true);
+    renderDivergenceOverview();
+    return;
+  }
 
+  if (currentView === 'breadth') {
+    initBreadth();
+    return;
+  }
 
-
-
-
-    if (currentView === 'breadth') {
-        initBreadth();
-        return;
-    }
-
-    if (currentView === 'logs') {
-        await refreshLogsView();
-    }
+  if (currentView === 'logs') {
+    await refreshLogsView();
+  }
 }
 
 function initGlobalSettingsPanel() {
-    const container = document.getElementById('global-settings-container');
-    const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
-    const panel = document.getElementById('global-settings-panel');
-    let timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
+  const container = document.getElementById('global-settings-container');
+  const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
+  const panel = document.getElementById('global-settings-panel');
+  let timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
 
-    if (!container || !toggleBtn || !panel) return;
+  if (!container || !toggleBtn || !panel) return;
 
-    const removeLegacyV3Row = () => {
-        panel.querySelectorAll<HTMLElement>('.global-settings-toggle-row').forEach((node) => node.remove());
-        const legacyById = panel.querySelector('#global-enable-v3-fetch, #enable-v3-fetch');
-        if (legacyById) {
-            (legacyById.closest('.global-settings-row') || legacyById).remove();
-        }
-        const allTextNodes = panel.querySelectorAll<HTMLElement>('label, span, div');
-        allTextNodes.forEach((node) => {
-            const text = String(node.textContent || '').trim().toLowerCase();
-            if (text !== 'enable v3 fetch') return;
-            (node.closest('.global-settings-row') || node).remove();
-        });
-    };
+  const removeLegacyV3Row = () => {
+    panel.querySelectorAll<HTMLElement>('.global-settings-toggle-row').forEach((node) => node.remove());
+    const legacyById = panel.querySelector('#global-enable-v3-fetch, #enable-v3-fetch');
+    if (legacyById) {
+      (legacyById.closest('.global-settings-row') || legacyById).remove();
+    }
+    const allTextNodes = panel.querySelectorAll<HTMLElement>('label, span, div');
+    allTextNodes.forEach((node) => {
+      const text = String(node.textContent || '')
+        .trim()
+        .toLowerCase();
+      if (text !== 'enable v3 fetch') return;
+      (node.closest('.global-settings-row') || node).remove();
+    });
+  };
 
-    const ensureTimezoneSelect = (): HTMLSelectElement => {
-        if (timezoneSelect) return timezoneSelect;
-        const row = document.createElement('div');
-        row.className = 'global-settings-row global-settings-timezone-row';
-        const label = document.createElement('label');
-        label.className = 'global-settings-label';
-        label.htmlFor = 'global-timezone-select';
-        label.textContent = 'Timezone';
-        const select = document.createElement('select');
-        select.id = 'global-timezone-select';
-        select.className = 'glass-input global-settings-select';
-        select.setAttribute('aria-label', 'Timezone');
-        row.append(label, select);
-        panel.append(row);
-        timezoneSelect = select;
-        return select;
-    };
+  const ensureTimezoneSelect = (): HTMLSelectElement => {
+    if (timezoneSelect) return timezoneSelect;
+    const row = document.createElement('div');
+    row.className = 'global-settings-row global-settings-timezone-row';
+    const label = document.createElement('label');
+    label.className = 'global-settings-label';
+    label.htmlFor = 'global-timezone-select';
+    label.textContent = 'Timezone';
+    const select = document.createElement('select');
+    select.id = 'global-timezone-select';
+    select.className = 'glass-input global-settings-select';
+    select.setAttribute('aria-label', 'Timezone');
+    row.append(label, select);
+    panel.append(row);
+    timezoneSelect = select;
+    return select;
+  };
 
-    removeLegacyV3Row();
-    timezoneSelect = ensureTimezoneSelect();
-    const timezoneSelectEl = timezoneSelect;
+  removeLegacyV3Row();
+  timezoneSelect = ensureTimezoneSelect();
+  const timezoneSelectEl = timezoneSelect;
 
-    const closePanel = () => {
-        panel.classList.add('hidden');
-        toggleBtn.classList.remove('active');
-    };
+  const closePanel = () => {
+    panel.classList.add('hidden');
+    toggleBtn.classList.remove('active');
+  };
 
-    const openPanel = () => {
-        panel.classList.remove('hidden');
-        toggleBtn.classList.add('active');
-        timezoneSelectEl.value = getAppTimeZone();
-    };
-
-    const options = getAppTimeZoneOptions();
-    timezoneSelectEl.innerHTML = options
-        .map((option) => `<option value="${option.value}">${option.label}</option>`)
-        .join('');
+  const openPanel = () => {
+    panel.classList.remove('hidden');
+    toggleBtn.classList.add('active');
     timezoneSelectEl.value = getAppTimeZone();
-    timezoneSelectEl.addEventListener('change', () => {
-        setAppTimeZone(timezoneSelectEl.value);
-    });
+  };
 
-    onAppTimeZoneChange((nextTimeZone) => {
-        timezoneSelectEl.value = nextTimeZone;
-        refreshViewAfterTimeZoneChange().catch((error) => {
-            console.error('Failed to refresh UI after timezone change:', error);
-        });
-    });
+  const options = getAppTimeZoneOptions();
+  timezoneSelectEl.innerHTML = options
+    .map((option) => `<option value="${option.value}">${option.label}</option>`)
+    .join('');
+  timezoneSelectEl.value = getAppTimeZone();
+  timezoneSelectEl.addEventListener('change', () => {
+    setAppTimeZone(timezoneSelectEl.value);
+  });
 
-    toggleBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (panel.classList.contains('hidden')) {
-            openPanel();
-            syncDivergenceScanUiState().catch(() => {});
-        } else {
-            closePanel();
-        }
+  onAppTimeZoneChange((nextTimeZone) => {
+    timezoneSelectEl.value = nextTimeZone;
+    refreshViewAfterTimeZoneChange().catch((error) => {
+      console.error('Failed to refresh UI after timezone change:', error);
     });
+  });
 
-    panel.addEventListener('click', (event) => {
-        event.stopPropagation();
-    });
+  toggleBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (panel.classList.contains('hidden')) {
+      openPanel();
+      syncDivergenceScanUiState().catch(() => {});
+    } else {
+      closePanel();
+    }
+  });
 
-    document.addEventListener('click', (event) => {
-        const target = event.target as HTMLElement | null;
-        if (!target) return;
-        if (target.closest('#global-settings-container')) return;
-        closePanel();
-    });
+  panel.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
 
-    // Theme buttons
-    const themeBtns = panel.querySelectorAll<HTMLElement>('.theme-swatch-btn');
-    const currentThemeName = getTheme();
-    themeBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.theme === currentThemeName);
-        btn.addEventListener('click', () => {
-            const name = btn.dataset.theme as ThemeName;
-            setTheme(name);
-            themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === name));
-        });
-    });
+  document.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('#global-settings-container')) return;
+    closePanel();
+  });
 
-    // Minichart on Mobile toggle
-    const mcBtns = panel.querySelectorAll<HTMLElement>('[data-minichart-mobile]');
-    const storedMc = localStorage.getItem('minichart_mobile') || 'off';
-    mcBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.minichartMobile === storedMc);
-        btn.addEventListener('click', () => {
-            const val = btn.dataset.minichartMobile || 'off';
-            mcBtns.forEach(b => b.classList.toggle('active', b.dataset.minichartMobile === val));
-            try { localStorage.setItem('minichart_mobile', val); } catch { /* ignore */ }
-            window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
-        });
+  // Theme buttons
+  const themeBtns = panel.querySelectorAll<HTMLElement>('.theme-swatch-btn');
+  const currentThemeName = getTheme();
+  themeBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.theme === currentThemeName);
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.theme as ThemeName;
+      setTheme(name);
+      themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
     });
+  });
+
+  // Minichart on Mobile toggle
+  const mcBtns = panel.querySelectorAll<HTMLElement>('[data-minichart-mobile]');
+  const storedMc = localStorage.getItem('minichart_mobile') || 'off';
+  mcBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.minichartMobile === storedMc);
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.minichartMobile || 'off';
+      mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichartMobile === val));
+      try {
+        localStorage.setItem('minichart_mobile', val);
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
+    });
+  });
 }
 
 async function checkServerSession(): Promise<boolean> {
-    try {
-        const res = await fetch('/api/auth/check');
-        return res.ok;
-    } catch {
-        return false;
-    }
+  try {
+    const res = await fetch('/api/auth/check');
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function verifyPasscodeOnServer(passcode: string): Promise<boolean> {
-    try {
-        const res = await fetch('/api/auth/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ passcode }),
-        });
-        return res.ok;
-    } catch {
-        return false;
-    }
+  try {
+    const res = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function initializeSiteLock(onUnlock: () => void): Promise<void> {
-    const overlay = document.getElementById('site-lock-overlay') as HTMLElement | null;
-    if (!overlay) {
-        onUnlock();
-        return;
-    }
-    if (!overlay.dataset.doubleTapBound) {
-        overlay.addEventListener('dblclick', (event) => {
-            event.preventDefault();
-        });
-        overlay.dataset.doubleTapBound = '1';
-    }
-
-    const panel = overlay.querySelector('.site-lock-panel') as HTMLElement | null;
-    const statusEl = document.getElementById('site-lock-status') as HTMLElement | null;
-    const dotEls = Array.from(overlay.querySelectorAll('.site-lock-dot')) as HTMLElement[];
-    const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
-    const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
-
-    // Check if we already have a valid server session
-    if (await checkServerSession()) {
-        overlay.classList.add('hidden');
-        document.body.classList.remove('site-locked');
-        onUnlock();
-        return;
-    }
-
-    document.body.classList.add('site-locked');
-    overlay.classList.remove('hidden');
-
-    let entered = '';
-    let verifying = false;
-
-    const updateDots = () => {
-        for (let i = 0; i < dotEls.length; i++) {
-            dotEls[i].classList.toggle('filled', i < entered.length);
-        }
-    };
-
-    const setStatus = (message: string) => {
-        if (!statusEl) return;
-        statusEl.textContent = message;
-    };
-
-    const clearEntry = () => {
-        entered = '';
-        updateDots();
-    };
-
-    const handleSuccess = () => {
-        overlay.classList.add('hidden');
-        document.body.classList.remove('site-locked');
-        window.removeEventListener('keydown', onKeyDown, true);
-        onUnlock();
-    };
-
-    const handleFailure = () => {
-        setStatus('');
-        clearEntry();
-        if (panel) {
-            panel.classList.remove('shake');
-            // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-            panel.offsetWidth;
-            panel.classList.add('shake');
-        }
-        window.setTimeout(() => {
-            if (panel) panel.classList.remove('shake');
-        }, 320);
-    };
-
-    const verifyIfComplete = async () => {
-        if (entered.length < SITE_LOCK_LENGTH || verifying) return;
-        verifying = true;
-        const passcode = entered;
-        const ok = await verifyPasscodeOnServer(passcode);
-        verifying = false;
-        if (ok) {
-            handleSuccess();
-        } else {
-            handleFailure();
-        }
-    };
-
-    const appendDigit = (digit: string) => {
-        if (!/^[0-9]$/.test(digit)) return;
-        if (entered.length >= SITE_LOCK_LENGTH) return;
-        entered += digit;
-        setStatus('');
-        updateDots();
-        void verifyIfComplete();
-    };
-
-    const backspace = () => {
-        if (!entered.length) return;
-        entered = entered.slice(0, -1);
-        setStatus('');
-        updateDots();
-    };
-
-    digitButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            appendDigit(String(button.dataset.lockDigit || ''));
-        });
+  const overlay = document.getElementById('site-lock-overlay') as HTMLElement | null;
+  if (!overlay) {
+    onUnlock();
+    return;
+  }
+  if (!overlay.dataset.doubleTapBound) {
+    overlay.addEventListener('dblclick', (event) => {
+      event.preventDefault();
     });
+    overlay.dataset.doubleTapBound = '1';
+  }
 
-    actionButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            const action = String(button.dataset.lockAction || '');
-            if (action === 'clear') {
-                clearEntry();
-                setStatus('');
-                return;
-            }
-            if (action === 'back') {
-                backspace();
-            }
-        });
-    });
+  const panel = overlay.querySelector('.site-lock-panel') as HTMLElement | null;
+  const statusEl = document.getElementById('site-lock-status') as HTMLElement | null;
+  const dotEls = Array.from(overlay.querySelectorAll('.site-lock-dot')) as HTMLElement[];
+  const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
+  const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
 
-    const onKeyDown = (event: KeyboardEvent) => {
-        if (overlay.classList.contains('hidden')) return;
-        const key = event.key;
-        if (/^[0-9]$/.test(key)) {
-            event.preventDefault();
-            appendDigit(key);
-            return;
-        }
-        if (key === 'Backspace') {
-            event.preventDefault();
-            backspace();
-            return;
-        }
-        if (key === 'Escape') {
-            event.preventDefault();
-            clearEntry();
-            setStatus('');
-        }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
+  // Check if we already have a valid server session
+  if (await checkServerSession()) {
+    overlay.classList.add('hidden');
+    document.body.classList.remove('site-locked');
+    onUnlock();
+    return;
+  }
 
+  document.body.classList.add('site-locked');
+  overlay.classList.remove('hidden');
+
+  let entered = '';
+  let verifying = false;
+
+  const updateDots = () => {
+    for (let i = 0; i < dotEls.length; i++) {
+      dotEls[i].classList.toggle('filled', i < entered.length);
+    }
+  };
+
+  const setStatus = (message: string) => {
+    if (!statusEl) return;
+    statusEl.textContent = message;
+  };
+
+  const clearEntry = () => {
+    entered = '';
     updateDots();
+  };
+
+  const handleSuccess = () => {
+    overlay.classList.add('hidden');
+    document.body.classList.remove('site-locked');
+    window.removeEventListener('keydown', onKeyDown, true);
+    onUnlock();
+  };
+
+  const handleFailure = () => {
+    setStatus('');
+    clearEntry();
+    if (panel) {
+      panel.classList.remove('shake');
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      panel.offsetWidth;
+      panel.classList.add('shake');
+    }
+    window.setTimeout(() => {
+      if (panel) panel.classList.remove('shake');
+    }, 320);
+  };
+
+  const verifyIfComplete = async () => {
+    if (entered.length < SITE_LOCK_LENGTH || verifying) return;
+    verifying = true;
+    const passcode = entered;
+    const ok = await verifyPasscodeOnServer(passcode);
+    verifying = false;
+    if (ok) {
+      handleSuccess();
+    } else {
+      handleFailure();
+    }
+  };
+
+  const appendDigit = (digit: string) => {
+    if (!/^[0-9]$/.test(digit)) return;
+    if (entered.length >= SITE_LOCK_LENGTH) return;
+    entered += digit;
+    setStatus('');
+    updateDots();
+    void verifyIfComplete();
+  };
+
+  const backspace = () => {
+    if (!entered.length) return;
+    entered = entered.slice(0, -1);
+    setStatus('');
+    updateDots();
+  };
+
+  digitButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      appendDigit(String(button.dataset.lockDigit || ''));
+    });
+  });
+
+  actionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = String(button.dataset.lockAction || '');
+      if (action === 'clear') {
+        clearEntry();
+        setStatus('');
+        return;
+      }
+      if (action === 'back') {
+        backspace();
+      }
+    });
+  });
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (overlay.classList.contains('hidden')) return;
+    const key = event.key;
+    if (/^[0-9]$/.test(key)) {
+      event.preventDefault();
+      appendDigit(key);
+      return;
+    }
+    if (key === 'Backspace') {
+      event.preventDefault();
+      backspace();
+      return;
+    }
+    if (key === 'Escape') {
+      event.preventDefault();
+      clearEntry();
+      setStatus('');
+    }
+  };
+  window.addEventListener('keydown', onKeyDown, true);
+
+  updateDots();
 }
 
 function initHeaderNavDropdown(): void {
-    const toggle = document.getElementById('header-nav-toggle');
-    const dropdown = document.getElementById('header-nav-dropdown');
-    if (!toggle || !dropdown) return;
+  const toggle = document.getElementById('header-nav-toggle');
+  const dropdown = document.getElementById('header-nav-dropdown');
+  if (!toggle || !dropdown) return;
 
-    toggle.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeAllColumnCustomPanels();
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAllColumnCustomPanels();
 
-        const isVisible = dropdown.classList.contains('open');
-        if (isVisible) {
-            dropdown.classList.remove('open');
-            setTimeout(() => dropdown.classList.add('hidden'), 150);
-        } else {
-            dropdown.classList.remove('hidden');
-            requestAnimationFrame(() => dropdown.classList.add('open'));
-        }
-    });
+    const isVisible = dropdown.classList.contains('open');
+    if (isVisible) {
+      dropdown.classList.remove('open');
+      setTimeout(() => dropdown.classList.add('hidden'), 150);
+    } else {
+      dropdown.classList.remove('hidden');
+      requestAnimationFrame(() => dropdown.classList.add('open'));
+    }
+  });
 
-    dropdown.addEventListener('click', (e) => {
-        const item = (e.target as HTMLElement).closest('.header-nav-item') as HTMLElement | null;
-        if (!item) return;
-        const view = item.dataset.view as 'logs' | 'divergence' | 'breadth';
-        if (view) {
-            switchView(view);
-            dropdown.classList.remove('open');
-            setTimeout(() => dropdown.classList.add('hidden'), 150);
-        }
-    });
+  dropdown.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('.header-nav-item') as HTMLElement | null;
+    if (!item) return;
+    const view = item.dataset.view as 'logs' | 'divergence' | 'breadth';
+    if (view) {
+      switchView(view);
+      dropdown.classList.remove('open');
+      setTimeout(() => dropdown.classList.add('hidden'), 150);
+    }
+  });
 }
 
 function initColumnTimeframeButtons(): void {
-    // Event delegation for all column tf buttons
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
+  // Event delegation for all column tf buttons
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
 
-        // Timeframe button click (1, 2, 5, custom)
-        const tfBtn = target.closest('.column-tf-controls .pane-btn[data-tf]') as HTMLElement | null;
-        if (tfBtn) {
-            const controls = tfBtn.closest('.column-tf-controls') as HTMLElement | null;
-            if (!controls) return;
-            const column = controls.dataset.column as 'daily' | 'weekly';
-            const mode = tfBtn.dataset.tf as ColumnFeedMode;
-            if (!column || !mode) return;
+    // Timeframe button click (1, 2, 5, custom)
+    const tfBtn = target.closest('.column-tf-controls .pane-btn[data-tf]') as HTMLElement | null;
+    if (tfBtn) {
+      const controls = tfBtn.closest('.column-tf-controls') as HTMLElement | null;
+      if (!controls) return;
+      const column = controls.dataset.column as 'daily' | 'weekly';
+      const mode = tfBtn.dataset.tf as ColumnFeedMode;
+      if (!column || !mode) return;
 
-            if (mode === 'custom') {
-                // Toggle custom panel visibility
-                const panel = controls.querySelector('.column-tf-custom-panel') as HTMLElement | null;
-                if (panel) {
-                    const isVisible = !panel.classList.contains('hidden');
-                    closeAllColumnCustomPanels();
-                    if (!isVisible) {
-                        panel.classList.remove('hidden');
-                        requestAnimationFrame(() => panel.classList.add('open'));
-                    }
-                }
-                // Mark C as active without fetching
-                setColumnFeedMode(column, mode, false);
-                return;
-            }
-
-            closeAllColumnCustomPanels();
-            setColumnFeedMode(column, mode);
-            return;
+      if (mode === 'custom') {
+        // Toggle custom panel visibility
+        const panel = controls.querySelector('.column-tf-custom-panel') as HTMLElement | null;
+        if (panel) {
+          const isVisible = !panel.classList.contains('hidden');
+          closeAllColumnCustomPanels();
+          if (!isVisible) {
+            panel.classList.remove('hidden');
+            requestAnimationFrame(() => panel.classList.add('open'));
+          }
         }
+        // Mark C as active without fetching
+        setColumnFeedMode(column, mode, false);
+        return;
+      }
 
-        // Apply button click inside custom panel
-        const applyBtn = target.closest('.column-tf-apply') as HTMLElement | null;
-        if (applyBtn) {
-            const panel = applyBtn.closest('.column-tf-custom-panel') as HTMLElement | null;
-            if (panel) applyCustomDatePanel(panel);
-            return;
-        }
+      closeAllColumnCustomPanels();
+      setColumnFeedMode(column, mode);
+      return;
+    }
 
-        // Click on date input inside custom panel — don't close
-        if (target.closest('.column-tf-custom-panel')) return;
+    // Apply button click inside custom panel
+    const applyBtn = target.closest('.column-tf-apply') as HTMLElement | null;
+    if (applyBtn) {
+      const panel = applyBtn.closest('.column-tf-custom-panel') as HTMLElement | null;
+      if (panel) applyCustomDatePanel(panel);
+      return;
+    }
 
-        // Click outside — close all custom panels
-        if (!target.closest('.column-tf-controls')) {
-            closeAllColumnCustomPanels();
-        }
-    });
+    // Click on date input inside custom panel — don't close
+    if (target.closest('.column-tf-custom-panel')) return;
 
-    // Auto-format date inputs (mm/dd/yyyy) with auto-advance
-    document.addEventListener('input', handleDateAutoFormat);
-    document.addEventListener('keydown', handleDateKeydown);
+    // Click outside — close all custom panels
+    if (!target.closest('.column-tf-controls')) {
+      closeAllColumnCustomPanels();
+    }
+  });
+
+  // Auto-format date inputs (mm/dd/yyyy) with auto-advance
+  document.addEventListener('input', handleDateAutoFormat);
+  document.addEventListener('keydown', handleDateKeydown);
 }
 
 function parseDateInputValue(value: string): string | null {
-    // Native date inputs return yyyy-mm-dd
-    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (isoMatch) return value;
-    // Legacy mm/dd/yyyy fallback
-    const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!m) return null;
-    return `${m[3]}-${m[1]}-${m[2]}`;
+  // Native date inputs return yyyy-mm-dd
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return value;
+  // Legacy mm/dd/yyyy fallback
+  const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[1]}-${m[2]}`;
 }
 
 function handleDateAutoFormat(e: Event): void {
-    const input = e.target as HTMLInputElement;
-    if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
+  const input = e.target as HTMLInputElement;
+  if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
 
-    const raw = input.value;
-    let digits = raw.replace(/\D/g, '');
-    if (digits.length > 8) digits = digits.slice(0, 8);
+  const raw = input.value;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length > 8) digits = digits.slice(0, 8);
 
-    let formatted = '';
-    if (digits.length <= 2) {
-        formatted = digits;
-    } else if (digits.length <= 4) {
-        formatted = digits.slice(0, 2) + '/' + digits.slice(2);
-    } else {
-        formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+  let formatted = '';
+  if (digits.length <= 2) {
+    formatted = digits;
+  } else if (digits.length <= 4) {
+    formatted = digits.slice(0, 2) + '/' + digits.slice(2);
+  } else {
+    formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+  }
+
+  input.value = formatted;
+
+  if (formatted.length === 10 && input.classList.contains('column-tf-from')) {
+    const panel = input.closest('.column-tf-custom-panel');
+    const toInput = panel?.querySelector('.column-tf-to') as HTMLInputElement | null;
+    if (toInput && !toInput.value) {
+      toInput.focus();
     }
-
-    input.value = formatted;
-
-    if (formatted.length === 10 && input.classList.contains('column-tf-from')) {
-        const panel = input.closest('.column-tf-custom-panel');
-        const toInput = panel?.querySelector('.column-tf-to') as HTMLInputElement | null;
-        if (toInput && !toInput.value) {
-            toInput.focus();
-        }
-    }
+  }
 }
 
 function handleDateKeydown(e: KeyboardEvent): void {
-    const input = e.target as HTMLInputElement;
-    if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
+  const input = e.target as HTMLInputElement;
+  if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
 
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const panel = input.closest('.column-tf-custom-panel');
-        const applyBtn = panel?.querySelector('.column-tf-apply') as HTMLElement | null;
-        applyBtn?.click();
-    }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const panel = input.closest('.column-tf-custom-panel');
+    const applyBtn = panel?.querySelector('.column-tf-apply') as HTMLElement | null;
+    applyBtn?.click();
+  }
 }
 
 function applyCustomDatePanel(panel: HTMLElement): void {
-    const controls = panel.closest('.column-tf-controls') as HTMLElement | null;
-    if (!controls) return;
-    const column = controls.dataset.column as 'daily' | 'weekly';
-    const fromInput = panel.querySelector('.column-tf-from') as HTMLInputElement | null;
-    const toInput = panel.querySelector('.column-tf-to') as HTMLInputElement | null;
-    const fromVal = parseDateInputValue(fromInput?.value || '');
-    const toVal = parseDateInputValue(toInput?.value || '');
-    if (column && fromVal && toVal) {
-        setColumnCustomDates(column, fromVal, toVal);
-        setColumnFeedMode(column, 'custom');
-    }
-    closeAllColumnCustomPanels();
+  const controls = panel.closest('.column-tf-controls') as HTMLElement | null;
+  if (!controls) return;
+  const column = controls.dataset.column as 'daily' | 'weekly';
+  const fromInput = panel.querySelector('.column-tf-from') as HTMLInputElement | null;
+  const toInput = panel.querySelector('.column-tf-to') as HTMLInputElement | null;
+  const fromVal = parseDateInputValue(fromInput?.value || '');
+  const toVal = parseDateInputValue(toInput?.value || '');
+  if (column && fromVal && toVal) {
+    setColumnCustomDates(column, fromVal, toVal);
+    setColumnFeedMode(column, 'custom');
+  }
+  closeAllColumnCustomPanels();
 }
 
 function closeAllColumnCustomPanels(): void {
-    document.querySelectorAll('.column-tf-custom-panel').forEach(panel => {
-        panel.classList.remove('open');
-        panel.classList.add('hidden');
-    });
+  document.querySelectorAll('.column-tf-custom-panel').forEach((panel) => {
+    panel.classList.remove('open');
+    panel.classList.add('hidden');
+  });
 }
 
 function bootstrapApplication(): void {
-    if (appInitialized) return;
-    appInitialized = true;
+  if (appInitialized) return;
+  appInitialized = true;
 
-    // Prevent long-press text selection / callout on touch devices globally
-    if (isMobileTouch) {
-        document.documentElement.style.webkitUserSelect = 'none';
-        document.documentElement.style.userSelect = 'none';
-        (document.documentElement.style as any).webkitTouchCallout = 'none';
-        document.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
-    }
-
-    // Back button (in chart controls bar)
-    document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);
-
-    // Global settings panel controls
-    document.getElementById('divergence-fetch-daily-btn')?.addEventListener('click', () => {
-        runManualDivergenceFetchDailyData();
+  // Prevent long-press text selection / callout on touch devices globally
+  if (isMobileTouch) {
+    document.documentElement.style.webkitUserSelect = 'none';
+    document.documentElement.style.userSelect = 'none';
+    (document.documentElement.style as any).webkitTouchCallout = 'none';
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
     });
-    document.getElementById('divergence-fetch-daily-stop-btn')?.addEventListener('click', () => {
-        stopManualDivergenceFetchDailyData();
+  }
+
+  // Back button (in chart controls bar)
+  document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);
+
+  // Global settings panel controls
+  document.getElementById('divergence-fetch-daily-btn')?.addEventListener('click', () => {
+    runManualDivergenceFetchDailyData();
+  });
+  document.getElementById('divergence-fetch-daily-stop-btn')?.addEventListener('click', () => {
+    stopManualDivergenceFetchDailyData();
+  });
+  document.getElementById('divergence-fetch-weekly-btn')?.addEventListener('click', () => {
+    runManualDivergenceFetchWeeklyData();
+  });
+  document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
+    stopManualDivergenceFetchWeeklyData();
+  });
+  document.getElementById('divergence-vdf-scan-btn')?.addEventListener('click', () => {
+    runManualVDFScan();
+  });
+  document.getElementById('divergence-vdf-scan-stop-btn')?.addEventListener('click', () => {
+    stopManualVDFScan();
+  });
+
+  // Ticker View Daily Sort Buttons
+  document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = (btn as HTMLElement).dataset.sort as SortMode;
+      setTickerDailySort(mode);
     });
-    document.getElementById('divergence-fetch-weekly-btn')?.addEventListener('click', () => {
-        runManualDivergenceFetchWeeklyData();
+  });
+
+  // Ticker View Weekly Sort Buttons
+  document.querySelectorAll('.ticker-weekly-sort .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = (btn as HTMLElement).dataset.sort as SortMode;
+      setTickerWeeklySort(mode);
     });
-    document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
-        stopManualDivergenceFetchWeeklyData();
+  });
+
+  // Breadth Controls
+  document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const days = Number((btn as HTMLElement).dataset.days);
+      setBreadthTimeframe(days);
     });
-    document.getElementById('divergence-vdf-scan-btn')?.addEventListener('click', () => {
-        runManualVDFScan();
+  });
+
+  document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
+      setBreadthMetric(metric);
+      const subtitle = document.getElementById('breadth-subtitle');
+      if (subtitle) subtitle.textContent = `SPY vs ${metric} — Normalized`;
     });
-    document.getElementById('divergence-vdf-scan-stop-btn')?.addEventListener('click', () => {
-        stopManualVDFScan();
-    });
+  });
 
-    // Ticker View Daily Sort Buttons
-    document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const mode = (btn as HTMLElement).dataset.sort as SortMode;
-            setTickerDailySort(mode);
-        });
-    });
+  // Header navigation dropdown & column timeframe dropdowns
+  initHeaderNavDropdown();
+  initColumnTimeframeButtons();
 
-    // Ticker View Weekly Sort Buttons
-    document.querySelectorAll('.ticker-weekly-sort .pane-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const mode = (btn as HTMLElement).dataset.sort as SortMode;
-            setTickerWeeklySort(mode);
-        });
-    });
+  // Close header dropdowns on outside click
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('#header-nav-container')) return;
+    closeAllHeaderDropdowns();
+  });
 
+  // Initial Load
+  initializeDivergenceSortDefaults();
+  syncDivergenceScanUiState().catch(() => {});
+  switchView('divergence');
 
-    // Breadth Controls
-    document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const days = Number((btn as HTMLElement).dataset.days);
-            setBreadthTimeframe(days);
-        });
-    });
+  // Setup Search
+  initGlobalSettingsPanel();
+  initSearch();
+  initLogsView();
 
-    document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
-            setBreadthMetric(metric);
-            const subtitle = document.getElementById('breadth-subtitle');
-            if (subtitle) subtitle.textContent = `SPY vs ${metric} — Normalized`;
-        });
-    });
+  // Setup Event Delegation
+  setupDivergenceFeedDelegation();
 
-    // Header navigation dropdown & column timeframe dropdowns
-    initHeaderNavDropdown();
-    initColumnTimeframeButtons();
+  // Mobile Collapse Toggle (only on mobile)
+  setupMobileCollapse();
 
-    // Close header dropdowns on outside click
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement | null;
-        if (!target) return;
-        if (target.closest('#header-nav-container')) return;
-        closeAllHeaderDropdowns();
-    });
-
-    // Initial Load
-    initializeDivergenceSortDefaults();
-    syncDivergenceScanUiState().catch(() => {});
-    switchView('divergence');
-
-    // Setup Search
-    initGlobalSettingsPanel();
-    initSearch();
-    initLogsView();
-
-    // Setup Event Delegation
-    setupDivergenceFeedDelegation();
-
-    // Mobile Collapse Toggle (only on mobile)
-    setupMobileCollapse();
-
-    // Initialize Chart Controls
-    initChartControls();
-
+  // Initialize Chart Controls
+  initChartControls();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    initTheme();
-    initializeSiteLock(() => {
-        bootstrapApplication();
-    });
+  initTheme();
+  initializeSiteLock(() => {
+    bootstrapApplication();
+  });
 });
 
 function setupMobileCollapse(): void {
-    const attachCollapseHandler = (root: HTMLElement | null, allowedContainerSelector: string): void => {
-        if (!root) return;
-        root.addEventListener('click', (e) => {
-            // Only activate on mobile-like viewport widths.
-            if (window.innerWidth > 768) return;
+  const attachCollapseHandler = (root: HTMLElement | null, allowedContainerSelector: string): void => {
+    if (!root) return;
+    root.addEventListener('click', (e) => {
+      // Only activate on mobile-like viewport widths.
+      if (window.innerWidth > 768) return;
 
-            const target = e.target as HTMLElement | null;
-            if (!target) return;
-            const heading = target.closest('h2');
-            if (!heading) return;
-            const isInHeader = heading.closest('.column-header') || heading.closest('.header-title-group');
-            if (!isInHeader) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const heading = target.closest('h2');
+      if (!heading) return;
+      const isInHeader = heading.closest('.column-header') || heading.closest('.header-title-group');
+      if (!isInHeader) return;
 
-            const column = heading.closest('.column');
-            if (!column) return;
-            if (!column.closest(allowedContainerSelector)) return;
+      const column = heading.closest('.column');
+      if (!column) return;
+      if (!column.closest(allowedContainerSelector)) return;
 
-            column.classList.toggle('collapsed');
-        });
-    };
+      column.classList.toggle('collapsed');
+    });
+  };
 
-    // Alerts page (default) dashboard columns.
-    attachCollapseHandler(document.getElementById('view-divergence'), '#divergence-dashboard-view');
+  // Alerts page (default) dashboard columns.
+  attachCollapseHandler(document.getElementById('view-divergence'), '#divergence-dashboard-view');
 }

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
 
 /**
@@ -53,7 +54,7 @@ function registerDivergenceRoutes(options = {}) {
     requestStopVDFScan,
     canResumeVDFScan,
     runVDFScan,
-    getIsVDFScanRunning
+    getIsVDFScanRunning,
   } = options;
 
   if (!app) {
@@ -87,7 +88,7 @@ function registerDivergenceRoutes(options = {}) {
     const scanRequest = buildManualScanRequest({
       req,
       parseBooleanInput,
-      parseEtDateInput
+      parseEtDateInput,
     });
     if (!scanRequest.ok) {
       return res.status(400).json({ error: scanRequest.error });
@@ -98,7 +99,7 @@ function registerDivergenceRoutes(options = {}) {
       force,
       refreshUniverse,
       runDateEt,
-      trigger: 'manual-api'
+      trigger: 'manual-api',
     })
       .then((summary) => {
         console.log('Manual divergence scan completed:', summary);
@@ -159,7 +160,7 @@ function registerDivergenceRoutes(options = {}) {
 
     runDailyDivergenceScan({
       trigger: 'manual-api-resume',
-      resume: true
+      resume: true,
     })
       .then((summary) => {
         console.log('Manual divergence scan resume completed:', summary);
@@ -200,10 +201,12 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
-      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
+    if (
+      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
+      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
+      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
+      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
+    ) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -211,13 +214,11 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(501).json({ error: 'Table run endpoint is not enabled' });
     }
 
-    const force = typeof parseBooleanInput === 'function'
-      ? parseBooleanInput(req.body?.force, true)
-      : true;
+    const force = typeof parseBooleanInput === 'function' ? parseBooleanInput(req.body?.force, true) : true;
 
     runDivergenceTableBuild({
       trigger: 'manual-api',
-      force
+      force,
     })
       .then((summary) => {
         console.log('Manual divergence table run completed:', summary);
@@ -288,7 +289,7 @@ function registerDivergenceRoutes(options = {}) {
 
     runDivergenceTableBuild({
       trigger: 'manual-api-resume',
-      resume: true
+      resume: true,
     })
       .then((summary) => {
         console.log('Manual divergence table resume completed:', summary);
@@ -333,10 +334,12 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
-      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
+    if (
+      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
+      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
+      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
+      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
+    ) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -349,7 +352,7 @@ function registerDivergenceRoutes(options = {}) {
     runDivergenceFetchDailyData({
       trigger: 'manual-api',
       resume: shouldResume,
-      force: true
+      force: true,
     })
       .then((summary) => {
         console.log(`Manual divergence fetch-daily ${shouldResume ? 'resumed' : 'started'}:`, summary);
@@ -390,10 +393,12 @@ function registerDivergenceRoutes(options = {}) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if ((typeof getIsScanRunning === 'function' && getIsScanRunning())
-      || (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning())
-      || (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning())
-      || (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())) {
+    if (
+      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
+      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
+      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
+      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
+    ) {
       return res.status(409).json({ status: 'running' });
     }
 
@@ -406,7 +411,7 @@ function registerDivergenceRoutes(options = {}) {
     runDivergenceFetchWeeklyData({
       trigger: 'manual-api',
       resume: shouldResume,
-      force: true
+      force: true,
     })
       .then((summary) => {
         console.log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
@@ -442,18 +447,10 @@ function registerDivergenceRoutes(options = {}) {
     }
 
     // In-memory statuses are always available and never fail.
-    const tableBuild = typeof getTableBuildStatus === 'function'
-      ? getTableBuildStatus()
-      : null;
-    const scanControl = typeof getScanControlStatus === 'function'
-      ? getScanControlStatus()
-      : null;
-    const fetchDailyData = typeof getFetchDailyDataStatus === 'function'
-      ? getFetchDailyDataStatus()
-      : null;
-    const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function'
-      ? getFetchWeeklyDataStatus()
-      : null;
+    const tableBuild = typeof getTableBuildStatus === 'function' ? getTableBuildStatus() : null;
+    const scanControl = typeof getScanControlStatus === 'function' ? getScanControlStatus() : null;
+    const fetchDailyData = typeof getFetchDailyDataStatus === 'function' ? getFetchDailyDataStatus() : null;
+    const fetchWeeklyData = typeof getFetchWeeklyDataStatus === 'function' ? getFetchWeeklyDataStatus() : null;
 
     // The DB query for latestJob can fail under heavy write load
     // (pool connections saturated during fetches). Fall back gracefully.
@@ -464,20 +461,18 @@ function registerDivergenceRoutes(options = {}) {
         divergenceSourceInterval,
         getIsScanRunning,
         getLastFetchedTradeDateEt,
-        getLastScanDateEt
+        getLastScanDateEt,
       });
     } catch (err) {
       console.error('Scan status DB query failed (returning in-memory status):', err.message);
       statusPayload = {
         running: getIsScanRunning(),
         lastScanDateEt: getLastFetchedTradeDateEt() || getLastScanDateEt() || null,
-        latestJob: null
+        latestJob: null,
       };
     }
 
-    const vdfScan = typeof getVDFScanStatus === 'function'
-      ? getVDFScanStatus()
-      : null;
+    const vdfScan = typeof getVDFScanStatus === 'function' ? getVDFScanStatus() : null;
 
     return res.json({
       ...statusPayload,
@@ -485,7 +480,7 @@ function registerDivergenceRoutes(options = {}) {
       tableBuild,
       fetchDailyData,
       fetchWeeklyData,
-      vdfScan
+      vdfScan,
     });
   });
 
