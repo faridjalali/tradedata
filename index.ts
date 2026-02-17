@@ -124,7 +124,18 @@ import {
   buildIntradayBreadthPoints,
 } from './server/services/chartEngine.js';
 
-const app = Fastify({ trustProxy: true });
+const app = Fastify({
+  trustProxy: true,
+  bodyLimit: 1048576,
+});
+
+// Allow empty bodies with Content-Type: application/json (Fastify rejects by default)
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+  const text = (body as string || '').trim();
+  if (!text) return done(null, {});
+  try { done(null, JSON.parse(text)); }
+  catch (err) { done(err as Error, undefined); }
+});
 const port = Number(PORT) || 3000;
 
 let isShuttingDown = false;
