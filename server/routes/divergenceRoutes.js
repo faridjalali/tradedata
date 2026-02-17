@@ -1,8 +1,21 @@
-const {
-  buildManualScanRequest,
-  fetchLatestDivergenceScanStatus
-} = require('../services/divergenceService');
+import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
 
+/**
+ * Register all divergence scan and control HTTP routes on the Express app.
+ * @param {object} options
+ * @param {import('express').Express} options.app - Express application instance
+ * @param {Function} options.isDivergenceConfigured - Returns true if divergence DB is available
+ * @param {string} [options.divergenceScanSecret] - Shared secret for scan endpoints
+ * @param {Function} options.getIsScanRunning - Returns true if a scan is in progress
+ * @param {Function} [options.parseBooleanInput] - Boolean parser for request params
+ * @param {Function} [options.parseEtDateInput] - ET date parser for request params
+ * @param {Function} [options.runDailyDivergenceScan] - Launches a daily divergence scan
+ * @param {Function} [options.runDivergenceTableBuild] - Launches a table rebuild
+ * @param {Function} [options.runDivergenceFetchDailyData] - Launches daily data fetch
+ * @param {Function} [options.runDivergenceFetchWeeklyData] - Launches weekly data fetch
+ * @param {object} [options.divergencePool] - PostgreSQL pool for divergence DB
+ * @param {string} [options.divergenceSourceInterval] - Default volume-delta source interval
+ */
 function registerDivergenceRoutes(options = {}) {
   const {
     app,
@@ -527,6 +540,4 @@ function registerDivergenceRoutes(options = {}) {
   });
 }
 
-module.exports = {
-  registerDivergenceRoutes
-};
+export { registerDivergenceRoutes };

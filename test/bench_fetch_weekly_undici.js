@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-require('dotenv').config();
+import 'dotenv/config';
 
 const mode = String(process.argv[2] || 'baseline').trim().toLowerCase();
 const tickerLimit = Math.max(1, Number(process.argv[3]) || 80);
@@ -7,7 +7,7 @@ const workerCount = Math.max(1, Number(process.argv[4]) || 16);
 const sourceInterval = String(process.argv[5] || process.env.BENCH_SOURCE_INTERVAL || '1min').trim();
 const lookbackDays = Math.max(28, Number(process.argv[6]) || 35);
 
-const { setGlobalDispatcher, Agent } = require('undici');
+import { setGlobalDispatcher, Agent } from 'undici';
 
 if (mode === 'undici') {
   setGlobalDispatcher(new Agent({

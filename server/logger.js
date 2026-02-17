@@ -1,5 +1,6 @@
-const pino = require('pino');
+import pino from 'pino';
 
+/** @type {import('pino').Logger} */
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   formatters: {
@@ -29,4 +30,4 @@ console.warn = (...args) => logger.warn(formatArgs(args));
 console.info = (...args) => logger.info(formatArgs(args));
 console.debug = (...args) => logger.debug(formatArgs(args));
 
-module.exports = logger;
+export default logger;

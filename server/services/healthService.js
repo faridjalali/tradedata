@@ -1,3 +1,8 @@
+/**
+ * Check if a PostgreSQL pool is responsive.
+ * @param {object|null} poolInstance - pg Pool instance, or null
+ * @returns {Promise<{ ok: boolean|null, error?: string }>}
+ */
 async function checkDatabaseReady(poolInstance) {
   if (!poolInstance) return { ok: null };
   try {
@@ -9,6 +14,18 @@ async function checkDatabaseReady(poolInstance) {
   }
 }
 
+/**
+ * Build the debug metrics response payload.
+ * @param {object} options
+ * @param {number} options.startedAtMs - Server start timestamp
+ * @param {boolean} options.isShuttingDown - Whether server is shutting down
+ * @param {{ totalRequests: number, apiRequests: number }} options.httpDebugMetrics
+ * @param {object} options.chartCacheSizes - Chart cache size breakdown
+ * @param {object} options.chartDebugMetrics - Chart cache hit/miss metrics
+ * @param {{ configured: boolean, running: boolean, lastScanDateEt: string }} options.divergence
+ * @param {NodeJS.MemoryUsage} [options.memoryUsage]
+ * @returns {object}
+ */
 function buildDebugMetricsPayload(options = {}) {
   const {
     startedAtMs,
@@ -45,6 +62,14 @@ function buildDebugMetricsPayload(options = {}) {
   };
 }
 
+/**
+ * Build the /healthz response payload.
+ * @param {object} options
+ * @param {boolean} options.isShuttingDown
+ * @param {string} options.nowIso - Current ISO timestamp
+ * @param {number} options.uptimeSeconds
+ * @returns {{ status: string, timestamp: string, uptimeSeconds: number, shuttingDown: boolean }}
+ */
 function buildHealthPayload(options = {}) {
   const {
     isShuttingDown,
@@ -59,6 +84,17 @@ function buildHealthPayload(options = {}) {
   };
 }
 
+/**
+ * Build the /readyz response payload with database connectivity checks.
+ * @param {object} options
+ * @param {object} options.pool - Primary pg Pool
+ * @param {object} [options.divergencePool] - Divergence pg Pool
+ * @param {Function} options.isDivergenceConfigured
+ * @param {boolean} options.isShuttingDown
+ * @param {boolean} options.divergenceScanRunning
+ * @param {string|null} options.lastScanDateEt
+ * @returns {Promise<{ statusCode: number, body: object }>}
+ */
 async function buildReadyPayload(options = {}) {
   const {
     pool,
@@ -95,9 +131,4 @@ async function buildReadyPayload(options = {}) {
   };
 }
 
-module.exports = {
-  checkDatabaseReady,
-  buildDebugMetricsPayload,
-  buildHealthPayload,
-  buildReadyPayload
-};
+export { checkDatabaseReady, buildDebugMetricsPayload, buildHealthPayload, buildReadyPayload };

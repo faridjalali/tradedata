@@ -4,11 +4,7 @@ import { getThemeColors } from './theme';
 // Chart.js is loaded globally via CDN in index.html
 declare const Chart: any;
 
-interface BreadthDataPoint {
-    date: string;
-    spy: number;
-    comparison: number;
-}
+import type { BreadthDataPoint, BreadthResponse } from '../shared/api-types';
 
 let breadthChart: any = null;
 let currentTimeframeDays = 5;
@@ -22,10 +18,6 @@ export function getCurrentBreadthMetric(): string {
     return currentMetric;
 }
 
-interface BreadthResponse {
-    intraday: boolean;
-    points: BreadthDataPoint[];
-}
 
 async function fetchBreadthData(ticker: string, days: number): Promise<BreadthResponse> {
     const response = await fetch(`/api/breadth?ticker=${ticker}&days=${days}`);

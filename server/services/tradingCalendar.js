@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Trading Calendar — hybrid approach using SPY daily bars (historical proof)
  * and the /v1/marketstatus/upcoming endpoint (future holidays / early closes).
@@ -89,6 +87,12 @@ function fallbackNextTradingDay(dateStr) {
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Check whether a given date is a trading day.
+ * Falls back to weekday check when calendar is not initialized.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {boolean}
+ */
 function isTradingDay(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return false;
   if (!initialized) return isWeekday(dateStr);
@@ -99,17 +103,32 @@ function isTradingDay(dateStr) {
   return isWeekday(dateStr);
 }
 
+/**
+ * Check whether a given date is an early-close trading day.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {boolean}
+ */
 function isEarlyClose(dateStr) {
   if (!initialized) return false;
   return earlyCloses.has(dateStr);
 }
 
+/**
+ * Get the ET close time for a trading day.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {string|null} Close time string (e.g. "16:00", "13:00"), or null if not a trading day
+ */
 function getCloseTimeEt(dateStr) {
   if (!isTradingDay(dateStr)) return null;
   if (earlyCloses.has(dateStr)) return earlyCloses.get(dateStr);
   return '16:00';
 }
 
+/**
+ * Find the most recent trading day before the given date.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {string} YYYY-MM-DD
+ */
 function previousTradingDay(dateStr) {
   if (!initialized) return fallbackPreviousTradingDay(dateStr);
   let cursor = addDays(dateStr, -1);
@@ -120,6 +139,11 @@ function previousTradingDay(dateStr) {
   return fallbackPreviousTradingDay(dateStr);
 }
 
+/**
+ * Find the next trading day after the given date.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {string} YYYY-MM-DD
+ */
 function nextTradingDay(dateStr) {
   if (!initialized) return fallbackNextTradingDay(dateStr);
   let cursor = addDays(dateStr, 1);
@@ -130,6 +154,12 @@ function nextTradingDay(dateStr) {
   return fallbackNextTradingDay(dateStr);
 }
 
+/**
+ * Get all trading days between two dates (inclusive).
+ * @param {string} start - YYYY-MM-DD
+ * @param {string} end - YYYY-MM-DD
+ * @returns {string[]} Array of YYYY-MM-DD date strings
+ */
 function getTradingDaysBetween(start, end) {
   if (!initialized) return weekdaysBetween(start, end);
   const result = [];
@@ -141,6 +171,10 @@ function getTradingDaysBetween(start, end) {
   return result;
 }
 
+/**
+ * Get the current calendar status for diagnostics.
+ * @returns {{ initialized: boolean, tradingDaysCount: number, earlyClosesCount: number, rangeStart: string, rangeEnd: string, lastRefreshedAt: string }}
+ */
 function getStatus() {
   return {
     initialized,
@@ -315,6 +349,14 @@ async function refreshCalendar(deps) {
 // Init / destroy
 // ---------------------------------------------------------------------------
 
+/**
+ * Initialize the trading calendar by fetching historical SPY data and upcoming market status.
+ * @param {object} deps
+ * @param {Function} deps.fetchDataApiJson - Fetches JSON from the data API
+ * @param {Function} deps.buildDataApiUrl - Builds a data API URL with query params
+ * @param {Function} deps.formatDateUTC - Formats Date as YYYY-MM-DD
+ * @param {Function} [deps.log] - Logger function (defaults to console.log)
+ */
 async function init(deps = {}) {
   const log = deps.log || console.log;
   savedDeps = deps;
@@ -333,6 +375,7 @@ async function init(deps = {}) {
   }
 }
 
+/** Stop the daily refresh timer. */
 function destroy() {
   if (refreshTimer) {
     clearTimeout(refreshTimer);
@@ -344,14 +387,4 @@ function destroy() {
 // Exports
 // ---------------------------------------------------------------------------
 
-module.exports = {
-  init,
-  destroy,
-  isTradingDay,
-  isEarlyClose,
-  getCloseTimeEt,
-  previousTradingDay,
-  nextTradingDay,
-  getTradingDaysBetween,
-  getStatus
-};
+export { init, destroy, isTradingDay, isEarlyClose, getCloseTimeEt, previousTradingDay, nextTradingDay, getTradingDaysBetween, getStatus };

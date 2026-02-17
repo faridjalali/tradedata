@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const { registerDivergenceRoutes } = require('../server/routes/divergenceRoutes');
+import { registerDivergenceRoutes } from '../server/routes/divergenceRoutes.js';
 
 function createMockApp() {
   const routes = {

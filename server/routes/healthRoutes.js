@@ -1,3 +1,12 @@
+/**
+ * Register health, readiness, and debug metrics HTTP routes.
+ * @param {object} options
+ * @param {import('express').Express} options.app - Express application instance
+ * @param {string} [options.debugMetricsSecret] - Secret required for /api/debug/metrics
+ * @param {Function} options.getDebugMetricsPayload - Returns debug metrics object
+ * @param {Function} options.getHealthPayload - Returns health check object
+ * @param {Function} options.getReadyPayload - Returns readiness check (async)
+ */
 function registerHealthRoutes(options = {}) {
   const {
     app,
@@ -39,6 +48,4 @@ function registerHealthRoutes(options = {}) {
   });
 }
 
-module.exports = {
-  registerHealthRoutes
-};
+export { registerHealthRoutes };

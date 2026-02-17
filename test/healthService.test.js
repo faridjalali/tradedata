@@ -1,12 +1,12 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   checkDatabaseReady,
   buildDebugMetricsPayload,
   buildHealthPayload,
   buildReadyPayload
-} = require('../server/services/healthService');
+} from '../server/services/healthService.js';
 
 test('checkDatabaseReady returns null readiness when pool missing', async () => {
   const result = await checkDatabaseReady(null);

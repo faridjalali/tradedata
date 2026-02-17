@@ -1,3 +1,8 @@
+/**
+ * Format a Date object as YYYY-MM-DD in UTC.
+ * @param {Date} date
+ * @returns {string}
+ */
 function formatDateUTC(date) {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
@@ -5,6 +10,11 @@ function formatDateUTC(date) {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Convert unix seconds to a YYYY-MM-DD date key in America/Los_Angeles.
+ * @param {number} unixSeconds
+ * @returns {string}
+ */
 function dayKeyInLA(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
   return new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
@@ -15,6 +25,11 @@ function dayKeyInLA(unixSeconds) {
   });
 }
 
+/**
+ * Convert unix seconds to a Monday-anchored YYYY-MM-DD week key in LA timezone.
+ * @param {number} unixSeconds
+ * @returns {string}
+ */
 function weekKeyInLA(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
   const dayString = new Date(unixSeconds * 1000).toLocaleDateString('en-CA', {
@@ -36,6 +51,11 @@ function weekKeyInLA(unixSeconds) {
   return formatDateUTC(utcDate);
 }
 
+/**
+ * Filter and sort OHLCV bars by time, discarding invalid entries.
+ * @param {Array<{time: number|string, open: number, high: number, low: number, close: number, volume?: number}>} bars
+ * @returns {Array<{time: number|string, open: number, high: number, low: number, close: number, volume?: number}>}
+ */
 function normalizeBarsForAggregation(bars) {
   if (!Array.isArray(bars)) return [];
   return bars
@@ -50,6 +70,11 @@ function normalizeBarsForAggregation(bars) {
     .sort((a, b) => Number(a.time) - Number(b.time));
 }
 
+/**
+ * Aggregate 4-hour OHLCV bars into daily bars keyed by LA day.
+ * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} fourHourBars
+ * @returns {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>}
+ */
 function aggregate4HourBarsToDaily(fourHourBars) {
   const sorted = normalizeBarsForAggregation(fourHourBars);
   if (sorted.length === 0) return [];
@@ -102,6 +127,11 @@ function aggregate4HourBarsToDaily(fourHourBars) {
     }));
 }
 
+/**
+ * Aggregate daily OHLCV bars into weekly bars keyed by LA week (Mon-Sun).
+ * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} dailyBars
+ * @returns {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>}
+ */
 function aggregateDailyBarsToWeekly(dailyBars) {
   const sorted = normalizeBarsForAggregation(dailyBars);
   if (sorted.length === 0) return [];
@@ -154,6 +184,11 @@ function aggregateDailyBarsToWeekly(dailyBars) {
     }));
 }
 
+/**
+ * Convert unix seconds to an ISO week key (YYYY-Www) using ET timezone.
+ * @param {number} unixSeconds
+ * @returns {string}
+ */
 function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
   if (!Number.isFinite(unixSeconds)) return '';
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -177,6 +212,13 @@ function isoWeekKeyFromEtUnixSeconds(unixSeconds) {
   return `${weekYear}-W${String(weekNo).padStart(2, '0')}`;
 }
 
+/**
+ * Classify a volume-delta divergence signal based on price action.
+ * @param {number} volumeDelta
+ * @param {number} close - Current close price
+ * @param {number} prevClose - Previous close price
+ * @returns {'bullish'|'bearish'|null}
+ */
 function classifyDivergenceSignal(volumeDelta, close, prevClose) {
   if (!Number.isFinite(volumeDelta) || !Number.isFinite(close) || !Number.isFinite(prevClose)) return null;
   if (volumeDelta > 0 && close < prevClose) return 'bullish';
@@ -184,6 +226,12 @@ function classifyDivergenceSignal(volumeDelta, close, prevClose) {
   return null;
 }
 
+/**
+ * Aggregate daily bars and volume deltas into weekly divergence entries.
+ * @param {Array<{time: number, open: number, high: number, low: number, close: number}>} dailyBars
+ * @param {Array<{time: number, delta: number}>} dailyDeltas
+ * @returns {Array<{weekKey: string, time: number, open: number, high: number, low: number, close: number, delta: number}>}
+ */
 function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
   if (!Array.isArray(dailyBars) || dailyBars.length === 0) return [];
   const deltaByTime = new Map((dailyDeltas || []).map((point) => [Number(point.time), Number(point.delta) || 0]));
@@ -225,6 +273,11 @@ function aggregateDailyDivergenceToWeekly(dailyBars, dailyDeltas) {
   return weekly.sort((a, b) => Number(a.time) - Number(b.time));
 }
 
+/**
+ * Convert bar objects to [time, open, high, low, close, volume] tuples.
+ * @param {Array<{time: number, open: number, high: number, low: number, close: number, volume: number}>} bars
+ * @returns {Array<[number, number, number, number, number, number]>}
+ */
 function barsToTuples(bars) {
   if (!Array.isArray(bars)) return [];
   return bars.map((b) => [
@@ -237,6 +290,12 @@ function barsToTuples(bars) {
   ]);
 }
 
+/**
+ * Convert point objects to [time, value] tuples.
+ * @param {Array<{time: number, [key: string]: number}>} points
+ * @param {string} [valueKey='value'] - Key to extract as the second tuple element
+ * @returns {Array<[number, number]>}
+ */
 function pointsToTuples(points, valueKey = 'value') {
   if (!Array.isArray(points)) return [];
   return points.map((p) => [
@@ -245,7 +304,7 @@ function pointsToTuples(points, valueKey = 'value') {
   ]);
 }
 
-module.exports = {
+export {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,

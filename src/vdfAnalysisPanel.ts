@@ -3,21 +3,8 @@ import { getThemeColors } from './theme';
 
 // ─── VDF Types ──────────────────────────────────────────────────────────────
 
-export interface VDFZone {
-  startDate: string; endDate: string; score: number; windowDays: number;
-  absorptionPct?: number; netDeltaPct?: number; accumWeekRatio?: number;
-  overallPriceChange?: number; accumWeeks?: number; weeks?: number;
-  durationMultiplier?: number;
-  concordancePenalty?: number; concordantFrac?: number;
-  components?: { s1: number; s2: number; s3: number; s4: number; s5: number; s6: number; s7: number; s8?: number };
-}
-export interface VDFDistribution { startDate: string; endDate: string; spanDays: number; priceChangePct?: number; netDeltaPct?: number; }
-export interface VDFProximity { compositeScore: number; level: string; signals: Array<{ type: string; points: number; detail: string }>; }
-export interface VDFCacheEntry {
-  is_detected: boolean; composite_score: number; status: string; weeks: number;
-  zones: VDFZone[]; allZones: VDFZone[]; distribution: VDFDistribution[]; proximity: VDFProximity;
-  details?: { metrics?: { totalDays?: number; scanStart?: string; scanEnd?: string; preDays?: number; recentCutoff?: string }; reason?: string };
-}
+export type { VDFZone, VDFDistribution, VDFProximity, VDFCacheEntry } from '../shared/api-types';
+import type { VDFZone, VDFDistribution, VDFProximity, VDFCacheEntry } from '../shared/api-types';
 
 // ─── VDF Component Metadata ─────────────────────────────────────────────────
 

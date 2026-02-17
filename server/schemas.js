@@ -1,4 +1,4 @@
-const { z } = require('zod');
+import { z } from 'zod';
 
 // --- Primitive schemas ---
 
@@ -109,7 +109,7 @@ const manualScanBody = z.object({
   runDateEt: etDate.optional()
 }).passthrough();
 
-module.exports = {
+export {
   tickerSymbol,
   etDate,
   booleanInput,

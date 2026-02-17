@@ -1,13 +1,13 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   aggregate4HourBarsToDaily,
   aggregateDailyBarsToWeekly,
   classifyDivergenceSignal,
   aggregateDailyDivergenceToWeekly,
   isoWeekKeyFromEtUnixSeconds
-} = require('../server/chartMath');
+} from '../server/chartMath.js';
 
 function unixSeconds(iso) {
   return Math.floor(new Date(iso).getTime() / 1000);

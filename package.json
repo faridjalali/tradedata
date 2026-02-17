@@ -1,13 +1,17 @@
 {
   "name": "tradingview-alerts-server",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "lint:server": "node --check index.js && node --check server/chartMath.js && node --check server/routes/chartRoutes.js && node --check server/routes/divergenceRoutes.js && node --check server/routes/healthRoutes.js && node --check server/services/divergenceService.js && node --check server/services/healthService.js",
+    "lint:eslint": "eslint .",
     "lint": "npm run lint:server && npm run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "node --test test/*.test.js",
     "build": "vite build",
     "preview": "vite preview"
@@ -27,6 +31,12 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   }

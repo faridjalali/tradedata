@@ -1,52 +1,9 @@
 // Chart API types and client
 
-export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day' | '1week';
+export type { ChartInterval, CandleBar, RSIPoint, CandleBarTuple, RSIPointTuple, ChartData, ChartLatestData } from '../shared/api-types';
+import type { ChartInterval, CandleBar, RSIPoint, CandleBarTuple, RSIPointTuple, ChartData, ChartLatestData } from '../shared/api-types';
 export type RSIDisplayMode = 'line' | 'points';
 export type VolumeDeltaSourceInterval = '1min' | '5min' | '15min' | '30min' | '1hour' | '4hour';
-
-export interface CandleBar {
-  time: string | number; // Usually Unix timestamp (seconds) or "YYYY-MM-DD" for day/week bars
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-export interface RSIPoint {
-  time: string | number;
-  value: number;
-}
-
-export type CandleBarTuple = [number, number, number, number, number, number]; // time, open, high, low, close, volume
-export type RSIPointTuple = [number, number]; // time, value
-
-// Public interfaces (Clean objects) used by the app
-export interface ChartData {
-  interval: ChartInterval;
-  timezone: string;
-  bars: CandleBar[];
-  rsi: RSIPoint[];
-  volumeDeltaRsi: {
-    rsi: RSIPoint[];
-  };
-  volumeDelta?: Array<{
-    time: string | number;
-    delta: number;
-  }>;
-}
-
-export interface ChartLatestData {
-  interval: ChartInterval;
-  timezone: string;
-  latestBar: CandleBar | null;
-  latestRsi: RSIPoint | null;
-  latestVolumeDeltaRsi: RSIPoint | null;
-  latestVolumeDelta: {
-    time: string | number;
-    delta: number;
-  } | null;
-}
 
 // Internal interfaces (Network response)
 interface ChartDataRaw extends Omit<ChartData, 'bars' | 'rsi' | 'volumeDeltaRsi' | 'volumeDelta'> {

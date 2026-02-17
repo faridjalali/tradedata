@@ -1,3 +1,11 @@
+/**
+ * Parse and validate a manual scan request from the HTTP layer.
+ * @param {object} options
+ * @param {import('express').Request} options.req - Express request object
+ * @param {Function} options.parseBooleanInput - Boolean parser
+ * @param {Function} options.parseEtDateInput - ET date parser
+ * @returns {{ ok: true, value: { force: boolean, refreshUniverse: boolean, runDateEt?: string } } | { ok: false, error: string }}
+ */
 function buildManualScanRequest(options = {}) {
   const {
     req,
@@ -31,6 +39,16 @@ function buildManualScanRequest(options = {}) {
   };
 }
 
+/**
+ * Query the database for the most recent divergence scan job and build a status payload.
+ * @param {object} options
+ * @param {object} options.divergencePool - PostgreSQL pool
+ * @param {string} options.divergenceSourceInterval - Source interval for signal lookup
+ * @param {Function} options.getIsScanRunning - Returns current running state
+ * @param {Function} options.getLastFetchedTradeDateEt - Returns last fetched trade date
+ * @param {Function} options.getLastScanDateEt - Returns last scan date fallback
+ * @returns {Promise<{ running: boolean, lastScanDateEt: string|null, latestJob: object|null }>}
+ */
 async function fetchLatestDivergenceScanStatus(options = {}) {
   const {
     divergencePool,
@@ -74,7 +92,4 @@ async function fetchLatestDivergenceScanStatus(options = {}) {
   };
 }
 
-module.exports = {
-  buildManualScanRequest,
-  fetchLatestDivergenceScanStatus
-};
+export { buildManualScanRequest, fetchLatestDivergenceScanStatus };

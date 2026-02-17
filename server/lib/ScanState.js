@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * ScanState — shared state management for scan-type background jobs.
  *
@@ -295,4 +293,4 @@ async function runRetryPasses({
   return stillFailed;
 }
 
-module.exports = { ScanState, runRetryPasses };
+export { ScanState, runRetryPasses };

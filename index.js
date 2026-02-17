@@ -1,15 +1,15 @@
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
-const { Pool } = require("pg");
-const crypto = require("crypto");
-const zlib = require("zlib");
-const { promisify } = require("util");
-const compression = require("compression");
-const { setGlobalDispatcher, Agent } = require("undici");
-const { LRUCache } = require("lru-cache");
-const logger = require("./server/logger");
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { Pool } from 'pg';
+import crypto from 'crypto';
+import zlib from 'zlib';
+import { promisify } from 'util';
+import compression from 'compression';
+import { setGlobalDispatcher, Agent } from 'undici';
+import { LRUCache } from 'lru-cache';
+import logger from './server/logger.js';
 
 // setGlobalDispatcher(new Agent({
 //   keepAliveTimeout: 10000,
@@ -19,27 +19,28 @@ const logger = require("./server/logger");
 //   }
 // }));
 
-const { registerChartRoutes } = require("./server/routes/chartRoutes");
-const { registerDivergenceRoutes } = require("./server/routes/divergenceRoutes");
-const { registerHealthRoutes } = require("./server/routes/healthRoutes");
-const { ScanState, runRetryPasses } = require("./server/lib/ScanState");
-const sessionAuth = require("./server/services/sessionAuth");
-const tradingCalendar = require("./server/services/tradingCalendar");
-const {
+import { registerChartRoutes } from './server/routes/chartRoutes.js';
+import { registerDivergenceRoutes } from './server/routes/divergenceRoutes.js';
+import { registerHealthRoutes } from './server/routes/healthRoutes.js';
+import { ScanState, runRetryPasses } from './server/lib/ScanState.js';
+import * as sessionAuth from './server/services/sessionAuth.js';
+import * as tradingCalendar from './server/services/tradingCalendar.js';
+import {
   buildDebugMetricsPayload,
   buildHealthPayload,
   buildReadyPayload
-} = require("./server/services/healthService");
-const { detectVDF } = require("./server/services/vdfDetector");
-const {
+} from './server/services/healthService.js';
+import { detectVDF } from './server/services/vdfDetector.js';
+import {
   classifyDivergenceSignal,
   barsToTuples,
   pointsToTuples,
   formatDateUTC,
   dayKeyInLA,
-} = require("./server/chartMath");
-const schemas = require("./server/schemas");
-require("dotenv").config();
+} from './server/chartMath.js';
+import * as schemas from './server/schemas.js';
+import * as chartPrewarm from './server/services/chartPrewarm.js';
+import 'dotenv/config';
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Railway, Heroku, etc.) for accurate IP in rate limiter
@@ -3688,7 +3689,6 @@ function buildChartResultFromRows(options = {}) {
 }
 
 // --- Chart pre-warming (extracted to server/services/chartPrewarm.js) ---
-const chartPrewarm = require('./server/services/chartPrewarm');
 const prewarmDeps = {
   getOrBuildChartResult: (...args) => getOrBuildChartResult(...args),
   toVolumeDeltaSourceInterval,

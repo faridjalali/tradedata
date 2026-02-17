@@ -2,6 +2,11 @@ function invalidIntervalErrorMessage() {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
 
+/**
+ * Extract a deduplicated, uppercased ticker list from query params.
+ * @param {import('express').Request} req
+ * @returns {string[]}
+ */
 function parseTickerListFromQuery(req) {
   const singleTicker = String(req.query.ticker || '').trim();
   const multiTickersRaw = String(req.query.tickers || '').trim();
@@ -15,11 +20,33 @@ function parseTickerListFromQuery(req) {
   return Array.from(new Set(tickers));
 }
 
+/**
+ * Parse a query string value as a boolean flag.
+ * @param {string|undefined} value
+ * @returns {boolean}
+ */
 function parseBooleanQueryFlag(value) {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
+/**
+ * Register all chart-related HTTP routes on the Express app.
+ * @param {object} options
+ * @param {import('express').Express} options.app - Express application instance
+ * @param {Function} options.parseChartRequestParams - Parses chart request query params
+ * @param {string[]} options.validChartIntervals - Allowed interval values
+ * @param {Function} options.getOrBuildChartResult - Builds or retrieves cached chart data
+ * @param {Function} options.extractLatestChartPayload - Extracts latest bar/RSI from full result
+ * @param {Function} options.sendChartJsonResponse - Sends compressed JSON response
+ * @param {Function} [options.validateChartPayload] - Optional Zod validation for chart payload
+ * @param {Function} [options.validateChartLatestPayload] - Optional Zod validation for latest payload
+ * @param {Function} [options.onChartRequestMeasured] - Callback for timing metrics
+ * @param {Function} [options.isValidTickerSymbol] - Ticker format validator
+ * @param {Function} [options.getDivergenceSummaryForTickers] - Divergence summary builder
+ * @param {Function} [options.barsToTuples] - Converts bar objects to tuple arrays
+ * @param {Function} [options.pointsToTuples] - Converts point objects to tuple arrays
+ */
 function registerChartRoutes(options = {}) {
   const {
     app,
@@ -321,6 +348,4 @@ function registerChartRoutes(options = {}) {
   });
 }
 
-module.exports = {
-  registerChartRoutes
-};
+export { registerChartRoutes };

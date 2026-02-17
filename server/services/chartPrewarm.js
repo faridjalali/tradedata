@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Chart pre-warming service.
  *
@@ -111,8 +109,4 @@ function schedulePostLoadPrewarmSequence(options = {}, deps = {}) {
   })();
 }
 
-module.exports = {
-  getPostLoadPrewarmSequence,
-  prewarmChartResult,
-  schedulePostLoadPrewarmSequence,
-};
+export { getPostLoadPrewarmSequence, prewarmChartResult, schedulePostLoadPrewarmSequence };

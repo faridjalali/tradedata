@@ -51,77 +51,8 @@ export async function toggleDivergenceFavorite(id: number): Promise<Alert> {
     return normalizeAlert(await response.json());
 }
 
-export interface DivergenceScanStatus {
-    running: boolean;
-    lastScanDateEt: string | null;
-    scanControl?: {
-        running?: boolean;
-        pause_requested?: boolean;
-        stop_requested?: boolean;
-        can_resume?: boolean;
-    } | null;
-    tableBuild?: {
-        running?: boolean;
-        pause_requested?: boolean;
-        stop_requested?: boolean;
-        can_resume?: boolean;
-        status?: string;
-        total_tickers?: number;
-        processed_tickers?: number;
-        error_tickers?: number;
-        started_at?: string | null;
-        finished_at?: string | null;
-        last_published_trade_date?: string | null;
-    } | null;
-    fetchDailyData?: {
-        running?: boolean;
-        stop_requested?: boolean;
-        can_resume?: boolean;
-        status?: string;
-        total_tickers?: number;
-        processed_tickers?: number;
-        error_tickers?: number;
-        started_at?: string | null;
-        finished_at?: string | null;
-        last_published_trade_date?: string | null;
-    } | null;
-    fetchWeeklyData?: {
-        running?: boolean;
-        stop_requested?: boolean;
-        can_resume?: boolean;
-        status?: string;
-        total_tickers?: number;
-        processed_tickers?: number;
-        error_tickers?: number;
-        started_at?: string | null;
-        finished_at?: string | null;
-        last_published_trade_date?: string | null;
-    } | null;
-    vdfScan?: {
-        running?: boolean;
-        stop_requested?: boolean;
-        can_resume?: boolean;
-        status?: string;
-        total_tickers?: number;
-        processed_tickers?: number;
-        error_tickers?: number;
-        detected_tickers?: number;
-        started_at?: string | null;
-        finished_at?: string | null;
-    } | null;
-    latestJob: {
-        run_for_date?: string;
-        scanned_trade_date?: string;
-        status?: string;
-        started_at?: string;
-        finished_at?: string;
-        processed_symbols?: number;
-        total_symbols?: number;
-        bullish_count?: number;
-        bearish_count?: number;
-        error_count?: number;
-    } | null;
-}
+export type { DivergenceScanStatus } from '../shared/api-types';
+import type { DivergenceScanStatus } from '../shared/api-types';
 
 export async function startDivergenceScan(options?: { force?: boolean; refreshUniverse?: boolean; runDateEt?: string }): Promise<{ status: string }> {
     const response = await fetch('/api/divergence/scan', {

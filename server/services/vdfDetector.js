@@ -14,8 +14,6 @@
  * See ALGORITHM-VD-ACCUMULATION.md for full documentation.
  */
 
-"use strict";
-
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
@@ -870,12 +868,4 @@ async function detectVDF(ticker, options) {
   }
 }
 
-module.exports = {
-  detectVDF,
-  scoreSubwindow,
-  findAccumulationZones,
-  findDistributionClusters,
-  evaluateProximitySignals,
-  vdAggregateDaily,
-  buildWeeks,
-};
+export { detectVDF, scoreSubwindow, findAccumulationZones, findDistributionClusters, evaluateProximitySignals, vdAggregateDaily, buildWeeks };

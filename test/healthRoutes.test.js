@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const { registerHealthRoutes } = require('../server/routes/healthRoutes');
+import { registerHealthRoutes } from '../server/routes/healthRoutes.js';
 
 function createMockApp() {
   const routes = {

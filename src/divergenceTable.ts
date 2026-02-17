@@ -1,24 +1,7 @@
-export type DivergenceState = 'bullish' | 'bearish' | 'neutral';
+export type { DivergenceState, DivergenceSummaryEntry } from '../shared/api-types';
+import type { DivergenceState, DivergenceSummaryEntry, DivergenceSummaryApiPayload } from '../shared/api-types';
 
 export const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28] as const;
-
-export interface DivergenceSummaryEntry {
-  ticker: string;
-  tradeDate: string | null;
-  states: Record<string, DivergenceState>;
-  expiresAtMs: number;
-}
-
-interface DivergenceSummaryApiPayload {
-  sourceInterval?: string;
-  refreshedAt?: string;
-  summaries?: Array<{
-    ticker?: string;
-    tradeDate?: string | null;
-    states?: Record<string, string>;
-    expiresAtMs?: number;
-  }>;
-}
 
 type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summaries']>[number];
 

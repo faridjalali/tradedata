@@ -1,10 +1,10 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const {
+import {
   buildManualScanRequest,
   fetchLatestDivergenceScanStatus
-} = require('../server/services/divergenceService');
+} from '../server/services/divergenceService.js';
 
 function defaultBooleanParser(value, fallback = false) {
   if (value === true || value === 'true') return true;
