@@ -1,10 +1,12 @@
-// @ts-nocheck
 /**
  * Trading Calendar — hybrid approach using SPY daily bars (historical proof)
  * and the /v1/marketstatus/upcoming endpoint (future holidays / early closes).
  *
  * Falls back to weekday-only logic if API is unreachable or not configured.
  */
+
+/** @type {Function} */
+const defaultLog = /** @type {any} */ (console).log.bind(console);
 
 const HISTORICAL_LOOKBACK_DAYS = 900; // ~2.5 years
 const FUTURE_PROJECTION_DAYS = 365; // 1 year ahead
@@ -20,19 +22,39 @@ let calendarRangeStart = '';
 let calendarRangeEnd = '';
 let initialized = false;
 let lastRefreshedAt = '';
+/** @type {ReturnType<typeof setTimeout> | null} */
 let refreshTimer = null;
 
-/** @type {{ fetchDataApiJson?: Function, buildDataApiUrl?: Function, formatDateUTC?: Function, log?: Function }} */
+/**
+ * @typedef {object} CalendarDeps
+ * @property {Function} fetchDataApiJson - Fetches JSON from the data API
+ * @property {Function} buildDataApiUrl - Builds a data API URL with query params
+ * @property {Function} formatDateUTC - Formats Date as YYYY-MM-DD
+ * @property {Function} [log] - Logger function (defaults to console.log)
+ */
+
+/** @type {Partial<CalendarDeps>} */
 let savedDeps = {};
 
 // ---------------------------------------------------------------------------
 // Date helpers (self-contained, no external deps)
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {number} y
+ * @param {number} m
+ * @param {number} d
+ * @returns {string}
+ */
 function toDateStr(y, m, d) {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/**
+ * @param {string} dateStr
+ * @param {number} n
+ * @returns {string}
+ */
 function addDays(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -40,18 +62,31 @@ function addDays(dateStr, n) {
   return toDateStr(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
 }
 
+/**
+ * @param {string} dateStr
+ * @returns {boolean}
+ */
 function isWeekday(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   return dow >= 1 && dow <= 5;
 }
 
-/** Convert Unix ms timestamp to ET date string YYYY-MM-DD */
+/**
+ * Convert Unix ms timestamp to ET date string YYYY-MM-DD
+ * @param {number} ms
+ * @returns {string}
+ */
 function unixMsToEtDateStr(ms) {
   return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
-/** All weekday date strings between start and end (inclusive) */
+/**
+ * All weekday date strings between start and end (inclusive)
+ * @param {string} start
+ * @param {string} end
+ * @returns {string[]}
+ */
 function weekdaysBetween(start, end) {
   const result = [];
   let cursor = start;
@@ -66,6 +101,10 @@ function weekdaysBetween(start, end) {
 // Fallback (replicates current weekday-only behavior)
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {string} dateStr
+ * @returns {string}
+ */
 function fallbackPreviousTradingDay(dateStr) {
   let cursor = addDays(dateStr, -1);
   for (let i = 0; i < 15; i++) {
@@ -75,6 +114,10 @@ function fallbackPreviousTradingDay(dateStr) {
   return cursor;
 }
 
+/**
+ * @param {string} dateStr
+ * @returns {string}
+ */
 function fallbackNextTradingDay(dateStr) {
   let cursor = addDays(dateStr, 1);
   for (let i = 0; i < 15; i++) {
@@ -121,7 +164,7 @@ function isEarlyClose(dateStr) {
  */
 function getCloseTimeEt(dateStr) {
   if (!isTradingDay(dateStr)) return null;
-  if (earlyCloses.has(dateStr)) return earlyCloses.get(dateStr);
+  if (earlyCloses.has(dateStr)) return /** @type {string} */ (earlyCloses.get(dateStr));
   return '16:00';
 }
 
@@ -191,8 +234,11 @@ function getStatus() {
 // Data fetching
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {CalendarDeps} deps
+ */
 async function fetchHistoricalTradingDays(deps) {
-  const { fetchDataApiJson, buildDataApiUrl, formatDateUTC, log } = deps;
+  const { fetchDataApiJson, buildDataApiUrl, formatDateUTC, log = defaultLog } = deps;
   const end = new Date();
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - HISTORICAL_LOOKBACK_DAYS);
@@ -221,8 +267,11 @@ async function fetchHistoricalTradingDays(deps) {
   return { dates, fromStr, toStr };
 }
 
+/**
+ * @param {CalendarDeps} deps
+ */
 async function fetchUpcomingHolidays(deps) {
-  const { fetchDataApiJson, buildDataApiUrl, log } = deps;
+  const { fetchDataApiJson, buildDataApiUrl, log = defaultLog } = deps;
   log('Fetching upcoming market status');
 
   const url = buildDataApiUrl('/v1/marketstatus/upcoming', {});
@@ -252,6 +301,10 @@ async function fetchUpcomingHolidays(deps) {
 // Calendar construction
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {{ dates: Set<string>, fromStr: string, toStr: string }} historical
+ * @param {{ holidays: Set<string>, eCloses: Map<string, string> }} upcoming
+ */
 function buildCalendar(historical, upcoming) {
   const todayStr = unixMsToEtDateStr(Date.now());
 
@@ -295,6 +348,9 @@ function buildCalendar(historical, upcoming) {
 // Refresh scheduling
 // ---------------------------------------------------------------------------
 
+/**
+ * @param {CalendarDeps} deps
+ */
 function scheduleRefresh(deps) {
   if (refreshTimer) clearTimeout(refreshTimer);
 
@@ -308,12 +364,12 @@ function scheduleRefresh(deps) {
   const delayMs = Math.max(60000, nextRefresh.getTime() - nowEt.getTime());
 
   refreshTimer = setTimeout(async () => {
-    const log = deps.log || console.log;
+    const log = deps.log || defaultLog;
     try {
       log('Daily refresh starting');
       await refreshCalendar(deps);
       log('Daily refresh complete');
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       log(`Daily refresh failed (keeping stale data): ${err && err.message ? err.message : err}`);
     }
     scheduleRefresh(deps);
@@ -322,18 +378,21 @@ function scheduleRefresh(deps) {
   if (typeof refreshTimer.unref === 'function') refreshTimer.unref();
 }
 
+/**
+ * @param {CalendarDeps} deps
+ */
 async function refreshCalendar(deps) {
   const [historical, upcoming] = await Promise.all([
     fetchHistoricalTradingDays(deps),
-    fetchUpcomingHolidays(deps).catch((err) => {
-      const log = deps.log || console.log;
+    fetchUpcomingHolidays(deps).catch((/** @type {any} */ err) => {
+      const log = deps.log || defaultLog;
       log(`Upcoming holidays fetch failed (non-fatal): ${err && err.message ? err.message : err}`);
       return { holidays: new Set(), eCloses: new Map() };
     }),
   ]);
 
   if (historical.dates.size === 0) {
-    const log = deps.log || console.log;
+    const log = deps.log || defaultLog;
     log('SPY history returned 0 trading days; keeping existing calendar');
     return;
   }
@@ -353,14 +412,10 @@ async function refreshCalendar(deps) {
 
 /**
  * Initialize the trading calendar by fetching historical SPY data and upcoming market status.
- * @param {object} deps
- * @param {Function} deps.fetchDataApiJson - Fetches JSON from the data API
- * @param {Function} deps.buildDataApiUrl - Builds a data API URL with query params
- * @param {Function} deps.formatDateUTC - Formats Date as YYYY-MM-DD
- * @param {Function} [deps.log] - Logger function (defaults to console.log)
+ * @param {CalendarDeps} deps
  */
-async function init(deps = {}) {
-  const log = deps.log || console.log;
+async function init(deps) {
+  const log = deps.log || defaultLog;
   savedDeps = deps;
 
   if (!deps.fetchDataApiJson || !deps.buildDataApiUrl || !deps.formatDateUTC) {
@@ -374,7 +429,7 @@ async function init(deps = {}) {
       `Initialized: ${tradingDays.size} trading days, ${earlyCloses.size} early closes, range ${calendarRangeStart} to ${calendarRangeEnd}`,
     );
     scheduleRefresh(deps);
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     log(`Init failed: ${err && err.message ? err.message : err}; staying in weekday-only mode`);
   }
 }

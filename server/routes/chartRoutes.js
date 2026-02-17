@@ -1,4 +1,3 @@
-// @ts-nocheck
 function invalidIntervalErrorMessage() {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
@@ -47,8 +46,13 @@ function parseBooleanQueryFlag(value) {
  * @param {Function} [options.getDivergenceSummaryForTickers] - Divergence summary builder
  * @param {Function} [options.barsToTuples] - Converts bar objects to tuple arrays
  * @param {Function} [options.pointsToTuples] - Converts point objects to tuple arrays
+ * @param {Function} [options.getMiniBarsCacheByTicker] - Returns mini bars cache Map
+ * @param {Function} [options.loadMiniChartBarsFromDb] - Loads mini chart bars from database
+ * @param {Function} [options.loadMiniChartBarsFromDbBatch] - Batch loads mini chart bars from database
+ * @param {Function} [options.fetchMiniChartBarsFromApi] - Fetches mini chart bars from API
+ * @param {Function} [options.getVDFStatus] - Returns VDF status for a ticker
  */
-function registerChartRoutes(options = {}) {
+function registerChartRoutes(options) {
   const {
     app,
     parseChartRequestParams,
@@ -94,15 +98,15 @@ function registerChartRoutes(options = {}) {
         payload = {
           ...result,
           bars: barsToTuples(result.bars),
-          rsi: pointsToTuples(result.rsi),
-          volumeDelta: pointsToTuples(result.volumeDelta, 'delta'),
+          rsi: /** @type {Function} */ (pointsToTuples)(result.rsi),
+          volumeDelta: /** @type {Function} */ (pointsToTuples)(result.volumeDelta, 'delta'),
           volumeDeltaRsi: {
             ...result.volumeDeltaRsi,
-            rsi: pointsToTuples(result.volumeDeltaRsi?.rsi),
+            rsi: /** @type {Function} */ (pointsToTuples)(result.volumeDeltaRsi?.rsi),
           },
         };
       } else if (useTupleFormat) {
-        console.warn('[ChartAPI] Tuple format requested but helpers missing!');
+        /** @type {any} */ (console).warn('[ChartAPI] Tuple format requested but helpers missing!');
       } else if (typeof validateChartPayload === 'function') {
         const validation = validateChartPayload(result);
         if (!validation || validation.ok !== true) {
@@ -121,8 +125,8 @@ function registerChartRoutes(options = {}) {
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
-    } catch (err) {
-      console.error('Chart API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('Chart API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
@@ -149,12 +153,12 @@ function registerChartRoutes(options = {}) {
         // For latest, we convert single objects to single tuples (1-element arrays or just the tuple)
         // Since barsToTuples expects array, we wrap and unwrap
         const barTuple = latestPayload.latestBar ? barsToTuples([latestPayload.latestBar])[0] : null;
-        const rsiTuple = latestPayload.latestRsi ? pointsToTuples([latestPayload.latestRsi])[0] : null;
+        const rsiTuple = latestPayload.latestRsi ? /** @type {Function} */ (pointsToTuples)([latestPayload.latestRsi])[0] : null;
         const vdTuple = latestPayload.latestVolumeDelta
-          ? pointsToTuples([latestPayload.latestVolumeDelta], 'delta')[0]
+          ? /** @type {Function} */ (pointsToTuples)([latestPayload.latestVolumeDelta], 'delta')[0]
           : null;
         const vdRsiTuple = latestPayload.latestVolumeDeltaRsi
-          ? pointsToTuples([latestPayload.latestVolumeDeltaRsi])[0]
+          ? /** @type {Function} */ (pointsToTuples)([latestPayload.latestVolumeDeltaRsi])[0]
           : null;
 
         payload = {
@@ -182,8 +186,8 @@ function registerChartRoutes(options = {}) {
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
-    } catch (err) {
-      console.error('Chart Latest API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('Chart Latest API Error:', err && err.message ? err.message : err);
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
@@ -218,8 +222,8 @@ function registerChartRoutes(options = {}) {
       }
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.status(200).json({ ticker, bars });
-    } catch (err) {
-      console.error('Mini Bars API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('Mini Bars API Error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Failed to fetch mini bars' });
     }
   });
@@ -243,6 +247,7 @@ function registerChartRoutes(options = {}) {
         }
       }
 
+      /** @type {Record<string, any>} */
       const results = {};
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
       const dbNeeded = [];
@@ -281,7 +286,7 @@ function registerChartRoutes(options = {}) {
         for (let i = 0; i < apiNeeded.length; i += API_CONCURRENCY) {
           const chunk = apiNeeded.slice(i, i + API_CONCURRENCY);
           const fetched = await Promise.all(
-            chunk.map((t) => fetchMiniChartBarsFromApi(t).then((bars) => ({ t, bars }))),
+            chunk.map((t) => fetchMiniChartBarsFromApi(t).then((/** @type {any} */ bars) => ({ t, bars }))),
           );
           for (const { t, bars } of fetched) {
             if (Array.isArray(bars) && bars.length > 0) {
@@ -293,8 +298,8 @@ function registerChartRoutes(options = {}) {
 
       res.setHeader('Cache-Control', 'public, max-age=300');
       return res.status(200).json({ results });
-    } catch (err) {
-      console.error('Mini Bars Batch API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('Mini Bars Batch API Error:', err && err.message ? err.message : err);
       return res.status(500).json({ error: 'Failed to fetch mini bars batch' });
     }
   });
@@ -313,13 +318,13 @@ function registerChartRoutes(options = {}) {
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
         return res.status(400).json({ error: `Invalid ticker format: ${ticker}` });
       }
-      const force = parseBooleanQueryFlag(req.query.force);
+      const force = parseBooleanQueryFlag(/** @type {string|undefined} */ (req.query.force));
       const mode = req.query.mode === 'chart' ? 'chart' : 'scan';
       const result = await options.getVDFStatus(ticker, { force, mode });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(result);
-    } catch (err) {
-      console.error('VDF Status API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('VDF Status API Error:', err && err.message ? err.message : err);
       return res.status(502).json({ error: 'Failed to fetch VDF status' });
     }
   });
@@ -346,8 +351,8 @@ function registerChartRoutes(options = {}) {
       }
 
       const vdSourceInterval = String(req.query.vdSourceInterval || '1min').trim();
-      const refresh = parseBooleanQueryFlag(req.query.refresh);
-      const noCache = parseBooleanQueryFlag(req.query.nocache) || parseBooleanQueryFlag(req.query.noCache);
+      const refresh = parseBooleanQueryFlag(/** @type {string|undefined} */ (req.query.refresh));
+      const noCache = parseBooleanQueryFlag(/** @type {string|undefined} */ (req.query.nocache)) || parseBooleanQueryFlag(/** @type {string|undefined} */ (req.query.noCache));
       const payload = await getDivergenceSummaryForTickers({
         tickers,
         vdSourceInterval,
@@ -356,8 +361,8 @@ function registerChartRoutes(options = {}) {
       });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(payload);
-    } catch (err) {
-      console.error('Chart Divergence Summary API Error:', err && err.message ? err.message : err);
+    } catch (/** @type {any} */ err) {
+      /** @type {any} */ (console).error('Chart Divergence Summary API Error:', err && err.message ? err.message : err);
       return res.status(502).json({ error: 'Failed to fetch divergence summary' });
     }
   });

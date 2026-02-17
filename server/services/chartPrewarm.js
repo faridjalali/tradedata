@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Chart pre-warming service.
  *
@@ -22,16 +21,20 @@ const PREWARM_SEQUENCES = {
 /**
  * Return the ordered list of intervals to pre-warm after `interval` loads.
  * Returns [] for intervals without a prewarm strategy (e.g. intraday < 4h).
+ * @param {string} interval
+ * @returns {string[]}
  */
 function getPostLoadPrewarmSequence(interval) {
-  return PREWARM_SEQUENCES[interval] || [];
+  return /** @type {Record<string, string[]>} */ (PREWARM_SEQUENCES)[interval] || [];
 }
 
 /**
  * Pre-warm a single interval by delegating to `getOrBuildChartResult`.
  * Best-effort: errors are logged (if enabled) but never propagated.
+ * @param {any} options
+ * @param {any} deps
  */
-async function prewarmChartResult(options = {}, deps = {}) {
+async function prewarmChartResult(options, deps) {
   const {
     getOrBuildChartResult,
     toVolumeDeltaSourceInterval,
@@ -85,10 +88,10 @@ async function prewarmChartResult(options = {}, deps = {}) {
       requestKey,
       skipFollowUpPrewarm: true,
     });
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (CHART_TIMING_LOG_ENABLED) {
       const message = err && err.message ? err.message : String(err);
-      console.warn(`[chart-prewarm] ${ticker} ${interval} failed: ${message}`);
+      /** @type {any} */ (console).warn(`[chart-prewarm] ${ticker} ${interval} failed: ${message}`);
     }
   }
 }
@@ -96,8 +99,10 @@ async function prewarmChartResult(options = {}, deps = {}) {
 /**
  * Schedule the full prewarm sequence for `interval`.
  * Each target is built sequentially to avoid resource spikes.
+ * @param {any} options
+ * @param {any} deps
  */
-function schedulePostLoadPrewarmSequence(options = {}, deps = {}) {
+function schedulePostLoadPrewarmSequence(options, deps) {
   const { toVolumeDeltaSourceInterval, getIntradayLookbackDays } = deps;
 
   const ticker = String(options.ticker || '').toUpperCase();

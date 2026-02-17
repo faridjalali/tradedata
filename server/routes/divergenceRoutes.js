@@ -1,23 +1,10 @@
-// @ts-nocheck
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
 
 /**
  * Register all divergence scan and control HTTP routes on the Express app.
- * @param {object} options
- * @param {import('express').Express} options.app - Express application instance
- * @param {Function} options.isDivergenceConfigured - Returns true if divergence DB is available
- * @param {string} [options.divergenceScanSecret] - Shared secret for scan endpoints
- * @param {Function} options.getIsScanRunning - Returns true if a scan is in progress
- * @param {Function} [options.parseBooleanInput] - Boolean parser for request params
- * @param {Function} [options.parseEtDateInput] - ET date parser for request params
- * @param {Function} [options.runDailyDivergenceScan] - Launches a daily divergence scan
- * @param {Function} [options.runDivergenceTableBuild] - Launches a table rebuild
- * @param {Function} [options.runDivergenceFetchDailyData] - Launches daily data fetch
- * @param {Function} [options.runDivergenceFetchWeeklyData] - Launches weekly data fetch
- * @param {object} [options.divergencePool] - PostgreSQL pool for divergence DB
- * @param {string} [options.divergenceSourceInterval] - Default volume-delta source interval
+ * @param {any} options
  */
-function registerDivergenceRoutes(options = {}) {
+function registerDivergenceRoutes(options) {
   const {
     app,
     isDivergenceConfigured,
@@ -61,7 +48,7 @@ function registerDivergenceRoutes(options = {}) {
     throw new Error('registerDivergenceRoutes requires app');
   }
 
-  app.post('/api/divergence/scan', async (req, res) => {
+  app.post('/api/divergence/scan', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -101,18 +88,18 @@ function registerDivergenceRoutes(options = {}) {
       runDateEt,
       trigger: 'manual-api',
     })
-      .then((summary) => {
-        console.log('Manual divergence scan completed:', summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log('Manual divergence scan completed:', summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence scan failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence scan failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });
   });
 
-  app.post('/api/divergence/scan/pause', async (req, res) => {
+  app.post('/api/divergence/scan/pause', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -130,7 +117,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/scan/resume', async (req, res) => {
+  app.post('/api/divergence/scan/resume', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -162,18 +149,18 @@ function registerDivergenceRoutes(options = {}) {
       trigger: 'manual-api-resume',
       resume: true,
     })
-      .then((summary) => {
-        console.log('Manual divergence scan resume completed:', summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log('Manual divergence scan resume completed:', summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence scan resume failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence scan resume failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });
   });
 
-  app.post('/api/divergence/scan/stop', async (req, res) => {
+  app.post('/api/divergence/scan/stop', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -190,7 +177,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/table/run', async (req, res) => {
+  app.post('/api/divergence/table/run', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -220,18 +207,18 @@ function registerDivergenceRoutes(options = {}) {
       trigger: 'manual-api',
       force,
     })
-      .then((summary) => {
-        console.log('Manual divergence table run completed:', summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log('Manual divergence table run completed:', summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence table run failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence table run failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });
   });
 
-  app.post('/api/divergence/table/pause', async (req, res) => {
+  app.post('/api/divergence/table/pause', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -256,7 +243,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/table/resume', async (req, res) => {
+  app.post('/api/divergence/table/resume', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -291,18 +278,18 @@ function registerDivergenceRoutes(options = {}) {
       trigger: 'manual-api-resume',
       resume: true,
     })
-      .then((summary) => {
-        console.log('Manual divergence table resume completed:', summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log('Manual divergence table resume completed:', summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence table resume failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence table resume failed: ${message}`);
       });
 
     return res.status(202).json({ status: 'started' });
   });
 
-  app.post('/api/divergence/table/stop', async (req, res) => {
+  app.post('/api/divergence/table/stop', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -323,7 +310,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/fetch-daily/run', async (req, res) => {
+  app.post('/api/divergence/fetch-daily/run', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -354,18 +341,18 @@ function registerDivergenceRoutes(options = {}) {
       resume: shouldResume,
       force: true,
     })
-      .then((summary) => {
-        console.log(`Manual divergence fetch-daily ${shouldResume ? 'resumed' : 'started'}:`, summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log(`Manual divergence fetch-daily ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-daily failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence fetch-daily failed: ${message}`);
       });
 
     return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
-  app.post('/api/divergence/fetch-daily/stop', async (req, res) => {
+  app.post('/api/divergence/fetch-daily/stop', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -382,7 +369,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.post('/api/divergence/fetch-weekly/run', async (req, res) => {
+  app.post('/api/divergence/fetch-weekly/run', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -413,18 +400,18 @@ function registerDivergenceRoutes(options = {}) {
       resume: shouldResume,
       force: true,
     })
-      .then((summary) => {
-        console.log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-weekly failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual divergence fetch-weekly failed: ${message}`);
       });
 
     return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
-  app.post('/api/divergence/fetch-weekly/stop', async (req, res) => {
+  app.post('/api/divergence/fetch-weekly/stop', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -441,7 +428,7 @@ function registerDivergenceRoutes(options = {}) {
     return res.status(409).json({ status: 'idle' });
   });
 
-  app.get('/api/divergence/scan/status', async (req, res) => {
+  app.get('/api/divergence/scan/status', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -463,8 +450,8 @@ function registerDivergenceRoutes(options = {}) {
         getLastFetchedTradeDateEt,
         getLastScanDateEt,
       });
-    } catch (err) {
-      console.error('Scan status DB query failed (returning in-memory status):', err.message);
+    } catch (/** @type {any} */ err) {
+      (/** @type {any} */ (console)).error('Scan status DB query failed (returning in-memory status):', err.message);
       statusPayload = {
         running: getIsScanRunning(),
         lastScanDateEt: getLastFetchedTradeDateEt() || getLastScanDateEt() || null,
@@ -484,7 +471,7 @@ function registerDivergenceRoutes(options = {}) {
     });
   });
 
-  app.post('/api/divergence/vdf-scan/run', async (req, res) => {
+  app.post('/api/divergence/vdf-scan/run', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
@@ -506,18 +493,18 @@ function registerDivergenceRoutes(options = {}) {
     const shouldResume = typeof canResumeVDFScan === 'function' && canResumeVDFScan();
 
     runVDFScan({ trigger: 'manual-api', resume: shouldResume })
-      .then((summary) => {
-        console.log(`Manual VDF scan ${shouldResume ? 'resumed' : 'started'}:`, summary);
+      .then((/** @type {any} */ summary) => {
+        (/** @type {any} */ (console)).log(`Manual VDF scan ${shouldResume ? 'resumed' : 'started'}:`, summary);
       })
-      .catch((err) => {
+      .catch((/** @type {any} */ err) => {
         const message = err && err.message ? err.message : String(err);
-        console.error(`Manual VDF scan failed: ${message}`);
+        (/** @type {any} */ (console)).error(`Manual VDF scan failed: ${message}`);
       });
 
     return res.status(202).json({ status: shouldResume ? 'resumed' : 'started' });
   });
 
-  app.post('/api/divergence/vdf-scan/stop', async (req, res) => {
+  app.post('/api/divergence/vdf-scan/stop', async (/** @type {any} */ req, /** @type {any} */ res) => {
     if (!isDivergenceConfigured()) {
       return res.status(503).json({ error: 'Divergence database is not configured' });
     }
