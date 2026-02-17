@@ -5968,8 +5968,22 @@ function initChartFullscreen(): void {
   const container = document.getElementById('custom-chart-container');
   const navPrevBtn = document.getElementById('chart-nav-prev');
   const navNextBtn = document.getElementById('chart-nav-next');
+  const refreshBtn = document.getElementById('chart-refresh-btn');
 
   if (!btn || !container) return;
+
+  // Initialize Refresh Button
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      if (!currentChartTicker || chartActivelyLoading) return;
+      // Evict cached data for current ticker+interval so fetch is forced
+      const cacheKey = buildChartDataCacheKey(currentChartTicker, currentChartInterval);
+      chartDataCache.delete(cacheKey);
+      schedulePersistChartDataCacheToSession();
+      // Re-render with fresh data (cache miss → full fetch → new cache entry)
+      renderCustomChart(currentChartTicker, currentChartInterval);
+    });
+  }
 
   // Initialize Navigation Buttons
   if (navPrevBtn) {
