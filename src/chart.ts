@@ -1844,18 +1844,12 @@ function createSettingsButton(container: HTMLElement, pane: PaneControlType): HT
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
   if (existing) return existing;
   const btn = document.createElement('button');
-  btn.className = 'pane-settings-btn settings-icon-btn';
+  btn.className = 'pane-btn pane-overlay pane-settings-btn';
   btn.dataset.pane = pane;
   btn.type = 'button';
-  btn.removeAttribute('title');
   btn.textContent = SETTINGS_ICON;
-  btn.style.position = 'absolute';
   btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
-  btn.style.zIndex = '30';
-  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.borderRadius = '4px';
   container.appendChild(btn);
   return btn;
 }
@@ -1872,28 +1866,14 @@ function createPaneNameBadge(container: HTMLElement, pane: PaneControlType): HTM
   if (existing) return existing;
 
   const badge = document.createElement('div');
-  badge.className = 'pane-name-badge';
+  badge.className = 'pane-btn pane-overlay label pane-name-badge';
   badge.dataset.pane = pane;
   badge.textContent = getPaneShortLabel(pane);
-  badge.style.position = 'absolute';
   badge.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX}px`;
   badge.style.top = `${PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX}px`;
-  badge.style.zIndex = '30';
   badge.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   badge.style.padding = '0 8px';
-  badge.style.borderRadius = '4px';
-  badge.style.border = `1px solid ${tc().borderColor}`;
-  badge.style.background = tc().cardBg;
-  badge.style.color = tc().textPrimary;
-  badge.style.display = 'inline-flex';
-  badge.style.alignItems = 'center';
-  badge.style.justifyContent = 'center';
-  badge.style.fontSize = '12px';
-  badge.style.fontWeight = '600';
-  badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-  badge.style.pointerEvents = 'none';
-  badge.style.userSelect = 'none';
   container.appendChild(badge);
   return badge;
 }
@@ -1908,7 +1888,7 @@ function createPaneTrendlineButton(
   if (existing) return existing;
 
   const btn = document.createElement('button');
-  btn.className = 'pane-trendline-btn';
+  btn.className = 'pane-btn pane-overlay pane-trendline-btn';
   btn.dataset.pane = pane;
   btn.dataset.action = action;
   btn.type = 'button';
@@ -1922,18 +1902,8 @@ function createPaneTrendlineButton(
     : action === 'erase'
       ? ERASE_ICON
       : DIVERGENCE_ICON;
-  btn.style.position = 'absolute';
   btn.style.left = `${PANE_SETTINGS_BUTTON_LEFT_PX + ((orderFromSettings + 1) * (PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX))}px`;
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX}px`;
-  btn.style.zIndex = '30';
-  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.borderRadius = '4px';
-  btn.style.border = `1px solid ${tc().borderColor}`;
-  btn.style.background = tc().cardBg;
-  btn.style.color = tc().textPrimary;
-  btn.style.cursor = 'pointer';
-  btn.style.padding = '0';
   container.appendChild(btn);
   return btn;
 }
@@ -1946,8 +1916,6 @@ function setPaneToolButtonActive(pane: TrendToolPane, action: 'trend' | 'diverge
   const btn = getPaneToolButton(pane, action);
   if (!btn) return;
   btn.classList.toggle('active', active);
-  btn.style.background = active ? tc().highlight : tc().cardBg;
-  btn.style.color = active ? tc().highlightText : tc().textPrimary;
   btn.textContent = action === 'trend' ? TREND_ICON : DIVERGENCE_ICON;
 }
 
@@ -4060,10 +4028,8 @@ function renderVolumeDeltaDivergenceSummary(
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
-    refreshButton.className = 'settings-icon-btn';
-    refreshButton.removeAttribute('title');
-    refreshButton.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    refreshButton.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+    refreshButton.className = 'pane-btn';
+    refreshButton.style.position = 'relative';
     refreshButton.style.cursor = loading ? 'wait' : 'pointer';
     refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
     refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
@@ -4211,27 +4177,18 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   }
 
   const btn = document.createElement('button');
-  btn.className = 'vdf-indicator-btn';
+  btn.className = 'pane-btn label vdf-indicator-btn';
   btn.type = 'button';
-  btn.removeAttribute('title');
   btn.textContent = 'VDF';
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.padding = '0 5px';
-  btn.style.borderRadius = '4px';
-  btn.style.border = `1px solid ${tc().borderColor}`;
-  btn.style.background = tc().cardBg;
   btn.style.color = VDF_COLOR_LOADING();
-  btn.style.cursor = 'default';
-  btn.style.pointerEvents = 'none';
   btn.style.fontSize = '9px';
   btn.style.fontWeight = '700';
-  btn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   btn.style.letterSpacing = '0.5px';
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.textAlign = 'center';
-  btn.style.userSelect = 'none';
   toolbar.appendChild(btn);
   vdfButtonEl = btn;
   return btn;
@@ -4245,11 +4202,9 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   }
 
   const btn = document.createElement('button');
-  btn.className = 'settings-icon-btn vdf-refresh-btn';
+  btn.className = 'pane-btn vdf-refresh-btn';
   btn.type = 'button';
-  btn.removeAttribute('title');
-  btn.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.position = 'relative';
   // Insert before VDF button so refresh appears on the left
   if (vdfButtonEl && vdfButtonEl.parentElement === toolbar) {
     toolbar.insertBefore(btn, vdfButtonEl);
@@ -4318,12 +4273,12 @@ function updateVDFButton(entry: VDFCacheEntry): void {
     } else if (proxLevel === 'elevated') {
       vdfButtonEl.style.borderColor = '#ffc107';
     } else {
-      vdfButtonEl.style.borderColor = tc().borderColor;
+      vdfButtonEl.style.borderColor = '';
     }
   } else {
     vdfButtonEl.textContent = 'VDF';
     vdfButtonEl.style.color = VDF_COLOR_NOT_DETECTED();
-    vdfButtonEl.style.borderColor = tc().borderColor;
+    vdfButtonEl.style.borderColor = '';
   }
   vdfButtonEl.removeAttribute('title');
 }
@@ -6008,14 +5963,6 @@ function reapplyInlineThemeStyles(): void {
   // Trendline cross labels
   document.querySelectorAll<HTMLElement>('.trendline-cross-label').forEach(setBorderBgColor);
 
-  // Pane trendline / divergence tool buttons
-  document.querySelectorAll<HTMLElement>('.pane-trendline-btn').forEach((btn) => {
-    const isActive = btn.classList.contains('active');
-    btn.style.border = `1px solid ${isActive ? c.highlight : c.borderColor}`;
-    btn.style.background = isActive ? c.highlight : c.cardBg;
-    btn.style.color = isActive ? c.highlightText : c.textPrimary;
-  });
-
   // Top-pane badges (ticker label, price change)
   document.querySelectorAll<HTMLElement>('.top-pane-badge').forEach((el) => {
     el.style.border = `1px solid ${c.borderColor}`;
@@ -6025,12 +5972,6 @@ function reapplyInlineThemeStyles(): void {
       el.style.color = c.textPrimary;
     }
   });
-
-  // VDF indicator button
-  if (vdfButtonEl) {
-    vdfButtonEl.style.border = `1px solid ${c.borderColor}`;
-    vdfButtonEl.style.background = c.cardBg;
-  }
 
   // Divergence plot overlays
   document.querySelectorAll<HTMLElement>('.divergence-plot-overlay').forEach((el) => {

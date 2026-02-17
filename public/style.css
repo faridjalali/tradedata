@@ -241,6 +241,48 @@ h2 {
   }
 }
 
+/* Unified button for custom chart */
+.pane-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+@media (hover: hover) {
+  .pane-btn:hover {
+    border-color: var(--highlight);
+    color: var(--text-primary);
+  }
+}
+.pane-btn.active {
+  background: var(--highlight);
+  color: var(--highlight-text);
+  border-color: var(--highlight);
+}
+.pane-btn.label {
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+  color: var(--text-primary);
+}
+.pane-btn.pane-overlay {
+  position: absolute;
+  z-index: 30;
+}
+
 /* Dropdown panel (nav, custom range, etc.) */
 .header-dropdown-panel {
   position: absolute;
@@ -320,7 +362,7 @@ h2 {
 }
 .feed-controls-group {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -1369,7 +1411,7 @@ button:hover {
 
 .chart-controls-bar {
   display: flex;
-  gap: 20px;
+  gap: 6px;
   margin-bottom: 20px;
   flex-wrap: wrap;
   align-items: center;
@@ -1378,20 +1420,8 @@ button:hover {
 .chart-navigation-group {
   margin-left: auto;
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
-}
-
-.tf-btn.icon-only {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  padding: 0;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
 }
 
 /* Fullscreen state */
@@ -1562,7 +1592,7 @@ button:hover {
   }
 
   .chart-controls-bar {
-    gap: 10px;
+    gap: 6px;
   }
 }
 
