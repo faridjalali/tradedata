@@ -215,7 +215,7 @@ const chartDebugMetrics = {
   },
   prewarmCompleted: 0,
   prewarmFailed: 0,
-  requestTimingByInterval: {},
+  requestTimingByInterval: {} as Record<string, any>,
 };
 const httpDebugMetrics = {
   totalRequests: 0,
@@ -224,13 +224,13 @@ const httpDebugMetrics = {
 const CHART_TIMING_SAMPLE_MAX = Math.max(50, Number(process.env.CHART_TIMING_SAMPLE_MAX) || 240);
 const chartTimingSamplesByKey = new Map();
 
-function clampTimingSample(valueMs) {
+function clampTimingSample(valueMs: any) {
   const numeric = Number(valueMs);
   if (!Number.isFinite(numeric) || numeric < 0) return null;
   return Math.round(numeric * 100) / 100;
 }
 
-function pushTimingSample(cacheKey, valueMs) {
+function pushTimingSample(cacheKey: any, valueMs: any) {
   const value = clampTimingSample(valueMs);
   if (value === null) return;
   let samples = chartTimingSamplesByKey.get(cacheKey);
@@ -244,14 +244,14 @@ function pushTimingSample(cacheKey, valueMs) {
   }
 }
 
-function calculateP95Ms(samples) {
+function calculateP95Ms(samples: any) {
   if (!Array.isArray(samples) || samples.length === 0) return 0;
   const sorted = [...samples].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
   return Math.round(sorted[index] * 100) / 100;
 }
 
-function getOrCreateChartTimingSummary(interval) {
+function getOrCreateChartTimingSummary(interval: any) {
   const key = String(interval || '').trim() || 'unknown';
   if (!chartDebugMetrics.requestTimingByInterval[key]) {
     chartDebugMetrics.requestTimingByInterval[key] = {
@@ -268,7 +268,7 @@ function getOrCreateChartTimingSummary(interval) {
   return chartDebugMetrics.requestTimingByInterval[key];
 }
 
-function recordChartRequestTiming(options = {}) {
+function recordChartRequestTiming(options: any = {}) {
   const interval = String(options.interval || '').trim() || 'unknown';
   const route = options.route === 'chart_latest' ? 'chart_latest' : 'chart';
   const cacheHit = options.cacheHit === true;
@@ -298,19 +298,19 @@ function recordChartRequestTiming(options = {}) {
 function validateStartupEnvironment() {
   const errors = [];
   const warnings = [];
-  const requireNonEmpty = (name) => {
+  const requireNonEmpty = (name: any) => {
     const value = String(process.env[name] || '').trim();
     if (!value) {
       errors.push(`${name} is required`);
     }
   };
-  const warnIfMissing = (name) => {
+  const warnIfMissing = (name: any) => {
     const value = String(process.env[name] || '').trim();
     if (!value) {
       warnings.push(`${name} is not set`);
     }
   };
-  const warnIfInvalidPositiveNumber = (name) => {
+  const warnIfInvalidPositiveNumber = (name: any) => {
     const raw = process.env[name];
     if (raw === undefined || raw === null || raw === '') return;
     const numeric = Number(raw);
@@ -318,7 +318,7 @@ function validateStartupEnvironment() {
       warnings.push(`${name} should be a positive number (received: ${String(raw)})`);
     }
   };
-  const warnIfInvalidNonNegativeNumber = (name) => {
+  const warnIfInvalidNonNegativeNumber = (name: any) => {
     const raw = process.env[name];
     if (raw === undefined || raw === null || raw === '') return;
     const numeric = Number(raw);
@@ -379,7 +379,7 @@ function validateStartupEnvironment() {
 
 validateStartupEnvironment();
 
-function logStructured(level, event, fields = {}) {
+function logStructured(level: any, event: any, fields = {}) {
   const pinoLevel = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
   logger[pinoLevel]({ event, ...fields });
 }
@@ -391,13 +391,13 @@ function createRequestId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-function shouldLogRequestPath(pathname) {
+function shouldLogRequestPath(pathname: any) {
   const path = String(pathname || '');
   if (path.startsWith('/api/')) return true;
   return path === '/healthz' || path === '/readyz';
 }
 
-function extractSafeRequestMeta(req) {
+function extractSafeRequestMeta(req: any) {
   const path = String(req.path || '');
   const queryKeys = Object.keys(req.query || {});
   const meta = {
@@ -413,44 +413,44 @@ function extractSafeRequestMeta(req) {
   return meta;
 }
 
-function isValidTickerSymbol(value) {
+function isValidTickerSymbol(value: any) {
   return schemas.tickerSymbol.safeParse(value).success;
 }
 
-function parseEtDateInput(value) {
+function parseEtDateInput(value: any) {
   if (value === undefined || value === null || value === '') return null;
   const result = schemas.etDate.safeParse(value);
   return result.success ? result.data : null;
 }
 
-function parseBooleanInput(value, fallback = false) {
+function parseBooleanInput(value: any, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
   const result = schemas.booleanInput.safeParse(value);
   return result.success ? result.data : fallback;
 }
 
-function validateChartPayloadShape(payload) {
+function validateChartPayloadShape(payload: any) {
   const result = schemas.chartPayload.safeParse(payload);
   if (result.success) return { ok: true };
   const firstIssue = result.error.issues[0];
   return { ok: false, error: firstIssue ? firstIssue.message : 'Invalid chart payload shape' };
 }
 
-function validateChartLatestPayloadShape(payload) {
+function validateChartLatestPayloadShape(payload: any) {
   const result = schemas.chartLatestPayload.safeParse(payload);
   if (result.success) return { ok: true };
   const firstIssue = result.error.issues[0];
   return { ok: false, error: firstIssue ? firstIssue.message : 'Invalid latest payload shape' };
 }
 
-function timingSafeStringEqual(left, right) {
+function timingSafeStringEqual(left: any, right: any) {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
   if (leftBuffer.length !== rightBuffer.length) return false;
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function basicAuthMiddleware(req, res, next) {
+function basicAuthMiddleware(req: any, res: any, next: any) {
   if (!BASIC_AUTH_ENABLED || req.method === 'OPTIONS') {
     return next();
   }
@@ -538,7 +538,7 @@ app.use((req, res, next) => {
 });
 app.use((req, res, next) => {
   const requestId = String(req.headers['x-request-id'] || '').trim() || createRequestId();
-  req.requestId = requestId;
+  (req as any).requestId = requestId;
   res.setHeader('x-request-id', requestId);
 
   httpDebugMetrics.totalRequests += 1;
@@ -649,10 +649,10 @@ const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.D
 const MINI_BARS_CACHE_MAX_TICKERS = 2000;
 const miniBarsCacheByTicker = new LRUCache({ max: MINI_BARS_CACHE_MAX_TICKERS });
 
-async function persistMiniChartBars(ticker, bars) {
+async function persistMiniChartBars(ticker: any, bars: any) {
   if (!divergencePool || !ticker || !Array.isArray(bars) || bars.length === 0) return;
   try {
-    const values = [];
+    const values: any[] = [];
     const placeholders = [];
     let idx = 1;
     for (const b of bars) {
@@ -677,12 +677,12 @@ async function persistMiniChartBars(ticker, bars) {
     `,
       values,
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error(`persistMiniChartBars(${ticker}): ${err.message}`);
   }
 }
 
-async function loadMiniChartBarsFromDb(ticker) {
+async function loadMiniChartBarsFromDb(ticker: any) {
   if (!divergencePool || !ticker) return [];
   const result = await divergencePool.query(
     `
@@ -703,7 +703,7 @@ async function loadMiniChartBarsFromDb(ticker) {
   }));
 }
 
-async function loadMiniChartBarsFromDbBatch(tickers) {
+async function loadMiniChartBarsFromDbBatch(tickers: any) {
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) return {};
   const upper = tickers.map((t) => t.toUpperCase());
   const placeholders = upper.map((_, i) => `$${i + 1}`).join(',');
@@ -717,7 +717,7 @@ async function loadMiniChartBarsFromDbBatch(tickers) {
   `,
     upper,
   );
-  const grouped = {};
+  const grouped: Record<string, any> = {};
   for (const r of result.rows) {
     const t = r.ticker;
     if (!grouped[t]) grouped[t] = [];
@@ -732,7 +732,7 @@ async function loadMiniChartBarsFromDbBatch(tickers) {
   return grouped;
 }
 
-async function fetchMiniChartBarsFromApi(ticker) {
+async function fetchMiniChartBarsFromApi(ticker: any) {
   if (!ticker) return [];
   try {
     const rows = await dataApiIntradayChartHistory(ticker, '1day', CHART_INTRADAY_LOOKBACK_DAYS);
@@ -753,33 +753,33 @@ async function fetchMiniChartBarsFromApi(ticker) {
       }
     }
     return bars;
-  } catch (err) {
+  } catch (err: any) {
     console.error(`fetchMiniChartBarsFromApi(${ticker}): ${err.message || err}`);
     return [];
   }
 }
 
 let divergenceScanRunning = false;
-let divergenceSchedulerTimer = null;
+let divergenceSchedulerTimer: any = null;
 let divergenceLastScanDateEt = '';
 let divergenceLastFetchedTradeDateEt = '';
 let divergenceScanPauseRequested = false;
 let divergenceScanStopRequested = false;
-let divergenceScanResumeState = null;
-let divergenceScanAbortController = null;
+let divergenceScanResumeState: any = null;
+let divergenceScanAbortController: any = null;
 let divergenceTableBuildRunning = false;
 let divergenceTableBuildPauseRequested = false;
 let divergenceTableBuildStopRequested = false;
-let divergenceTableBuildResumeState = null;
-let divergenceTableBuildAbortController = null;
+let divergenceTableBuildResumeState: any = null;
+let divergenceTableBuildAbortController: any = null;
 let divergenceTableBuildStatus = {
   running: false,
   status: 'idle',
   totalTickers: 0,
   processedTickers: 0,
   errorTickers: 0,
-  startedAt: null,
-  finishedAt: null,
+  startedAt: null as string | null,
+  finishedAt: null as string | null,
   lastPublishedTradeDate: '',
 };
 // Fetch Daily and Weekly use ScanState with resume normalizers (set after function definitions below)
@@ -788,21 +788,21 @@ const fetchWeeklyScan = new ScanState('fetchWeekly', { metricsKey: 'fetchWeekly'
 
 const RUN_METRICS_SAMPLE_CAP = Math.max(100, Number(process.env.RUN_METRICS_SAMPLE_CAP) || 1200);
 const RUN_METRICS_HISTORY_LIMIT = Math.max(10, Number(process.env.RUN_METRICS_HISTORY_LIMIT) || 40);
-const runMetricsByType = {
+const runMetricsByType: Record<string, any> = {
   fetchDaily: null,
   fetchWeekly: null,
   vdfScan: null,
 };
-const runMetricsHistory = [];
+const runMetricsHistory: any[] = [];
 
-function clampMetricNumber(value, digits = 2) {
+function clampMetricNumber(value: any, digits = 2) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   const factor = 10 ** Math.max(0, Number(digits) || 0);
   return Math.round(numeric * factor) / factor;
 }
 
-function percentileFromSortedSamples(samples, percentile) {
+function percentileFromSortedSamples(samples: any, percentile: any) {
   if (!Array.isArray(samples) || samples.length === 0) return 0;
   const p = Math.max(0, Math.min(1, Number(percentile) || 0));
   const index = Math.min(samples.length - 1, Math.max(0, Math.ceil(samples.length * p) - 1));
@@ -810,7 +810,7 @@ function percentileFromSortedSamples(samples, percentile) {
   return Number.isFinite(value) ? value : 0;
 }
 
-function summarizeRunMetrics(metrics) {
+function summarizeRunMetrics(metrics: any) {
   if (!metrics || typeof metrics !== 'object') return null;
   const samples = Array.isArray(metrics.api?.latencySamples)
     ? [...metrics.api.latencySamples].sort((a, b) => a - b)
@@ -872,7 +872,7 @@ function summarizeRunMetrics(metrics) {
   };
 }
 
-function pushRunMetricsHistory(snapshot) {
+function pushRunMetricsHistory(snapshot: any) {
   if (!snapshot) return;
   runMetricsHistory.unshift(snapshot);
   if (runMetricsHistory.length > RUN_METRICS_HISTORY_LIMIT) {
@@ -883,7 +883,7 @@ function pushRunMetricsHistory(snapshot) {
 
 const RUN_METRICS_DB_LIMIT = 15;
 
-function persistRunSnapshotToDb(snapshot) {
+function persistRunSnapshotToDb(snapshot: any) {
   if (!snapshot || !snapshot.runId) return;
   pool
     .query(
@@ -919,13 +919,13 @@ async function loadRunHistoryFromDb() {
       RUN_METRICS_DB_LIMIT,
     ]);
     return result.rows.map((r) => r.snapshot);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to load run history from DB:', err.message);
     return [];
   }
 }
 
-function createRunMetricsTracker(runType, meta = {}) {
+function createRunMetricsTracker(runType: any, meta = {}) {
   const normalizedType = String(runType || '').trim() || 'unknown';
   const runId = `${normalizedType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const metrics = {
@@ -934,7 +934,7 @@ function createRunMetricsTracker(runType, meta = {}) {
     status: 'running',
     phase: 'starting',
     startedAt: new Date().toISOString(),
-    finishedAt: null,
+    finishedAt: null as string | null,
     updatedAt: new Date().toISOString(),
     tickers: {
       total: 0,
@@ -950,7 +950,7 @@ function createRunMetricsTracker(runType, meta = {}) {
       aborted: 0,
       subscriptionRestricted: 0,
       totalLatencyMs: 0,
-      latencySamples: [],
+      latencySamples: [] as number[],
     },
     db: {
       flushCount: 0,
@@ -965,8 +965,8 @@ function createRunMetricsTracker(runType, meta = {}) {
       retries: 0,
       watchdogAborts: 0,
     },
-    failedTickers: [],
-    retryRecovered: [],
+    failedTickers: [] as string[],
+    retryRecovered: [] as string[],
     meta: {
       ...meta,
     },
@@ -988,20 +988,20 @@ function createRunMetricsTracker(runType, meta = {}) {
       metrics.meta = { ...metrics.meta, ...patch };
       touch();
     },
-    setPhase(phase) {
+    setPhase(phase: any) {
       metrics.phase = String(phase || '').trim() || metrics.phase;
       touch();
     },
-    setTotals(totalTickers) {
+    setTotals(totalTickers: any) {
       metrics.tickers.total = Math.max(0, Number(totalTickers) || 0);
       touch();
     },
-    setProgress(processedTickers, errorTickers) {
+    setProgress(processedTickers: any, errorTickers: any) {
       metrics.tickers.processed = Math.max(0, Number(processedTickers) || 0);
       metrics.tickers.errors = Math.max(0, Number(errorTickers) || 0);
       touch();
     },
-    recordApiCall(details = {}) {
+    recordApiCall(details: any = {}) {
       const latencyMs = Math.max(0, Number(details.latencyMs) || 0);
       metrics.api.calls += 1;
       metrics.api.totalLatencyMs += latencyMs;
@@ -1020,7 +1020,7 @@ function createRunMetricsTracker(runType, meta = {}) {
       if (details.subscriptionRestricted) metrics.api.subscriptionRestricted += 1;
       touch();
     },
-    recordDbFlush(details = {}) {
+    recordDbFlush(details: any = {}) {
       const durationMs = Math.max(0, Number(details.durationMs) || 0);
       metrics.db.flushCount += 1;
       metrics.db.totalFlushMs += durationMs;
@@ -1031,7 +1031,7 @@ function createRunMetricsTracker(runType, meta = {}) {
       metrics.db.neutralRows += Math.max(0, Number(details.neutralRows) || 0);
       touch();
     },
-    recordFailedTicker(ticker) {
+    recordFailedTicker(ticker: any) {
       const name = String(ticker || '')
         .trim()
         .toUpperCase();
@@ -1040,7 +1040,7 @@ function createRunMetricsTracker(runType, meta = {}) {
       }
       touch();
     },
-    recordRetryRecovered(ticker) {
+    recordRetryRecovered(ticker: any) {
       const name = String(ticker || '')
         .trim()
         .toUpperCase();
@@ -1060,7 +1060,7 @@ function createRunMetricsTracker(runType, meta = {}) {
       metrics.stalls.watchdogAborts += 1;
       touch();
     },
-    finish(status, patch = {}) {
+    finish(status: any, patch: any = {}) {
       if (finished) return summarizeRunMetrics(metrics);
       finished = true;
       metrics.status = String(status || 'completed').trim() || 'completed';
@@ -1102,10 +1102,10 @@ function getLogsRunMetricsPayload() {
       divergenceLookbackDays: DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
       divergenceConcurrencyConfigured: DIVERGENCE_TABLE_BUILD_CONCURRENCY,
       divergenceFlushSize: DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
-      dataApiBase: DATA_API_BASE,
-      dataApiTimeoutMs: DATA_API_TIMEOUT_MS,
-      dataApiMaxRequestsPerSecond: DATA_API_MAX_REQUESTS_PER_SECOND,
-      dataApiRateBucketCapacity: DATA_API_RATE_BUCKET_CAPACITY,
+      dataApiBase: String(process.env.DATA_API_BASE || 'https://api.massive.com'),
+      dataApiTimeoutMs: Number(process.env.DATA_API_TIMEOUT_MS) || 15000,
+      dataApiMaxRequestsPerSecond: Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99,
+      dataApiRateBucketCapacity: Number(process.env.DATA_API_RATE_BUCKET_CAPACITY) || Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99,
     },
     statuses: {
       fetchDaily: fetchDailyScan.getStatus(),
@@ -1127,7 +1127,7 @@ function isDivergenceConfigured() {
   return Boolean(divergencePool);
 }
 
-async function withDivergenceClient(fn) {
+async function withDivergenceClient(fn: any) {
   if (!divergencePool) {
     throw new Error('DIVERGENCE_DATABASE_URL is not configured');
   }
@@ -1202,7 +1202,7 @@ const initDB = async () => {
     }
 
     console.log('Database initialized successfully');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to initialize database:', err);
   }
 };
@@ -1422,25 +1422,25 @@ const initDivergenceDB = async () => {
           `Restored trade dates from DB — daily: ${restoredTradeDate || '(none)'}, weekly: ${restoredWeeklyDate || '(none)'}`,
         );
       }
-    } catch (restoreErr) {
+    } catch (restoreErr: any) {
       console.error('Failed to restore trade dates from DB:', restoreErr.message);
     }
 
     console.log('Divergence database initialized successfully');
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to initialize divergence database:', err);
   }
 };
 
 app.get('/api/alerts', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 0;
+    const days = parseInt(String(req.query.days)) || 0;
     const startDate = String(req.query.start_date || '').trim();
     const endDate = String(req.query.end_date || '').trim();
     const hasDateKeyRange = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate);
 
     let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100';
-    let values = [];
+    let values: any[] = [];
 
     if (hasDateKeyRange) {
       // Optimized sargable query using timestamp range
@@ -1479,7 +1479,7 @@ app.get('/api/alerts', async (req, res) => {
       summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
         includeLatestFallbackForMissing: true,
       });
-    } catch (summaryErr) {
+    } catch (summaryErr: any) {
       const message = summaryErr && summaryErr.message ? summaryErr.message : String(summaryErr);
       console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
     }
@@ -1488,7 +1488,7 @@ app.get('/api/alerts', async (req, res) => {
     try {
       if (tickers.length > 0 && isDivergenceConfigured()) {
         const vdfTradeDate = currentEtDateString();
-        const vdfRes = await divergencePool.query(
+        const vdfRes = await divergencePool!.query(
           `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers],
         );
@@ -1532,7 +1532,7 @@ app.get('/api/alerts', async (req, res) => {
       };
     });
     res.json(enrichedRows);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err);
     res.status(500).send('Server Error');
   }
@@ -1563,7 +1563,7 @@ app.post('/api/alerts/:id/favorite', async (req, res) => {
       return res.status(404).send('Alert not found');
     }
     res.json(result.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error toggling favorite:', err);
     res.status(500).send('Server Error');
   }
@@ -1574,7 +1574,7 @@ app.get('/api/divergence/signals', async (req, res) => {
     return res.status(503).json({ error: 'Divergence database is not configured' });
   }
   try {
-    const days = parseInt(req.query.days) || 0;
+    const days = parseInt(String(req.query.days)) || 0;
     const startDate = String(req.query.start_date || '').trim();
     const endDate = String(req.query.end_date || '').trim();
     const hasDateKeyRange = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate);
@@ -1712,7 +1712,7 @@ app.get('/api/divergence/signals', async (req, res) => {
       values = [publishedTradeDate || null, PER_TIMEFRAME_SIGNAL_LIMIT, allowedTimeframes];
     }
 
-    const result = await divergencePool.query(query, values);
+    const result = await divergencePool!.query(query, values);
     const sourceInterval = toVolumeDeltaSourceInterval(req.query.vd_source_interval, DIVERGENCE_SOURCE_INTERVAL);
     const tickers = Array.from(
       new Set(
@@ -1730,7 +1730,7 @@ app.get('/api/divergence/signals', async (req, res) => {
       summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
         includeLatestFallbackForMissing: true,
       });
-    } catch (summaryErr) {
+    } catch (summaryErr: any) {
       const message = summaryErr && summaryErr.message ? summaryErr.message : String(summaryErr);
       console.error(`Failed to enrich divergence signals with divergence summaries: ${message}`);
     }
@@ -1740,7 +1740,7 @@ app.get('/api/divergence/signals', async (req, res) => {
     try {
       if (tickers.length > 0) {
         const vdfTradeDate = currentEtDateString();
-        const vdfRes = await divergencePool.query(
+        const vdfRes = await divergencePool!.query(
           `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers],
         );
@@ -1784,7 +1784,7 @@ app.get('/api/divergence/signals', async (req, res) => {
       };
     });
     res.json(enrichedRows);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Divergence API error:', err);
     res.status(500).json({ error: 'Failed to fetch divergence signals' });
   }
@@ -1841,12 +1841,12 @@ app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
       `;
       values = [id];
     }
-    const result = await divergencePool.query(query, values);
+    const result = await divergencePool!.query(query, values);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Signal not found' });
     }
     res.json(result.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error toggling divergence favorite:', err);
     res.status(500).json({ error: 'Server Error' });
   }
@@ -1854,7 +1854,7 @@ app.post('/api/divergence/signals/:id/favorite', async (req, res) => {
 
 app.get('/api/breadth', async (req, res) => {
   const compTicker = (req.query.ticker || 'SVIX').toString().toUpperCase();
-  const days = Math.min(Math.max(parseInt(req.query.days) || 5, 1), 60);
+  const days = Math.min(Math.max(parseInt(String(req.query.days)) || 5, 1), 60);
   const isIntraday = days <= 30;
 
   try {
@@ -1902,7 +1902,7 @@ app.get('/api/breadth', async (req, res) => {
 
     const points = allPoints.slice(-days);
     res.json({ intraday: false, points });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Breadth API Error:', err);
     res.status(500).json({ error: 'Failed to fetch breadth data' });
   }
@@ -1910,7 +1910,7 @@ app.get('/api/breadth', async (req, res) => {
 
 // --- Chart pre-warming (extracted to server/services/chartPrewarm.js) ---
 const prewarmDeps = {
-  getOrBuildChartResult: (...args) => getOrBuildChartResult(...args),
+  getOrBuildChartResult: (params: any) => getOrBuildChartResult(params),
   toVolumeDeltaSourceInterval,
   getIntradayLookbackDays,
   buildChartRequestKey,
@@ -1925,11 +1925,11 @@ function schedulePostLoadPrewarmSequence(options = {}) {
   chartPrewarm.schedulePostLoadPrewarmSequence(options, prewarmDeps);
 }
 
-function parseChartRequestParams(req) {
+function parseChartRequestParams(req: any) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   if (!isValidTickerSymbol(ticker)) {
     const err = new Error('Invalid ticker format');
-    err.httpStatus = 400;
+    (err as any).httpStatus = 400;
     throw err;
   }
   const interval = (req.query.interval || '4hour').toString();
@@ -1956,7 +1956,7 @@ function parseChartRequestParams(req) {
   };
 }
 
-async function getOrBuildChartResult(params) {
+async function getOrBuildChartResult(params: any) {
   const {
     ticker,
     interval,
@@ -2008,7 +2008,7 @@ async function getOrBuildChartResult(params) {
   if (!buildPromise) {
     if (CHART_IN_FLIGHT_REQUESTS.size >= CHART_IN_FLIGHT_MAX) {
       const err = new Error('Server is busy processing chart requests, please retry shortly');
-      err.httpStatus = 503;
+      (err as any).httpStatus = 503;
       throw err;
     }
     buildPromise = (async () => {
@@ -2086,7 +2086,7 @@ async function getOrBuildChartResult(params) {
   return { result, serverTiming, cacheHit: false };
 }
 
-function findPointByTime(points, timeValue) {
+function findPointByTime(points: any, timeValue: any) {
   if (!Array.isArray(points) || points.length === 0) return null;
   const key = String(timeValue);
   for (let i = points.length - 1; i >= 0; i--) {
@@ -2097,7 +2097,7 @@ function findPointByTime(points, timeValue) {
   return null;
 }
 
-function extractLatestChartPayload(result) {
+function extractLatestChartPayload(result: any) {
   const bars = Array.isArray(result?.bars) ? result.bars : [];
   const latestBar = bars.length ? bars[bars.length - 1] : null;
   const latestTime = latestBar ? latestBar.time : null;
@@ -2116,14 +2116,14 @@ function extractLatestChartPayload(result) {
 }
 
 function buildNeutralDivergenceStates() {
-  const states = {};
+  const states: Record<string, any> = {};
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
     states[String(days)] = 'neutral';
   }
   return states;
 }
 
-function computeDivergenceSummaryStatesFromDailyResult(result, options = {}) {
+function computeDivergenceSummaryStatesFromDailyResult(result: any, options: any = {}) {
   const bars = Array.isArray(result?.bars) ? result.bars : [];
   const volumeDelta = Array.isArray(result?.volumeDelta) ? result.volumeDelta : [];
   const maxTradeDateKey = String(options.maxTradeDateKey || '').trim();
@@ -2188,23 +2188,23 @@ function computeDivergenceSummaryStatesFromDailyResult(result, options = {}) {
   };
 }
 
-function getDivergenceSummaryCacheKey(ticker, sourceInterval) {
+function getDivergenceSummaryCacheKey(ticker: any, sourceInterval: any) {
   return `${String(ticker || '').toUpperCase()}|${String(sourceInterval || '1min')}`;
 }
 
-function getCachedDivergenceSummaryEntry(ticker, sourceInterval) {
+function getCachedDivergenceSummaryEntry(ticker: any, sourceInterval: any) {
   return null;
 }
 
-function setDivergenceSummaryCacheEntry(entry) {
+function setDivergenceSummaryCacheEntry(entry: any) {
   return;
 }
 
-function clearDivergenceSummaryCacheForSourceInterval(sourceInterval) {
+function clearDivergenceSummaryCacheForSourceInterval(sourceInterval: any) {
   return;
 }
 
-function normalizeDivergenceState(value) {
+function normalizeDivergenceState(value: any) {
   const normalized = String(value || '')
     .trim()
     .toLowerCase();
@@ -2212,7 +2212,7 @@ function normalizeDivergenceState(value) {
   return 'neutral';
 }
 
-function normalizeSummaryMaState(value) {
+function normalizeSummaryMaState(value: any) {
   if (value === true) return true;
   if (value === false) return false;
   const numeric = Number(value);
@@ -2228,7 +2228,7 @@ function normalizeSummaryMaState(value) {
   return false;
 }
 
-function buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresAtMs) {
+function buildDivergenceSummaryEntryFromRow(row: any, sourceInterval: any, nowMs: any, expiresAtMs: any) {
   const ticker = String(row?.ticker || '').toUpperCase();
   if (!ticker) return null;
   const entry = {
@@ -2255,7 +2255,7 @@ function buildDivergenceSummaryEntryFromRow(row, sourceInterval, nowMs, expiresA
   return entry;
 }
 
-async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval, options = {}) {
+async function getStoredDivergenceSummariesForTickers(tickers: any, sourceInterval: any, options: any = {}) {
   const map = new Map();
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) {
     return map;
@@ -2311,14 +2311,14 @@ async function getStoredDivergenceSummariesForTickers(tickers, sourceInterval, o
   return map;
 }
 
-async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldStop) {
+async function mapWithConcurrency(items: any, concurrency: any, worker: any, onSettled?: any, shouldStop?: any) {
   const list = Array.isArray(items) ? items : [];
   if (list.length === 0) return [];
   const maxConcurrency = Math.max(1, Math.min(list.length, Number(concurrency) || 1));
   const results = new Array(list.length);
   let cursor = 0;
   let cancelled = false;
-  let cancelResolve = null;
+  let cancelResolve: any = null;
   const cancelPromise = new Promise((resolve) => {
     cancelResolve = resolve;
   });
@@ -2344,7 +2344,7 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
       cursor += 1;
       try {
         results[currentIndex] = await worker(list[currentIndex], currentIndex);
-      } catch (err) {
+      } catch (err: any) {
         results[currentIndex] = { error: err };
         if (isAbortError(err) && typeof shouldStop === 'function') {
           try {
@@ -2387,14 +2387,14 @@ async function mapWithConcurrency(items, concurrency, worker, onSettled, shouldS
 
 function resolveAdaptiveFetchConcurrency(runType = 'fetch-daily') {
   const configured = Math.max(1, Number(DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 1);
-  const maxRps = Math.max(1, Number(DATA_API_MAX_REQUESTS_PER_SECOND) || 1);
+  const maxRps = Math.max(1, Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99);
   const estimatedApiCallsPerTicker = runType === 'fetch-weekly' ? 10 : 8;
   const targetTickersPerSecond = Math.max(1, Math.floor(maxRps / estimatedApiCallsPerTicker));
   const adaptive = Math.max(4, targetTickersPerSecond * 4);
   return Math.max(1, Math.min(configured, adaptive));
 }
 
-async function buildDailyDivergenceSummaryInput(options = {}) {
+async function buildDailyDivergenceSummaryInput(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1day')));
@@ -2436,7 +2436,7 @@ async function buildDailyDivergenceSummaryInput(options = {}) {
   };
 }
 
-async function persistOnDemandTickerDivergenceSummary(options = {}) {
+async function persistOnDemandTickerDivergenceSummary(options: any = {}) {
   if (!divergencePool) return;
   const entry = options.entry || null;
   const latestDailyBar = options.latestDailyBar || null;
@@ -2461,7 +2461,7 @@ async function persistOnDemandTickerDivergenceSummary(options = {}) {
   }
 }
 
-async function getOrBuildTickerDivergenceSummary(options = {}) {
+async function getOrBuildTickerDivergenceSummary(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const forceRefresh = Boolean(options.forceRefresh);
@@ -2511,7 +2511,7 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
       const storedMap = await getStoredDivergenceSummariesForTickers([ticker], vdSourceInterval);
       const stored = storedMap.get(ticker);
       if (stored) return stored;
-    } catch (err) {
+    } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
       console.error(`Failed to persist on-demand divergence summary for ${ticker}: ${message}`);
     }
@@ -2519,11 +2519,11 @@ async function getOrBuildTickerDivergenceSummary(options = {}) {
   return entry;
 }
 
-async function getDivergenceSummaryForTickers(options = {}) {
+async function getDivergenceSummaryForTickers(options: any = {}) {
   const tickers = Array.isArray(options.tickers)
     ? options.tickers
-        .map((ticker) => String(ticker || '').toUpperCase())
-        .filter((ticker) => ticker && isValidTickerSymbol(ticker))
+        .map((ticker: any) => String(ticker || '').toUpperCase())
+        .filter((ticker: any) => ticker && isValidTickerSymbol(ticker))
     : [];
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   if (tickers.length === 0) {
@@ -2540,7 +2540,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
     await mapWithConcurrency(
       uniqueTickers,
       8,
-      async (ticker) => {
+      async (ticker: any) => {
         await getOrBuildTickerDivergenceSummary({
           ticker,
           vdSourceInterval,
@@ -2548,7 +2548,7 @@ async function getDivergenceSummaryForTickers(options = {}) {
           persistToDatabase: true,
         });
       },
-      (result, _index, ticker) => {
+      (result: any, _index: any, ticker: any) => {
         if (result && result.error) {
           const message = result.error && result.error.message ? result.error.message : String(result.error);
           console.error(`Failed to force-refresh divergence summary for ${ticker}: ${message}`);
@@ -2601,10 +2601,10 @@ async function getDivergenceSummaryForTickers(options = {}) {
 // --- VDF (Volume Divergence Flag) Detector helpers ---
 let vdfRunningTickers = new Set();
 
-async function getStoredVDFResult(ticker, tradeDate) {
+async function getStoredVDFResult(ticker: any, tradeDate: any) {
   if (!isDivergenceConfigured()) return null;
   try {
-    const { rows } = await divergencePool.query(
+    const { rows } = await divergencePool!.query(
       `SELECT is_detected, composite_score, status, weeks, result_json,
               best_zone_score, proximity_score, proximity_level, num_zones, has_distribution
        FROM vdf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
@@ -2612,7 +2612,7 @@ async function getStoredVDFResult(ticker, tradeDate) {
     );
     if (rows.length === 0) return null;
     const row = rows[0];
-    let parsed = {};
+    let parsed: any = {};
     try {
       parsed = row.result_json ? JSON.parse(row.result_json) : {};
     } catch {
@@ -2633,13 +2633,13 @@ async function getStoredVDFResult(ticker, tradeDate) {
       proximity: parsed.proximity || { compositeScore: 0, level: 'none', signals: [] },
       details: parsed,
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error('getStoredVDFResult error:', err && err.message ? err.message : err);
     return null;
   }
 }
 
-async function upsertVDFResult(ticker, tradeDate, result) {
+async function upsertVDFResult(ticker: any, tradeDate: any, result: any) {
   if (!isDivergenceConfigured()) return;
   try {
     const bestScore = result.bestScore || result.score || 0;
@@ -2654,7 +2654,7 @@ async function upsertVDFResult(ticker, tradeDate, result) {
       metrics: result.metrics || null,
       reason: result.reason || '',
     });
-    await divergencePool.query(
+    await divergencePool!.query(
       `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json,
                                 best_zone_score, proximity_score, proximity_level, num_zones, has_distribution, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
@@ -2685,12 +2685,12 @@ async function upsertVDFResult(ticker, tradeDate, result) {
         hasDist,
       ],
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error('upsertVDFResult error:', err && err.message ? err.message : err);
   }
 }
 
-async function getVDFStatus(ticker, options = {}) {
+async function getVDFStatus(ticker: any, options: any = {}) {
   const force = options.force === true;
   const signal = options.signal || null;
   const noCache = options.noCache === true;
@@ -2725,7 +2725,7 @@ async function getVDFStatus(ticker, options = {}) {
 
   try {
     const fetcher = noCache
-      ? (sym, intv, days, opts) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
+      ? (sym: any, intv: any, days: any, opts: any) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
       : dataApiIntradayChartHistory;
     const result = await detectVDF(ticker, {
       dataApiFetcher: fetcher,
@@ -2761,7 +2761,7 @@ async function getVDFStatus(ticker, options = {}) {
 // --- VDF Scan (bulk) state ---
 const vdfScan = new ScanState('vdfScan', { metricsKey: 'vdfScan' });
 
-async function runVDFScan(options = {}) {
+async function runVDFScan(options: any = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -2786,7 +2786,7 @@ async function runVDFScan(options = {}) {
   let detectedTickers = Math.max(0, Number(rs?.detectedTickers || 0));
   let totalTickers = Math.max(0, Number(rs?.totalTickers || 0));
   const startedAtIso = new Date().toISOString();
-  const failedTickers = [];
+  const failedTickers: any[] = [];
   let tickers = rs?.tickers || [];
   let startIndex = Math.max(0, Number(rs?.nextIndex || 0));
 
@@ -2805,10 +2805,10 @@ async function runVDFScan(options = {}) {
   // creating massive memory pressure. Cap concurrency at 3 to prevent OOM.
   // The adaptive calculator was producing 11+ which caused ~9GB cache buildup.
   const runConcurrency = Math.min(3, resolveAdaptiveFetchConcurrency('vdf-scan'));
-  let runMetricsTracker = null;
+  let runMetricsTracker: any = null;
 
   const syncExtra = () => vdfScan.setExtraStatus({ detected_tickers: detectedTickers });
-  const buildStatusFields = (proc) => ({
+  const buildStatusFields = (proc?: any) => ({
     totalTickers,
     processedTickers: proc ?? processedTickers,
     errorTickers,
@@ -2816,7 +2816,7 @@ async function runVDFScan(options = {}) {
     finishedAt: new Date().toISOString(),
   });
 
-  const vdfWorker = async (ticker) => {
+  const vdfWorker = async (ticker: any) => {
     if (vdfScan.shouldStop) return { ticker, skipped: true };
     const apiStart = Date.now();
     try {
@@ -2824,7 +2824,7 @@ async function runVDFScan(options = {}) {
       const latencyMs = Date.now() - apiStart;
       if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
       return { ticker, result, error: null };
-    } catch (err) {
+    } catch (err: any) {
       const latencyMs = Date.now() - apiStart;
       if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: false });
       return { ticker, result: null, error: err };
@@ -2858,7 +2858,7 @@ async function runVDFScan(options = {}) {
       tickerSlice,
       runConcurrency,
       vdfWorker,
-      (settled) => {
+      (settled: any) => {
         if (settled.skipped) return;
         settledCount++;
         processedTickers = startIndex + settledCount;
@@ -2914,7 +2914,7 @@ async function runVDFScan(options = {}) {
     const finalStatus = vdfScan.getStatus().status;
     runMetricsTracker?.finish(finalStatus, { totalTickers, processedTickers, errorTickers, failedTickers });
     return { status: finalStatus, processedTickers, errorTickers, detectedTickers };
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`VDF scan failed: ${message}`);
 
@@ -2959,7 +2959,7 @@ registerChartRoutes({
   getVDFStatus,
 });
 
-async function getPublishedTradeDateForSourceInterval(sourceInterval) {
+async function getPublishedTradeDateForSourceInterval(sourceInterval: any) {
   if (!divergencePool) return '';
   const normalizedSource = String(sourceInterval || DIVERGENCE_SOURCE_INTERVAL);
   try {
@@ -2984,14 +2984,14 @@ async function getPublishedTradeDateForSourceInterval(sourceInterval) {
       LIMIT 1
     `);
     return String(fallback.rows[0]?.scanned_trade_date || '').trim();
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`Failed to read divergence publication state: ${message}`);
     return '';
   }
 }
 
-async function resolveDivergenceAsOfTradeDate(sourceInterval, explicitTradeDate = '') {
+async function resolveDivergenceAsOfTradeDate(sourceInterval: any, explicitTradeDate = '') {
   const explicit = String(explicitTradeDate || '').trim();
   if (explicit) return explicit;
 
@@ -3048,10 +3048,10 @@ async function fetchUsStockUniverseFromDataApi() {
   return Array.from(unique.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
 }
 
-async function refreshDivergenceSymbolUniverse(options = {}) {
+async function refreshDivergenceSymbolUniverse(options: any = {}) {
   const fullReset = Boolean(options.fullReset);
   const symbols = await fetchUsStockUniverseFromDataApi();
-  await withDivergenceClient(async (client) => {
+  await withDivergenceClient(async (client: any) => {
     await client.query('BEGIN');
     try {
       if (fullReset) {
@@ -3073,7 +3073,7 @@ async function refreshDivergenceSymbolUniverse(options = {}) {
         );
       }
       await client.query('COMMIT');
-    } catch (err) {
+    } catch (err: any) {
       await client.query('ROLLBACK');
       throw err;
     }
@@ -3081,7 +3081,7 @@ async function refreshDivergenceSymbolUniverse(options = {}) {
   return symbols.map((s) => s.ticker);
 }
 
-async function getDivergenceUniverseTickers(options = {}) {
+async function getDivergenceUniverseTickers(options: any = {}) {
   if (!divergencePool) return [];
   const forceRefresh = Boolean(options.forceRefresh);
   const existing = await divergencePool.query(`
@@ -3111,7 +3111,7 @@ async function getDivergenceUniverseTickers(options = {}) {
     }
     if (storedTickers.length > 0) return storedTickers;
     return [];
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`DataAPI universe bootstrap failed, falling back to cached divergence symbols: ${message}`);
     return storedTickers;
@@ -3135,7 +3135,7 @@ async function getStoredDivergenceSymbolTickers() {
     .filter((ticker) => ticker && isValidTickerSymbol(ticker));
 }
 
-async function getLatestWeeklySignalTradeDate(sourceInterval) {
+async function getLatestWeeklySignalTradeDate(sourceInterval: any) {
   if (!divergencePool) return '';
   const normalizedSource = String(sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const result = await divergencePool.query(
@@ -3150,7 +3150,7 @@ async function getLatestWeeklySignalTradeDate(sourceInterval) {
   return String(result.rows[0]?.trade_date || '').trim();
 }
 
-async function computeSymbolDivergenceSignals(ticker, options = {}) {
+async function computeSymbolDivergenceSignals(ticker: any, options: any = {}) {
   const signal = options && options.signal ? options.signal : null;
   const parentFetchInterval = '1day';
   const [parentRows, sourceRows] = await Promise.all([
@@ -3207,7 +3207,7 @@ async function computeSymbolDivergenceSignals(ticker, options = {}) {
   return { signals: results, latestTradeDate, dailyBar };
 }
 
-async function startDivergenceScanJob(runForDate, totalSymbols, trigger) {
+async function startDivergenceScanJob(runForDate: any, totalSymbols: any, trigger: any) {
   if (!divergencePool) return null;
   const result = await divergencePool.query(
     `
@@ -3232,7 +3232,7 @@ const SCAN_JOB_ALLOWED_COLUMNS = new Set([
   'total_symbols',
 ]);
 
-async function updateDivergenceScanJob(jobId, patch) {
+async function updateDivergenceScanJob(jobId: any, patch: any) {
   if (!divergencePool || !jobId) return;
   const fields = [];
   const values = [];
@@ -3248,7 +3248,7 @@ async function updateDivergenceScanJob(jobId, patch) {
   await divergencePool.query(`UPDATE divergence_scan_jobs SET ${fields.join(', ')} WHERE id = $${idx}`, values);
 }
 
-async function upsertDivergenceSignalsBatch(signals, scanJobId) {
+async function upsertDivergenceSignalsBatch(signals: any, scanJobId: any) {
   if (!divergencePool || !Array.isArray(signals) || signals.length === 0) return;
   const tickers = [];
   const signalTypes = [];
@@ -3331,7 +3331,7 @@ async function upsertDivergenceSignalsBatch(signals, scanJobId) {
   );
 }
 
-function normalizeOneDaySignalTypeFromState(state) {
+function normalizeOneDaySignalTypeFromState(state: any) {
   const normalized = String(state || '')
     .trim()
     .toLowerCase();
@@ -3339,7 +3339,7 @@ function normalizeOneDaySignalTypeFromState(state) {
   return '';
 }
 
-async function syncOneDaySignalsFromSummaryRows(summaryRows, sourceInterval, scanJobId = null) {
+async function syncOneDaySignalsFromSummaryRows(summaryRows: any, sourceInterval: any, scanJobId = null) {
   if (!divergencePool || !Array.isArray(summaryRows) || summaryRows.length === 0) return;
   const signalRows = [];
   const neutralTickers = [];
@@ -3400,7 +3400,7 @@ async function syncOneDaySignalsFromSummaryRows(summaryRows, sourceInterval, sca
   }
 }
 
-async function upsertDivergenceDailyBarsBatch(rows, scanJobId) {
+async function upsertDivergenceDailyBarsBatch(rows: any, scanJobId: any) {
   if (!divergencePool || !Array.isArray(rows) || rows.length === 0) return;
   const tickers = [];
   const tradeDates = [];
@@ -3482,14 +3482,14 @@ async function upsertDivergenceDailyBarsBatch(rows, scanJobId) {
 }
 
 function buildNeutralDivergenceStateMap() {
-  const out = {};
+  const out: Record<string, any> = {};
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
     out[String(days)] = 'neutral';
   }
   return out;
 }
 
-function classifyDivergenceStateMapFromDailyRows(rows) {
+function classifyDivergenceStateMapFromDailyRows(rows: any) {
   const safeRows = Array.isArray(rows) ? rows : [];
   const states = buildNeutralDivergenceStateMap();
   if (safeRows.length < 2) {
@@ -3524,7 +3524,7 @@ function classifyDivergenceStateMapFromDailyRows(rows) {
   return states;
 }
 
-async function upsertDivergenceSummaryBatch(rows, scanJobId) {
+async function upsertDivergenceSummaryBatch(rows: any, scanJobId: any) {
   if (!divergencePool || !Array.isArray(rows) || rows.length === 0) return;
   const tickers = [];
   const sourceIntervals = [];
@@ -3660,7 +3660,7 @@ async function upsertDivergenceSummaryBatch(rows, scanJobId) {
   );
 }
 
-async function rebuildDivergenceSummariesForTradeDate(options = {}) {
+async function rebuildDivergenceSummariesForTradeDate(options: any = {}) {
   if (!divergencePool) {
     return { asOfTradeDate: '', processedTickers: 0 };
   }
@@ -3706,7 +3706,7 @@ async function rebuildDivergenceSummariesForTradeDate(options = {}) {
 
   const summaryRows = [];
   for (const [ticker, rows] of rowsByTicker.entries()) {
-    const filtered = rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
+    const filtered = rows.filter((row: any) => row.trade_date && row.trade_date <= asOfTradeDate);
     if (!filtered.length) continue;
     const latestRow = filtered[filtered.length - 1];
     if (!latestRow?.trade_date) continue;
@@ -3722,14 +3722,14 @@ async function rebuildDivergenceSummariesForTradeDate(options = {}) {
   for (let i = 0; i < summaryRows.length; i += DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE) {
     summaryBatches.push(summaryRows.slice(i, i + DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE));
   }
-  await mapWithConcurrency(summaryBatches, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY, async (batch) => {
+  await mapWithConcurrency(summaryBatches, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY, async (batch: any) => {
     await upsertDivergenceSummaryBatch(batch, scanJobId);
     return null;
   });
   return { asOfTradeDate, processedTickers: summaryRows.length };
 }
 
-async function publishDivergenceTradeDate(options = {}) {
+async function publishDivergenceTradeDate(options: any = {}) {
   if (!divergencePool) return '';
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -3856,17 +3856,17 @@ function canResumeDivergenceTableBuild() {
 // are now provided by fetchDailyScan.getStatus(), fetchWeeklyScan.getStatus(),
 // fetchDailyScan.requestStop(), fetchWeeklyScan.requestStop()
 
-function normalizeFetchDailyDataResumeState(state = {}) {
+function normalizeFetchDailyDataResumeState(state: any = {}) {
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const sourceInterval = String(state.sourceInterval || '').trim();
   const tickers = Array.isArray(state.tickers)
     ? state.tickers
-        .map((t) =>
+        .map((t: any) =>
           String(t || '')
             .trim()
             .toUpperCase(),
         )
-        .filter((t) => t && isValidTickerSymbol(t))
+        .filter((t: any) => t && isValidTickerSymbol(t))
     : [];
   const totalTickers = tickers.length;
   const nextIndex = Math.max(0, Math.min(totalTickers, Math.floor(Number(state.nextIndex) || 0)));
@@ -3883,18 +3883,18 @@ function normalizeFetchDailyDataResumeState(state = {}) {
   };
 }
 
-function normalizeFetchWeeklyDataResumeState(state = {}) {
+function normalizeFetchWeeklyDataResumeState(state: any = {}) {
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const weeklyTradeDate = String(state.weeklyTradeDate || '').trim();
   const sourceInterval = String(state.sourceInterval || '').trim();
   const tickers = Array.isArray(state.tickers)
     ? state.tickers
-        .map((t) =>
+        .map((t: any) =>
           String(t || '')
             .trim()
             .toUpperCase(),
         )
-        .filter((t) => t && isValidTickerSymbol(t))
+        .filter((t: any) => t && isValidTickerSymbol(t))
     : [];
   const totalTickers = tickers.length;
   const nextIndex = Math.max(0, Math.min(totalTickers, Math.floor(Number(state.nextIndex) || 0)));
@@ -3976,17 +3976,17 @@ fetchWeeklyScan.canResumeValidator = (rs) => {
   return Boolean(n.asOfTradeDate) && Boolean(n.weeklyTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
 };
 
-function normalizeDivergenceScanResumeState(state = {}) {
+function normalizeDivergenceScanResumeState(state: any = {}) {
   const runDateEt = String(state.runDateEt || '').trim();
   const trigger = String(state.trigger || 'manual').trim() || 'manual';
   const symbols = Array.isArray(state.symbols)
     ? state.symbols
-        .map((symbol) =>
+        .map((symbol: any) =>
           String(symbol || '')
             .trim()
             .toUpperCase(),
         )
-        .filter((symbol) => symbol && isValidTickerSymbol(symbol))
+        .filter((symbol: any) => symbol && isValidTickerSymbol(symbol))
     : [];
   const totalSymbols = symbols.length;
   const nextIndex = Math.max(0, Math.min(totalSymbols, Math.floor(Number(state.nextIndex) || 0)));
@@ -4007,7 +4007,7 @@ function normalizeDivergenceScanResumeState(state = {}) {
   };
 }
 
-function normalizeDivergenceTableResumeState(state = {}) {
+function normalizeDivergenceTableResumeState(state: any = {}) {
   const sourceInterval =
     String(state.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
@@ -4017,14 +4017,14 @@ function normalizeDivergenceTableResumeState(state = {}) {
   );
   const tickers = Array.isArray(state.tickers)
     ? state.tickers
-        .map((ticker) => String(ticker || '').toUpperCase())
-        .filter((ticker) => ticker && isValidTickerSymbol(ticker))
+        .map((ticker: any) => String(ticker || '').toUpperCase())
+        .filter((ticker: any) => ticker && isValidTickerSymbol(ticker))
     : [];
   const tickerSet = new Set(tickers);
   const backfillTickers = Array.isArray(state.backfillTickers)
     ? state.backfillTickers
-        .map((ticker) => String(ticker || '').toUpperCase())
-        .filter((ticker) => tickerSet.has(ticker))
+        .map((ticker: any) => String(ticker || '').toUpperCase())
+        .filter((ticker: any) => tickerSet.has(ticker))
     : [];
   const totalTickers = Number.isFinite(Number(state.totalTickers))
     ? Math.max(0, Math.floor(Number(state.totalTickers)))
@@ -4051,7 +4051,7 @@ function normalizeDivergenceTableResumeState(state = {}) {
   };
 }
 
-async function rebuildStoredDivergenceSummariesForTickers(options = {}) {
+async function rebuildStoredDivergenceSummariesForTickers(options: any = {}) {
   if (!divergencePool) return new Map();
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -4059,8 +4059,8 @@ async function rebuildStoredDivergenceSummariesForTickers(options = {}) {
     ? Array.from(
         new Set(
           options.tickers
-            .map((ticker) => String(ticker || '').toUpperCase())
-            .filter((ticker) => ticker && isValidTickerSymbol(ticker)),
+            .map((ticker: any) => String(ticker || '').toUpperCase())
+            .filter((ticker: any) => ticker && isValidTickerSymbol(ticker)),
         ),
       )
     : [];
@@ -4080,14 +4080,14 @@ async function rebuildStoredDivergenceSummariesForTickers(options = {}) {
   });
 
   const neutralStates = buildNeutralDivergenceStateMap();
-  const summaryRows = [];
+  const summaryRows: any[] = [];
   const summaryByTicker = new Map();
   const nowMs = Date.now();
   const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
 
   for (const ticker of tickers) {
     const rows = rowsByTicker.get(ticker) || [];
-    const filtered = rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
+    const filtered = rows.filter((row: any) => row.trade_date && row.trade_date <= asOfTradeDate);
     const latestRowDate = filtered.length ? String(filtered[filtered.length - 1].trade_date || '').trim() : '';
     const tradeDate = latestRowDate || asOfTradeDate;
     const states = filtered.length >= 2 ? classifyDivergenceStateMapFromDailyRows(filtered) : neutralStates;
@@ -4117,7 +4117,7 @@ async function rebuildStoredDivergenceSummariesForTickers(options = {}) {
   return summaryByTicker;
 }
 
-function buildLatestDailyBarSnapshotForTicker(options = {}) {
+function buildLatestDailyBarSnapshotForTicker(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -4162,7 +4162,7 @@ function buildLatestDailyBarSnapshotForTicker(options = {}) {
   };
 }
 
-async function buildLatestWeeklyBarSnapshotForTicker(options = {}) {
+async function buildLatestWeeklyBarSnapshotForTicker(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
@@ -4229,7 +4229,7 @@ async function getDivergenceTableTickerUniverseFromAlerts() {
         .toUpperCase();
       if (ticker && isValidTickerSymbol(ticker)) tickers.add(ticker);
     }
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`Failed to load TV ticker universe for table run: ${message}`);
   }
@@ -4247,16 +4247,16 @@ async function getDivergenceTableTickerUniverseFromAlerts() {
           .toUpperCase();
         if (ticker && isValidTickerSymbol(ticker)) tickers.add(ticker);
       }
-    } catch (err) {
+    } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
       console.error(`Failed to load FML ticker universe for table run: ${message}`);
     }
   }
 
-  return Array.from(tickers).sort((a, b) => a.localeCompare(b));
+  return Array.from(tickers).sort((a: any, b: any) => a.localeCompare(b));
 }
 
-function groupDivergenceDailyRowsByTicker(rows) {
+function groupDivergenceDailyRowsByTicker(rows: any) {
   const out = new Map();
   for (const row of rows || []) {
     const ticker = String(row?.ticker || '').toUpperCase();
@@ -4271,7 +4271,7 @@ function groupDivergenceDailyRowsByTicker(rows) {
   return out;
 }
 
-async function loadDivergenceDailyHistoryByTicker(options = {}) {
+async function loadDivergenceDailyHistoryByTicker(options: any = {}) {
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const tickers = Array.isArray(options.tickers) ? options.tickers : [];
@@ -4301,7 +4301,7 @@ async function loadDivergenceDailyHistoryByTicker(options = {}) {
   return groupDivergenceDailyRowsByTicker(historyResult.rows);
 }
 
-function hasDivergenceHistoryCoverage(rows, asOfTradeDate, minCoverageDays) {
+function hasDivergenceHistoryCoverage(rows: any, asOfTradeDate: any, minCoverageDays: any) {
   const safeRows = (Array.isArray(rows) ? rows : []).filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
   if (safeRows.length < 2) return false;
 
@@ -4319,7 +4319,7 @@ function hasDivergenceHistoryCoverage(rows, asOfTradeDate, minCoverageDays) {
   return coverageDays >= Math.max(1, Number(minCoverageDays) || DIVERGENCE_TABLE_MIN_COVERAGE_DAYS);
 }
 
-async function buildDivergenceDailyRowsForTicker(options = {}) {
+async function buildDivergenceDailyRowsForTicker(options: any = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));
@@ -4384,7 +4384,7 @@ async function buildDivergenceDailyRowsForTicker(options = {}) {
   return out;
 }
 
-async function runDivergenceTableBuild(options = {}) {
+async function runDivergenceTableBuild(options: any = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -4403,6 +4403,7 @@ async function runDivergenceTableBuild(options = {}) {
   divergenceTableBuildRunning = true;
   divergenceTableBuildPauseRequested = false;
   divergenceTableBuildStopRequested = false;
+  const runMetricsTracker: any = null; // table build doesn't track metrics yet
   if (!resumeRequested) {
     divergenceTableBuildResumeState = null;
   }
@@ -4479,7 +4480,7 @@ async function runDivergenceTableBuild(options = {}) {
       if (forceFullRebuild) {
         backfillTickers = tickers.slice();
       } else if (bootstrapMissing) {
-        backfillTickers = tickers.filter((ticker) => {
+        backfillTickers = tickers.filter((ticker: any) => {
           const rows = rowsByTicker.get(ticker) || [];
           return !hasDivergenceHistoryCoverage(rows, asOfTradeDate, DIVERGENCE_TABLE_MIN_COVERAGE_DAYS);
         });
@@ -4588,7 +4589,7 @@ async function runDivergenceTableBuild(options = {}) {
             await mapWithConcurrency(
               chunk,
               DIVERGENCE_TABLE_BUILD_CONCURRENCY,
-              async (ticker) => {
+              async (ticker: any) => {
                 const rows = await buildDivergenceDailyRowsForTicker({
                   ticker,
                   sourceInterval,
@@ -4602,7 +4603,7 @@ async function runDivergenceTableBuild(options = {}) {
                 }
                 return { ticker, rowCount: rows.length };
               },
-              (result, _index, ticker) => {
+              (result: any, _index: any, ticker: any) => {
                 chunkProcessed += 1;
                 processedTickers = Math.min(backfillTickers.length, chunkStartOffset + chunkProcessed);
                 divergenceTableBuildStatus.processedTickers = processedTickers;
@@ -4642,7 +4643,7 @@ async function runDivergenceTableBuild(options = {}) {
               );
               try {
                 await sleepWithAbort(retryDelayMs, tableAbortController.signal);
-              } catch (sleepErr) {
+              } catch (sleepErr: any) {
                 if (
                   !isAbortError(sleepErr) ||
                   (!divergenceTableBuildStopRequested && !divergenceTableBuildPauseRequested)
@@ -4688,7 +4689,7 @@ async function runDivergenceTableBuild(options = {}) {
     divergenceTableBuildStatus.processedTickers = processedTickers;
     divergenceTableBuildStatus.errorTickers = errorTickers;
 
-    const summaryRows = [];
+    const summaryRows: any[] = [];
     const neutralStates = buildNeutralDivergenceStateMap();
     const flushSummaryRows = async () => {
       if (summaryRows.length === 0) return;
@@ -4724,7 +4725,7 @@ async function runDivergenceTableBuild(options = {}) {
       }
       const ticker = tickers[idx];
       const rows = rowsByTicker.get(ticker) || [];
-      const filtered = rows.filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
+      const filtered = rows.filter((row: any) => row.trade_date && row.trade_date <= asOfTradeDate);
       const latestRowDate = filtered.length ? String(filtered[filtered.length - 1].trade_date || '').trim() : '';
       const states = filtered.length >= 2 ? classifyDivergenceStateMapFromDailyRows(filtered) : neutralStates;
       summaryRows.push({
@@ -4778,7 +4779,7 @@ async function runDivergenceTableBuild(options = {}) {
       errorTickers,
       lastPublishedTradeDate: lastPublishedTradeDate || null,
     };
-  } catch (err) {
+  } catch (err: any) {
     divergenceTableBuildPauseRequested = false;
     divergenceTableBuildStopRequested = false;
     divergenceTableBuildStatus = {
@@ -4819,7 +4820,7 @@ async function runDivergenceTableBuild(options = {}) {
   }
 }
 
-async function runDivergenceFetchDailyData(options = {}) {
+async function runDivergenceFetchDailyData(options: any = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -4873,11 +4874,11 @@ async function runDivergenceFetchDailyData(options = {}) {
   let runConcurrency = resolveAdaptiveFetchConcurrency('fetch-daily');
   const summaryFlushSize = DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE;
   let asOfTradeDate = '';
-  let runMetricsTracker = null;
-  const dailyRowsBuffer = [];
-  const summaryRowsBuffer = [];
-  const maSummaryRowsBuffer = [];
-  const maSeedRows = [];
+  let runMetricsTracker: any = null;
+  const dailyRowsBuffer: any[] = [];
+  const summaryRowsBuffer: any[] = [];
+  const maSummaryRowsBuffer: any[] = [];
+  const maSeedRows: any[] = [];
 
   try {
     sourceInterval =
@@ -4910,7 +4911,7 @@ async function runDivergenceFetchDailyData(options = {}) {
     fetchDailyScan._status.totalTickers = totalTickers;
     runMetricsTracker?.setTotals(totalTickers);
 
-    const persistResumeState = (nextIdx) => {
+    const persistResumeState = (nextIdx: any) => {
       fetchDailyScan.resumeState = normalizeFetchDailyDataResumeState({
         asOfTradeDate,
         sourceInterval,
@@ -4924,7 +4925,7 @@ async function runDivergenceFetchDailyData(options = {}) {
       });
     };
 
-    const markStopped = (nextIdx, options = {}) => {
+    const markStopped = (nextIdx: any, options: any = {}) => {
       const preserveResume = options.preserveResume !== false;
       const rewind = options.rewind !== false;
       // Rewind by concurrency level so in-flight workers that got aborted
@@ -5038,12 +5039,12 @@ async function runDivergenceFetchDailyData(options = {}) {
     // Slice tickers to only the remaining portion for resume
     const tickerSlice = tickers.slice(startIndex);
     let settledCount = 0;
-    const failedTickers = [];
+    const failedTickers: any[] = [];
 
     persistResumeState(startIndex);
 
     // --- Worker function shared by main pass and retry pass ---
-    const fetchDailyTickerWorker = async (ticker) => {
+    const fetchDailyTickerWorker = async (ticker: any) => {
       return runWithAbortAndTimeout(
         async (tickerSignal) => {
           if (fetchDailyScan.stopRequested || fetchDailyAbortController.signal.aborted) {
@@ -5117,7 +5118,7 @@ async function runDivergenceFetchDailyData(options = {}) {
       tickerSlice,
       runConcurrency,
       fetchDailyTickerWorker,
-      (result, sliceIndex) => {
+      (result: any, sliceIndex: any) => {
         settledCount += 1;
         processedTickers = startIndex + settledCount;
         const ticker = tickerSlice[sliceIndex] || '';
@@ -5160,12 +5161,12 @@ async function runDivergenceFetchDailyData(options = {}) {
       runMetricsTracker?.setPhase('retry');
       fetchDailyScan._status.status = 'running-retry';
       let retryRecovered = 0;
-      const stillFailedTickers = [];
+      const stillFailedTickers: any[] = [];
       await mapWithConcurrency(
         failedTickers,
         Math.max(1, Math.floor(runConcurrency / 2)),
         fetchDailyTickerWorker,
-        (result, idx) => {
+        (result: any, idx: any) => {
           const ticker = failedTickers[idx] || '';
           if (result && result.error) {
             if (!isAbortError(result.error)) {
@@ -5200,7 +5201,7 @@ async function runDivergenceFetchDailyData(options = {}) {
           stillFailedTickers,
           Math.max(1, Math.floor(runConcurrency / 4)),
           fetchDailyTickerWorker,
-          (result, idx) => {
+          (result: any, idx: any) => {
             const ticker = stillFailedTickers[idx] || '';
             if (result && result.error) {
               if (!isAbortError(result.error)) {
@@ -5229,9 +5230,9 @@ async function runDivergenceFetchDailyData(options = {}) {
       runMetricsTracker?.setPhase('ma-enrichment');
       fetchDailyScan._status.status = 'running-ma';
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
-      const failedMaSeeds = [];
+      const failedMaSeeds: any[] = [];
 
-      const fetchDailyMaWorker = async (seed) => {
+      const fetchDailyMaWorker = async (seed: any) => {
         return runWithAbortAndTimeout(
           async (tickerSignal) => {
             const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
@@ -5267,7 +5268,7 @@ async function runDivergenceFetchDailyData(options = {}) {
         maSeedRows,
         maConcurrency,
         fetchDailyMaWorker,
-        (result, idx) => {
+        (result: any, idx: any) => {
           if (result && result.error && !isAbortError(result.error)) {
             failedMaSeeds.push(maSeedRows[idx]);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
@@ -5289,12 +5290,12 @@ async function runDivergenceFetchDailyData(options = {}) {
         console.log(`Fetch-all: retrying ${maRetryCount} failed MA ticker(s)...`);
         fetchDailyScan._status.status = 'running-ma-retry';
         let maRetryRecovered = 0;
-        const stillFailedMaSeeds = [];
+        const stillFailedMaSeeds: any[] = [];
         await mapWithConcurrency(
           failedMaSeeds,
           Math.max(1, Math.floor(maConcurrency / 2)),
           fetchDailyMaWorker,
-          (result, idx) => {
+          (result: any, idx: any) => {
             const seed = failedMaSeeds[idx];
             if (result && result.error) {
               if (!isAbortError(result.error)) {
@@ -5327,7 +5328,7 @@ async function runDivergenceFetchDailyData(options = {}) {
             stillFailedMaSeeds,
             Math.max(1, Math.floor(maConcurrency / 4)),
             fetchDailyMaWorker,
-            (result, idx) => {
+            (result: any, idx: any) => {
               const seed = stillFailedMaSeeds[idx];
               if (result && result.error) {
                 if (!isAbortError(result.error)) {
@@ -5382,7 +5383,7 @@ async function runDivergenceFetchDailyData(options = {}) {
       errorTickers,
       lastPublishedTradeDate: lastPublishedTradeDate || null,
     };
-  } catch (err) {
+  } catch (err: any) {
     // Flush whatever is buffered even on error/abort
     try {
       if (dailyRowsBuffer.length > 0) {
@@ -5398,7 +5399,7 @@ async function runDivergenceFetchDailyData(options = {}) {
         const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
         await upsertDivergenceSummaryBatch(batch, null);
       }
-    } catch (flushErr) {
+    } catch (flushErr: any) {
       console.error(
         'Fetch-all error-path flush failed:',
         flushErr && flushErr.message ? flushErr.message : String(flushErr),
@@ -5474,7 +5475,7 @@ async function runDivergenceFetchDailyData(options = {}) {
   }
 }
 
-async function runDivergenceFetchWeeklyData(options = {}) {
+async function runDivergenceFetchWeeklyData(options: any = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -5531,13 +5532,13 @@ async function runDivergenceFetchWeeklyData(options = {}) {
   const summaryFlushSize = DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE;
   let asOfTradeDate = '';
   let weeklyTradeDate = '';
-  let runMetricsTracker = null;
-  const dailyRowsBuffer = [];
-  const summaryRowsBuffer = [];
-  const maSummaryRowsBuffer = [];
-  const maSeedRows = [];
-  const weeklySignalRowsBuffer = [];
-  const weeklyNeutralTickerBuffer = [];
+  let runMetricsTracker: any = null;
+  const dailyRowsBuffer: any[] = [];
+  const summaryRowsBuffer: any[] = [];
+  const maSummaryRowsBuffer: any[] = [];
+  const maSeedRows: any[] = [];
+  const weeklySignalRowsBuffer: any[] = [];
+  const weeklyNeutralTickerBuffer: any[] = [];
 
   try {
     sourceInterval =
@@ -5594,7 +5595,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
     fetchWeeklyScan._status.totalTickers = totalTickers;
     runMetricsTracker?.setTotals(totalTickers);
 
-    const persistResumeState = (nextIdx) => {
+    const persistResumeState = (nextIdx: any) => {
       fetchWeeklyScan.resumeState = normalizeFetchWeeklyDataResumeState({
         asOfTradeDate,
         weeklyTradeDate,
@@ -5609,7 +5610,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       });
     };
 
-    const markStopped = (nextIdx, options = {}) => {
+    const markStopped = (nextIdx: any, options: any = {}) => {
       const preserveResume = options.preserveResume !== false;
       const rewind = options.rewind !== false;
       const safeNextIndex = rewind
@@ -5711,7 +5712,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         flushedNeutralRows += neutralRows.length;
         const neutralTickers = neutralRows.map((row) => row.ticker);
         const neutralTradeDates = neutralRows.map((row) => row.trade_date);
-        await divergencePool.query(
+        await divergencePool!.query(
           `
           DELETE FROM divergence_signals AS ds
           USING (
@@ -5753,12 +5754,12 @@ async function runDivergenceFetchWeeklyData(options = {}) {
 
     const tickerSlice = tickers.slice(startIndex);
     let settledCount = 0;
-    const failedTickers = [];
+    const failedTickers: any[] = [];
 
     persistResumeState(startIndex);
 
     // --- Worker function shared by main pass and retry pass ---
-    const fetchWeeklyTickerWorker = async (ticker) => {
+    const fetchWeeklyTickerWorker = async (ticker: any) => {
       return runWithAbortAndTimeout(
         async (tickerSignal) => {
           if (fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted) {
@@ -5872,7 +5873,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       tickerSlice,
       runConcurrency,
       fetchWeeklyTickerWorker,
-      (result, sliceIndex) => {
+      (result: any, sliceIndex: any) => {
         settledCount += 1;
         processedTickers = startIndex + settledCount;
         const ticker = tickerSlice[sliceIndex] || '';
@@ -5912,12 +5913,12 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       runMetricsTracker?.setPhase('retry');
       fetchWeeklyScan._status.status = 'running-retry';
       let retryRecovered = 0;
-      const stillFailedTickers = [];
+      const stillFailedTickers: any[] = [];
       await mapWithConcurrency(
         failedTickers,
         Math.max(1, Math.floor(runConcurrency / 2)),
         fetchWeeklyTickerWorker,
-        (result, idx) => {
+        (result: any, idx: any) => {
           const ticker = failedTickers[idx] || '';
           if (result && result.error) {
             if (!isAbortError(result.error)) {
@@ -5956,7 +5957,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           stillFailedTickers,
           Math.max(1, Math.floor(runConcurrency / 4)),
           fetchWeeklyTickerWorker,
-          (result, idx) => {
+          (result: any, idx: any) => {
             const ticker = stillFailedTickers[idx] || '';
             if (result && result.error) {
               if (!isAbortError(result.error)) {
@@ -5985,9 +5986,9 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       runMetricsTracker?.setPhase('ma-enrichment');
       fetchWeeklyScan._status.status = 'running-ma';
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
-      const failedMaSeeds = [];
+      const failedMaSeeds: any[] = [];
 
-      const fetchWeeklyMaWorker = async (seed) => {
+      const fetchWeeklyMaWorker = async (seed: any) => {
         return runWithAbortAndTimeout(
           async (tickerSignal) => {
             const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
@@ -6023,7 +6024,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         maSeedRows,
         maConcurrency,
         fetchWeeklyMaWorker,
-        (result, idx) => {
+        (result: any, idx: any) => {
           if (result && result.error && !isAbortError(result.error)) {
             failedMaSeeds.push(maSeedRows[idx]);
             const message = result.error && result.error.message ? result.error.message : String(result.error);
@@ -6045,12 +6046,12 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         console.log(`Fetch-weekly: retrying ${maRetryCount} failed MA ticker(s)...`);
         fetchWeeklyScan._status.status = 'running-ma-retry';
         let maRetryRecovered = 0;
-        const stillFailedMaSeeds = [];
+        const stillFailedMaSeeds: any[] = [];
         await mapWithConcurrency(
           failedMaSeeds,
           Math.max(1, Math.floor(maConcurrency / 2)),
           fetchWeeklyMaWorker,
-          (result, idx) => {
+          (result: any, idx: any) => {
             const seed = failedMaSeeds[idx];
             if (result && result.error) {
               if (!isAbortError(result.error)) {
@@ -6083,7 +6084,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
             stillFailedMaSeeds,
             Math.max(1, Math.floor(maConcurrency / 4)),
             fetchWeeklyMaWorker,
-            (result, idx) => {
+            (result: any, idx: any) => {
               const seed = stillFailedMaSeeds[idx];
               if (result && result.error) {
                 if (!isAbortError(result.error)) {
@@ -6127,7 +6128,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
       errorTickers,
       lastPublishedTradeDate: weeklyTradeDate || null,
     };
-  } catch (err) {
+  } catch (err: any) {
     try {
       if (dailyRowsBuffer.length > 0) {
         const batch = dailyRowsBuffer.splice(0, dailyRowsBuffer.length);
@@ -6149,7 +6150,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
         const neutralRows = weeklyNeutralTickerBuffer.splice(0, weeklyNeutralTickerBuffer.length);
         const neutralTickers = neutralRows.map((row) => row.ticker);
         const neutralTradeDates = neutralRows.map((row) => row.trade_date);
-        await divergencePool.query(
+        await divergencePool!.query(
           `
           DELETE FROM divergence_signals AS ds
           USING (
@@ -6169,7 +6170,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
           [neutralTickers, neutralTradeDates, sourceInterval],
         );
       }
-    } catch (flushErr) {
+    } catch (flushErr: any) {
       console.error(
         'Fetch-weekly error-path flush failed:',
         flushErr && flushErr.message ? flushErr.message : String(flushErr),
@@ -6247,7 +6248,7 @@ async function runDivergenceFetchWeeklyData(options = {}) {
   }
 }
 
-async function runDailyDivergenceScan(options = {}) {
+async function runDailyDivergenceScan(options: any = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -6322,7 +6323,7 @@ async function runDailyDivergenceScan(options = {}) {
       summaryProcessedTickers = 0;
       scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
 
-      await divergencePool.query(
+      await divergencePool!.query(
         `
         DELETE FROM divergence_signals
         WHERE source_interval = $1
@@ -6330,7 +6331,7 @@ async function runDailyDivergenceScan(options = {}) {
       `,
         [DIVERGENCE_SOURCE_INTERVAL],
       );
-      await divergencePool.query(
+      await divergencePool!.query(
         `
         DELETE FROM divergence_signals
         WHERE trade_date = $1
@@ -6422,11 +6423,11 @@ async function runDailyDivergenceScan(options = {}) {
       let batchResults = [];
       try {
         batchResults = await Promise.all(
-          batch.map(async (ticker) => {
+          batch.map(async (ticker: any) => {
             try {
               const outcome = await computeSymbolDivergenceSignals(ticker, { signal: attemptController.signal });
               return { ticker, ...outcome, error: null };
-            } catch (err) {
+            } catch (err: any) {
               return { ticker, signals: [], latestTradeDate: '', error: err };
             }
           }),
@@ -6528,7 +6529,7 @@ async function runDailyDivergenceScan(options = {}) {
       if (targetSpacingMs > 0) {
         try {
           await sleepWithAbort(targetSpacingMs, scanAbortController.signal);
-        } catch (sleepErr) {
+        } catch (sleepErr: any) {
           if (!(isAbortError(sleepErr) && (divergenceScanStopRequested || divergenceScanPauseRequested))) {
             throw sleepErr;
           }
@@ -6629,7 +6630,7 @@ async function runDailyDivergenceScan(options = {}) {
       errorCount,
       summaryProcessedTickers,
     };
-  } catch (err) {
+  } catch (err: any) {
     if (
       divergenceScanStopRequested ||
       (isAbortError(err) && scanAbortController.signal.aborted && !divergenceScanPauseRequested)
@@ -6731,7 +6732,7 @@ async function runScheduledDivergencePipeline() {
       sourceInterval: DIVERGENCE_SOURCE_INTERVAL,
     });
     console.log('Scheduled divergence table build completed after scan:', tableSummary);
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`Scheduled divergence table build failed after scan: ${message}`);
   }
@@ -6747,7 +6748,7 @@ function scheduleNextDivergenceScan() {
   divergenceSchedulerTimer = setTimeout(async () => {
     try {
       await runScheduledDivergencePipeline();
-    } catch (err) {
+    } catch (err: any) {
       const message = err && err.message ? err.message : String(err);
       console.error(`Scheduled divergence scan failed: ${message}`);
     } finally {
@@ -6838,7 +6839,7 @@ function getDebugMetricsPayload() {
     divergence: {
       configured: isDivergenceConfigured(),
       running: divergenceScanRunning,
-      lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
+      lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || '',
     },
     memoryUsage: process.memoryUsage(),
   });
@@ -6855,7 +6856,7 @@ function getHealthPayload() {
 async function getReadyPayload() {
   return buildReadyPayload({
     pool,
-    divergencePool,
+    divergencePool: divergencePool as any,
     isDivergenceConfigured,
     isShuttingDown,
     divergenceScanRunning,
@@ -6879,23 +6880,23 @@ async function pruneOldAlerts() {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - ALERT_RETENTION_DAYS);
     const result = await pool.query('DELETE FROM alerts WHERE created_at < $1', [cutoffDate]);
-    if (result.rowCount > 0) {
+    if (result.rowCount && result.rowCount > 0) {
       console.log(`Pruned ${result.rowCount} old alerts created before ${cutoffDate.toISOString()}`);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to prune old alerts:', err.message);
   }
 }
 
-let server;
-let pruneOldAlertsInitialTimer = null;
-let pruneOldAlertsIntervalTimer = null;
+let server: any;
+let pruneOldAlertsInitialTimer: any = null;
+let pruneOldAlertsIntervalTimer: any = null;
 
 (async function startServer() {
   try {
     await initDB();
     await initDivergenceDB();
-  } catch (err) {
+  } catch (err: any) {
     console.error('Fatal: database initialization failed, exiting.', err);
     process.exit(1);
   }
@@ -6906,7 +6907,7 @@ let pruneOldAlertsIntervalTimer = null;
       fetchDataApiJson,
       buildDataApiUrl,
       formatDateUTC,
-      log: (msg) => console.log(`[TradingCalendar] ${msg}`),
+      log: (msg: any) => console.log(`[TradingCalendar] ${msg}`),
     })
     .catch((err) => {
       console.warn(
@@ -6933,7 +6934,7 @@ process.on('uncaughtException', (err) => {
   shutdownServer('uncaughtException');
 });
 
-async function shutdownServer(signal) {
+async function shutdownServer(signal: any) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`Received ${signal}; shutting down gracefully...`);
@@ -6975,9 +6976,9 @@ async function shutdownServer(signal) {
 
   try {
     await new Promise((resolve, reject) => {
-      server.close((err) => {
+      server.close((err: any) => {
         if (err) reject(err);
-        else resolve();
+        else resolve(undefined);
       });
     });
     console.log('HTTP server closed; draining database pools...');
@@ -6985,7 +6986,7 @@ async function shutdownServer(signal) {
     console.log('Shutdown complete');
     clearTimeout(forceExitTimer);
     process.exit(0);
-  } catch (err) {
+  } catch (err: any) {
     const message = err && err.message ? err.message : String(err);
     console.error(`Graceful shutdown failed: ${message}`);
     clearTimeout(forceExitTimer);

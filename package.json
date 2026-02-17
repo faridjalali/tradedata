@@ -2,9 +2,9 @@
   "name": "tradingview-alerts-server",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "start": "tsx index.js",
+    "start": "tsx index.ts",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "typecheck:server": "tsc --noEmit --project tsconfig.server.json",
@@ -33,6 +33,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.2.3",
     "@types/pg": "^8.16.0",
