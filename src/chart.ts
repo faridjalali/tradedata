@@ -4224,43 +4224,9 @@ function renderVolumeDeltaDivergenceSummary(
 
     const refreshButton = document.createElement('button');
     refreshButton.type = 'button';
-    refreshButton.className = 'pane-btn';
+    refreshButton.className = 'pane-btn refresh-btn';
     refreshButton.style.position = 'relative';
-    refreshButton.style.cursor = loading ? 'wait' : 'pointer';
-    refreshButton.style.pointerEvents = loading ? 'none' : 'auto';
-    refreshButton.setAttribute('aria-disabled', loading ? 'true' : 'false');
-    refreshButton.disabled = false;
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '11');
-    svg.setAttribute('height', '11');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2.5');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.style.display = 'block';
-    const path1 = document.createElementNS(svgNS, 'path');
-    path1.setAttribute('d', 'M21.5 2v6h-6');
-    const path2 = document.createElementNS(svgNS, 'path');
-    path2.setAttribute('d', 'M21.5 8A10 10 0 0 0 5.6 5.6');
-    const path3 = document.createElementNS(svgNS, 'path');
-    path3.setAttribute('d', 'M2.5 22v-6h6');
-    const path4 = document.createElementNS(svgNS, 'path');
-    path4.setAttribute('d', 'M2.5 16A10 10 0 0 0 18.4 18.4');
-    svg.appendChild(path1);
-    svg.appendChild(path2);
-    svg.appendChild(path3);
-    svg.appendChild(path4);
-    if (loading) {
-      svg.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
-        duration: 800,
-        iterations: Infinity,
-        easing: 'linear',
-      });
-    }
-    refreshButton.appendChild(svg);
+    setRefreshButtonLoading(refreshButton, loading);
     refreshButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -4327,6 +4293,48 @@ function renderVolumeDeltaDivergenceSummary(
 function VDF_COLOR_LOADING() {
   return tc().textPrimary;
 }
+// ── Shared refresh-button helpers ──────────────────────────────────
+const REFRESH_SVG_NS = 'http://www.w3.org/2000/svg';
+const REFRESH_SVG_PATHS = [
+  'M21.5 2v6h-6',
+  'M21.5 8A10 10 0 0 0 5.6 5.6',
+  'M2.5 22v-6h6',
+  'M2.5 16A10 10 0 0 0 18.4 18.4',
+];
+
+/** Create the 4-path refresh SVG icon used by all refresh buttons. */
+function createRefreshSvgIcon(): SVGSVGElement {
+  const svg = document.createElementNS(REFRESH_SVG_NS, 'svg');
+  svg.setAttribute('width', '11');
+  svg.setAttribute('height', '11');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.5');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.style.display = 'block';
+  for (const d of REFRESH_SVG_PATHS) {
+    const p = document.createElementNS(REFRESH_SVG_NS, 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
+/**
+ * Set a .refresh-btn's loading state.
+ * Replaces inner SVG, toggles .loading CSS class, and sets cursor/pointer-events.
+ */
+function setRefreshButtonLoading(btn: HTMLElement, loading: boolean): void {
+  btn.innerHTML = '';
+  const svg = createRefreshSvgIcon();
+  btn.appendChild(svg);
+  btn.classList.toggle('loading', loading);
+  btn.style.cursor = loading ? 'wait' : 'pointer';
+  btn.style.pointerEvents = loading ? 'none' : 'auto';
+}
+
 function VDF_COLOR_NOT_DETECTED() {
   return tc().textMuted;
 }
@@ -4385,7 +4393,7 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
   }
 
   const btn = document.createElement('button');
-  btn.className = 'pane-btn vdf-refresh-btn';
+  btn.className = 'pane-btn refresh-btn vdf-refresh-btn';
   btn.type = 'button';
   btn.style.position = 'relative';
   // Insert before VDF button so refresh appears on the left
@@ -4401,42 +4409,8 @@ function ensureVDFRefreshButton(container: HTMLElement): HTMLButtonElement {
 
 function renderVDFRefreshIcon(loading: boolean): void {
   if (!vdfRefreshButtonEl) return;
-  vdfRefreshButtonEl.innerHTML = '';
   vdfRefreshButtonEl.removeAttribute('title');
-  vdfRefreshButtonEl.style.cursor = loading ? 'wait' : 'pointer';
-  vdfRefreshButtonEl.style.pointerEvents = loading ? 'none' : 'auto';
-
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('width', '11');
-  svg.setAttribute('height', '11');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2.5');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.style.display = 'block';
-  const path1 = document.createElementNS(svgNS, 'path');
-  path1.setAttribute('d', 'M21.5 2v6h-6');
-  const path2 = document.createElementNS(svgNS, 'path');
-  path2.setAttribute('d', 'M21.5 8A10 10 0 0 0 5.6 5.6');
-  const path3 = document.createElementNS(svgNS, 'path');
-  path3.setAttribute('d', 'M2.5 22v-6h6');
-  const path4 = document.createElementNS(svgNS, 'path');
-  path4.setAttribute('d', 'M2.5 16A10 10 0 0 0 18.4 18.4');
-  svg.appendChild(path1);
-  svg.appendChild(path2);
-  svg.appendChild(path3);
-  svg.appendChild(path4);
-  if (loading) {
-    svg.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], {
-      duration: 800,
-      iterations: Infinity,
-      easing: 'linear',
-    });
-  }
-  vdfRefreshButtonEl.appendChild(svg);
+  setRefreshButtonLoading(vdfRefreshButtonEl, loading);
 }
 
 function setVDFButtonColor(color: string, title?: string): void {
@@ -5561,6 +5535,9 @@ export async function renderCustomChart(
     if (chartFetchAbortController === fetchController) {
       chartFetchAbortController = null;
     }
+    // Clear chart refresh button loading state
+    const chartRefreshBtn = document.getElementById('chart-refresh-btn');
+    if (chartRefreshBtn) setRefreshButtonLoading(chartRefreshBtn, false);
   }
 }
 
@@ -5974,13 +5951,15 @@ function initChartFullscreen(): void {
 
   // Initialize Refresh Button
   if (refreshBtn) {
+    setRefreshButtonLoading(refreshBtn, false);
     refreshBtn.addEventListener('click', () => {
       if (!currentChartTicker || chartActivelyLoading) return;
       // Evict cached data for current ticker+interval so fetch is forced
       const cacheKey = buildChartDataCacheKey(currentChartTicker, currentChartInterval);
       chartDataCache.delete(cacheKey);
       schedulePersistChartDataCacheToSession();
-      // Re-render with fresh data (cache miss → full fetch → new cache entry)
+      // Show loading state, re-render with fresh data, then clear loading
+      setRefreshButtonLoading(refreshBtn, true);
       renderCustomChart(currentChartTicker, currentChartInterval);
     });
   }
