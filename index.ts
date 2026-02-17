@@ -170,7 +170,15 @@ await app.register(fastifyHelmet, {
 await app.register(fastifyRateLimit, {
   max: API_RATE_LIMIT_MAX,
   timeWindow: 15 * 60 * 1000,
-  allowList: (req: { url?: string }) => !String(req.url || '').split('?')[0].startsWith('/api/'),
+  allowList: (req: { url?: string }) => {
+    const path = String(req.url || '').split('?')[0];
+    // Exempt non-API paths, auth endpoints, health checks, and scan status polling
+    return !path.startsWith('/api/')
+      || path.startsWith('/api/auth/')
+      || path.startsWith('/api/health')
+      || path.startsWith('/api/ready')
+      || path === '/api/divergence/scan/status';
+  },
 });
 
 await app.register(fastifyCompress);
