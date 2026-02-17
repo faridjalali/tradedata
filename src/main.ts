@@ -543,7 +543,7 @@ function initColumnTimeframeButtons(): void {
         const target = e.target as HTMLElement;
 
         // Timeframe button click (1, 2, 5, custom)
-        const tfBtn = target.closest('.column-tf-controls .tf-btn[data-tf]') as HTMLElement | null;
+        const tfBtn = target.closest('.column-tf-controls .pane-btn[data-tf]') as HTMLElement | null;
         if (tfBtn) {
             const controls = tfBtn.closest('.column-tf-controls') as HTMLElement | null;
             if (!controls) return;
@@ -704,7 +704,7 @@ function bootstrapApplication(): void {
     });
 
     // Ticker View Daily Sort Buttons
-    document.querySelectorAll('.ticker-daily-sort .tf-btn').forEach(btn => {
+    document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mode = (btn as HTMLElement).dataset.sort as SortMode;
             setTickerDailySort(mode);
@@ -712,7 +712,7 @@ function bootstrapApplication(): void {
     });
 
     // Ticker View Weekly Sort Buttons
-    document.querySelectorAll('.ticker-weekly-sort .tf-btn').forEach(btn => {
+    document.querySelectorAll('.ticker-weekly-sort .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mode = (btn as HTMLElement).dataset.sort as SortMode;
             setTickerWeeklySort(mode);
@@ -721,14 +721,14 @@ function bootstrapApplication(): void {
 
 
     // Breadth Controls
-    document.querySelectorAll('#breadth-tf-btns .tf-btn').forEach(btn => {
+    document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const days = Number((btn as HTMLElement).dataset.days);
             setBreadthTimeframe(days);
         });
     });
 
-    document.querySelectorAll('#breadth-metric-btns .tf-btn').forEach(btn => {
+    document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
             setBreadthMetric(metric);

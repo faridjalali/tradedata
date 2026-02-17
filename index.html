@@ -78,8 +78,8 @@
               <div class="global-settings-row" style="justify-content:space-between;">
                 <label class="global-settings-label">Minichart on Mobile</label>
                 <div id="global-minichart-mobile-btns" style="display:flex;gap:6px;align-items:center;">
-                  <button class="tf-btn active" data-minichart-mobile="off">Off</button>
-                  <button class="tf-btn" data-minichart-mobile="on">On</button>
+                  <button class="pane-btn active" data-minichart-mobile="off">Off</button>
+                  <button class="pane-btn" data-minichart-mobile="on">On</button>
                 </div>
               </div>
               <div class="global-settings-row global-settings-timezone-row">
@@ -88,13 +88,13 @@
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
-                  class="tf-btn divergence-run-btn"
+                  class="pane-btn divergence-run-btn"
                   id="divergence-fetch-daily-btn"
                 >
                   Fetch Daily
                 </button>
                 <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-fetch-daily-stop-btn"
                   aria-label="Stop Fetch Daily"
                   disabled
@@ -105,13 +105,13 @@
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
-                  class="tf-btn divergence-run-btn"
+                  class="pane-btn divergence-run-btn"
                   id="divergence-fetch-weekly-btn"
                 >
                   Fetch Weekly
                 </button>
                 <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-fetch-weekly-stop-btn"
                   aria-label="Stop Fetch Weekly"
                   disabled
@@ -122,13 +122,13 @@
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
                 <button
-                  class="tf-btn divergence-run-btn"
+                  class="pane-btn divergence-run-btn"
                   id="divergence-vdf-scan-btn"
                 >
                   Analyze
                 </button>
                 <button
-                  class="tf-btn divergence-run-btn divergence-control-icon-btn"
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
                   id="divergence-vdf-scan-stop-btn"
                   aria-label="Stop VDF Scan"
                   disabled
@@ -189,7 +189,11 @@
             <div class="column-header">
               <h2>Run Metrics</h2>
               <div class="header-sort-controls">
-                <button id="logs-refresh-btn" class="tf-btn">↻</button>
+                <button id="logs-refresh-btn" class="pane-btn refresh-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6"/><path d="M21.5 8A10 10 0 0 0 3.2 7.2"/><path d="M2.5 22v-6h6"/><path d="M2.5 16A10 10 0 0 0 20.8 16.8"/>
+                  </svg>
+                </button>
               </div>
             </div>
             <div id="logs-run-cards" class="logs-grid">
@@ -218,23 +222,23 @@
               <div class="header-title-group">
                 <h2>Daily</h2>
                 <div class="column-tf-controls" data-column="daily">
-                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
                     <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
                     <input type="date" class="glass-input column-tf-to" />
-                    <button class="tf-btn column-tf-apply" >&#x203A;</button>
+                    <button class="pane-btn column-tf-apply" >&#x203A;</button>
                   </div>
                 </div>
               </div>
               <div class="header-sort-controls divergence-daily-sort">
-                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                <button class="pane-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-daily-container" class="alerts-list">
@@ -247,23 +251,23 @@
               <div class="header-title-group">
                 <h2>Weekly</h2>
                 <div class="column-tf-controls" data-column="weekly">
-                  <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                  <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                  <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                  <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                  <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                  <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                  <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                  <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                   <div class="column-tf-custom-panel header-dropdown-panel hidden">
                     <input type="date" class="glass-input column-tf-from" />
                     <span class="column-tf-sep">to</span>
                     <input type="date" class="glass-input column-tf-to" />
-                    <button class="tf-btn column-tf-apply" >&#x203A;</button>
+                    <button class="pane-btn column-tf-apply" >&#x203A;</button>
                   </div>
                 </div>
               </div>
               <div class="header-sort-controls divergence-weekly-sort">
-                <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                <button class="pane-btn" data-sort="favorite" title="Favorites only">★</button>
+                <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
               </div>
             </div>
             <div id="divergence-weekly-container" class="alerts-list">
@@ -283,23 +287,23 @@
                   <div class="header-title-group">
                     <h2>Daily</h2>
                     <div class="column-tf-controls" data-column="daily">
-                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                       <div class="column-tf-custom-panel header-dropdown-panel hidden">
                         <input type="date" class="glass-input column-tf-from" />
                         <span class="column-tf-sep">to</span>
                         <input type="date" class="glass-input column-tf-to" />
-                        <button class="tf-btn column-tf-apply" >&#x203A;</button>
+                        <button class="pane-btn column-tf-apply" >&#x203A;</button>
                       </div>
                     </div>
                   </div>
                   <div class="header-sort-controls ticker-daily-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                    <button class="pane-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                    <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-daily-container" class="alerts-list">
@@ -313,23 +317,23 @@
                   <div class="header-title-group">
                     <h2>Weekly</h2>
                     <div class="column-tf-controls" data-column="weekly">
-                      <button class="tf-btn active" data-tf="1" title="Last fetch day">1</button>
-                      <button class="tf-btn" data-tf="2" title="Last 2 fetch days">2</button>
-                      <button class="tf-btn" data-tf="5" title="Last 5 fetch days">5</button>
-                      <button class="tf-btn" data-tf="custom" title="Custom date range">C</button>
+                      <button class="pane-btn active" data-tf="1" title="Last fetch day">1</button>
+                      <button class="pane-btn" data-tf="2" title="Last 2 fetch days">2</button>
+                      <button class="pane-btn" data-tf="5" title="Last 5 fetch days">5</button>
+                      <button class="pane-btn" data-tf="custom" title="Custom date range">C</button>
                       <div class="column-tf-custom-panel header-dropdown-panel hidden">
                         <input type="date" class="glass-input column-tf-from" />
                         <span class="column-tf-sep">to</span>
                         <input type="date" class="glass-input column-tf-to" />
-                        <button class="tf-btn column-tf-apply" >&#x203A;</button>
+                        <button class="pane-btn column-tf-apply" >&#x203A;</button>
                       </div>
                     </div>
                   </div>
                   <div class="header-sort-controls ticker-weekly-sort">
-                    <button class="tf-btn" data-sort="favorite" title="Favorites only">★</button>
-                    <button class="tf-btn" data-sort="time" title="Sort by Date">D</button>
-                    <button class="tf-btn" data-sort="volume" title="Sort by Volume">V</button>
-                    <button class="tf-btn active" data-sort="score" title="Sort by Score">S</button>
+                    <button class="pane-btn" data-sort="favorite" title="Favorites only">★</button>
+                    <button class="pane-btn" data-sort="time" title="Sort by Date">D</button>
+                    <button class="pane-btn" data-sort="volume" title="Sort by Volume">V</button>
+                    <button class="pane-btn active" data-sort="score" title="Sort by Score">S</button>
                   </div>
                 </div>
                 <div id="ticker-weekly-container" class="alerts-list">
@@ -401,16 +405,16 @@
           <div class="single-page-header">
             <div class="single-page-controls">
               <div id="breadth-tf-btns" class="feed-controls-group">
-                <button class="tf-btn" data-days="1">T</button>
-                <button class="tf-btn active" data-days="5">5</button>
-                <button class="tf-btn" data-days="10">10</button>
-                <button class="tf-btn" data-days="20">20</button>
-                <button class="tf-btn" data-days="30">30</button>
+                <button class="pane-btn" data-days="1">T</button>
+                <button class="pane-btn active" data-days="5">5</button>
+                <button class="pane-btn" data-days="10">10</button>
+                <button class="pane-btn" data-days="20">20</button>
+                <button class="pane-btn" data-days="30">30</button>
               </div>
               <div id="breadth-metric-btns" class="feed-controls-group">
-                <button class="tf-btn active" data-metric="SVIX">SPY / SVIX</button>
-                <button class="tf-btn" data-metric="RSP">SPY / RSP</button>
-                <button class="tf-btn" data-metric="MAGS">SPY / MAGS</button>
+                <button class="pane-btn active" data-metric="SVIX">SPY / SVIX</button>
+                <button class="pane-btn" data-metric="RSP">SPY / RSP</button>
+                <button class="pane-btn" data-metric="MAGS">SPY / MAGS</button>
               </div>
             </div>
             <span id="breadth-subtitle" class="single-page-subtitle">SPY vs SVIX — Normalized</span>

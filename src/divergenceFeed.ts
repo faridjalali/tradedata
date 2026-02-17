@@ -1240,7 +1240,7 @@ function showMoreButtonHtml(shown: number, total: number, timeframe: '1d' | '1w'
     if (shown >= total) return '';
     const remaining = total - shown;
     const nextBatch = Math.min(remaining, ALERTS_PAGE_SIZE);
-    return `<button class="tf-btn show-more-btn" data-timeframe="${timeframe}">▼ Show ${nextBatch} more (${shown}/${total})</button>`;
+    return `<button class="pane-btn show-more-btn" data-timeframe="${timeframe}">▼ Show ${nextBatch} more (${shown}/${total})</button>`;
 }
 
 export function renderDivergenceOverview(): void {
@@ -1683,14 +1683,14 @@ export function setupDivergenceFeedDelegation(): void {
     });
 
     // Sort Buttons
-    document.querySelectorAll('#view-divergence .divergence-daily-sort .tf-btn').forEach(btn => {
+    document.querySelectorAll('#view-divergence .divergence-daily-sort .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mode = (btn as HTMLElement).dataset.sort as SortMode;
             setDivergenceDailySort(mode);
         });
     });
 
-    document.querySelectorAll('#view-divergence .divergence-weekly-sort .tf-btn').forEach(btn => {
+    document.querySelectorAll('#view-divergence .divergence-weekly-sort .pane-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mode = (btn as HTMLElement).dataset.sort as SortMode;
             setDivergenceWeeklySort(mode);
@@ -1888,7 +1888,7 @@ export function setColumnFeedMode(column: 'daily' | 'weekly', mode: ColumnFeedMo
 
     // Update button active state for all instances of this column
     document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach(controls => {
-        controls.querySelectorAll('.tf-btn[data-tf]').forEach(btn => {
+        controls.querySelectorAll('.pane-btn[data-tf]').forEach(btn => {
             const el = btn as HTMLElement;
             el.classList.toggle('active', el.dataset.tf === mode);
         });

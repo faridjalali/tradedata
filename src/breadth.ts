@@ -229,7 +229,7 @@ export function setBreadthTimeframe(days: number): void {
     currentTimeframeDays = days;
 
     // Update active button
-    document.querySelectorAll('#breadth-tf-btns .tf-btn').forEach(btn => {
+    document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach(btn => {
         btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
     });
 
@@ -240,7 +240,7 @@ export function setBreadthMetric(metric: 'SVIX' | 'RSP' | 'MAGS'): void {
     currentMetric = metric;
 
     // Update active button
-    document.querySelectorAll('#breadth-metric-btns .tf-btn').forEach(btn => {
+    document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach(btn => {
         btn.classList.toggle('active', (btn as HTMLElement).dataset.metric === metric);
     });
 

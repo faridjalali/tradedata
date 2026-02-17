@@ -182,7 +182,7 @@ export function updateSortButtonUi(
 ): void {
     const header = document.querySelector(containerSelector);
     if (!header) return;
-    header.querySelectorAll('.tf-btn').forEach(btn => {
+    header.querySelectorAll('.pane-btn').forEach(btn => {
         const el = btn as HTMLElement;
         const mode = el.dataset.sort as SortMode;
         if (mode === currentMode) {
