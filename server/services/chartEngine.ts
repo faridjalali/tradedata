@@ -334,17 +334,23 @@ async function dataApiIntraday(
 
     let rows: Array<unknown> = [];
     if (urls.length > 1) {
-      const results = await Promise.all(
-        urls.map((url) =>
-          fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
-            .then((payload) => toArrayPayload(payload) || [])
-            .catch((err: any) => {
-              console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
-              throw err;
-            }),
-        ),
-      );
-      rows = results.flat();
+      const CHUNK_CONCURRENCY = 3;
+      const allRows: Array<unknown> = [];
+      for (let i = 0; i < urls.length; i += CHUNK_CONCURRENCY) {
+        const batch = urls.slice(i, i + CHUNK_CONCURRENCY);
+        const batchResults = await Promise.all(
+          batch.map((url) =>
+            fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
+              .then((payload) => toArrayPayload(payload) || [])
+              .catch((err: any) => {
+                console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
+                throw err;
+              }),
+          ),
+        );
+        allRows.push(...batchResults.flat());
+      }
+      rows = allRows;
     } else {
       rows = await fetchDataApiArrayWithFallback(`DataAPI ${interval}`, urls, { signal, metricsTracker });
     }

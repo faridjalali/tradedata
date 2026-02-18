@@ -122,6 +122,9 @@ export function validateStartupEnvironment() {
   if (!String(process.env.DATA_API_KEY || '').trim()) {
     warnings.push('DATA_API_KEY is not set');
   }
+  if (!String(process.env.DIVERGENCE_SCAN_SECRET || '').trim()) {
+    warnings.push('DIVERGENCE_SCAN_SECRET is not set — divergence admin endpoints are unprotected');
+  }
   if (String(process.env.DATA_API_REQUESTS_PAUSED || 'false').toLowerCase() === 'true') {
     warnings.push('DATA_API_REQUESTS_PAUSED is enabled (outbound market-data calls are blocked)');
   }
