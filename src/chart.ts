@@ -7,23 +7,16 @@ import {
   ChartInterval,
 } from './chartApi';
 import { RSIChart } from './rsi';
-import { DIVERGENCE_LOOKBACK_DAYS, DivergenceSummaryEntry, getTickerDivergenceSummary } from './divergenceTable';
 import {
   ensureVDFAnalysisPanel,
   clearVDFAnalysisPanel,
   renderVDFAnalysisPanel,
 } from './vdfAnalysisPanel';
-import {
-  loadTrendlineStorage,
-  saveTrendlineStorage,
-  buildTrendlineContextKey,
-  loadPersistedTrendlinesForContext,
-} from './trendlineStorage';
 import { getThemeColors } from './theme';
 import {
   unixSecondsFromTimeValue, formatTimeScaleTickMark,
   buildMonthBoundaryTimes,
-  timeKey, toUnixSeconds, formatMmDdYyFromUnixSeconds,
+  timeKey, toUnixSeconds,
 } from './chartTimeUtils';
 import {
   buildRSISeriesFromBars, normalizeValueSeries,
@@ -56,21 +49,34 @@ import {
   deactivateRsiDivergencePlotTool, deactivateVolumeDeltaRsiDivergencePlotTool,
   updateRsiDivergencePlotPoint, updateVolumeDeltaRsiDivergencePlotPoint,
   refreshActiveDivergenceOverlays, deactivateInteractivePaneToolsFromEscape,
-  getDivergenceOverlayChart,
 } from './chartDivergencePlot';
+import {
+  showLoadingOverlay, showRetryOverlay, hideLoadingOverlay,
+  reapplyInlineThemeStyles,
+} from './chartOverlays';
+import {
+  initVDTrendlines,
+  setVDTrendlineData, resetVDTrendlineData, updateVDRsiLastPoint,
+  isVolumeDeltaDivergenceToolActive, isVolumeDeltaSyncSuppressed,
+  fixedVolumeDeltaAutoscaleInfoProvider, normalizeVolumeDeltaValue,
+  refreshVolumeDeltaTrendlineCrossLabels,
+  deactivateVolumeDeltaDivergenceTool, activateVolumeDeltaDivergenceTool,
+  clearVolumeDeltaDivergence,
+  detectAndHandleVolumeDeltaDivergenceClick,
+  persistTrendlinesForCurrentContext,
+  restorePersistedTrendlinesForCurrentContext,
+  clearVolumeDeltaDivergenceSummary, renderVolumeDeltaDivergenceSummary,
+} from './chartVDTrendlines';
 import {
   type MidlineStyle,
   type PaneId, type TrendToolPane, type PaneControlType,
-  type RSIPersistedTrendline,
   TREND_ICON, ERASE_ICON, DIVERGENCE_ICON, SETTINGS_ICON,
   INTERVAL_SWITCH_DEBOUNCE_MS, CHART_LIVE_REFRESH_MS,
   RIGHT_MARGIN_BARS, FUTURE_TIMELINE_TRADING_DAYS, SCALE_LABEL_CHARS, SCALE_MIN_WIDTH_PX,
   INVALID_SYMBOL_MESSAGE,
   TOP_PANE_TICKER_LABEL_CLASS, TOP_PANE_BADGE_CLASS, TOP_PANE_BADGE_START_LEFT_PX, TOP_PANE_BADGE_GAP_PX,
   PANE_SETTINGS_BUTTON_LEFT_PX, PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
-  VOLUME_DELTA_MIDLINE, RSI_MIDLINE_VALUE,
-  VOLUME_DELTA_AXIS_MIN, VOLUME_DELTA_AXIS_MAX, VOLUME_DELTA_DATA_MIN, VOLUME_DELTA_DATA_MAX,
-  VOLUME_DELTA_MAX_HIGHLIGHT_POINTS, DIVERGENCE_HIGHLIGHT_COLOR, TRENDLINE_COLOR,
+  VOLUME_DELTA_MIDLINE,
   VOLUME_DELTA_POSITIVE_COLOR, VOLUME_DELTA_NEGATIVE_COLOR,
   PREFETCH_INTERVAL_TARGETS,
   PANE_HEIGHT_MIN, PANE_HEIGHT_MAX, DEFAULT_PANE_ORDER, DEFAULT_PANE_HEIGHTS, normalizePaneOrder,
@@ -98,21 +104,7 @@ let volumeDeltaChart: any = null;
 
 let volumeDeltaHistogramSeries: any = null;
 let volumeDeltaTimelineSeries: any = null;
-let volumeDeltaRsiPoints: Array<{ time: string | number; value: number }> = [];
-let volumeDeltaIndexByTime = new Map<string, number>();
-let volumeDeltaHighlightSeries: any = null;
-let volumeDeltaTrendLineSeriesList: any[] = [];
-let volumeDeltaTrendlineCrossLabels: Array<{
-  element: HTMLDivElement;
-  anchorTime: string | number;
-  anchorValue: number;
-}> = [];
-let volumeDeltaTrendlineDefinitions: RSIPersistedTrendline[] = [];
-let volumeDeltaDivergencePointTimeKeys = new Set<string>();
-let volumeDeltaFirstPoint: { time: string | number; rsi: number; price: number; index: number } | null = null;
-let volumeDeltaDivergenceToolActive = false;
 let rsiDivergenceToolActive = false;
-let volumeDeltaSuppressSync = false;
 let chartResizeObserver: ResizeObserver | null = null;
 let isChartSyncBound = false;
 let latestRenderRequestId = 0;
@@ -130,7 +122,6 @@ let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaRsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
-let volumeDeltaDivergenceSummaryEl: HTMLDivElement | null = null;
 let chartFetchAbortController: AbortController | null = null;
 let prefetchAbortController: AbortController | null = null;
 let chartActivelyLoading = false;
@@ -284,6 +275,16 @@ initVDF({
   getCurrentBars: () => currentBars,
   getCurrentTicker: () => currentChartTicker,
 });
+initVDTrendlines({
+  getVDRsiChart: () => volumeDeltaRsiChart,
+  getVDRsiSeries: () => volumeDeltaRsiSeries,
+  getCurrentTicker: () => currentChartTicker,
+  getCurrentInterval: () => currentChartInterval,
+  getPriceByTime: () => priceByTime,
+  getRsiChart: () => rsiChart,
+  setPaneTrendlineToolActive,
+  applyPricePaneDivergentBarColors,
+});
 initSettingsUI({
   applyMovingAverages,
   applyPriceGridOptions,
@@ -309,7 +310,7 @@ initDivergencePlot({
   getVolumeDeltaRsiByTime: () => volumeDeltaRsiByTime,
   getRsiDivergenceToolActive: () => rsiDivergenceToolActive,
   setRsiDivergenceToolActive: (v: boolean) => { rsiDivergenceToolActive = v; },
-  getVolumeDeltaDivergenceToolActive: () => volumeDeltaDivergenceToolActive,
+  getVolumeDeltaDivergenceToolActive: () => isVolumeDeltaDivergenceToolActive(),
   deactivateVolumeDeltaDivergenceTool,
   getRsiChart: () => rsiChart,
   setPaneTrendlineToolActive,
@@ -413,16 +414,6 @@ function formatVolumeDeltaHistogramScaleLabel(value: number): string {
   return sign ? `${sign}0`.padEnd(SCALE_LABEL_CHARS, ' ') : '0'.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function persistTrendlinesForCurrentContext(): void {
-  if (!currentChartTicker) return;
-  const storage = loadTrendlineStorage();
-  const key = buildTrendlineContextKey(currentChartTicker, currentChartInterval);
-  storage[key] = {
-    rsi: rsiChart?.getPersistedTrendlines() ?? [],
-    volumeDeltaRsi: volumeDeltaTrendlineDefinitions.map((line) => ({ ...line })),
-  };
-  saveTrendlineStorage(storage);
-}
 
 
 function clearMovingAverageSeries(): void {
@@ -1113,7 +1104,7 @@ function clearRSITrendlines(): void {
 
 function toggleVolumeDeltaRSITrendlineTool(): void {
   if (!volumeDeltaRsiChart) return;
-  if (volumeDeltaDivergenceToolActive) {
+  if (isVolumeDeltaDivergenceToolActive()) {
     deactivateVolumeDeltaDivergenceTool();
     setPaneTrendlineToolActive('volumeDeltaRsi', false);
     return;
@@ -1294,7 +1285,7 @@ function ensureSettingsUI(
   }
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
-  setPaneTrendlineToolActive('volumeDeltaRsi', volumeDeltaDivergenceToolActive);
+  setPaneTrendlineToolActive('volumeDeltaRsi', isVolumeDeltaDivergenceToolActive());
   setPaneToolButtonActive('rsi', 'divergence', isRsiDivergencePlotToolActive());
   setPaneToolButtonActive('volumeDeltaRsi', 'divergence', isVolumeDeltaRsiDivergencePlotToolActive());
 
@@ -1435,446 +1426,7 @@ function formatPriceScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function fixedVolumeDeltaAutoscaleInfoProvider(): any {
-  return {
-    priceRange: {
-      minValue: VOLUME_DELTA_AXIS_MIN,
-      maxValue: VOLUME_DELTA_AXIS_MAX,
-    },
-  };
-}
 
-function normalizeVolumeDeltaValue(value: number): number {
-  return Math.max(VOLUME_DELTA_DATA_MIN, Math.min(VOLUME_DELTA_DATA_MAX, Number(value)));
-}
-
-function setVolumeDeltaCursor(isCrosshair: boolean): void {
-  const container = document.getElementById('vd-rsi-chart-container');
-  if (!container) return;
-  container.style.cursor = isCrosshair ? 'crosshair' : 'default';
-}
-
-function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
-  const label = document.createElement('div');
-  label.className = 'trendline-cross-label';
-  label.textContent = text;
-  label.style.position = 'absolute';
-  label.style.zIndex = '29';
-  label.style.minHeight = '24px';
-  label.style.display = 'inline-flex';
-  label.style.alignItems = 'center';
-  label.style.padding = '0 8px';
-  label.style.borderRadius = '4px';
-  label.style.border = `1px solid ${tc().borderColor}`;
-  label.style.background = tc().cardBg;
-  label.style.color = tc().textPrimary;
-  label.style.fontSize = '12px';
-  label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-  label.style.pointerEvents = 'none';
-  label.style.whiteSpace = 'nowrap';
-  label.style.transform = 'translate(-50%, calc(-100% - 6px))';
-  return label;
-}
-
-function refreshVolumeDeltaTrendlineCrossLabels(): void {
-  const container = document.getElementById('vd-rsi-chart-container');
-  if (!container || !volumeDeltaRsiChart || !volumeDeltaRsiSeries) return;
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-
-  for (const label of volumeDeltaTrendlineCrossLabels) {
-    const x = volumeDeltaRsiChart.timeScale().timeToCoordinate(label.anchorTime);
-    const y = volumeDeltaRsiSeries.priceToCoordinate(label.anchorValue);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > width || y < 0 || y > height) {
-      label.element.style.display = 'none';
-      continue;
-    }
-    label.element.style.display = 'inline-flex';
-    label.element.style.left = `${Math.round(x)}px`;
-    label.element.style.top = `${Math.round(Math.max(8, y))}px`;
-  }
-}
-
-function clearVolumeDeltaTrendlineCrossLabels(): void {
-  for (const label of volumeDeltaTrendlineCrossLabels) {
-    label.element.remove();
-  }
-  volumeDeltaTrendlineCrossLabels = [];
-}
-
-function addVolumeDeltaTrendlineCrossLabel(anchorTime: string | number, anchorValue: number, text: string): void {
-  const container = document.getElementById('vd-rsi-chart-container');
-  if (!container) return;
-  const element = createTrendlineCrossLabelElement(text);
-  container.appendChild(element);
-  volumeDeltaTrendlineCrossLabels.push({
-    element,
-    anchorTime,
-    anchorValue,
-  });
-  refreshVolumeDeltaTrendlineCrossLabels();
-}
-
-function projectFutureTradingUnixSeconds(lastTimeSeconds: number, futureBars: number, stepSeconds: number): number {
-  // For daily/weekly intervals, skip weekends when projecting
-  if (stepSeconds >= 86400) {
-    const wholeBars = Math.floor(futureBars);
-    const fraction = futureBars - wholeBars;
-    const d = new Date(lastTimeSeconds * 1000);
-    let remaining = wholeBars;
-    while (remaining > 0) {
-      d.setUTCDate(d.getUTCDate() + 1);
-      const dow = d.getUTCDay();
-      if (dow !== 0 && dow !== 6) remaining--;
-    }
-    const wholeTime = Math.floor(d.getTime() / 1000);
-    if (fraction > 0) {
-      // Interpolate toward next trading day
-      const nextD = new Date(d);
-      do {
-        nextD.setUTCDate(nextD.getUTCDate() + 1);
-      } while (nextD.getUTCDay() === 0 || nextD.getUTCDay() === 6);
-      const nextTime = Math.floor(nextD.getTime() / 1000);
-      return wholeTime + fraction * (nextTime - wholeTime);
-    }
-    return wholeTime;
-  }
-  // Intraday: spread bars across trading days, skipping weekends.
-  const barsPerDay = barsPerTradingDayFromStep(stepSeconds);
-  const tradingDaysAhead = Math.floor(futureBars / barsPerDay);
-  const intraDayBars = futureBars - tradingDaysAhead * barsPerDay;
-  const d = new Date(lastTimeSeconds * 1000);
-  let remaining = tradingDaysAhead;
-  while (remaining > 0) {
-    d.setUTCDate(d.getUTCDate() + 1);
-    const dow = d.getUTCDay();
-    if (dow !== 0 && dow !== 6) remaining--;
-  }
-  return Math.floor(d.getTime() / 1000) + intraDayBars * stepSeconds;
-}
-
-function volumeDeltaIndexToUnixSeconds(
-  index: number,
-  lastHistoricalIndex: number,
-  firstHistoricalTimeSeconds: number | null,
-  lastHistoricalTimeSeconds: number | null,
-  stepSeconds: number,
-): number | null {
-  if (!Number.isFinite(index)) return null;
-
-  if (index > lastHistoricalIndex) {
-    if (lastHistoricalTimeSeconds === null) return null;
-    return projectFutureTradingUnixSeconds(lastHistoricalTimeSeconds, index - lastHistoricalIndex, stepSeconds);
-  }
-
-  if (index < 0) {
-    if (firstHistoricalTimeSeconds === null) return null;
-    return firstHistoricalTimeSeconds + index * stepSeconds;
-  }
-
-  const lowerIndex = Math.max(0, Math.floor(index));
-  const upperIndex = Math.min(lastHistoricalIndex, Math.ceil(index));
-  const lowerTime = toUnixSeconds(volumeDeltaRsiPoints[lowerIndex]?.time);
-  const upperTime = toUnixSeconds(volumeDeltaRsiPoints[upperIndex]?.time);
-  if (lowerIndex === upperIndex) return lowerTime;
-  if (Number.isFinite(lowerTime) && Number.isFinite(upperTime)) {
-    const ratio = index - lowerIndex;
-    return Number(lowerTime) + (Number(upperTime) - Number(lowerTime)) * ratio;
-  }
-  if (Number.isFinite(lowerTime)) return Number(lowerTime) + (index - lowerIndex) * stepSeconds;
-  if (firstHistoricalTimeSeconds === null) return null;
-  return firstHistoricalTimeSeconds + index * stepSeconds;
-}
-
-function computeVolumeDeltaTrendlineMidlineCrossUnixSeconds(
-  index1: number,
-  value1: number,
-  slope: number,
-  lastHistoricalIndex: number,
-  firstHistoricalTimeSeconds: number | null,
-  lastHistoricalTimeSeconds: number | null,
-  stepSeconds: number,
-): number | null {
-  if (!Number.isFinite(slope) || Math.abs(slope) < 1e-12) return null;
-  const crossIndex = index1 + (RSI_MIDLINE_VALUE - value1) / slope;
-  if (!Number.isFinite(crossIndex)) return null;
-  return volumeDeltaIndexToUnixSeconds(
-    crossIndex,
-    lastHistoricalIndex,
-    firstHistoricalTimeSeconds,
-    lastHistoricalTimeSeconds,
-    stepSeconds,
-  );
-}
-
-function inferVolumeDeltaBarStepSeconds(): number {
-  if (volumeDeltaRsiPoints.length < 2) return 1800;
-  const diffs: number[] = [];
-  for (let i = 1; i < volumeDeltaRsiPoints.length; i++) {
-    const prev = toUnixSeconds(volumeDeltaRsiPoints[i - 1].time);
-    const curr = toUnixSeconds(volumeDeltaRsiPoints[i].time);
-    if (prev === null || curr === null) continue;
-    const diff = curr - prev;
-    if (Number.isFinite(diff) && diff > 0) {
-      diffs.push(diff);
-    }
-  }
-  if (diffs.length === 0) return 1800;
-  diffs.sort((a, b) => a - b);
-  // Use the 25th-percentile diff to filter out weekend/holiday gaps
-  // while still capturing the true bar interval for daily/weekly data.
-  return diffs[Math.floor(diffs.length * 0.25)];
-}
-
-function barsPerTradingDayFromStep(stepSeconds: number): number {
-  if (stepSeconds <= 5 * 60) return 78;
-  if (stepSeconds <= 15 * 60) return 26;
-  if (stepSeconds <= 30 * 60) return 13;
-  if (stepSeconds <= 60 * 60) return 7;
-  return 2;
-}
-
-function volumeDeltaFutureBarsForOneYear(): number {
-  const stepSeconds = inferVolumeDeltaBarStepSeconds();
-  return barsPerTradingDayFromStep(stepSeconds) * 252;
-}
-
-function clearVolumeDeltaHighlights(): void {
-  if (!volumeDeltaHighlightSeries || !volumeDeltaRsiChart) return;
-  try {
-    volumeDeltaRsiChart.removeSeries(volumeDeltaHighlightSeries);
-  } catch {
-    // Ignore stale highlight series remove errors.
-  }
-  volumeDeltaHighlightSeries = null;
-}
-
-function clearVolumeDeltaTrendLines(preserveViewport: boolean = false): void {
-  const visibleRangeBeforeClear =
-    preserveViewport && volumeDeltaRsiChart ? volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.() : null;
-  if (preserveViewport) {
-    volumeDeltaSuppressSync = true;
-  }
-
-  if (!volumeDeltaRsiChart || volumeDeltaTrendLineSeriesList.length === 0) {
-    volumeDeltaTrendLineSeriesList = [];
-    volumeDeltaTrendlineDefinitions = [];
-    clearVolumeDeltaTrendlineCrossLabels();
-    if (preserveViewport) {
-      volumeDeltaSuppressSync = false;
-    }
-    return;
-  }
-
-  try {
-    for (const series of volumeDeltaTrendLineSeriesList) {
-      try {
-        volumeDeltaRsiChart.removeSeries(series);
-      } catch {
-        // Ignore stale trendline series remove errors.
-      }
-    }
-    volumeDeltaTrendLineSeriesList = [];
-    volumeDeltaTrendlineDefinitions = [];
-    clearVolumeDeltaTrendlineCrossLabels();
-  } finally {
-    if (preserveViewport && visibleRangeBeforeClear) {
-      try {
-        volumeDeltaRsiChart.timeScale().setVisibleLogicalRange(visibleRangeBeforeClear);
-      } catch {
-        // Keep viewport stable after clearing.
-      }
-    }
-    if (preserveViewport) {
-      volumeDeltaSuppressSync = false;
-    }
-  }
-}
-
-function clearVolumeDeltaDivergenceState(): void {
-  clearVolumeDeltaHighlights();
-  volumeDeltaFirstPoint = null;
-  volumeDeltaDivergencePointTimeKeys.clear();
-}
-
-function deactivateVolumeDeltaDivergenceTool(): void {
-  volumeDeltaDivergenceToolActive = false;
-  clearVolumeDeltaDivergenceState();
-  setVolumeDeltaCursor(false);
-}
-
-function activateVolumeDeltaDivergenceTool(): void {
-  volumeDeltaDivergenceToolActive = true;
-  setVolumeDeltaCursor(true);
-}
-
-function clearVolumeDeltaDivergence(preserveViewport: boolean = false): void {
-  clearVolumeDeltaDivergenceState();
-  clearVolumeDeltaTrendLines(preserveViewport);
-}
-
-function highlightVolumeDeltaPoints(points: Array<{ time: string | number; value: number }>): void {
-  clearVolumeDeltaHighlights();
-  if (!volumeDeltaRsiChart || points.length === 0) return;
-
-  volumeDeltaHighlightSeries = volumeDeltaRsiChart.addLineSeries({
-    color: DIVERGENCE_HIGHLIGHT_COLOR,
-    lineVisible: false,
-    pointMarkersVisible: true,
-    pointMarkersRadius: 2,
-    priceLineVisible: false,
-    lastValueVisible: false,
-    crosshairMarkerVisible: false,
-    autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
-  });
-
-  const step = Math.max(1, Math.ceil(points.length / VOLUME_DELTA_MAX_HIGHLIGHT_POINTS));
-  const displayPoints = step === 1 ? points : points.filter((_, index) => index % step === 0);
-  volumeDeltaHighlightSeries.setData(displayPoints);
-}
-
-function drawVolumeDeltaTrendLine(
-  time1: string | number,
-  value1: number,
-  time2: string | number,
-  value2: number,
-  recordDefinition: boolean = true,
-): void {
-  if (!volumeDeltaRsiChart || !volumeDeltaRsiPoints.length) return;
-
-  const index1 = volumeDeltaIndexByTime.get(timeKey(time1));
-  const index2 = volumeDeltaIndexByTime.get(timeKey(time2));
-  if (index1 === undefined || index2 === undefined || index1 === index2) return;
-
-  const slope = (value2 - value1) / (index2 - index1);
-  const lastHistoricalIndex = volumeDeltaRsiPoints.length - 1;
-  const futureBars = volumeDeltaFutureBarsForOneYear();
-  const maxIndex = lastHistoricalIndex + futureBars;
-  const stepSeconds = inferVolumeDeltaBarStepSeconds();
-  const firstTimeSeconds = toUnixSeconds(volumeDeltaRsiPoints[0]?.time);
-  const lastTimeSeconds = toUnixSeconds(volumeDeltaRsiPoints[lastHistoricalIndex]?.time);
-  const visibleRangeBeforeDraw = volumeDeltaRsiChart.timeScale().getVisibleLogicalRange?.();
-
-  const trendLineData: Array<{ time: string | number; value: number }> = [];
-  volumeDeltaSuppressSync = true;
-  try {
-    for (let i = index1; i <= maxIndex; i++) {
-      const projectedValue = value1 + slope * (i - index1);
-      if (!Number.isFinite(projectedValue)) break;
-      if (projectedValue < VOLUME_DELTA_DATA_MIN || projectedValue > VOLUME_DELTA_DATA_MAX) break;
-
-      let pointTime: string | number | null = null;
-      if (i <= lastHistoricalIndex) {
-        pointTime = volumeDeltaRsiPoints[i]?.time ?? null;
-      } else if (lastTimeSeconds !== null) {
-        pointTime = projectFutureTradingUnixSeconds(lastTimeSeconds, i - lastHistoricalIndex, stepSeconds);
-      }
-      if (pointTime === null || pointTime === undefined) continue;
-      trendLineData.push({
-        time: pointTime,
-        value: projectedValue,
-      });
-    }
-
-    if (!trendLineData.length) return;
-
-    const trendLineSeries = volumeDeltaRsiChart.addLineSeries({
-      color: TRENDLINE_COLOR,
-      lineWidth: 1,
-      lineStyle: 0,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-      autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
-    });
-    trendLineSeries.setData(trendLineData);
-    volumeDeltaTrendLineSeriesList.push(trendLineSeries);
-
-    const crossUnixSeconds = computeVolumeDeltaTrendlineMidlineCrossUnixSeconds(
-      index1,
-      value1,
-      slope,
-      lastHistoricalIndex,
-      firstTimeSeconds,
-      lastTimeSeconds,
-      stepSeconds,
-    );
-    addVolumeDeltaTrendlineCrossLabel(time1, value1, formatMmDdYyFromUnixSeconds(crossUnixSeconds));
-    if (recordDefinition) {
-      volumeDeltaTrendlineDefinitions.push({
-        time1,
-        value1: Number(value1),
-        time2,
-        value2: Number(value2),
-      });
-    }
-  } finally {
-    if (visibleRangeBeforeDraw) {
-      try {
-        volumeDeltaRsiChart.timeScale().setVisibleLogicalRange(visibleRangeBeforeDraw);
-      } catch {
-        // Keep viewport stable even if range restoration fails.
-      }
-    }
-    volumeDeltaSuppressSync = false;
-  }
-}
-
-function detectAndHandleVolumeDeltaDivergenceClick(clickedTime: string | number): void {
-  if (!volumeDeltaDivergenceToolActive) return;
-
-  const clickedKey = timeKey(clickedTime);
-  const clickedIndex = volumeDeltaIndexByTime.get(clickedKey);
-  if (clickedIndex === undefined) return;
-
-  const clickedPoint = volumeDeltaRsiPoints[clickedIndex];
-  if (!clickedPoint) return;
-  const clickedRSI = Number(clickedPoint.value);
-  const clickedPrice = priceByTime.get(clickedKey);
-  if (!Number.isFinite(clickedRSI) || !Number.isFinite(clickedPrice)) return;
-  const clickedPriceValue = Number(clickedPrice);
-
-  if (!volumeDeltaFirstPoint) {
-    volumeDeltaFirstPoint = {
-      time: clickedTime,
-      rsi: clickedRSI,
-      price: clickedPriceValue,
-      index: clickedIndex,
-    };
-
-    const divergencePoints: Array<{ time: string | number; value: number }> = [];
-    volumeDeltaDivergencePointTimeKeys.clear();
-
-    for (let i = clickedIndex + 1; i < volumeDeltaRsiPoints.length; i++) {
-      const currentPoint = volumeDeltaRsiPoints[i];
-      const currentRSI = Number(currentPoint?.value);
-      if (!Number.isFinite(currentRSI)) continue;
-      const currentPrice = priceByTime.get(timeKey(currentPoint.time));
-      if (!Number.isFinite(currentPrice)) continue;
-
-      const currentPriceValue = Number(currentPrice);
-      const bearishDivergence = currentRSI < clickedRSI && currentPriceValue > clickedPriceValue;
-      const bullishDivergence = currentRSI > clickedRSI && currentPriceValue < clickedPriceValue;
-      if (!bearishDivergence && !bullishDivergence) continue;
-
-      divergencePoints.push({ time: currentPoint.time, value: currentRSI });
-      volumeDeltaDivergencePointTimeKeys.add(timeKey(currentPoint.time));
-    }
-
-    highlightVolumeDeltaPoints(divergencePoints);
-    return;
-  }
-
-  if (!volumeDeltaDivergencePointTimeKeys.has(clickedKey)) {
-    return;
-  }
-
-  drawVolumeDeltaTrendLine(volumeDeltaFirstPoint.time, volumeDeltaFirstPoint.rsi, clickedTime, clickedRSI);
-
-  deactivateVolumeDeltaDivergenceTool();
-  setPaneTrendlineToolActive('volumeDeltaRsi', false);
-  persistTrendlinesForCurrentContext();
-}
 
 function sameLogicalRange(a: any, b: any): boolean {
   if (!a || !b) return false;
@@ -2055,7 +1607,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, false);
       return;
     }
-    if (!volumeDeltaDivergenceToolActive) return;
+    if (!isVolumeDeltaDivergenceToolActive()) return;
     detectAndHandleVolumeDeltaDivergenceClick(param.time);
   });
 
@@ -2159,17 +1711,18 @@ function setVolumeDeltaRsiData(
 
   clearVolumeDeltaDivergence();
   const normalizedRsi = normalizeValueSeries(volumeDeltaRsi?.rsi || []);
-  volumeDeltaRsiPoints = normalizedRsi.map((point) => ({
+  const vdPoints = normalizedRsi.map((point) => ({
     time: point.time,
     value: normalizeVolumeDeltaValue(Number(point.value)),
   }));
-  volumeDeltaIndexByTime = new Map<string, number>();
-  for (let i = 0; i < volumeDeltaRsiPoints.length; i++) {
-    volumeDeltaIndexByTime.set(timeKey(volumeDeltaRsiPoints[i].time), i);
+  const vdIndexByTime = new Map<string, number>();
+  for (let i = 0; i < vdPoints.length; i++) {
+    vdIndexByTime.set(timeKey(vdPoints[i].time), i);
   }
+  setVDTrendlineData(vdPoints, vdIndexByTime);
 
   const rsiByTimeLocal = new Map<string, number>();
-  for (const point of volumeDeltaRsiPoints) {
+  for (const point of vdPoints) {
     rsiByTimeLocal.set(timeKey(point.time), Number(point.value));
   }
 
@@ -2192,30 +1745,6 @@ function setVolumeDeltaRsiData(
   refreshActiveDivergenceOverlays();
 }
 
-function restoreVolumeDeltaPersistedTrendlines(trendlines: RSIPersistedTrendline[]): void {
-  clearVolumeDeltaTrendLines();
-  if (!Array.isArray(trendlines) || trendlines.length === 0) return;
-  for (const line of trendlines) {
-    const time1 = line?.time1;
-    const time2 = line?.time2;
-    const value1 = Number(line?.value1);
-    const value2 = Number(line?.value2);
-    if (
-      (typeof time1 !== 'string' && typeof time1 !== 'number') ||
-      (typeof time2 !== 'string' && typeof time2 !== 'number')
-    )
-      continue;
-    if (!Number.isFinite(value1) || !Number.isFinite(value2)) continue;
-    drawVolumeDeltaTrendLine(time1, value1, time2, value2, true);
-  }
-}
-
-function restorePersistedTrendlinesForCurrentContext(): void {
-  if (!currentChartTicker) return;
-  const persisted = loadPersistedTrendlinesForContext(currentChartTicker, currentChartInterval);
-  rsiChart?.restorePersistedTrendlines(persisted.rsi);
-  restoreVolumeDeltaPersistedTrendlines(persisted.volumeDeltaRsi);
-}
 
 function setVolumeDeltaHistogramData(
   bars: any[],
@@ -2245,199 +1774,6 @@ function setVolumeDeltaHistogramData(
   applyPricePaneDivergentBarColors();
 }
 
-function ensureVolumeDeltaDivergenceSummaryEl(container: HTMLElement): HTMLDivElement {
-  if (volumeDeltaDivergenceSummaryEl && volumeDeltaDivergenceSummaryEl.parentElement === container) {
-    volumeDeltaDivergenceSummaryEl.style.top = '8px';
-    volumeDeltaDivergenceSummaryEl.style.transform = 'none';
-    volumeDeltaDivergenceSummaryEl.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
-    volumeDeltaDivergenceSummaryEl.style.display = 'flex';
-    volumeDeltaDivergenceSummaryEl.style.flexDirection = 'row';
-    volumeDeltaDivergenceSummaryEl.style.alignItems = 'center';
-    volumeDeltaDivergenceSummaryEl.style.gap = `${PANE_TOOL_BUTTON_GAP_PX}px`;
-    volumeDeltaDivergenceSummaryEl.style.background = 'transparent';
-    volumeDeltaDivergenceSummaryEl.style.border = 'none';
-    volumeDeltaDivergenceSummaryEl.style.borderRadius = '0';
-    volumeDeltaDivergenceSummaryEl.style.overflow = 'visible';
-    return volumeDeltaDivergenceSummaryEl;
-  }
-
-  const el = document.createElement('div');
-  el.className = 'volume-delta-divergence-summary';
-  el.style.position = 'absolute';
-  el.style.top = '8px';
-  el.style.transform = 'none';
-  el.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
-  el.style.zIndex = '34';
-  el.style.display = 'flex';
-  el.style.flexDirection = 'row';
-  el.style.alignItems = 'center';
-  el.style.gap = `${PANE_TOOL_BUTTON_GAP_PX}px`;
-  el.style.background = 'transparent';
-  el.style.border = 'none';
-  el.style.borderRadius = '0';
-  el.style.overflow = 'visible';
-  el.style.pointerEvents = 'auto';
-  container.appendChild(el);
-  volumeDeltaDivergenceSummaryEl = el;
-  return el;
-}
-
-function clearVolumeDeltaDivergenceSummary(): void {
-  if (!volumeDeltaDivergenceSummaryEl) return;
-  volumeDeltaDivergenceSummaryEl.style.display = 'none';
-  volumeDeltaDivergenceSummaryEl.innerHTML = '';
-}
-
-function renderVolumeDeltaDivergenceSummary(
-  container: HTMLElement,
-  bars: any[],
-  options?: { noCache?: boolean },
-): void {
-  if (!volumeDeltaSettings.divergenceTable) {
-    clearVolumeDeltaDivergenceSummary();
-    return;
-  }
-  const summaryEl = ensureVolumeDeltaDivergenceSummaryEl(container);
-  summaryEl.innerHTML = '';
-  summaryEl.style.display = 'flex';
-  summaryEl.style.flexDirection = 'row';
-  summaryEl.style.alignItems = 'center';
-  const ticker = String(currentChartTicker || '')
-    .trim()
-    .toUpperCase();
-  const sourceInterval = volumeDeltaSettings.sourceInterval;
-  const noCache = options?.noCache === true;
-  const requestToken = `${ticker}|${sourceInterval}|${Date.now()}`;
-  summaryEl.dataset.requestToken = requestToken;
-  let manualRefreshInFlight = false;
-  let lastSummary: DivergenceSummaryEntry | null = null;
-
-  const buildBadge = (text: string, color: string, title: string): HTMLDivElement => {
-    const badge = document.createElement('div');
-    badge.textContent = text;
-    badge.title = title;
-    badge.style.display = 'inline-flex';
-    badge.style.alignItems = 'center';
-    badge.style.justifyContent = 'center';
-    badge.style.width = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    badge.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-    badge.style.padding = '0';
-    badge.style.borderRadius = '4px';
-    badge.style.border = `1px solid ${tc().borderColor}`;
-    badge.style.background = tc().cardBg;
-    badge.style.fontSize = '12px';
-    badge.style.fontWeight = '600';
-    badge.style.lineHeight = '1';
-    badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-    badge.style.color = color;
-    badge.style.pointerEvents = 'none';
-    return badge;
-  };
-
-  const runManualRefresh = () => {
-    if (manualRefreshInFlight) return;
-    manualRefreshInFlight = true;
-    renderSummary(lastSummary, true);
-    getTickerDivergenceSummary(ticker, sourceInterval, { forceRefresh: true, noCache: true })
-      .then((summary) => {
-        if (summaryEl.dataset.requestToken !== requestToken) return;
-        if (
-          String(currentChartTicker || '')
-            .trim()
-            .toUpperCase() !== ticker
-        )
-          return;
-        lastSummary = summary || null;
-        renderSummary(lastSummary, false);
-      })
-      .catch(() => {
-        if (summaryEl.dataset.requestToken !== requestToken) return;
-        if (
-          String(currentChartTicker || '')
-            .trim()
-            .toUpperCase() !== ticker
-        )
-          return;
-        renderSummary(lastSummary, false);
-      })
-      .finally(() => {
-        manualRefreshInFlight = false;
-      });
-  };
-
-  const renderSummary = (summary: DivergenceSummaryEntry | null, loading = false) => {
-    if (summaryEl.dataset.requestToken !== requestToken) return;
-    if (
-      String(currentChartTicker || '')
-        .trim()
-        .toUpperCase() !== ticker
-    )
-      return;
-    summaryEl.innerHTML = '';
-
-    const refreshButton = document.createElement('button');
-    refreshButton.type = 'button';
-    refreshButton.className = 'pane-btn refresh-btn';
-    refreshButton.style.position = 'relative';
-    setRefreshButtonLoading(refreshButton, loading);
-    refreshButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      runManualRefresh();
-    });
-    summaryEl.appendChild(refreshButton);
-
-    for (let i = 0; i < DIVERGENCE_LOOKBACK_DAYS.length; i++) {
-      const days = DIVERGENCE_LOOKBACK_DAYS[i];
-      const state = summary?.states?.[String(days)] || 'neutral';
-      const badgeColor = state === 'bullish' ? '#26a69a' : state === 'bearish' ? '#ef5350' : tc().textPrimary;
-      const badge = buildBadge(
-        String(days),
-        badgeColor,
-        `Last ${days} day${days === 1 ? '' : 's'}${summary?.tradeDate ? ` (as of ${summary.tradeDate})` : ''}`,
-      );
-      summaryEl.appendChild(badge);
-    }
-  };
-
-  renderSummary(null, false);
-  if (!ticker || !Array.isArray(bars) || bars.length < 2) {
-    return;
-  }
-
-  // Phase 1: Fast path — try cached / stored value (no server recomputation).
-  getTickerDivergenceSummary(ticker, sourceInterval)
-    .then((summary) => {
-      if (summaryEl.dataset.requestToken !== requestToken) return;
-      lastSummary = summary || null;
-      renderSummary(lastSummary, false);
-
-      // Phase 2: If the cached value is stale or missing, refresh in background.
-      const needsRefresh =
-        noCache || !summary || !Number.isFinite(summary.expiresAtMs) || summary.expiresAtMs <= Date.now();
-      if (needsRefresh) {
-        getTickerDivergenceSummary(ticker, sourceInterval, { forceRefresh: true, noCache: true })
-          .then((freshSummary) => {
-            if (summaryEl.dataset.requestToken !== requestToken) return;
-            lastSummary = freshSummary || null;
-            renderSummary(lastSummary, false);
-          })
-          .catch(() => {});
-      }
-    })
-    .catch(() => {
-      // Phase 1 failed — fall back to force refresh.
-      getTickerDivergenceSummary(ticker, sourceInterval, { forceRefresh: true, noCache: true })
-        .then((summary) => {
-          if (summaryEl.dataset.requestToken !== requestToken) return;
-          lastSummary = summary || null;
-          renderSummary(lastSummary, false);
-        })
-        .catch(() => {
-          renderSummary(lastSummary, false);
-        });
-    });
-}
 
 
 
@@ -2633,98 +1969,6 @@ function ensurePaneResizeHandles(
   }
 }
 
-function showLoadingOverlay(container: HTMLElement): void {
-  // Remove existing overlay if present
-  const existingOverlay = container.querySelector('.chart-loading-overlay');
-  if (existingOverlay) {
-    existingOverlay.remove();
-  }
-
-  // Create loading overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'chart-loading-overlay';
-  overlay.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: ${tc().bgOverlay95};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    pointer-events: none;
-  `;
-
-  // Create loading spinner
-  const spinner = document.createElement('div');
-  spinner.innerHTML = `
-    <svg width="40" height="40" viewBox="0 0 40 40" style="animation: spin 1s linear infinite;">
-      <circle cx="20" cy="20" r="16" fill="none" stroke="${tc().spinnerColor}" stroke-width="3"
-              stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" opacity="0.8"/>
-    </svg>
-    <style>
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-    </style>
-  `;
-
-  overlay.appendChild(spinner);
-  container.appendChild(overlay);
-}
-
-function showRetryOverlay(container: HTMLElement, onRetry: () => void): void {
-  const existingOverlay = container.querySelector('.chart-loading-overlay');
-  if (existingOverlay) {
-    existingOverlay.remove();
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = 'chart-loading-overlay';
-  overlay.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: ${tc().bgOverlay95};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    pointer-events: auto;
-  `;
-
-  const retryBtn = document.createElement('button');
-  retryBtn.type = 'button';
-  retryBtn.textContent = 'Try Refreshing';
-  retryBtn.style.background = tc().cardBg;
-  retryBtn.style.color = tc().textPrimary;
-  retryBtn.style.border = `1px solid ${tc().borderColor}`;
-  retryBtn.style.borderRadius = '6px';
-  retryBtn.style.padding = '8px 12px';
-  retryBtn.style.fontSize = '12px';
-  retryBtn.style.fontWeight = '600';
-  retryBtn.style.cursor = 'pointer';
-  retryBtn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
-  retryBtn.addEventListener('click', (event) => {
-    event.preventDefault();
-    onRetry();
-  });
-
-  overlay.appendChild(retryBtn);
-  container.appendChild(overlay);
-}
-
-function hideLoadingOverlay(container: HTMLElement): void {
-  const overlay = container.querySelector('.chart-loading-overlay');
-  if (overlay) {
-    overlay.remove();
-  }
-}
 
 function scheduleIntervalChartRender(interval: ChartInterval): void {
   const scheduledTicker = currentChartTicker;
@@ -2796,15 +2040,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
   if (Number.isFinite(latestVdRsi)) {
     const normalizedVdRsi = normalizeVolumeDeltaValue(Number(latestVdRsi));
     volumeDeltaRsiByTime.set(lastKey, normalizedVdRsi);
-    if (
-      volumeDeltaRsiPoints.length > 0 &&
-      timeKey(volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1].time) === lastKey
-    ) {
-      volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1] = {
-        ...volumeDeltaRsiPoints[volumeDeltaRsiPoints.length - 1],
-        value: normalizedVdRsi,
-      };
-    }
+    updateVDRsiLastPoint(lastKey, normalizedVdRsi);
     volumeDeltaRsiSeries.update({
       time: lastTime,
       value: normalizedVdRsi,
@@ -3031,7 +2267,7 @@ export async function renderCustomChart(
   if (contextChanged) {
     deactivateRsiDivergencePlotTool();
     deactivateVolumeDeltaRsiDivergencePlotTool();
-    volumeDeltaDivergenceToolActive = false;
+    deactivateVolumeDeltaDivergenceTool();
     rsiDivergenceToolActive = false;
     // Re-bind chart sync on next setupChartSync call since charts may be recreated.
     isChartSyncBound = false;
@@ -3212,8 +2448,7 @@ export async function renderCustomChart(
       }
       applyFutureTimelineSeriesData([]);
       clearVolumeDeltaDivergence();
-      volumeDeltaRsiPoints = [];
-      volumeDeltaIndexByTime = new Map();
+      resetVDTrendlineData();
       volumeDeltaRsiByTime = new Map();
       volumeDeltaByTime = new Map();
       clearVolumeDeltaDivergenceSummary();
@@ -3414,7 +2649,7 @@ function setupChartSync() {
   });
 
   volumeDeltaRsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
-    if (volumeDeltaSuppressSync) return;
+    if (isVolumeDeltaSyncSuppressed()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
     syncLock = 'volumeDeltaRsi';
     try {
@@ -3767,82 +3002,6 @@ async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSi
   if (prevTicker) await fetchForTicker(prevTicker);
 }
 
-function reapplyInlineThemeStyles(): void {
-  const c = tc();
-  const setBorderBgColor = (el: HTMLElement) => {
-    el.style.border = `1px solid ${c.borderColor}`;
-    el.style.background = c.cardBg;
-    el.style.color = c.textPrimary;
-  };
-
-  // Trendline cross labels
-  document.querySelectorAll<HTMLElement>('.trendline-cross-label').forEach(setBorderBgColor);
-
-  // Top-pane badges (ticker label, price change)
-  document.querySelectorAll<HTMLElement>('.top-pane-badge').forEach((el) => {
-    el.style.border = `1px solid ${c.borderColor}`;
-    el.style.background = c.cardBg;
-    // Price-change badge keeps its semantic green/red color
-    if (!el.classList.contains('price-pane-change')) {
-      el.style.color = c.textPrimary;
-    }
-  });
-
-  // Divergence plot overlays
-  document.querySelectorAll<HTMLElement>('.divergence-plot-overlay').forEach((el) => {
-    el.style.border = `1px solid ${c.borderColor}`;
-    el.style.background = c.bgOverlay95;
-  });
-
-  // Settings panels (price, rsi, volume-delta, volume-delta-rsi)
-  document.querySelectorAll<HTMLElement>('.pane-settings-panel').forEach((panel) => {
-    panel.style.background = c.cardBgOverlay95;
-    panel.style.border = `1px solid ${c.borderColor}`;
-    panel.style.color = c.textPrimary;
-    // Inner form elements: buttons, selects, inputs
-    panel.querySelectorAll<HTMLElement>('button, select, input[type="number"]').forEach((el) => {
-      el.style.background = c.bgColor;
-      el.style.color = c.textPrimary;
-      el.style.borderColor = c.borderColor;
-    });
-  });
-
-  // Price pane message
-  document.querySelectorAll<HTMLElement>('.price-pane-message').forEach((el) => {
-    el.style.color = c.textSecondary;
-  });
-
-  // Loading / retry overlays
-  document.querySelectorAll<HTMLElement>('.chart-loading-overlay').forEach((el) => {
-    el.style.background = c.bgOverlay95;
-    const btn = el.querySelector('button') as HTMLElement | null;
-    if (btn) {
-      btn.style.background = c.cardBg;
-      btn.style.color = c.textPrimary;
-      btn.style.borderColor = c.borderColor;
-    }
-  });
-
-  // Divergence plot overlay Chart.js instances
-  for (const pane of ['rsi', 'volumeDeltaRsi'] as TrendToolPane[]) {
-    const chart = getDivergenceOverlayChart(pane);
-    if (chart) {
-      try {
-        chart.options.plugins.tooltip.backgroundColor = c.cardBgOverlay95;
-        chart.options.plugins.tooltip.borderColor = c.borderColor;
-        chart.options.plugins.tooltip.titleColor = c.textPrimary;
-        chart.options.plugins.tooltip.bodyColor = c.textSecondary;
-        chart.options.scales.x.ticks.color = c.textSecondary;
-        chart.options.scales.x.grid.color = c.borderOverlay22;
-        chart.options.scales.y.ticks.color = c.textSecondary;
-        chart.options.scales.y.grid.color = c.borderOverlay22;
-        chart.update('none');
-      } catch {
-        /* chart may not be fully initialized */
-      }
-    }
-  }
-}
 
 window.addEventListener('themechange', () => {
   const c = tc();
