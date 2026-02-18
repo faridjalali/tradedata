@@ -4452,7 +4452,7 @@ function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.className = 'pane-btn label bull-flag-indicator-btn';
   btn.type = 'button';
-  btn.textContent = 'BF';
+  btn.textContent = 'B';
   btn.style.position = 'absolute';
   btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX}px`;
   btn.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
@@ -4476,12 +4476,12 @@ function updateBullFlagButton(entry: VDFCacheEntry): void {
   if (!bullFlagButtonEl) return;
   const confidence = entry.bull_flag_confidence;
   if (confidence != null && confidence >= 50) {
-    bullFlagButtonEl.textContent = 'BF';
+    bullFlagButtonEl.textContent = 'B';
     bullFlagButtonEl.style.color = '#4caf50';
     bullFlagButtonEl.style.borderColor = '#4caf50';
     bullFlagButtonEl.title = `Bull flag (${confidence}%)`;
   } else {
-    bullFlagButtonEl.textContent = 'BF';
+    bullFlagButtonEl.textContent = 'B';
     bullFlagButtonEl.style.color = tc().textMuted;
     bullFlagButtonEl.style.borderColor = '';
     bullFlagButtonEl.title = '';

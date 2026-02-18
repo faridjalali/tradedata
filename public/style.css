@@ -935,7 +935,7 @@ h2 {
   line-height: 16px;
   vertical-align: middle;
   text-align: center;
-  width: 3ch;
+  width: 2ch;
 }
 .bull-flag-placeholder {
   display: inline-block;
@@ -946,7 +946,7 @@ h2 {
   line-height: 16px;
   vertical-align: middle;
   border: 1px solid transparent;
-  width: 3ch;
+  width: 2ch;
 }
 .vdf-score-badge.vdf-high { border-color: #ff9800; color: #ff9800; }
 .vdf-score-badge.vdf-imminent { border-color: #f44336; color: #f44336; animation: vdf-pulse 1.5s infinite; }
