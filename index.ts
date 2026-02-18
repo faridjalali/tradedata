@@ -1145,6 +1145,11 @@ await tradingCalendar
 
 await app.listen({ port, host: '0.0.0.0' });
 console.log(`Server running on port ${port}`);
+if (SITE_LOCK_ENABLED) {
+  console.log('[siteLock] Passcode lock ENABLED');
+} else {
+  console.warn('[siteLock] WARNING: SITE_LOCK_PASSCODE is not set — site is publicly accessible without a passcode');
+}
 scheduleNextDivergenceScan();
 scheduleNextBreadthComputation();
 

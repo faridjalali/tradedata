@@ -2,9 +2,11 @@
  * Site passcode lock — gates the application behind an 8-digit passcode.
  *
  * Flow:
- *  1. Check /api/auth/check — if a valid server session exists, unlock immediately.
- *  2. Otherwise show the overlay, accept digit input (keyboard + on-screen keypad).
- *  3. When 8 digits are entered, POST /api/auth/verify — on success the server
+ *  1. Overlay is shown immediately on load (fail-secure — never starts hidden).
+ *  2. Check /api/auth/check — if the server says the session is valid (or site
+ *     lock is disabled), hide the overlay and call onUnlock() right away.
+ *  3. Otherwise keep the overlay visible, accept digit input (keyboard + keypad).
+ *  4. When 8 digits are entered, POST /api/auth/verify — on success the server
  *     sets a session cookie and we call onUnlock(); on failure shake + clear.
  */
 
@@ -39,6 +41,11 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
     return;
   }
 
+  // Show overlay immediately — fail-secure. The application content stays hidden
+  // until the server explicitly confirms a valid session or no lock is configured.
+  overlay.classList.remove('hidden');
+  document.body.classList.add('site-locked');
+
   if (!overlay.dataset.doubleTapBound) {
     overlay.addEventListener('dblclick', (event) => {
       event.preventDefault();
@@ -52,7 +59,8 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
   const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
   const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
 
-  // If a valid session already exists, skip the overlay entirely.
+  // If a valid session already exists (or site lock is not configured on the server),
+  // unlock immediately. The overlay was already shown above so there's no security gap.
   if (await checkServerSession()) {
     overlay.classList.add('hidden');
     document.body.classList.remove('site-locked');
@@ -60,9 +68,7 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
     return;
   }
 
-  document.body.classList.add('site-locked');
-  overlay.classList.remove('hidden');
-
+  // No valid session — stay locked and initialize the keypad.
   let entered = '';
   let verifying = false;
 
