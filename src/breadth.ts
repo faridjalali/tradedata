@@ -452,8 +452,15 @@ async function loadBreadthMA(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Comparative Breadth: all 4 MA lines for one index over a timeframe
+// Comparative Breadth: index price vs breadth MA lines, all normalized to 100
 // ---------------------------------------------------------------------------
+
+/** Normalize a series so the first non-null value = 100. Null/missing values stay null. */
+function normalizeToBase100(values: (number | null)[]): (number | null)[] {
+  const first = values.find((v) => v != null && !isNaN(v as number)) as number | undefined;
+  if (first == null || first === 0) return values.map(() => null);
+  return values.map((v) => (v == null || isNaN(v as number) ? null : ((v as number) / first) * 100));
+}
 
 function renderBreadthCompareChart(): void {
   const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
@@ -466,30 +473,102 @@ function renderBreadthCompareChart(): void {
   }
 
   const history = (breadthMAData.history[currentCompareIndex] || []).slice(-currentCompareTfDays);
+  if (history.length === 0) return;
 
   const labels = history.map(h => {
     const date = new Date(h.date + 'T00:00:00');
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
 
-  const maConfigs: Array<{ key: keyof BreadthMAHistory; label: string; color: string }> = [
-    { key: 'ma21',  label: '21 MA',  color: '#00d4ff' },
-    { key: 'ma50',  label: '50 MA',  color: '#58a6ff' },
-    { key: 'ma100', label: '100 MA', color: '#bc8cff' },
-    { key: 'ma200', label: '200 MA', color: '#f0883e' },
-  ];
+  const ptRadius = history.length > 20 ? 0 : 3;
 
-  const datasets = maConfigs.map(({ key, label, color }) => ({
-    label,
-    data: history.map(h => h[key] as number),
-    borderColor: color,
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    pointRadius: history.length > 25 ? 0 : 3,
-    pointHoverRadius: 5,
-    tension: 0.3,
-    fill: false,
-  }));
+  // Raw value arrays
+  const rawClose   = history.map(h => (h.close != null ? h.close : null));
+  const rawMa21    = history.map(h => h.ma21);
+  const rawMa50    = history.map(h => h.ma50);
+  const rawMa100   = history.map(h => h.ma100);
+  const rawMa200   = history.map(h => (h.ma200 > 0 ? h.ma200 : null));
+
+  // Normalized to 100 at start
+  const normClose  = normalizeToBase100(rawClose);
+  const normMa21   = normalizeToBase100(rawMa21);
+  const normMa50   = normalizeToBase100(rawMa50);
+  const normMa100  = normalizeToBase100(rawMa100);
+  const normMa200  = normalizeToBase100(rawMa200);
+
+  const datasets = [
+    {
+      label: currentCompareIndex,
+      data: normClose,
+      rawValues: rawClose,
+      rawSuffix: '',
+      rawDecimals: 2,
+      borderColor: '#ffffff',
+      backgroundColor: 'transparent',
+      borderWidth: 2.5,
+      pointRadius: ptRadius,
+      pointHoverRadius: 5,
+      tension: 0.2,
+      fill: false,
+    },
+    {
+      label: '% > 21d',
+      data: normMa21,
+      rawValues: rawMa21,
+      rawSuffix: '%',
+      rawDecimals: 1,
+      borderColor: '#00d4ff',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderDash: [],
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    },
+    {
+      label: '% > 50d',
+      data: normMa50,
+      rawValues: rawMa50,
+      rawSuffix: '%',
+      rawDecimals: 1,
+      borderColor: '#58a6ff',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    },
+    {
+      label: '% > 100d',
+      data: normMa100,
+      rawValues: rawMa100,
+      rawSuffix: '%',
+      rawDecimals: 1,
+      borderColor: '#bc8cff',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    },
+    {
+      label: '% > 200d',
+      data: normMa200,
+      rawValues: rawMa200,
+      rawSuffix: '%',
+      rawDecimals: 1,
+      borderColor: '#f0883e',
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    },
+  ];
 
   breadthCompareChart = new Chart(canvas, {
     type: 'line',
@@ -501,9 +580,8 @@ function renderBreadthCompareChart(): void {
       plugins: {
         legend: {
           onClick: (_e: any, legendItem: any, legend: any) => {
-            // Default Chart.js toggle behaviour
-            const index = legendItem.datasetIndex;
-            const meta = legend.chart.getDatasetMeta(index);
+            const idx = legendItem.datasetIndex;
+            const meta = legend.chart.getDatasetMeta(idx);
             meta.hidden = !meta.hidden;
             legend.chart.update();
           },
@@ -522,7 +600,18 @@ function renderBreadthCompareChart(): void {
           bodyColor: c.textSecondary,
           padding: 12,
           callbacks: {
-            label: (ctx: any) => `${ctx.dataset.label}: ${(ctx.parsed.y as number).toFixed(1)}%`,
+            label: (ctx: any) => {
+              const ds = ctx.dataset as any;
+              const norm = ctx.parsed.y as number | null;
+              if (norm == null) return null;
+              const pct = norm - 100;
+              const sign = pct >= 0 ? '+' : '';
+              const raw = ds.rawValues?.[ctx.dataIndex];
+              const rawStr = raw != null
+                ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})`
+                : '';
+              return `${ds.label}: ${sign}${pct.toFixed(1)}%${rawStr}`;
+            },
           },
         },
       },
@@ -538,12 +627,10 @@ function renderBreadthCompareChart(): void {
           grid: { color: c.borderOverlay30 },
         },
         y: {
-          min: 0,
-          max: 100,
           ticks: {
             color: c.textSecondary,
             font: { size: 11 },
-            callback: (value: number | string) => `${value}%`,
+            callback: (value: number | string) => `${Number(value).toFixed(0)}`,
           },
           grid: { color: c.borderOverlay30 },
         },
@@ -555,7 +642,7 @@ function renderBreadthCompareChart(): void {
 function updateBreadthCompareSubtitle(): void {
   const subtitle = document.getElementById('breadth-compare-subtitle');
   if (subtitle) {
-    subtitle.textContent = `${currentCompareIndex} — % Above Moving Averages (${currentCompareTfDays}d)`;
+    subtitle.textContent = `${currentCompareIndex} price vs breadth, normalized to 100 (${currentCompareTfDays}d)`;
   }
 }
 

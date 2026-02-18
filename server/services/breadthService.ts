@@ -6,7 +6,7 @@
 
 import type { Pool } from 'pg';
 import type { BreadthMAResponse } from '../../shared/api-types.js';
-import { fetchGroupedDailyBars } from './dataApi.js';
+import { fetchGroupedDailyBars, dataApiDaily } from './dataApi.js';
 import {
   ALL_BREADTH_TICKERS,
   ALL_BREADTH_INDICES,
@@ -19,6 +19,7 @@ import {
   upsertBreadthSnapshot,
   getLatestBreadthSnapshots,
   getBreadthHistory,
+  isBreadthMa200Valid,
   cleanupOldCloses,
 } from '../data/breadthStore.js';
 import * as tradingCalendar from './tradingCalendar.js';
@@ -199,9 +200,28 @@ export async function getLatestBreadthData(
   historyDays: number = 60,
 ): Promise<BreadthMAResponse> {
   const snapshots = await getLatestBreadthSnapshots(dbPool);
+
+  // Fetch index ETF prices in parallel for the normalized comparison chart
+  const indexTickers = ALL_BREADTH_INDICES as string[];
+  const priceResults = await Promise.allSettled(indexTickers.map((t) => dataApiDaily(t)));
+  const priceByIndex: Record<string, Map<string, number>> = {};
+  for (let i = 0; i < indexTickers.length; i++) {
+    const r = priceResults[i];
+    const closeMap = new Map<string, number>();
+    if (r.status === 'fulfilled' && r.value) {
+      for (const bar of r.value) closeMap.set(bar.date, bar.close);
+    }
+    priceByIndex[indexTickers[i]] = closeMap;
+  }
+
   const history: Record<string, any[]> = {};
   for (const index of ALL_BREADTH_INDICES) {
-    history[index] = await getBreadthHistory(dbPool, index, historyDays);
+    const raw = await getBreadthHistory(dbPool, index, historyDays);
+    const closeMap = priceByIndex[index];
+    history[index] = raw.map((h) => ({
+      ...h,
+      close: closeMap.get(h.date),
+    }));
   }
   return { snapshots, history };
 }

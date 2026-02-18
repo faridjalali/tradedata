@@ -201,6 +201,8 @@ export interface BreadthMAHistory {
   ma50: number;
   ma100: number;
   ma200: number;
+  /** Index ETF close price for this date (SPY/QQQ/SMH). May be absent if fetch failed. */
+  close?: number;
 }
 
 export interface BreadthMAResponse {

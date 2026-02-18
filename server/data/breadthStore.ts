@@ -172,6 +172,30 @@ export async function getBreadthHistory(
 }
 
 /**
+ * Check whether the 200-day MA breadth history is valid for `checkDays` recent snapshots.
+ * Returns true if all checked rows have pct_above_ma200 > 0 (i.e., the data is usable).
+ */
+export async function isBreadthMa200Valid(
+  dbPool: Pool,
+  indexName: string = 'SPY',
+  checkDays: number = 30,
+): Promise<boolean> {
+  const { rows } = await dbPool.query(
+    `SELECT COUNT(*) AS zero_count
+     FROM (
+       SELECT pct_above_ma200
+       FROM breadth_snapshots
+       WHERE index_name = $1
+       ORDER BY trade_date DESC
+       LIMIT $2
+     ) sub
+     WHERE pct_above_ma200 = 0`,
+    [indexName, checkDays],
+  );
+  return Number(rows[0]?.zero_count ?? 1) === 0;
+}
+
+/**
  * Delete closes older than `keepDays` trading days.
  */
 export async function cleanupOldCloses(dbPool: Pool, keepDays: number): Promise<number> {

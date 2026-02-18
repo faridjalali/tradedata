@@ -94,7 +94,7 @@ import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOr
 import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeeklyOrchestrator.js';
 import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestrator.js';
 import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
-import { initBreadthTables, getLatestBreadthSnapshots } from './server/data/breadthStore.js';
+import { initBreadthTables, getLatestBreadthSnapshots, isBreadthMa200Valid } from './server/data/breadthStore.js';
 import { runBreadthComputation, bootstrapBreadthHistory, getLatestBreadthData, cleanupBreadthData } from './server/services/breadthService.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
@@ -844,10 +844,14 @@ app.get('/api/breadth', async (request, reply) => {
         getSpyIntraday(lookbackDays),
         dataApiIntradayChartHistory(compTicker, '30min', lookbackDays),
       ]);
-      if (!spyBars || !compBars) return reply.code(404).send({ error: 'No intraday data available (market may be closed)' });
-      const points = buildIntradayBreadthPoints(spyBars, compBars, days);
-      return reply.send({ intraday: true, points });
+      // When intraday data is available (market hours), use it
+      if (spyBars && compBars) {
+        const points = buildIntradayBreadthPoints(spyBars, compBars, days);
+        return reply.send({ intraday: true, points });
+      }
+      // After hours / pre-market: fall through to daily data below
     }
+    // Daily fallback (also used when isIntraday=false or intraday data unavailable)
     const [spyBars, compBars] = await Promise.all([getSpyDaily(), dataApiDaily(compTicker)]);
     if (!spyBars || !compBars) return reply.code(404).send({ error: 'No price data available' });
     const spyMap = new Map();
@@ -858,7 +862,9 @@ app.get('/api/breadth', async (request, reply) => {
     const allPoints = commonDates.slice(-30).map((d) => ({
       date: d, spy: Math.round(spyMap.get(d) * 100) / 100, comparison: Math.round(compMap.get(d) * 100) / 100,
     }));
-    return reply.send({ intraday: false, points: allPoints.slice(-days) });
+    // For "T" (days=1) show just last 2 daily closes so there's a visible line segment
+    const sliceDays = days === 1 ? 2 : days;
+    return reply.send({ intraday: false, points: allPoints.slice(-sliceDays) });
   } catch (err: any) {
     console.error('Breadth API Error:', err);
     return reply.code(500).send({ error: 'Failed to fetch breadth data' });
@@ -886,7 +892,7 @@ app.post('/api/breadth/ma/bootstrap', async (request, reply) => {
   if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
     return reply.code(403).send({ error: 'Forbidden' });
   }
-  const numDays = Math.min(Math.max(parseInt(String(q.days)) || 220, 10), 500);
+  const numDays = Math.min(Math.max(parseInt(String(q.days)) || 300, 10), 500);
   // Run in background
   bootstrapBreadthHistory(divergencePool, numDays)
     .then((r) => console.log(`[breadth] Bootstrap complete: fetched=${r.fetchedDays}, computed=${r.computedDays}`))
@@ -1142,18 +1148,23 @@ console.log(`Server running on port ${port}`);
 scheduleNextDivergenceScan();
 scheduleNextBreadthComputation();
 
-// Auto-bootstrap breadth if no snapshots exist yet
+// Auto-bootstrap breadth if no snapshots exist, or if 200d MA history is invalid (zeros)
 if (divergencePool) {
-  getLatestBreadthSnapshots(divergencePool).then(async (snapshots) => {
-    if (snapshots.length === 0) {
-      console.log('[breadth] No snapshots found — auto-bootstrapping in background...');
-      try {
-        await bootstrapBreadthHistory(divergencePool!, 220);
-      } catch (err: any) {
-        console.error('[breadth] Auto-bootstrap failed:', err.message);
+  (async () => {
+    try {
+      const snapshots = await getLatestBreadthSnapshots(divergencePool!);
+      const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid(divergencePool!) : false;
+      if (snapshots.length === 0) {
+        console.log('[breadth] No snapshots found — auto-bootstrapping (300d) in background...');
+        await bootstrapBreadthHistory(divergencePool!, 300);
+      } else if (!ma200Valid) {
+        console.log('[breadth] 200d MA history has zeros — re-bootstrapping with 300d closes to fix...');
+        await bootstrapBreadthHistory(divergencePool!, 300);
       }
+    } catch (err: any) {
+      console.error('[breadth] Auto-bootstrap failed:', err.message);
     }
-  }).catch(() => {});
+  })();
 }
 
 pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000);
