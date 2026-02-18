@@ -96,7 +96,7 @@ import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestr
 import { scheduleNextDivergenceScan } from './server/services/schedulerService.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
-import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote } from './server/services/dataApi.js';
+import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote, getDataApiCircuitBreakerInfo, resetDataApiCircuitBreaker } from './server/services/dataApi.js';
 import {
   VD_RSI_LOWER_TF_CACHE,
   VD_RSI_RESULT_CACHE,
@@ -497,6 +497,47 @@ const initDivergenceDB = async () => {
         ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS bull_flag_confidence SMALLINT;
       END $$;
     `);
+
+    // --- Performance indexes (idempotent, safe to re-run) ---
+
+    // vdf_results: alert enrichment queries filter by (trade_date, is_detected) + ticker IN (...)
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS vdf_results_detected_idx
+      ON vdf_results(trade_date, is_detected) WHERE is_detected = TRUE;
+    `);
+
+    // divergence_signals: CTE queries filter by (trade_date range, timeframe) with ORDER BY trade_date DESC
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_signals_trade_date_timeframe_idx
+      ON divergence_signals(trade_date DESC, timeframe, source_interval);
+    `);
+
+    // divergence_signals: favorite toggle and id lookups
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_signals_is_favorite_idx
+      ON divergence_signals(is_favorite) WHERE is_favorite = TRUE;
+    `);
+
+    // divergence_symbols: universe queries always filter is_active = TRUE
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_symbols_active_idx
+      ON divergence_symbols(ticker) WHERE is_active = TRUE;
+    `);
+
+    // divergence_scan_jobs: status polling queries ORDER BY finished_at DESC
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS divergence_scan_jobs_finished_idx
+      ON divergence_scan_jobs(finished_at DESC NULLS LAST);
+    `);
+
+    // mini_chart_bars: batch lookups by ticker with ORDER BY trade_date
+    // (Primary key is (ticker, trade_date) which already covers single-ticker lookups,
+    //  but batch IN queries benefit from this ordering.)
+    await divergencePool.query(`
+      CREATE INDEX IF NOT EXISTS mini_chart_bars_ticker_idx
+      ON mini_chart_bars(ticker);
+    `);
+
     try {
       const pubResult = await divergencePool.query(
         `SELECT published_trade_date::text AS trade_date FROM divergence_publication_state WHERE source_interval = $1 LIMIT 1`,
@@ -964,7 +1005,7 @@ app.get('/api/trading-calendar/context', async (request, reply) => {
 });
 
 function getDebugMetricsPayload() {
-  return buildDebugMetricsPayload({
+  const base = buildDebugMetricsPayload({
     startedAtMs, isShuttingDown, httpDebugMetrics,
     chartCacheSizes: {
       lowerTf: VD_RSI_LOWER_TF_CACHE.size, vdRsiResults: VD_RSI_RESULT_CACHE.size,
@@ -978,6 +1019,7 @@ function getDebugMetricsPayload() {
     },
     memoryUsage: process.memoryUsage(),
   });
+  return { ...base, circuitBreaker: getDataApiCircuitBreakerInfo() };
 }
 
 function getHealthPayload() {
@@ -993,6 +1035,16 @@ async function getReadyPayload() {
 }
 
 registerHealthRoutes({ app, debugMetricsSecret: DEBUG_METRICS_SECRET, getDebugMetricsPayload, getHealthPayload, getReadyPayload });
+
+// Circuit breaker manual reset (admin only — requires debug secret)
+app.post('/api/admin/circuit-breaker/reset', (request, reply) => {
+  const secret = String((request.query as any).secret || request.headers['x-debug-secret'] || '').trim();
+  if (DEBUG_METRICS_SECRET && secret !== DEBUG_METRICS_SECRET) {
+    return reply.code(401).send({ error: 'Unauthorized' });
+  }
+  resetDataApiCircuitBreaker();
+  return reply.code(200).send({ ok: true, circuitBreaker: getDataApiCircuitBreakerInfo() });
+});
 
 // SPA fallback — serve index.html for non-API, non-file routes
 app.setNotFoundHandler(async (request, reply) => {

@@ -95,12 +95,12 @@ export function createAlertCard(alert: Alert): string {
                         : alert.vdf_detected
                           ? '<span class="vdf-tag">VDF</span>'
                           : '<span class="vdf-score-placeholder"></span>'
-                    }${
+                    }
+                    ${maDots}${
                       alert.bull_flag_confidence != null && alert.bull_flag_confidence >= 50
                         ? `<span class="bull-flag-badge" title="Bull flag (${alert.bull_flag_confidence}%)">BF</span>`
-                        : ''
+                        : '<span class="bull-flag-placeholder"></span>'
                     }
-                    ${maDots}
                 </div>
             </div>
 

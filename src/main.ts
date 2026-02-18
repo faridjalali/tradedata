@@ -1,7 +1,19 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
-import { initBreadth, setBreadthTimeframe, setBreadthMetric } from './breadth';
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
-import { initLogsView, refreshLogsView, startLogsPolling, stopLogsPolling } from './logs';
+
+// --- Lazy-loaded view modules (code splitting) ---
+
+let _logsModule: typeof import('./logs') | null = null;
+async function loadLogs() {
+  if (!_logsModule) _logsModule = await import('./logs');
+  return _logsModule;
+}
+
+let _breadthModule: typeof import('./breadth') | null = null;
+async function loadBreadth() {
+  if (!_breadthModule) _breadthModule = await import('./breadth');
+  return _breadthModule;
+}
 import {
   fetchDivergenceSignals,
   renderDivergenceOverview,
@@ -29,6 +41,62 @@ let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 
 const SITE_LOCK_LENGTH = 8;
+
+// ---------------------------------------------------------------------------
+// Hash Router — maps URL hash to views so browser back/forward works and
+// deep-linking is possible (e.g. #/ticker/AAPL, #/logs).
+// ---------------------------------------------------------------------------
+
+type ViewName = 'logs' | 'divergence' | 'breadth';
+
+/** Suppress pushHash when we're already responding to a hashchange. */
+let hashNavInProgress = false;
+
+function pushHash(hash: string): void {
+  if (hashNavInProgress) return;
+  const target = hash.startsWith('#') ? hash : `#${hash}`;
+  if (window.location.hash !== target) {
+    history.pushState(null, '', target);
+  }
+}
+
+function parseHash(hash: string): { view: ViewName } | { ticker: string } | null {
+  const raw = (hash || '').replace(/^#\/?/, '').trim();
+  if (!raw) return null;
+  // #/ticker/AAPL  or  #/ticker/AAPL/
+  const tickerMatch = raw.match(/^ticker\/([A-Za-z0-9._-]+)\/?$/);
+  if (tickerMatch) return { ticker: tickerMatch[1].toUpperCase() };
+  // #/divergence, #/logs, #/breadth
+  const viewName = raw.replace(/\/$/, '').toLowerCase();
+  if (viewName === 'divergence' || viewName === 'logs' || viewName === 'breadth') {
+    return { view: viewName };
+  }
+  return null;
+}
+
+function handleHashRoute(): void {
+  if (!appInitialized) return;
+  const parsed = parseHash(window.location.hash);
+  if (!parsed) return;
+  hashNavInProgress = true;
+  try {
+    if ('ticker' in parsed) {
+      window.showTickerView(parsed.ticker);
+    } else {
+      // If we're in a ticker sub-view, close it first
+      const tickerView = document.getElementById('ticker-view');
+      if (tickerView && !tickerView.classList.contains('hidden')) {
+        cancelChartLoading();
+        delete tickerView.dataset.ticker;
+        tickerView.classList.add('hidden');
+        document.getElementById('view-divergence')?.classList.remove('hidden');
+      }
+      switchView(parsed.view);
+    }
+  } finally {
+    hashNavInProgress = false;
+  }
+}
 
 // Expose globals for HTML onclick attributes
 // Note: We declared the Window interface in liveFeed.ts (or global.d.ts ideally),
@@ -66,6 +134,7 @@ window.showTickerView = function (
     document.getElementById('dashboard-view')?.classList.add('hidden');
     document.getElementById('view-divergence')?.classList.add('hidden');
     tickerView.classList.remove('hidden');
+    pushHash(`/ticker/${ticker}`);
     renderTickerView(ticker);
     window.scrollTo(0, 0);
   }
@@ -76,12 +145,13 @@ window.showOverview = function () {
   const tickerView = document.getElementById('ticker-view');
   if (tickerView) delete tickerView.dataset.ticker;
 
-  switchView('divergence');
+  switchView('divergence'); // pushes #/divergence
   window.scrollTo(0, divergenceDashboardScrollY);
 };
 
 function switchView(view: 'logs' | 'divergence' | 'breadth') {
   currentView = view;
+  pushHash(`/${view}`);
   setActiveNavTab(view);
 
   // Hide all views
@@ -93,7 +163,7 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
   document.getElementById('ticker-view')?.classList.add('hidden');
   cancelChartLoading();
 
-  stopLogsPolling();
+  loadLogs().then((m) => m.stopLogsPolling()).catch(() => {});
 
   // Close any open dropdowns
   closeAllHeaderDropdowns();
@@ -101,15 +171,14 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
   // Show the selected view and controls
   if (view === 'logs') {
     document.getElementById('view-logs')?.classList.remove('hidden');
-    refreshLogsView().catch(() => {});
-    startLogsPolling();
+    loadLogs().then((m) => { m.refreshLogsView().catch(() => {}); m.startLogsPolling(); }).catch(() => {});
   } else if (view === 'divergence') {
     document.getElementById('view-divergence')?.classList.remove('hidden');
     fetchDivergenceSignals(true).then(renderDivergenceOverview);
     syncDivergenceScanUiState();
   } else if (view === 'breadth') {
     document.getElementById('view-breadth')?.classList.remove('hidden');
-    initBreadth();
+    loadBreadth().then((m) => m.initBreadth()).catch(() => {});
   }
 }
 
@@ -203,12 +272,14 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
   }
 
   if (currentView === 'breadth') {
-    initBreadth();
+    const breadth = await loadBreadth();
+    breadth.initBreadth();
     return;
   }
 
   if (currentView === 'logs') {
-    await refreshLogsView();
+    const logs = await loadLogs();
+    await logs.refreshLogsView();
   }
 }
 
@@ -714,18 +785,18 @@ function bootstrapApplication(): void {
     });
   });
 
-  // Breadth Controls
+  // Breadth Controls (lazy-loaded)
   document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const days = Number((btn as HTMLElement).dataset.days);
-      setBreadthTimeframe(days);
+      loadBreadth().then((m) => m.setBreadthTimeframe(days)).catch(() => {});
     });
   });
 
   document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
-      setBreadthMetric(metric);
+      loadBreadth().then((m) => m.setBreadthMetric(metric)).catch(() => {});
       const subtitle = document.getElementById('breadth-subtitle');
       if (subtitle) subtitle.textContent = `SPY vs ${metric} — Normalized`;
     });
@@ -746,12 +817,25 @@ function bootstrapApplication(): void {
   // Initial Load
   initializeDivergenceSortDefaults();
   syncDivergenceScanUiState().catch(() => {});
-  switchView('divergence');
+
+  // Hash router: restore view from URL hash, or default to divergence
+  const initialRoute = parseHash(window.location.hash);
+  if (initialRoute && 'ticker' in initialRoute) {
+    switchView('divergence');
+    window.showTickerView(initialRoute.ticker);
+  } else if (initialRoute && 'view' in initialRoute) {
+    switchView(initialRoute.view);
+  } else {
+    switchView('divergence');
+  }
+
+  // Listen for browser back/forward
+  window.addEventListener('hashchange', () => handleHashRoute());
 
   // Setup Search
   initGlobalSettingsPanel();
   initSearch();
-  initLogsView();
+  loadLogs().then((m) => m.initLogsView()).catch(() => {});
 
   // Setup Event Delegation
   setupDivergenceFeedDelegation();

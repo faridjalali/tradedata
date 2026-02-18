@@ -9,6 +9,8 @@
 
 import { formatDateUTC } from '../chartMath.js';
 import { addUtcDays, etDateStringFromUnixSeconds } from '../lib/dateUtils.js';
+import { CircuitBreaker, CircuitOpenError } from '../lib/circuitBreaker.js';
+import { AggregateResponseSchema, IndicatorResponseSchema, validateApiResponse } from '../lib/apiSchemas.js';
 
 // ---------------------------------------------------------------------------
 // DataApiError interface
@@ -50,6 +52,46 @@ function refillDataApiRateTokens(nowMs?: number): void {
   const refillPerMs = DATA_API_MAX_REQUESTS_PER_SECOND / 1000;
   dataApiRateTokens = Math.min(DATA_API_RATE_BUCKET_CAPACITY, dataApiRateTokens + elapsedMs * refillPerMs);
   dataApiRateLastRefillMs = now;
+}
+
+// ---------------------------------------------------------------------------
+// Circuit breaker — trips on infrastructure failures (timeouts, 5xx),
+// transparent to rate-limit / abort / paused / subscription errors.
+// ---------------------------------------------------------------------------
+
+function isInfrastructureError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return true;
+  // These are business-level, not outage signals:
+  if (isDataApiRateLimitedError(err)) return false;
+  if (isDataApiPausedError(err)) return false;
+  if (isAbortError(err)) return false;
+  if (isDataApiSubscriptionRestrictedError(err)) return false;
+  // Timeouts and 5xx are infrastructure failures:
+  const status = (err as Record<string, unknown>).httpStatus;
+  if (Number(status) >= 500 || (err as Record<string, unknown>).isTaskTimeout) return true;
+  // Network errors (ECONNREFUSED, ETIMEDOUT, etc.)
+  const code = (err as Record<string, unknown>).code;
+  if (typeof code === 'string' && /^(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)) return true;
+  // Timeout in message
+  const msg = String((err as Record<string, unknown>).message || '');
+  if (/timed?\s*out/i.test(msg)) return true;
+  return false;
+}
+
+const dataApiCircuitBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  cooldownMs: 30_000,
+  isInfraError: isInfrastructureError,
+});
+
+/** Expose circuit breaker info for health/status endpoints. */
+function getDataApiCircuitBreakerInfo() {
+  return dataApiCircuitBreaker.getInfo();
+}
+
+/** Manually reset the circuit breaker (e.g. from admin endpoint). */
+function resetDataApiCircuitBreaker() {
+  dataApiCircuitBreaker.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -408,83 +450,85 @@ async function fetchDataApiJson(
     throw buildDataApiPausedError(`${label} requests are paused by server configuration`);
   }
 
-  const externalSignal = options && options.signal ? options.signal : null;
-  const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
-  const requestStartedMs = Date.now();
-  await acquireDataApiRateLimitSlot(externalSignal);
-  const controller = new AbortController();
-  let timedOut: boolean = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, DATA_API_TIMEOUT_MS);
-  const forwardAbort = () => {
-    try {
+  // Circuit breaker — reject immediately when API is confirmed down.
+  return dataApiCircuitBreaker.call(async () => {
+    const externalSignal = options && options.signal ? options.signal : null;
+    const metricsTracker = options && options.metricsTracker ? options.metricsTracker : null;
+    const requestStartedMs = Date.now();
+    await acquireDataApiRateLimitSlot(externalSignal);
+    const controller = new AbortController();
+    let timedOut: boolean = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
       controller.abort();
-    } catch {
-      // Ignore duplicate abort errors.
+    }, DATA_API_TIMEOUT_MS);
+    const forwardAbort = () => {
+      try {
+        controller.abort();
+      } catch {
+        // Ignore duplicate abort errors.
+      }
+    };
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        forwardAbort();
+      } else {
+        externalSignal.addEventListener('abort', forwardAbort, { once: true });
+      }
     }
-  };
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      forwardAbort();
-    } else {
-      externalSignal.addEventListener('abort', forwardAbort, { once: true });
-    }
-  }
-  try {
-    const requestUrl = withDataApiKey(url);
-    const resp = await fetch(requestUrl, { signal: controller.signal });
-    const text = await resp.text();
-    const payload = parseJsonSafe(text);
-    const apiError = extractDataApiError(payload);
-    const bodyText = apiError || (typeof text === 'string' ? text.trim().slice(0, 180) : '');
+    try {
+      const requestUrl = withDataApiKey(url);
+      const resp = await fetch(requestUrl, { signal: controller.signal });
+      const text = await resp.text();
+      const payload = parseJsonSafe(text);
+      const apiError = extractDataApiError(payload);
+      const bodyText = apiError || (typeof text === 'string' ? text.trim().slice(0, 180) : '');
 
-    if (!resp.ok) {
-      if (resp.status === 429) {
-        throw buildDataApiRateLimitedError(`${label} request failed (429): ${bodyText || 'Too Many Requests'}`);
+      if (!resp.ok) {
+        if (resp.status === 429) {
+          throw buildDataApiRateLimitedError(`${label} request failed (429): ${bodyText || 'Too Many Requests'}`);
+        }
+        const details = bodyText || `HTTP ${resp.status}`;
+        const error = new Error(`${label} request failed (${resp.status}): ${details}`) as DataApiError;
+        error.httpStatus = resp.status;
+        if (
+          resp.status === 403 &&
+          /plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(details)
+        ) {
+          error.isDataApiSubscriptionRestricted = true;
+        }
+        throw error;
       }
-      const details = bodyText || `HTTP ${resp.status}`;
-      const error = new Error(`${label} request failed (${resp.status}): ${details}`) as DataApiError;
-      error.httpStatus = resp.status;
-      if (
-        resp.status === 403 &&
-        /plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(details)
-      ) {
-        error.isDataApiSubscriptionRestricted = true;
-      }
-      throw error;
-    }
 
-    if (apiError) {
-      if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
-        throw buildDataApiRateLimitedError(`${label} request failed (429): ${apiError}`);
+      if (apiError) {
+        if (/Limit Reach|Too Many Requests|rate limit/i.test(apiError)) {
+          throw buildDataApiRateLimitedError(`${label} request failed (429): ${apiError}`);
+        }
+        const error = new Error(`${label} API error: ${apiError}`) as DataApiError;
+        if (/plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(apiError)) {
+          error.isDataApiSubscriptionRestricted = true;
+        }
+        throw error;
       }
-      const error = new Error(`${label} API error: ${apiError}`) as DataApiError;
-      if (/plan\s+doesn'?t\s+include\s+this\s+data\s+timeframe|subscription|restricted endpoint/i.test(apiError)) {
-        error.isDataApiSubscriptionRestricted = true;
-      }
-      throw error;
-    }
 
-    if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
-      metricsTracker.recordApiCall({
-        latencyMs: Date.now() - requestStartedMs,
-        ok: true,
-      });
-    }
-    return payload;
-  } catch (err: any) {
-    if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
-      metricsTracker.recordApiCall({
-        latencyMs: Date.now() - requestStartedMs,
-        ok: false,
-        rateLimited: isDataApiRateLimitedError(err),
-        timedOut,
-        aborted: isAbortError(err),
-        subscriptionRestricted: isDataApiSubscriptionRestrictedError(err),
-      });
-    }
+      if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
+        metricsTracker.recordApiCall({
+          latencyMs: Date.now() - requestStartedMs,
+          ok: true,
+        });
+      }
+      return payload;
+    } catch (err: any) {
+      if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
+        metricsTracker.recordApiCall({
+          latencyMs: Date.now() - requestStartedMs,
+          ok: false,
+          rateLimited: isDataApiRateLimitedError(err),
+          timedOut,
+          aborted: isAbortError(err),
+          subscriptionRestricted: isDataApiSubscriptionRestrictedError(err),
+        });
+      }
     if (isAbortError(err)) {
       if (externalSignal && externalSignal.aborted) {
         const abortError = new Error(`${label} request aborted`) as DataApiError;
@@ -505,6 +549,7 @@ async function fetchDataApiJson(
       externalSignal.removeEventListener('abort', forwardAbort);
     }
   }
+  }); // end circuit breaker call
 }
 
 async function fetchDataApiArrayWithFallback(
@@ -519,6 +564,8 @@ async function fetchDataApiArrayWithFallback(
   for (const url of urls) {
     try {
       const payload = await fetchDataApiJson(url, label, options);
+      // Zod validation — log warning on shape mismatch but don't hard-fail
+      validateApiResponse(AggregateResponseSchema, payload, label);
       const rows = toArrayPayload(payload);
       if (!rows) {
         throw new Error(`${label} returned unexpected payload shape`);
@@ -728,6 +775,8 @@ async function fetchDataApiIndicatorLatestValue(
     });
     try {
       const payload = await fetchDataApiJson(url, `DataAPI ${type}${window} ${candidate}`, options);
+      // Zod validation — log warning on shape mismatch but don't hard-fail
+      validateApiResponse(IndicatorResponseSchema, payload, `DataAPI ${type}${window}`);
       const value = extractLatestIndicatorValue(payload);
       if (value !== null) {
         if (candidate !== ticker) {
@@ -853,4 +902,9 @@ export {
   fetchDataApiMovingAverageStatesForTicker,
   dataApiQuoteSingle,
   dataApiLatestQuote,
+
+  // Circuit breaker
+  CircuitOpenError,
+  getDataApiCircuitBreakerInfo,
+  resetDataApiCircuitBreaker,
 };
