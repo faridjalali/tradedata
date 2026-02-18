@@ -5,9 +5,8 @@ import {
   ChartData,
   ChartLatestData,
   ChartInterval,
-  VolumeDeltaSourceInterval,
 } from './chartApi';
-import { RSIChart, RSIPersistedTrendline } from './rsi';
+import { RSIChart } from './rsi';
 import { DIVERGENCE_LOOKBACK_DAYS, DivergenceSummaryEntry, getTickerDivergenceSummary } from './divergenceTable';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import {
@@ -23,6 +22,44 @@ import {
   loadPersistedTrendlinesForContext,
 } from './trendlineStorage';
 import { getThemeColors } from './theme';
+import {
+  unixSecondsFromTimeValue, formatTimeScaleTickMark,
+  buildMonthBoundaryTimes,
+  timeKey, toUnixSeconds, formatMmDdYyFromUnixSeconds,
+} from './chartTimeUtils';
+import {
+  buildRSISeriesFromBars, normalizeValueSeries,
+  computeSMA, computeEMA, buildDailyMAValuesForBars, isRenderableMaValue,
+} from './chartIndicators';
+import { recordChartFetchPerf, recordChartRenderPerf, exposeChartPerfMetrics } from './chartPerf';
+import {
+  buildChartDataCacheKey, getCachedChartData, setCachedChartData,
+  evictCachedChartData, getLastBarSignature, schedulePersistChartDataCacheToSession,
+} from './chartDataCache';
+import { navigateChart, getNeighborTicker, initPaneAxisNavigation } from './chartNavigation';
+import {
+  type MidlineStyle,
+  type PaneId, type TrendToolPane, type PaneControlType,
+  type PersistedChartSettings, type RSIPersistedTrendline,
+  TREND_ICON, ERASE_ICON, DIVERGENCE_ICON, SETTINGS_ICON,
+  INTERVAL_SWITCH_DEBOUNCE_MS, CHART_LIVE_REFRESH_MS,
+  RIGHT_MARGIN_BARS, FUTURE_TIMELINE_TRADING_DAYS, SCALE_LABEL_CHARS, SCALE_MIN_WIDTH_PX,
+  INVALID_SYMBOL_MESSAGE, SETTINGS_STORAGE_KEY, VDF_CACHE_MAX_SIZE,
+  TOP_PANE_TICKER_LABEL_CLASS, TOP_PANE_BADGE_CLASS, TOP_PANE_BADGE_START_LEFT_PX, TOP_PANE_BADGE_GAP_PX,
+  PANE_SETTINGS_BUTTON_LEFT_PX, PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
+  VOLUME_DELTA_MIDLINE, RSI_MIDLINE_VALUE,
+  VOLUME_DELTA_AXIS_MIN, VOLUME_DELTA_AXIS_MAX, VOLUME_DELTA_DATA_MIN, VOLUME_DELTA_DATA_MAX,
+  VOLUME_DELTA_MAX_HIGHLIGHT_POINTS, DIVERGENCE_HIGHLIGHT_COLOR, TRENDLINE_COLOR,
+  VOLUME_DELTA_POSITIVE_COLOR, VOLUME_DELTA_NEGATIVE_COLOR, VOLUME_DELTA_SOURCE_OPTIONS,
+  PREFETCH_INTERVAL_TARGETS,
+  PANE_HEIGHT_MIN, PANE_HEIGHT_MAX, DEFAULT_PANE_ORDER, DEFAULT_PANE_HEIGHTS, normalizePaneOrder,
+  DEFAULT_RSI_SETTINGS, DEFAULT_VOLUME_DELTA_RSI_SETTINGS, DEFAULT_VOLUME_DELTA_SETTINGS, DEFAULT_PRICE_SETTINGS,
+  rsiSettings, volumeDeltaRsiSettings, volumeDeltaSettings, priceChartSettings,
+  paneOrder, setPaneOrder, paneHeights,
+} from './chartTypes';
+// Re-export isMobileTouch for consumers that import from chart.ts
+import { isMobileTouch } from './chartTypes';
+export { isMobileTouch } from './chartTypes';
 
 declare const Chart: any;
 
@@ -94,9 +131,6 @@ let chartActivelyLoading = false;
 let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
-let chartDataCache = new Map<string, { data: ChartData; updatedAt: number }>();
-let chartCacheHydratedFromSession = false;
-let chartCachePersistTimer: number | null = null;
 let chartLayoutRefreshRafId: number | null = null;
 let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
@@ -106,223 +140,16 @@ let bullFlagButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
-const VDF_CACHE_MAX_SIZE = 200;
-const TREND_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/><polyline points="15 4 20 4 20 9"/></svg>`;
-const ERASE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21h10"/><path d="M5.5 13.5 9 17l8.5-8.5a2.12 2.12 0 0 0-3-3L6 14"/><path d="m2 22 3-3"/></svg>`;
-const DIVERGENCE_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 12 6 20 18"/></svg>`;
-const INTERVAL_SWITCH_DEBOUNCE_MS = 120;
-const CHART_LIVE_REFRESH_MS = 15 * 60 * 1000;
-const CHART_CLIENT_CACHE_TTL_MS = 15 * 60 * 1000;
-const CHART_CLIENT_CACHE_MAX_ENTRIES = 16;
-const CHART_SESSION_CACHE_KEY = 'custom_chart_session_cache_v1';
-const CHART_SESSION_CACHE_MAX_ENTRIES = 6;
-const CHART_SESSION_CACHE_MAX_BYTES = 900_000;
-const RIGHT_MARGIN_BARS = 10;
-const FUTURE_TIMELINE_TRADING_DAYS = 252;
-const SCALE_LABEL_CHARS = 4;
-const SCALE_MIN_WIDTH_PX = 56;
-const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 function tc() {
   return getThemeColors();
 }
 function getMonthGridlineColor(): string {
   return tc().monthGridlineColor;
 }
-const SETTINGS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 
-/** Detect touch-capable device — shared with rsi.ts */
-export const isMobileTouch: boolean =
-  typeof window !== 'undefined' &&
-  (window.matchMedia('(max-width: 768px)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0);
-const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
-const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
-const TOP_PANE_BADGE_START_LEFT_PX = 38;
-const TOP_PANE_BADGE_GAP_PX = 6;
-const PANE_SETTINGS_BUTTON_LEFT_PX = 8;
-const PANE_TOOL_BUTTON_TOP_PX = 8;
-const PANE_TOOL_BUTTON_SIZE_PX = 24;
-const PANE_TOOL_BUTTON_GAP_PX = 6;
-const VOLUME_DELTA_RSI_COLOR = '#2962FF';
-const VOLUME_DELTA_MIDLINE = 50;
-const RSI_MIDLINE_VALUE = 50;
-const VOLUME_DELTA_AXIS_MIN = 20;
-const VOLUME_DELTA_AXIS_MAX = 80;
-const VOLUME_DELTA_DATA_MIN = 0;
-const VOLUME_DELTA_DATA_MAX = 100;
-const VOLUME_DELTA_MAX_HIGHLIGHT_POINTS = 2000;
-const DIVERGENCE_HIGHLIGHT_COLOR = '#ff6b6b';
-const TRENDLINE_COLOR = '#ffa500';
-const VOLUME_DELTA_POSITIVE_COLOR = '#089981';
-const VOLUME_DELTA_NEGATIVE_COLOR = '#f23645';
-const VOLUME_DELTA_SOURCE_OPTIONS: Array<{ value: VolumeDeltaSourceInterval; label: string }> = [
-  { value: '1min', label: '1 min' },
-  { value: '5min', label: '5 min' },
-  { value: '15min', label: '15 min' },
-  { value: '30min', label: '30 min' },
-  { value: '1hour', label: '1 hour' },
-  { value: '4hour', label: '4 hour' },
-];
-const CHART_PERF_SAMPLE_MAX = 180;
-const PREFETCH_INTERVAL_TARGETS: Record<ChartInterval, ChartInterval[]> = {
-  '5min': [],
-  '15min': [],
-  '30min': [],
-  '1hour': [],
-  '4hour': ['1day'],
-  '1day': ['4hour', '1week'],
-  '1week': ['1day'],
-};
-
-type MAType = 'SMA' | 'EMA';
-type MASourceMode = 'daily' | 'timeframe';
-type MidlineStyle = 'dotted' | 'solid';
-type PaneId = 'price-chart-container' | 'vd-rsi-chart-container' | 'rsi-chart-container' | 'vd-chart-container';
-type TrendToolPane = 'rsi' | 'volumeDeltaRsi';
-type PaneControlType = 'price' | 'volumeDelta' | 'volumeDeltaRsi' | 'rsi';
-
-interface MASetting {
-  enabled: boolean;
-  type: MAType;
-  length: number;
-  color: string;
-  series: any | null;
-  values: Array<number | null>;
-}
-
-interface PriceChartSettings {
-  maSourceMode: MASourceMode;
-  verticalGridlines: boolean;
-  horizontalGridlines: boolean;
-  ma: MASetting[];
-}
-
-interface RSISettings {
-  length: number;
-  lineColor: string;
-  midlineColor: string;
-  midlineStyle: MidlineStyle;
-}
-
-interface VolumeDeltaRSISettings {
-  length: number;
-  lineColor: string;
-  midlineColor: string;
-  midlineStyle: MidlineStyle;
-  sourceInterval: VolumeDeltaSourceInterval;
-}
-
-interface VolumeDeltaSettings {
-  sourceInterval: VolumeDeltaSourceInterval;
-  divergenceTable: boolean;
-  divergentPriceBars: boolean;
-  bullishDivergentColor: string;
-  bearishDivergentColor: string;
-  neutralDivergentColor: string;
-}
-
-interface PersistedMASetting {
-  enabled: boolean;
-  type: MAType;
-  length: number;
-  color: string;
-}
-
-interface PersistedChartSettings {
-  price: {
-    maSourceMode: MASourceMode;
-    verticalGridlines: boolean;
-    horizontalGridlines: boolean;
-    ma: PersistedMASetting[];
-  };
-  volumeDelta?: VolumeDeltaSettings;
-  rsi: RSISettings;
-  volumeDeltaRsi?: VolumeDeltaRSISettings;
-  paneOrder?: PaneId[];
-  paneHeights?: Record<string, number>;
-}
-
-const DEFAULT_RSI_SETTINGS: RSISettings = {
-  length: 14,
-  lineColor: '#58a6ff',
-  midlineColor: '#c9d1d9',
-  midlineStyle: 'dotted',
-};
-
-const DEFAULT_VOLUME_DELTA_RSI_SETTINGS: VolumeDeltaRSISettings = {
-  length: 14,
-  lineColor: VOLUME_DELTA_RSI_COLOR,
-  midlineColor: '#c9d1d9',
-  midlineStyle: 'dotted',
-  sourceInterval: '1min',
-};
-
-const DEFAULT_VOLUME_DELTA_SETTINGS: VolumeDeltaSettings = {
-  sourceInterval: '1min',
-  divergenceTable: true,
-  divergentPriceBars: true,
-  bullishDivergentColor: '#26a69a',
-  bearishDivergentColor: '#ef5350',
-  neutralDivergentColor: '#8b949e',
-};
-
-const DEFAULT_PRICE_SETTINGS: {
-  maSourceMode: MASourceMode;
-  verticalGridlines: boolean;
-  horizontalGridlines: boolean;
-  ma: PersistedMASetting[];
-} = {
-  maSourceMode: 'daily',
-  verticalGridlines: false,
-  horizontalGridlines: false,
-  ma: [
-    { enabled: true, type: 'EMA', length: 8, color: '#ffa500' },
-    { enabled: true, type: 'EMA', length: 21, color: '#8a2be2' },
-    { enabled: true, type: 'SMA', length: 50, color: '#00bcd4' },
-    { enabled: false, type: 'SMA', length: 200, color: '#90ee90' },
-  ],
-};
-
-const DEFAULT_PANE_ORDER: PaneId[] = [
-  'vd-chart-container',
-  'price-chart-container',
-  'rsi-chart-container',
-  'vd-rsi-chart-container',
-];
-
-let paneOrder: PaneId[] = [...DEFAULT_PANE_ORDER];
 let draggedPaneId: PaneId | null = null;
-
-const PANE_HEIGHT_MIN = 120;
-const PANE_HEIGHT_MAX = 600;
-const DEFAULT_PANE_HEIGHTS: Record<string, number> = {
-  'vd-chart-container': 240,
-  'price-chart-container': 400,
-  'rsi-chart-container': 400,
-  'vd-rsi-chart-container': 400,
-};
-let paneHeights: Record<string, number> = {};
 let paneResizeHandlesInstalled = false;
 let crosshairHidden = false;
-
-const rsiSettings: RSISettings = {
-  ...DEFAULT_RSI_SETTINGS,
-};
-
-const volumeDeltaRsiSettings: VolumeDeltaRSISettings = {
-  ...DEFAULT_VOLUME_DELTA_RSI_SETTINGS,
-};
-
-const volumeDeltaSettings: VolumeDeltaSettings = {
-  ...DEFAULT_VOLUME_DELTA_SETTINGS,
-};
-
-const priceChartSettings: PriceChartSettings = {
-  maSourceMode: DEFAULT_PRICE_SETTINGS.maSourceMode,
-  verticalGridlines: DEFAULT_PRICE_SETTINGS.verticalGridlines,
-  horizontalGridlines: DEFAULT_PRICE_SETTINGS.horizontalGridlines,
-  ma: DEFAULT_PRICE_SETTINGS.ma.map((ma) => ({ ...ma, series: null, values: [] })),
-};
 
 function ensureMonthGridOverlay(
   container: HTMLElement,
@@ -369,91 +196,6 @@ function ensureMonthGridOverlay(
   return overlay;
 }
 
-function unixSecondsFromTimeValue(time: string | number | null | undefined): number | null {
-  if (typeof time === 'number' && Number.isFinite(time)) return time;
-  if (typeof time === 'string' && time.trim()) {
-    const parsed = Date.parse(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
-    if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
-  }
-  return null;
-}
-
-function toDateFromScaleTime(time: any): Date | null {
-  if (typeof time === 'number' && Number.isFinite(time)) {
-    return new Date(time * 1000);
-  }
-  if (typeof time === 'string' && time.trim()) {
-    const parsed = new Date(time.includes('T') ? time : `${time.replace(' ', 'T')}Z`);
-    return Number.isFinite(parsed.getTime()) ? parsed : null;
-  }
-  if (
-    time &&
-    typeof time === 'object' &&
-    Number.isFinite(time.year) &&
-    Number.isFinite(time.month) &&
-    Number.isFinite(time.day)
-  ) {
-    return new Date(Date.UTC(Number(time.year), Number(time.month) - 1, Number(time.day), 0, 0, 0));
-  }
-  return null;
-}
-
-function formatTimeScaleTickMark(time: any, tickMarkType: number): string {
-  const date = toDateFromScaleTime(time);
-  if (!date) return '';
-  const appTimeZone = getAppTimeZone();
-
-  if (tickMarkType === 0) {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      timeZone: appTimeZone,
-    });
-  }
-  if (tickMarkType === 1) {
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      timeZone: appTimeZone,
-    });
-  }
-  return date.toLocaleDateString('en-US', {
-    day: 'numeric',
-    timeZone: appTimeZone,
-  });
-}
-
-function monthKeyInAppTimeZone(unixSeconds: number): string {
-  const parts = getAppTimeZoneFormatter('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date(unixSeconds * 1000));
-  const year = parts.find((p) => p.type === 'year')?.value || '';
-  const month = parts.find((p) => p.type === 'month')?.value || '';
-  return `${year}-${month}`;
-}
-
-function buildMonthBoundaryTimes(bars: any[]): number[] {
-  const result: number[] = [];
-  let lastMonthKey = '';
-  for (const bar of bars) {
-    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
-    if (unixSeconds === null) continue;
-    const monthKey = monthKeyInAppTimeZone(unixSeconds);
-    if (monthKey !== lastMonthKey) {
-      result.push(unixSeconds);
-      lastMonthKey = monthKey;
-    }
-  }
-  return result;
-}
-
-function dayKeyInAppTimeZone(unixSeconds: number): string {
-  return getAppTimeZoneFormatter('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(unixSeconds * 1000));
-}
-
 function buildFutureTimelinePointsFromBars(bars: any[]): Array<{ time: number }> {
   if (!Array.isArray(bars) || bars.length === 0) return [];
   const lastUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
@@ -484,371 +226,7 @@ function applyFutureTimelineSeriesData(bars: any[]): void {
   }
 }
 
-function calculateRSIFromCloses(closePrices: number[], period: number): number[] {
-  if (!Array.isArray(closePrices) || closePrices.length === 0) return [];
-  if (closePrices.length === 1) return [50];
 
-  const safePeriod = Math.max(1, Math.floor(period || 14));
-  const rsiValues = new Array(closePrices.length).fill(50);
-  const gains: number[] = [];
-  const losses: number[] = [];
-  let avgGain = 0;
-  let avgLoss = 0;
-
-  for (let i = 1; i < closePrices.length; i++) {
-    const change = closePrices[i] - closePrices[i - 1];
-    const gain = change > 0 ? change : 0;
-    const loss = change < 0 ? Math.abs(change) : 0;
-    gains.push(gain);
-    losses.push(loss);
-
-    if (i < safePeriod) {
-      const window = i;
-      let gainSum = 0;
-      let lossSum = 0;
-      for (let j = 0; j < window; j++) {
-        gainSum += gains[j];
-        lossSum += losses[j];
-      }
-      avgGain = gainSum / window;
-      avgLoss = lossSum / window;
-    } else if (i === safePeriod) {
-      let gainSum = 0;
-      let lossSum = 0;
-      for (let j = i - safePeriod; j < i; j++) {
-        gainSum += gains[j];
-        lossSum += losses[j];
-      }
-      avgGain = gainSum / safePeriod;
-      avgLoss = lossSum / safePeriod;
-    } else {
-      avgGain = (avgGain * (safePeriod - 1) + gain) / safePeriod;
-      avgLoss = (avgLoss * (safePeriod - 1) + loss) / safePeriod;
-    }
-
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    const rsi = 100 - 100 / (1 + rs);
-    rsiValues[i] = Number.isFinite(rsi) ? rsi : rsiValues[i - 1];
-  }
-
-  rsiValues[0] = rsiValues[1] ?? 50;
-  return rsiValues;
-}
-
-function buildRSISeriesFromBars(bars: any[], period: number): Array<{ time: string | number; value: number }> {
-  if (!bars || bars.length === 0) return [];
-  // Don't filter — keep 1:1 index alignment between bars and closes.
-  // Non-finite values are handled inside calculateRSIFromCloses.
-  const closes = bars.map((bar) => Number(bar.close));
-  const rsiValues = calculateRSIFromCloses(closes, period);
-  const out: Array<{ time: string | number; value: number }> = [];
-  for (let i = 0; i < bars.length; i++) {
-    const raw = rsiValues[i];
-    if (!Number.isFinite(raw)) continue;
-    out.push({ time: bars[i].time, value: Math.round(raw * 100) / 100 });
-  }
-  return out;
-}
-
-function normalizeValueSeries(points: any[]): Array<{ time: string | number; value: number }> {
-  if (!Array.isArray(points)) return [];
-  return points
-    .filter(
-      (point) =>
-        point &&
-        (typeof point.time === 'string' || typeof point.time === 'number') &&
-        Number.isFinite(Number(point.value)),
-    )
-    .map((point) => ({
-      time: point.time,
-      value: Number(point.value),
-    }));
-}
-
-function buildChartDataCacheKey(ticker: string, interval: ChartInterval): string {
-  return [
-    String(ticker || '')
-      .trim()
-      .toUpperCase(),
-    interval,
-    String(volumeDeltaRsiSettings.length),
-    volumeDeltaSettings.sourceInterval,
-    volumeDeltaRsiSettings.sourceInterval,
-  ].join('|');
-}
-
-function isValidChartDataPayload(data: unknown): data is ChartData {
-  if (!data || typeof data !== 'object') return false;
-  const candidate = data as Partial<ChartData>;
-  if (!Array.isArray(candidate.bars) || candidate.bars.length === 0) return false;
-  return true;
-}
-
-function enforceChartDataCacheMaxEntries(): void {
-  while (chartDataCache.size > CHART_CLIENT_CACHE_MAX_ENTRIES) {
-    const oldestKey = chartDataCache.keys().next().value;
-    if (!oldestKey) break;
-    chartDataCache.delete(oldestKey);
-  }
-}
-
-function hydrateChartDataCacheFromSessionIfNeeded(): void {
-  if (chartCacheHydratedFromSession) return;
-  chartCacheHydratedFromSession = true;
-  if (typeof window === 'undefined') return;
-
-  try {
-    const raw = window.sessionStorage.getItem(CHART_SESSION_CACHE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as {
-      version?: number;
-      entries?: Array<{ key: string; updatedAt: number; data: ChartData }>;
-    };
-    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries)) return;
-    const sortedEntries = [...parsed.entries]
-      .filter(
-        (entry) =>
-          entry &&
-          typeof entry.key === 'string' &&
-          Number.isFinite(entry.updatedAt) &&
-          isValidChartDataPayload(entry.data),
-      )
-      .sort((a, b) => Number(a.updatedAt) - Number(b.updatedAt));
-    for (const entry of sortedEntries) {
-      chartDataCache.set(entry.key, {
-        data: entry.data,
-        updatedAt: Number(entry.updatedAt),
-      });
-    }
-    enforceChartDataCacheMaxEntries();
-  } catch {
-    // Ignore session cache read/parse errors.
-  }
-}
-
-function schedulePersistChartDataCacheToSession(): void {
-  if (typeof window === 'undefined') return;
-  if (chartCachePersistTimer !== null) return;
-  chartCachePersistTimer = window.setTimeout(() => {
-    chartCachePersistTimer = null;
-    try {
-      const newestFirst = Array.from(chartDataCache.entries()).reverse();
-      const persistedEntries: Array<{ key: string; updatedAt: number; data: ChartData }> = [];
-      let totalBytes = 0;
-      for (const [key, entry] of newestFirst) {
-        if (!entry || !entry.data || !Number.isFinite(entry.updatedAt)) continue;
-        const candidate = {
-          key,
-          updatedAt: entry.updatedAt,
-          data: entry.data,
-        };
-        const serializedCandidate = JSON.stringify(candidate);
-        if (!serializedCandidate) continue;
-        if (totalBytes + serializedCandidate.length > CHART_SESSION_CACHE_MAX_BYTES) continue;
-        persistedEntries.push(candidate);
-        totalBytes += serializedCandidate.length;
-        if (persistedEntries.length >= CHART_SESSION_CACHE_MAX_ENTRIES) break;
-      }
-      const payload = JSON.stringify({
-        version: 1,
-        entries: persistedEntries,
-      });
-      window.sessionStorage.setItem(CHART_SESSION_CACHE_KEY, payload);
-    } catch {
-      // Ignore session cache persistence errors (quota, serialization, etc).
-    }
-  }, 180);
-}
-
-function sweepChartDataCache(): void {
-  hydrateChartDataCacheFromSessionIfNeeded();
-  const now = Date.now();
-  let changed = false;
-  for (const [key, entry] of chartDataCache.entries()) {
-    if (!entry || !entry.updatedAt || now - entry.updatedAt > CHART_CLIENT_CACHE_TTL_MS) {
-      chartDataCache.delete(key);
-      changed = true;
-    }
-  }
-  const sizeBefore = chartDataCache.size;
-  enforceChartDataCacheMaxEntries();
-  if (chartDataCache.size !== sizeBefore) {
-    changed = true;
-  }
-  if (changed) {
-    schedulePersistChartDataCacheToSession();
-  }
-}
-
-function getCachedChartData(cacheKey: string): ChartData | null {
-  sweepChartDataCache();
-  const cached = chartDataCache.get(cacheKey);
-  if (cached) {
-    chartDataCache.delete(cacheKey);
-    chartDataCache.set(cacheKey, cached);
-  }
-  return cached ? cached.data : null;
-}
-
-function setCachedChartData(cacheKey: string, data: ChartData): void {
-  hydrateChartDataCacheFromSessionIfNeeded();
-  chartDataCache.delete(cacheKey);
-  chartDataCache.set(cacheKey, {
-    data,
-    updatedAt: Date.now(),
-  });
-  enforceChartDataCacheMaxEntries();
-  schedulePersistChartDataCacheToSession();
-}
-
-function getLastBarSignature(data: ChartData | null): string {
-  const bars = Array.isArray(data?.bars) ? data.bars : [];
-  if (!bars.length) return 'none';
-  const last = bars[bars.length - 1];
-  return [
-    bars.length,
-    timeKey(last.time),
-    Number(last.open),
-    Number(last.high),
-    Number(last.low),
-    Number(last.close),
-    Number(last.volume),
-  ].join('|');
-}
-
-type ChartPerfSummary = {
-  fetchCount: number;
-  renderCount: number;
-  fetchP95Ms: number;
-  renderP95Ms: number;
-  responseCacheHit: number;
-  responseCacheMiss: number;
-  responseCacheUnknown: number;
-};
-
-const chartPerfSamples: Record<ChartInterval, { fetchMs: number[]; renderMs: number[] }> = {
-  '5min': { fetchMs: [], renderMs: [] },
-  '15min': { fetchMs: [], renderMs: [] },
-  '30min': { fetchMs: [], renderMs: [] },
-  '1hour': { fetchMs: [], renderMs: [] },
-  '4hour': { fetchMs: [], renderMs: [] },
-  '1day': { fetchMs: [], renderMs: [] },
-  '1week': { fetchMs: [], renderMs: [] },
-};
-
-const chartPerfSummary: Record<ChartInterval, ChartPerfSummary> = {
-  '5min': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '15min': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '30min': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '1hour': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '4hour': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '1day': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-  '1week': {
-    fetchCount: 0,
-    renderCount: 0,
-    fetchP95Ms: 0,
-    renderP95Ms: 0,
-    responseCacheHit: 0,
-    responseCacheMiss: 0,
-    responseCacheUnknown: 0,
-  },
-};
-
-function computeP95(values: number[]): number {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
-  return Math.round(sorted[index] * 100) / 100;
-}
-
-function pushPerfSample(values: number[], ms: number): void {
-  if (!Number.isFinite(ms) || ms < 0) return;
-  values.push(Math.round(ms * 100) / 100);
-  if (values.length > CHART_PERF_SAMPLE_MAX) {
-    values.shift();
-  }
-}
-
-function recordChartFetchPerf(interval: ChartInterval, durationMs: number, cacheHeader: string | null): void {
-  const samples = chartPerfSamples[interval];
-  const summary = chartPerfSummary[interval];
-  pushPerfSample(samples.fetchMs, durationMs);
-  summary.fetchCount += 1;
-  summary.fetchP95Ms = computeP95(samples.fetchMs);
-  if (cacheHeader === 'hit') {
-    summary.responseCacheHit += 1;
-  } else if (cacheHeader === 'miss') {
-    summary.responseCacheMiss += 1;
-  } else {
-    summary.responseCacheUnknown += 1;
-  }
-}
-
-function recordChartRenderPerf(interval: ChartInterval, durationMs: number): void {
-  const samples = chartPerfSamples[interval];
-  const summary = chartPerfSummary[interval];
-  pushPerfSample(samples.renderMs, durationMs);
-  summary.renderCount += 1;
-  summary.renderP95Ms = computeP95(samples.renderMs);
-}
-
-function exposeChartPerfMetrics(): void {
-  if (typeof window === 'undefined') return;
-  (window as any).__chartPerfMetrics = {
-    getSnapshot: () => ({
-      byInterval: chartPerfSummary,
-      sampleMax: CHART_PERF_SAMPLE_MAX,
-    }),
-  };
-}
 
 async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): Promise<void> {
   const normalizedTicker = String(ticker || '')
@@ -903,24 +281,6 @@ async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval)
 
 exposeChartPerfMetrics();
 
-function normalizePaneOrder(order: unknown): PaneId[] {
-  if (!Array.isArray(order)) return [...DEFAULT_PANE_ORDER];
-  const allowed = new Set<PaneId>(DEFAULT_PANE_ORDER);
-  const normalized: PaneId[] = [];
-
-  for (const candidate of order) {
-    if (typeof candidate !== 'string') continue;
-    if (!allowed.has(candidate as PaneId)) continue;
-    const paneId = candidate as PaneId;
-    if (!normalized.includes(paneId)) normalized.push(paneId);
-  }
-
-  for (const paneId of DEFAULT_PANE_ORDER) {
-    if (!normalized.includes(paneId)) normalized.push(paneId);
-  }
-
-  return normalized;
-}
 
 function formatVolumeDeltaScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
@@ -1185,7 +545,7 @@ function ensureSettingsLoadedFromStorage(): void {
       }
     }
 
-    paneOrder = normalizePaneOrder(parsed?.paneOrder);
+    setPaneOrder(normalizePaneOrder(parsed?.paneOrder));
 
     if (parsed?.paneHeights && typeof parsed.paneHeights === 'object') {
       for (const [id, h] of Object.entries(parsed.paneHeights)) {
@@ -1197,111 +557,6 @@ function ensureSettingsLoadedFromStorage(): void {
   } catch {
     // Ignore malformed storage content.
   }
-}
-
-function computeSMA(values: number[], length: number): Array<number | null> {
-  const period = Math.max(1, Math.floor(length));
-  const out: Array<number | null> = new Array(values.length).fill(null);
-  // Forward-fill non-finite values so the sliding window stays consistent.
-  const filled = values.slice();
-  let lastFinite: number | null = null;
-  for (let i = 0; i < filled.length; i++) {
-    if (Number.isFinite(filled[i])) {
-      lastFinite = filled[i];
-    } else if (lastFinite !== null) {
-      filled[i] = lastFinite;
-    }
-  }
-  let sum = 0;
-  for (let i = 0; i < filled.length; i++) {
-    const value = filled[i];
-    if (!Number.isFinite(value)) continue;
-    sum += value;
-    if (i >= period) {
-      sum -= filled[i - period];
-    }
-    if (i >= period - 1) {
-      out[i] = sum / period;
-    }
-  }
-  return out;
-}
-
-function buildDailyMAValuesForBars(bars: any[], type: MAType, length: number): Array<number | null> {
-  const dayOrder: string[] = [];
-  const dayCloseByKey = new Map<string, number>();
-  const seen = new Set<string>();
-
-  for (const bar of bars) {
-    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
-    const close = Number(bar?.close);
-    if (unixSeconds === null || !Number.isFinite(close)) continue;
-    const key = dayKeyInAppTimeZone(unixSeconds);
-    if (!seen.has(key)) {
-      seen.add(key);
-      dayOrder.push(key);
-    }
-    // Sorted bars => last assignment is the day close.
-    dayCloseByKey.set(key, close);
-  }
-
-  const dailyCloses = dayOrder.map((day) => Number(dayCloseByKey.get(day)));
-  const dailyMA = type === 'EMA' ? computeEMA(dailyCloses, length) : computeSMA(dailyCloses, length);
-
-  const dailyMAByKey = new Map<string, number | null>();
-  for (let i = 0; i < dayOrder.length; i++) {
-    dailyMAByKey.set(dayOrder[i], dailyMA[i] ?? null);
-  }
-
-  return bars.map((bar) => {
-    const unixSeconds = unixSecondsFromTimeValue(bar?.time);
-    if (unixSeconds === null) return null;
-    return dailyMAByKey.get(dayKeyInAppTimeZone(unixSeconds)) ?? null;
-  });
-}
-
-function computeEMA(values: number[], length: number): Array<number | null> {
-  const period = Math.max(1, Math.floor(length));
-  const out: Array<number | null> = new Array(values.length).fill(null);
-  if (values.length === 0) return out;
-  // Forward-fill non-finite values so the EMA window stays consistent.
-  const filled = values.slice();
-  let lastFinite: number | null = null;
-  for (let i = 0; i < filled.length; i++) {
-    if (Number.isFinite(filled[i])) {
-      lastFinite = filled[i];
-    } else if (lastFinite !== null) {
-      filled[i] = lastFinite;
-    }
-  }
-  const alpha = 2 / (period + 1);
-  let ema: number | null = null;
-
-  for (let i = 0; i < filled.length; i++) {
-    const value = filled[i];
-    if (!Number.isFinite(value)) continue;
-    if (ema === null) {
-      // Seed with SMA of first `period` finite values.
-      let sum = 0;
-      let count = 0;
-      for (let j = i; j < filled.length && count < period; j++) {
-        if (Number.isFinite(filled[j])) {
-          sum += filled[j];
-          count++;
-        }
-      }
-      ema = count > 0 ? sum / count : value;
-    } else {
-      ema = value * alpha + ema * (1 - alpha);
-    }
-    out[i] = ema;
-  }
-  return out;
-}
-
-function isRenderableMaValue(value: unknown): value is number {
-  const numeric = typeof value === 'number' ? value : Number.NaN;
-  return Number.isFinite(numeric) && numeric > 0;
 }
 
 function clearMovingAverageSeries(): void {
@@ -1756,7 +1011,7 @@ function movePaneInOrder(movingPaneId: PaneId, targetPaneId: PaneId, insertAfter
   if (targetIndex < 0) return;
   const insertIndex = insertAfter ? targetIndex + 1 : targetIndex;
   nextOrder.splice(insertIndex, 0, movingPaneId);
-  paneOrder = normalizePaneOrder(nextOrder);
+  setPaneOrder(normalizePaneOrder(nextOrder));
 }
 
 function clearPaneDragOverState(): void {
@@ -1883,7 +1138,7 @@ function ensurePaneReorderHandle(pane: HTMLElement, paneId: PaneId, chartContent
 }
 
 function ensurePaneReorderUI(chartContent: HTMLElement): void {
-  paneOrder = normalizePaneOrder(paneOrder);
+  setPaneOrder(normalizePaneOrder(paneOrder));
   applyPaneOrderToDom(chartContent);
   for (const paneId of DEFAULT_PANE_ORDER) {
     const pane = document.getElementById(paneId);
@@ -1952,7 +1207,7 @@ function resetPriceSettingsToDefault(): void {
     priceChartSettings.ma[i].series = null;
     priceChartSettings.ma[i].values = [];
   }
-  paneOrder = [...DEFAULT_PANE_ORDER];
+  setPaneOrder([...DEFAULT_PANE_ORDER]);
   const chartContent = document.getElementById('chart-content');
   if (chartContent && chartContent instanceof HTMLElement) {
     applyPaneOrderAndRefreshLayout(chartContent);
@@ -3267,10 +2522,6 @@ function formatPriceScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function timeKey(time: string | number): string {
-  return typeof time === 'number' ? String(time) : time;
-}
-
 function fixedVolumeDeltaAutoscaleInfoProvider(): any {
   return {
     priceRange: {
@@ -3288,19 +2539,6 @@ function setVolumeDeltaCursor(isCrosshair: boolean): void {
   const container = document.getElementById('vd-rsi-chart-container');
   if (!container) return;
   container.style.cursor = isCrosshair ? 'crosshair' : 'default';
-}
-
-function toUnixSeconds(time: string | number): number | null {
-  return unixSecondsFromTimeValue(time);
-}
-
-function formatMmDdYyFromUnixSeconds(unixSeconds: number | null): string {
-  if (!Number.isFinite(unixSeconds)) return 'N/A';
-  return getAppTimeZoneFormatter('en-US', {
-    month: '2-digit',
-    day: '2-digit',
-    year: '2-digit',
-  }).format(new Date(Math.round(Number(unixSeconds)) * 1000));
 }
 
 function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
@@ -5988,8 +5226,6 @@ const FULLSCREEN_EXIT_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fil
   <polyline points="1 10.5 5.5 10.5 5.5 15"/>
 </svg>`;
 
-import { getTickerListContext, getTickerOriginView } from './main';
-
 function initChartFullscreen(): void {
   const btn = document.getElementById('chart-fullscreen-btn');
   const container = document.getElementById('custom-chart-container');
@@ -6006,7 +5242,7 @@ function initChartFullscreen(): void {
       if (!currentChartTicker || chartActivelyLoading) return;
       // Evict cached data for current ticker+interval so fetch is forced
       const cacheKey = buildChartDataCacheKey(currentChartTicker, currentChartInterval);
-      chartDataCache.delete(cacheKey);
+      evictCachedChartData(cacheKey);
       schedulePersistChartDataCacheToSession();
       // Show loading state, re-render with fresh data, then clear loading
       setRefreshButtonLoading(refreshBtn, true);
@@ -6065,110 +5301,6 @@ function initChartFullscreen(): void {
   });
 }
 
-function navigateChart(direction: -1 | 1): void {
-  const context = getTickerListContext();
-  const origin = getTickerOriginView();
-  const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
-
-  if (!context || !currentTicker) return;
-
-  let containerId = '';
-  if (origin === 'divergence') {
-    containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
-  } else {
-    containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
-  }
-
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
-  const currentIndex = cards.findIndex((c) => c.dataset.ticker === currentTicker);
-
-  if (currentIndex === -1) return;
-
-  const nextIndex = currentIndex + direction;
-  if (nextIndex >= 0 && nextIndex < cards.length) {
-    const nextCard = cards[nextIndex];
-    const nextTicker = nextCard.dataset.ticker;
-    if (nextTicker && window.showTickerView) {
-      // Keep the same context
-      window.showTickerView(nextTicker, origin, context);
-    }
-  }
-}
-
-function initPaneAxisNavigation(): void {
-  const container = document.getElementById('custom-chart-container');
-  if (!container) return;
-
-  container.addEventListener('dblclick', (e) => {
-    // e.target might be the canvas or a wrapper
-    const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-
-    // Check if click is on the right side (Y-axis area)
-    // Assume Y-axis width is roughly 60px
-    const isRightSide = x > rect.width - 60;
-    if (!isRightSide) return;
-
-    // Determine which pane was clicked
-    // We need to find the DOM elements for the panes in current order
-    const currentOrder = normalizePaneOrder(paneOrder);
-    const pane3Id = currentOrder[2]; // 3rd pane
-    const pane4Id = currentOrder[3]; // 4th pane
-
-    const getPaneRect = (id: string) => {
-      const el = document.getElementById(id);
-      if (!el || el.style.display === 'none') return null;
-      // The pane element itself might be relative to chart content
-      return el.getBoundingClientRect();
-    };
-
-    // Check 3rd Pane -> Next (Right)
-    const pane3Rect = getPaneRect(pane3Id);
-    if (pane3Rect && e.clientY >= pane3Rect.top && e.clientY <= pane3Rect.bottom) {
-      navigateChart(1);
-      return;
-    }
-
-    // Check 4th Pane -> Prev (Left)
-    const pane4Rect = getPaneRect(pane4Id);
-    if (pane4Rect && e.clientY >= pane4Rect.top && e.clientY <= pane4Rect.bottom) {
-      navigateChart(-1);
-      return;
-    }
-  });
-}
-
-function getNeighborTicker(direction: -1 | 1): string | null {
-  const context = getTickerListContext();
-  const origin = getTickerOriginView();
-  const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
-
-  if (!context || !currentTicker) return null;
-
-  let containerId = '';
-  if (origin === 'divergence') {
-    containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
-  } else {
-    containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
-  }
-
-  const container = document.getElementById(containerId);
-  if (!container) return null;
-
-  const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
-  const currentIndex = cards.findIndex((c) => c.dataset.ticker === currentTicker);
-
-  if (currentIndex === -1) return null;
-
-  const nextIndex = currentIndex + direction;
-  if (nextIndex >= 0 && nextIndex < cards.length) {
-    return cards[nextIndex].dataset.ticker || null;
-  }
-  return null;
-}
 
 async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSignal): Promise<void> {
   const nextTicker = getNeighborTicker(1);

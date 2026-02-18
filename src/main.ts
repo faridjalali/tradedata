@@ -1,5 +1,6 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
+import { setChartNavigationCallbacks } from './chartNavigation';
 
 // --- Lazy-loaded view modules (code splitting) ---
 
@@ -850,6 +851,9 @@ function bootstrapApplication(): void {
 
   // Mobile Collapse Toggle (only on mobile)
   setupMobileCollapse();
+
+  // Wire up chart navigation callbacks (resolves circular dep: chart ↔ main)
+  setChartNavigationCallbacks(getTickerListContext, getTickerOriginView);
 
   // Initialize Chart Controls
   initChartControls();
