@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
+import { timingSafeStringEqual } from '../middleware.js';
 
 interface DivergenceRoutesOptions {
   app: FastifyInstance;
@@ -87,6 +88,18 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     throw new Error('registerDivergenceRoutes requires app');
   }
 
+  /** Start an async job and surface immediate startup errors before returning 202. */
+  async function startJob(jobFn: () => Promise<unknown>, label: string, res: FastifyReply, successStatus = 'started'): Promise<unknown> {
+    const earlyErr = await Promise.race<string | null>([
+      jobFn()
+        .then((summary) => { console.log(`${label} completed:`, summary); return null; })
+        .catch((err: any) => { const m = err?.message || String(err); console.error(`${label} failed: ${m}`); return m; }),
+      new Promise<null>(resolve => setTimeout(resolve, 0)),
+    ]);
+    if (earlyErr) return res.code(500).send({ error: `${label} startup failed: ${earlyErr}` });
+    return res.code(202).send({ status: successStatus });
+  }
+
   app.post('/api/divergence/scan', async (req: FastifyRequest, res: FastifyReply) => {
     if (!isDivergenceConfigured()) {
       return res.code(503).send({ error: 'Divergence database is not configured' });
@@ -94,7 +107,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -121,21 +134,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const { force, refreshUniverse, runDateEt } = scanRequest.value;
 
-    runDailyDivergenceScan({
-      force,
-      refreshUniverse,
-      runDateEt,
-      trigger: 'manual-api',
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log('Manual divergence scan completed:', summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence scan failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: 'started' });
+    return startJob(
+      () => runDailyDivergenceScan({ force, refreshUniverse, runDateEt, trigger: 'manual-api' }),
+      'Manual divergence scan',
+      res,
+    );
   });
 
   app.post('/api/divergence/scan/pause', async (req: FastifyRequest, res: FastifyReply) => {
@@ -144,7 +147,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof requestPauseScan !== 'function') {
@@ -162,7 +165,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof runDailyDivergenceScan !== 'function') {
@@ -184,19 +187,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
       return res.code(409).send({ status: 'no-resume' });
     }
 
-    runDailyDivergenceScan({
-      trigger: 'manual-api-resume',
-      resume: true,
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log('Manual divergence scan resume completed:', summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence scan resume failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: 'started' });
+    return startJob(
+      () => runDailyDivergenceScan({ trigger: 'manual-api-resume', resume: true }),
+      'Manual divergence scan resume',
+      res,
+    );
   });
 
   app.post('/api/divergence/scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
@@ -205,7 +200,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof requestStopScan !== 'function') {
@@ -223,7 +218,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -242,19 +237,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const force = typeof parseBooleanInput === 'function' ? parseBooleanInput((req.body as Record<string, unknown> | undefined)?.force, true) : true;
 
-    runDivergenceTableBuild({
-      trigger: 'manual-api',
-      force,
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log('Manual divergence table run completed:', summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence table run failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: 'started' });
+    return startJob(
+      () => runDivergenceTableBuild({ trigger: 'manual-api', force }),
+      'Manual divergence table run',
+      res,
+    );
   });
 
   app.post('/api/divergence/table/pause', async (req: FastifyRequest, res: FastifyReply) => {
@@ -264,7 +251,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -289,7 +276,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -313,19 +300,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
       return res.code(409).send({ status: 'no-resume' });
     }
 
-    runDivergenceTableBuild({
-      trigger: 'manual-api-resume',
-      resume: true,
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log('Manual divergence table resume completed:', summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence table resume failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: 'started' });
+    return startJob(
+      () => runDivergenceTableBuild({ trigger: 'manual-api-resume', resume: true }),
+      'Manual divergence table resume',
+      res,
+    );
   });
 
   app.post('/api/divergence/table/stop', async (req: FastifyRequest, res: FastifyReply) => {
@@ -335,7 +314,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -356,7 +335,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -375,20 +354,12 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const shouldResume = typeof canResumeFetchDailyData === 'function' && canResumeFetchDailyData();
 
-    runDivergenceFetchDailyData({
-      trigger: 'manual-api',
-      resume: shouldResume,
-      force: true,
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log(`Manual divergence fetch-daily ${shouldResume ? 'resumed' : 'started'}:`, summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-daily failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: shouldResume ? 'resumed' : 'started' });
+    return startJob(
+      () => runDivergenceFetchDailyData({ trigger: 'manual-api', resume: shouldResume, force: true }),
+      'Manual divergence fetch-daily',
+      res,
+      shouldResume ? 'resumed' : 'started',
+    );
   });
 
   app.post('/api/divergence/fetch-daily/stop', async (req: FastifyRequest, res: FastifyReply) => {
@@ -397,7 +368,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof requestStopFetchDailyData !== 'function') {
@@ -415,7 +386,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -434,20 +405,12 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const shouldResume = typeof canResumeFetchWeeklyData === 'function' && canResumeFetchWeeklyData();
 
-    runDivergenceFetchWeeklyData({
-      trigger: 'manual-api',
-      resume: shouldResume,
-      force: true,
-    })
-      .then((summary: Record<string, unknown>) => {
-        console.log(`Manual divergence fetch-weekly ${shouldResume ? 'resumed' : 'started'}:`, summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual divergence fetch-weekly failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: shouldResume ? 'resumed' : 'started' });
+    return startJob(
+      () => runDivergenceFetchWeeklyData({ trigger: 'manual-api', resume: shouldResume, force: true }),
+      'Manual divergence fetch-weekly',
+      res,
+      shouldResume ? 'resumed' : 'started',
+    );
   });
 
   app.post('/api/divergence/fetch-weekly/stop', async (req: FastifyRequest, res: FastifyReply) => {
@@ -456,7 +419,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof requestStopFetchWeeklyData !== 'function') {
@@ -517,7 +480,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -531,16 +494,12 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
 
     const shouldResume = typeof canResumeVDFScan === 'function' && canResumeVDFScan();
 
-    runVDFScan({ trigger: 'manual-api', resume: shouldResume })
-      .then((summary: Record<string, unknown>) => {
-        console.log(`Manual VDF scan ${shouldResume ? 'resumed' : 'started'}:`, summary);
-      })
-      .catch((err: any) => {
-        const message = err && err.message ? err.message : String(err);
-        console.error(`Manual VDF scan failed: ${message}`);
-      });
-
-    return res.code(202).send({ status: shouldResume ? 'resumed' : 'started' });
+    return startJob(
+      () => runVDFScan({ trigger: 'manual-api', resume: shouldResume }),
+      'Manual VDF scan',
+      res,
+      shouldResume ? 'resumed' : 'started',
+    );
   });
 
   app.post('/api/divergence/vdf-scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
@@ -549,7 +508,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     }
     const configuredSecret = String(divergenceScanSecret || '').trim();
     const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && configuredSecret !== providedSecret) {
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
     }
     if (typeof requestStopVDFScan !== 'function') {

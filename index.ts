@@ -584,7 +584,8 @@ const initDivergenceDB = async () => {
 app.get('/api/alerts', async (request, reply) => {
   try {
     const q = request.query as Record<string, unknown>;
-    const days = parseInt(String(q.days)) || 0;
+    const daysRaw = parseInt(String(q.days), 10);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(365, daysRaw) : 0;
     const startDate = String(q.start_date || '').trim();
     const endDate = String(q.end_date || '').trim();
     const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime());
@@ -691,7 +692,8 @@ app.get('/api/divergence/signals', async (request, reply) => {
   if (!isDivergenceConfigured()) return reply.code(503).send({ error: 'Divergence database is not configured' });
   try {
     const q = request.query as Record<string, unknown>;
-    const days = parseInt(String(q.days)) || 0;
+    const daysRaw = parseInt(String(q.days), 10);
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(365, daysRaw) : 0;
     const startDate = String(q.start_date || '').trim();
     const endDate = String(q.end_date || '').trim();
     const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime());

@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { pool } from '../db.js';
 import {
   CHART_TIMING_SAMPLE_MAX, RUN_METRICS_SAMPLE_CAP, RUN_METRICS_HISTORY_LIMIT,
@@ -339,7 +340,7 @@ export async function loadRunHistoryFromDb() {
 
 export function createRunMetricsTracker(runType: string, meta: Record<string, unknown> = {}) {
   const normalizedType = String(runType || '').trim() || 'unknown';
-  const runId = `${normalizedType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const runId = `${normalizedType}-${Date.now()}-${randomBytes(4).toString('hex')}`;
   const metrics = {
     runId,
     runType: normalizedType,
