@@ -87,10 +87,10 @@ export function getRelativeTime(timestamp?: string, timeZone: string = getAppTim
 }
 
 export function formatVolume(vol?: number): string {
-  if (!vol) return '0'.padEnd(7);
-  if (vol < 1000) return vol.toFixed(0).padEnd(7);
+  if (!vol) return '0'.padEnd(5);
+  if (vol < 1000) return vol.toFixed(0).padEnd(5);
   const str = Math.round(vol / 1000) + 'K';
-  return str.padEnd(7);
+  return str.padEnd(5);
 }
 
 export function getDateRangeForMode(
