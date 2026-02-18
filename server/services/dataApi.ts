@@ -440,6 +440,9 @@ function withDataApiKey(url: string): string {
   return parsed.toString();
 }
 
+const FETCH_RATE_LIMIT_MAX_RETRIES = 3;
+const FETCH_RATE_LIMIT_BASE_BACKOFF_MS = 1_500;
+
 async function fetchDataApiJson(
   url: string,
   label: string,
@@ -449,6 +452,33 @@ async function fetchDataApiJson(
   if (isDataApiRequestsPaused()) {
     throw buildDataApiPausedError(`${label} requests are paused by server configuration`);
   }
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fetchDataApiJsonOnce(url, label, options);
+    } catch (err) {
+      attempt++;
+      const signal = options && options.signal ? options.signal : null;
+      if (
+        isDataApiRateLimitedError(err) &&
+        attempt <= FETCH_RATE_LIMIT_MAX_RETRIES &&
+        !(signal && signal.aborted)
+      ) {
+        const backoffMs = Math.min(30_000, FETCH_RATE_LIMIT_BASE_BACKOFF_MS * 2 ** (attempt - 1));
+        console.warn(`[dataApi] ${label} rate-limited (attempt ${attempt}/${FETCH_RATE_LIMIT_MAX_RETRIES}), retrying in ${backoffMs}ms`);
+        await sleepWithAbort(backoffMs, signal);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+async function fetchDataApiJsonOnce(
+  url: string,
+  label: string,
+  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+): Promise<unknown> {
 
   // Circuit breaker — reject immediately when API is confirmed down.
   return dataApiCircuitBreaker.call(async () => {

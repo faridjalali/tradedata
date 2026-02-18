@@ -1,5 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
+// In-flight dedup for mini-bar live API fetches — prevents duplicate upstream calls
+// when multiple requests arrive simultaneously for the same ticker with empty cache.
+const miniBarApiFetchInFlight = new Map<string, Promise<unknown[]>>();
+
 function invalidIntervalErrorMessage(): string {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
@@ -214,9 +218,16 @@ function registerChartRoutes(options: {
           cache.set(ticker, bars);
         }
       }
-      // Fall back to live API fetch if DB is also empty.
+      // Fall back to live API fetch if DB is also empty — deduplicated per ticker.
       if (bars.length === 0 && typeof fetchMiniChartBarsFromApi === 'function') {
-        bars = await fetchMiniChartBarsFromApi(ticker);
+        let inFlight = miniBarApiFetchInFlight.get(ticker);
+        if (!inFlight) {
+          inFlight = (fetchMiniChartBarsFromApi(ticker) as Promise<unknown[]>).finally(() => {
+            miniBarApiFetchInFlight.delete(ticker);
+          });
+          miniBarApiFetchInFlight.set(ticker, inFlight);
+        }
+        bars = await inFlight;
       }
       // Trim to most recent ~30 bars (in-memory cache may contain older untrimmed data).
       if (bars.length > 30) bars = bars.slice(-30);

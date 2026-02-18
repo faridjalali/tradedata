@@ -1109,6 +1109,7 @@ async function getReadyPayload() {
     pool, divergencePool: divergencePool as any, isDivergenceConfigured,
     isShuttingDown, divergenceScanRunning,
     lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
+    circuitBreakerInfo: getDataApiCircuitBreakerInfo(),
   });
 }
 
@@ -1180,16 +1181,20 @@ scheduleNextBreadthComputation();
 // the 200d MA history contains zeros (stale bootstrap with insufficient history).
 if (divergencePool) {
   setTimeout(() => {
+    const BOOTSTRAP_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+    const timeoutGuard = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Breadth bootstrap timed out after 15 minutes')), BOOTSTRAP_TIMEOUT_MS),
+    );
     (async () => {
       try {
         const snapshots = await getLatestBreadthSnapshots(divergencePool!);
         const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid(divergencePool!) : false;
         if (snapshots.length === 0) {
           console.log('[breadth] No snapshots — auto-bootstrapping 300d in background...');
-          await bootstrapBreadthHistory(divergencePool!, 300);
+          await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
         } else if (!ma200Valid) {
           console.log('[breadth] 200d MA zeros detected — re-bootstrapping 300d to fix...');
-          await bootstrapBreadthHistory(divergencePool!, 300);
+          await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
         }
       } catch (err: any) {
         console.error('[breadth] Auto-bootstrap failed:', err.message);

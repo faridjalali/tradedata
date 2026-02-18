@@ -123,23 +123,24 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
       summaryProcessedTickers = 0;
       scanJobId = await startDivergenceScanJob(runDate, totalSymbols, trigger);
 
-      await divergencePool!.query(
-        `
-        DELETE FROM divergence_signals
-        WHERE source_interval = $1
-          AND timeframe <> '1d'
-      `,
-        [DIVERGENCE_SOURCE_INTERVAL],
-      );
-      await divergencePool!.query(
-        `
-        DELETE FROM divergence_signals
-        WHERE trade_date = $1
-          AND source_interval = $2
-          AND timeframe = '1d'
-      `,
-        [runDate, DIVERGENCE_SOURCE_INTERVAL],
-      );
+      const deleteClient = await divergencePool!.connect();
+      try {
+        await deleteClient.query('BEGIN');
+        await deleteClient.query(
+          `DELETE FROM divergence_signals WHERE source_interval = $1 AND timeframe <> '1d'`,
+          [DIVERGENCE_SOURCE_INTERVAL],
+        );
+        await deleteClient.query(
+          `DELETE FROM divergence_signals WHERE trade_date = $1 AND source_interval = $2 AND timeframe = '1d'`,
+          [runDate, DIVERGENCE_SOURCE_INTERVAL],
+        );
+        await deleteClient.query('COMMIT');
+      } catch (deleteErr) {
+        await deleteClient.query('ROLLBACK').catch(() => {});
+        throw deleteErr;
+      } finally {
+        deleteClient.release();
+      }
     } else if (scanJobId) {
       await updateDivergenceScanJob(scanJobId, {
         status: 'running',

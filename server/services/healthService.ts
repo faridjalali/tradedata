@@ -71,28 +71,48 @@ interface ReadyPayloadOptions {
   isShuttingDown: boolean;
   divergenceScanRunning: boolean;
   lastScanDateEt: string | null;
+  circuitBreakerInfo?: { state: string; consecutiveFailures?: number; failures?: number } | null;
 }
 
+const DATA_STALENESS_WARN_HOURS = 25;
+
 async function buildReadyPayload(options: ReadyPayloadOptions) {
-  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt } =
+  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt, circuitBreakerInfo } =
     options;
 
   const primaryDb = await checkDatabaseReady(pool);
   const divergenceConfigured = isDivergenceConfigured();
   const divergenceDb = divergenceConfigured ? await checkDatabaseReady(divergencePool || null) : { ok: null as boolean | null };
   const ready = !isShuttingDown && primaryDb.ok === true;
-  const statusCode = ready ? 200 : 503;
+
+  // Degraded checks — app is up but operating in a reduced-capacity state.
+  const warnings: string[] = [];
+  const cbState = circuitBreakerInfo?.state ?? 'CLOSED';
+  if (cbState === 'OPEN') warnings.push('data-api circuit breaker is OPEN — external market-data calls are failing');
+  if (cbState === 'HALF_OPEN') warnings.push('data-api circuit breaker is HALF_OPEN — external market-data calls are recovering');
+  if (lastScanDateEt) {
+    const scanDate = new Date(lastScanDateEt + 'T00:00:00-05:00');
+    const hoursSinceScan = (Date.now() - scanDate.getTime()) / (60 * 60 * 1000);
+    if (hoursSinceScan > DATA_STALENESS_WARN_HOURS) {
+      warnings.push(`divergence scan data is stale — last scan: ${lastScanDateEt} (${Math.floor(hoursSinceScan)}h ago)`);
+    }
+  }
+  const degraded = warnings.length > 0;
+  const statusCode = !ready ? 503 : 200;
 
   return {
     statusCode,
     body: {
       ready,
+      degraded,
       shuttingDown: isShuttingDown,
       primaryDb: primaryDb.ok,
       divergenceDb: divergenceDb.ok,
       divergenceConfigured,
       divergenceScanRunning,
       lastScanDateEt,
+      circuitBreaker: cbState,
+      warnings: degraded ? warnings : undefined,
       errors: {
         primaryDb: primaryDb.error || null,
         divergenceDb: divergenceDb.error || null,
