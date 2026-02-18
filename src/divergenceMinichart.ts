@@ -290,6 +290,28 @@ function isMobileMinichartEnabled(): boolean {
   return isMobileTouch && localStorage.getItem('minichart_mobile') === 'on';
 }
 
+/** Load (or fetch-then-create) the inline chart for a wrapper already in/near the viewport. */
+function loadChartForWrapper(wrapper: HTMLElement, ticker: string): void {
+  if (inlineChartInstances.has(ticker)) return;
+  const cached = miniChartDataCache.get(ticker);
+  if (cached && cached.length > 0) {
+    createInlineChart(wrapper, ticker, cached);
+  } else {
+    fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const bars = Array.isArray(data?.bars) ? data.bars : [];
+        if (bars.length > 0) {
+          miniChartDataCache.set(ticker, bars);
+          if (wrapper.isConnected && !inlineChartInstances.has(ticker)) {
+            createInlineChart(wrapper, ticker, bars);
+          }
+        }
+      })
+      .catch(() => {});
+  }
+}
+
 function getInlineChartObserver(): IntersectionObserver {
   if (inlineChartObserver) return inlineChartObserver;
   inlineChartObserver = new IntersectionObserver(
@@ -300,26 +322,7 @@ function getInlineChartObserver(): IntersectionObserver {
         if (!ticker) continue;
 
         if (entry.isIntersecting) {
-          // Entering viewport zone — create chart if not already created
-          if (inlineChartInstances.has(ticker)) continue;
-          const cached = miniChartDataCache.get(ticker);
-          if (cached && cached.length > 0) {
-            createInlineChart(wrapper, ticker, cached);
-          } else {
-            // Fetch bars on demand
-            fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`)
-              .then((res) => (res.ok ? res.json() : null))
-              .then((data) => {
-                const bars = Array.isArray(data?.bars) ? data.bars : [];
-                if (bars.length > 0) {
-                  miniChartDataCache.set(ticker, bars);
-                  if (wrapper.isConnected && !inlineChartInstances.has(ticker)) {
-                    createInlineChart(wrapper, ticker, bars);
-                  }
-                }
-              })
-              .catch(() => {});
-          }
+          loadChartForWrapper(wrapper, ticker);
         } else {
           // Left viewport zone — destroy chart to free memory
           const chart = inlineChartInstances.get(ticker);
@@ -417,5 +420,15 @@ export function renderInlineMinicharts(container: HTMLElement): void {
     card.after(wrapper);
     // Let IntersectionObserver handle chart creation when wrapper scrolls into view
     observer.observe(wrapper);
+    // Safari/iPad does not reliably fire IntersectionObserver for elements already
+    // in the viewport when observe() is first called — trigger immediately if visible.
+    const rect = wrapper.getBoundingClientRect();
+    const margin = 300;
+    if (
+      rect.top < (window.innerHeight || document.documentElement.clientHeight) + margin &&
+      rect.bottom > -margin
+    ) {
+      loadChartForWrapper(wrapper, ticker);
+    }
   }
 }
