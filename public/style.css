@@ -131,6 +131,15 @@ header {
   min-width: 182px;
   height: 24px;
   padding: 0 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color-scheme: dark;
+}
+[data-theme="light"] .global-settings-select,
+[data-theme="beige"] .global-settings-select {
+  color-scheme: light;
 }
 
 .global-settings-toggle-row {
@@ -418,14 +427,14 @@ h2 {
   border-radius: 6px;
   font-family: inherit;
   cursor: pointer;
+  color-scheme: dark;
+}
+[data-theme="light"] .glass-input,
+[data-theme="beige"] .glass-input {
+  color-scheme: light;
 }
 .glass-input::-webkit-calendar-picker-indicator {
-  filter: invert(1);
   cursor: pointer;
-}
-[data-theme="light"] .glass-input::-webkit-calendar-picker-indicator,
-[data-theme="beige"] .glass-input::-webkit-calendar-picker-indicator {
-  filter: invert(0);
 }
 
 .tf-btn {
