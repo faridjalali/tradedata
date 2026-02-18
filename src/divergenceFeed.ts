@@ -1709,7 +1709,8 @@ function handleFavoriteClick(e: Event): void {
       const freshStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
       freshStars.forEach((star) => applyFavIconState(star, updatedAlert.is_favorite));
     })
-    .catch(() => {
+    .catch((err) => {
+      console.error('Favorite toggle failed:', err);
       // Revert optimistic state on error
       removePendingFavoriteToggle(numericId);
       const current = getDivergenceSignals();

@@ -623,7 +623,8 @@ app.post('/api/alerts/:id/favorite', async (request, reply) => {
   if (!Number.isFinite(id) || id <= 0) {
     return reply.code(400).send({ error: 'Invalid alert ID' });
   }
-  const { is_favorite } = request.body as any;
+  const body = (request.body ?? {}) as Record<string, unknown>;
+  const is_favorite = body.is_favorite;
   try {
     let query; let values;
     if (typeof is_favorite === 'boolean') {
@@ -762,7 +763,8 @@ app.post('/api/divergence/signals/:id/favorite', async (request, reply) => {
   if (!isDivergenceConfigured()) return reply.code(503).send({ error: 'Divergence database is not configured' });
   const id = parseInt((request.params as any).id, 10);
   if (!Number.isFinite(id) || id <= 0) return reply.code(400).send({ error: 'Invalid signal ID' });
-  const { is_favorite } = request.body as any;
+  const body = (request.body ?? {}) as Record<string, unknown>;
+  const is_favorite = body.is_favorite;
   try {
     let query; let values;
     if (typeof is_favorite === 'boolean') {
