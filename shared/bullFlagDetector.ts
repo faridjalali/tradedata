@@ -23,8 +23,8 @@ const MIN_TOTAL_BARS = 10;
 /** Maximum bars to consider from the end of the dataset. */
 const MAX_LOOKBACK_BARS = 40;
 
-/** Minimum bars in the consolidation zone. */
-const FLAG_MIN_BARS = 4;
+/** Minimum bars in the consolidation zone (1 week ≈ 5 trading days). */
+const FLAG_MIN_BARS = 5;
 /** Maximum bars in the consolidation zone (4 weeks ≈ 20 trading days). */
 const FLAG_MAX_BARS = 20;
 
@@ -187,7 +187,7 @@ function scorePennant(
   priorGainPct: number,
   flagLen: number,
 ): { confidence: number; slopePerBar: number; r2: number } | null {
-  if (flagBars.length < 4) return null; // need at least 4 bars for convergence
+  if (flagBars.length < 5) return null; // need at least 5 bars for convergence
 
   const highs = flagBars.map((b) => b.high);
   const lows = flagBars.map((b) => b.low);
