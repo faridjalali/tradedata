@@ -2,15 +2,20 @@
  * Site passcode lock — gates the application behind an 8-digit passcode.
  *
  * Flow:
- *  1. Overlay is shown immediately on load (fail-secure — never starts hidden).
- *  2. Check /api/auth/check — if the server says the session is valid (or site
- *     lock is disabled), hide the overlay and call onUnlock() right away.
- *  3. Otherwise keep the overlay visible, accept digit input (keyboard + keypad).
- *  4. When 8 digits are entered, POST /api/auth/verify — on success the server
- *     sets a session cookie and we call onUnlock(); on failure shake + clear.
+ *  1. If no prior-auth hint in localStorage, show overlay immediately (fail-secure).
+ *  2. Check /api/auth/check:
+ *     - 200: valid session (or lock disabled) → hide overlay, set hint, unlock.
+ *     - non-200: clear hint, ensure overlay is visible, activate keypad.
+ *  3. When 8 digits are entered, POST /api/auth/verify — on success set hint,
+ *     hide overlay, call onUnlock(); on failure shake + clear.
+ *
+ * The localStorage hint avoids a visible flash for authenticated return visits
+ * while still ensuring the lock screen appears whenever the session has expired
+ * or been cleared.
  */
 
 const SITE_LOCK_LENGTH = 8;
+const AUTH_HINT_KEY = 'catvue_auth_hint';
 
 async function checkServerSession(): Promise<boolean> {
   try {
@@ -41,10 +46,13 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
     return;
   }
 
-  // Show overlay immediately — fail-secure. The application content stays hidden
-  // until the server explicitly confirms a valid session or no lock is configured.
-  overlay.classList.remove('hidden');
-  document.body.classList.add('site-locked');
+  // If no prior-auth hint, show the overlay immediately (fail-secure for fresh / cleared sessions).
+  // If a hint exists, keep the overlay hidden while we verify the session silently.
+  const hasAuthHint = !!localStorage.getItem(AUTH_HINT_KEY);
+  if (!hasAuthHint) {
+    overlay.classList.remove('hidden');
+    document.body.classList.add('site-locked');
+  }
 
   if (!overlay.dataset.doubleTapBound) {
     overlay.addEventListener('dblclick', (event) => {
@@ -59,16 +67,22 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
   const digitButtons = Array.from(overlay.querySelectorAll('[data-lock-digit]')) as HTMLButtonElement[];
   const actionButtons = Array.from(overlay.querySelectorAll('[data-lock-action]')) as HTMLButtonElement[];
 
-  // If a valid session already exists (or site lock is not configured on the server),
-  // unlock immediately. The overlay was already shown above so there's no security gap.
-  if (await checkServerSession()) {
+  const sessionValid = await checkServerSession();
+
+  if (sessionValid) {
+    // Valid session (or site lock not configured) — record hint and unlock silently.
+    localStorage.setItem(AUTH_HINT_KEY, '1');
     overlay.classList.add('hidden');
     document.body.classList.remove('site-locked');
     onUnlock();
     return;
   }
 
-  // No valid session — stay locked and initialize the keypad.
+  // Session invalid or expired — clear the hint and ensure the overlay is visible.
+  localStorage.removeItem(AUTH_HINT_KEY);
+  overlay.classList.remove('hidden');
+  document.body.classList.add('site-locked');
+
   let entered = '';
   let verifying = false;
 
@@ -88,6 +102,7 @@ export async function initializeSiteLock(onUnlock: () => void): Promise<void> {
   };
 
   const handleSuccess = () => {
+    localStorage.setItem(AUTH_HINT_KEY, '1');
     overlay.classList.add('hidden');
     document.body.classList.remove('site-locked');
     window.removeEventListener('keydown', onKeyDown, true);
