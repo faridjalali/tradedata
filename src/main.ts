@@ -811,11 +811,11 @@ function bootstrapApplication(): void {
     });
   });
 
-  // Comparative Breadth: MA window buttons
-  document.querySelectorAll('#breadth-compare-ma-btns .pane-btn:not(.label)').forEach((btn) => {
+  // Comparative Breadth: Index buttons
+  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const ma = (btn as HTMLElement).dataset.ma as 'ma21' | 'ma50' | 'ma100' | 'ma200';
-      loadBreadth().then((m) => m.setBreadthCompareMA(ma)).catch(() => {});
+      const index = (btn as HTMLElement).dataset.index as 'SPY' | 'QQQ' | 'SMH';
+      loadBreadth().then((m) => m.setBreadthCompareIndex(index)).catch(() => {});
     });
   });
 

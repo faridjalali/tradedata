@@ -17,8 +17,8 @@ let breadthMAData: BreadthMAResponse | null = null;
 
 // Comparative Breadth state
 let breadthCompareChart: any = null;
-let currentCompareMA: 'ma21' | 'ma50' | 'ma100' | 'ma200' = 'ma21';
-let currentCompareTfDays: number = 5;
+let currentCompareIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
+let currentCompareTfDays: number = 20;
 
 export function getCurrentBreadthTimeframe(): number {
   return currentTimeframeDays;
@@ -452,15 +452,8 @@ async function loadBreadthMA(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Comparative Breadth: Normalized SPY vs QQQ vs SMH
+// Comparative Breadth: all 4 MA lines for one index over a timeframe
 // ---------------------------------------------------------------------------
-
-function normalizeCompare(values: number[]): number[] {
-  if (values.length === 0) return [];
-  const base = values[0];
-  if (base === 0) return values.map(() => 100);
-  return values.map(v => (v / base) * 100);
-}
 
 function renderBreadthCompareChart(): void {
   const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
@@ -472,41 +465,31 @@ function renderBreadthCompareChart(): void {
     breadthCompareChart = null;
   }
 
-  const indices: Array<'SPY' | 'QQQ' | 'SMH'> = ['SPY', 'QQQ', 'SMH'];
-  const maKey = currentCompareMA;
+  const history = (breadthMAData.history[currentCompareIndex] || []).slice(-currentCompareTfDays);
 
-  const sliced: Record<string, BreadthMAHistory[]> = {};
-  for (const idx of indices) {
-    const full = breadthMAData.history[idx] || [];
-    sliced[idx] = full.slice(-currentCompareTfDays);
-  }
-
-  const labels = (sliced['SPY'] || []).map(h => {
+  const labels = history.map(h => {
     const date = new Date(h.date + 'T00:00:00');
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
 
-  const colors: Record<string, string> = {
-    SPY: '#58a6ff',
-    QQQ: '#bc8cff',
-    SMH: '#f0883e',
-  };
+  const maConfigs: Array<{ key: keyof BreadthMAHistory; label: string; color: string }> = [
+    { key: 'ma21',  label: '21 MA',  color: '#00d4ff' },
+    { key: 'ma50',  label: '50 MA',  color: '#58a6ff' },
+    { key: 'ma100', label: '100 MA', color: '#bc8cff' },
+    { key: 'ma200', label: '200 MA', color: '#f0883e' },
+  ];
 
-  const datasets = indices.map(idx => {
-    const raw = (sliced[idx] || []).map(h => h[maKey]);
-    const normed = normalizeCompare(raw);
-    return {
-      label: idx,
-      data: normed,
-      borderColor: colors[idx],
-      backgroundColor: 'transparent',
-      borderWidth: 2.5,
-      pointRadius: normed.length > 15 ? 0 : 3,
-      pointHoverRadius: 5,
-      tension: 0.3,
-      fill: false,
-    };
-  });
+  const datasets = maConfigs.map(({ key, label, color }) => ({
+    label,
+    data: history.map(h => h[key] as number),
+    borderColor: color,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: history.length > 25 ? 0 : 3,
+    pointHoverRadius: 5,
+    tension: 0.3,
+    fill: false,
+  }));
 
   breadthCompareChart = new Chart(canvas, {
     type: 'line',
@@ -517,6 +500,13 @@ function renderBreadthCompareChart(): void {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
+          onClick: (_e: any, legendItem: any, legend: any) => {
+            // Default Chart.js toggle behaviour
+            const index = legendItem.datasetIndex;
+            const meta = legend.chart.getDatasetMeta(index);
+            meta.hidden = !meta.hidden;
+            legend.chart.update();
+          },
           labels: {
             color: c.textPrimary,
             font: { size: 12 },
@@ -532,19 +522,7 @@ function renderBreadthCompareChart(): void {
           bodyColor: c.textSecondary,
           padding: 12,
           callbacks: {
-            label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`,
-          },
-        },
-        annotation: {
-          annotations: {
-            baseline100: {
-              type: 'line',
-              yMin: 100,
-              yMax: 100,
-              borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
-              borderWidth: 1,
-              borderDash: [4, 4],
-            },
+            label: (ctx: any) => `${ctx.dataset.label}: ${(ctx.parsed.y as number).toFixed(1)}%`,
           },
         },
       },
@@ -560,10 +538,12 @@ function renderBreadthCompareChart(): void {
           grid: { color: c.borderOverlay30 },
         },
         y: {
+          min: 0,
+          max: 100,
           ticks: {
             color: c.textSecondary,
             font: { size: 11 },
-            callback: (value: number | string) => `${(value as number).toFixed(1)}`,
+            callback: (value: number | string) => `${value}%`,
           },
           grid: { color: c.borderOverlay30 },
         },
@@ -575,15 +555,14 @@ function renderBreadthCompareChart(): void {
 function updateBreadthCompareSubtitle(): void {
   const subtitle = document.getElementById('breadth-compare-subtitle');
   if (subtitle) {
-    const maLabel = currentCompareMA.replace('ma', '');
-    subtitle.textContent = `Comparative Breadth — % Above ${maLabel} MA (${currentCompareTfDays}d)`;
+    subtitle.textContent = `${currentCompareIndex} — % Above Moving Averages (${currentCompareTfDays}d)`;
   }
 }
 
-export function setBreadthCompareMA(ma: 'ma21' | 'ma50' | 'ma100' | 'ma200'): void {
-  currentCompareMA = ma;
-  document.querySelectorAll('#breadth-compare-ma-btns .pane-btn:not(.label)').forEach(btn => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.ma === ma);
+export function setBreadthCompareIndex(index: 'SPY' | 'QQQ' | 'SMH'): void {
+  currentCompareIndex = index;
+  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
   });
   updateBreadthCompareSubtitle();
   renderBreadthCompareChart();
