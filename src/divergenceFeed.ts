@@ -36,7 +36,7 @@ import {
 import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading, isMobileTouch } from './chart';
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
-import { detectBullFlag } from './bullFlagDetector';
+import { detectBullFlag } from '../shared/bullFlagDetector';
 
 export type ColumnFeedMode = '1' | '2' | '5' | 'custom';
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectBullFlag } from '../src/bullFlagDetector.js';
+import { detectBullFlag } from '../shared/bullFlagDetector.js';
 
 type Bar = { time: number; open: number; high: number; low: number; close: number };
 

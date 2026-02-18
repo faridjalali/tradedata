@@ -14,6 +14,8 @@
  * See ALGORITHM-VD-ACCUMULATION.md for full documentation.
  */
 
+import { detectBullFlag } from '../../shared/bullFlagDetector.js';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -867,6 +869,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     distribution: [] as { startDate: string; endDate: string; spanDays: number; priceChangePct: number; netDeltaPct: number }[],
     proximity: { compositeScore: 0, level: 'none', signals: [] as ProximitySignal[] },
     metrics: {} as Record<string, unknown>,
+    bull_flag_confidence: null as number | null,
   });
 
   try {
@@ -897,6 +900,10 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     // Build daily aggregates
     const allDaily = vdAggregateDaily(scanBars);
     const preDaily = vdAggregateDaily(preBars);
+
+    // Bull flag / pennant detection on daily bars
+    const bfBars = allDaily.map(d => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close }));
+    const bfResult = detectBullFlag(bfBars);
 
     if (allDaily.length < 10) {
       return emptyResult('insufficient_daily_data', 'Insufficient daily data');
@@ -995,6 +1002,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
         preDays: preDaily.length,
         recentCutoff: recentCutoffStr,
       },
+      bull_flag_confidence: bfResult?.confidence ?? null,
     };
   } catch (err: unknown) {
     const e = err as Error;
@@ -1010,6 +1018,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
       distribution: [],
       proximity: { compositeScore: 0, level: 'none', signals: [] as ProximitySignal[] },
       metrics: {},
+      bull_flag_confidence: null,
     };
   }
 }

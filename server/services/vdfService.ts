@@ -22,7 +22,8 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
   try {
     const { rows } = await divergencePool!.query(
       `SELECT is_detected, composite_score, status, weeks, result_json,
-              best_zone_score, proximity_score, proximity_level, num_zones, has_distribution
+              best_zone_score, proximity_score, proximity_level, num_zones, has_distribution,
+              bull_flag_confidence
        FROM vdf_results WHERE ticker = $1 AND trade_date = $2 LIMIT 1`,
       [ticker, tradeDate],
     );
@@ -44,6 +45,7 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
       proximity_level: row.proximity_level || 'none',
       num_zones: Number(row.num_zones) || 0,
       has_distribution: row.has_distribution || false,
+      bull_flag_confidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
       zones: parsed.zones || [],
       distribution: parsed.distribution || [],
       proximity: parsed.proximity || { compositeScore: 0, level: 'none', signals: [] },
@@ -73,8 +75,8 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
     });
     await divergencePool!.query(
       `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json,
-                                best_zone_score, proximity_score, proximity_level, num_zones, has_distribution, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+                                best_zone_score, proximity_score, proximity_level, num_zones, has_distribution, bull_flag_confidence, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
        ON CONFLICT (ticker, trade_date) DO UPDATE SET
          is_detected = EXCLUDED.is_detected,
          composite_score = EXCLUDED.composite_score,
@@ -86,6 +88,7 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
          proximity_level = EXCLUDED.proximity_level,
          num_zones = EXCLUDED.num_zones,
          has_distribution = EXCLUDED.has_distribution,
+         bull_flag_confidence = EXCLUDED.bull_flag_confidence,
          updated_at = NOW()`,
       [
         ticker,
@@ -100,6 +103,7 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
         proxLevel,
         numZones,
         hasDist,
+        result.bull_flag_confidence ?? null,
       ],
     );
   } catch (err: any) {
@@ -133,6 +137,7 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
       proximity_level: 'none',
       num_zones: 0,
       has_distribution: false,
+      bull_flag_confidence: null as number | null,
       zones: [],
       distribution: [],
       proximity: { compositeScore: 0, level: 'none', signals: [] },
@@ -164,6 +169,7 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
       proximity_level: result.proximity?.level || 'none',
       num_zones: result.zones?.length || 0,
       has_distribution: (result.distribution?.length || 0) > 0,
+      bull_flag_confidence: result.bull_flag_confidence ?? null,
       zones: result.zones || [],
       allZones: result.allZones || result.zones || [],
       distribution: result.distribution || [],

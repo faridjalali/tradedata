@@ -73,6 +73,7 @@ export interface Alert {
   vdf_detected?: boolean;
   vdf_score?: number;
   vdf_proximity?: string;
+  bull_flag_confidence?: number | null;
 }
 
 export type DivergenceState = 'bullish' | 'bearish' | 'neutral';
@@ -301,6 +302,7 @@ export interface VDFCacheEntry {
   composite_score: number;
   status: string;
   weeks: number;
+  bull_flag_confidence?: number | null;
   zones: VDFZone[];
   allZones: VDFZone[];
   distribution: VDFDistribution[];

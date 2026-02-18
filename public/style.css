@@ -883,14 +883,14 @@ h2 {
 .vdf-tag {
   display: inline-block;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   color: #26a69a;
   border: 1px solid #26a69a;
   border-radius: 3px;
   padding: 0 3px;
   margin-left: 4px;
-  line-height: 14px;
+  line-height: 16px;
   vertical-align: middle;
 }
 
@@ -898,14 +898,14 @@ h2 {
   display: inline-block;
   box-sizing: border-box;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   color: #26a69a;
   border: 1px solid #26a69a;
   border-radius: 3px;
   padding: 0 3px;
   margin-left: 4px;
-  line-height: 14px;
+  line-height: 16px;
   vertical-align: middle;
   width: 5ch;
   text-align: center;
@@ -913,13 +913,28 @@ h2 {
 .vdf-score-placeholder {
   display: inline-block;
   box-sizing: border-box;
-  font-size: 9px;
+  font-size: 12px;
   padding: 0 3px;
   margin-left: 4px;
-  line-height: 14px;
+  line-height: 16px;
   vertical-align: middle;
   border: 1px solid transparent;
   width: 5ch;
+}
+.bull-flag-badge {
+  display: inline-block;
+  box-sizing: border-box;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4caf50;
+  border: 1px solid #4caf50;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 4px;
+  line-height: 16px;
+  vertical-align: middle;
+  text-align: center;
 }
 .vdf-score-badge.vdf-high { border-color: #ff9800; color: #ff9800; }
 .vdf-score-badge.vdf-imminent { border-color: #f44336; color: #f44336; animation: vdf-pulse 1.5s infinite; }

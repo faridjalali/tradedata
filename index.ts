@@ -494,6 +494,7 @@ const initDivergenceDB = async () => {
         ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS proximity_level VARCHAR(10) DEFAULT 'none';
         ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS num_zones INTEGER DEFAULT 0;
         ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS has_distribution BOOLEAN DEFAULT FALSE;
+        ALTER TABLE vdf_results ADD COLUMN IF NOT EXISTS bull_flag_confidence SMALLINT;
       END $$;
     `);
     try {
@@ -583,7 +584,7 @@ app.get('/api/alerts', async (request, reply) => {
       if (tickers.length > 0 && isDivergenceConfigured()) {
         const vdfTradeDate = currentEtDateString();
         const vdfRes = await divergencePool!.query(
-          `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT ticker, best_zone_score, proximity_level, num_zones, bull_flag_confidence FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers],
         );
         for (const row of vdfRes.rows) {
@@ -591,6 +592,7 @@ app.get('/api/alerts', async (request, reply) => {
             score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
             proximityLevel: row.proximity_level || 'none',
             numZones: Number(row.num_zones) || 0,
+            bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
           });
         }
       }
@@ -606,6 +608,7 @@ app.get('/api/alerts', async (request, reply) => {
         ma_states: { ema8: Boolean(summary?.maStates?.ema8), ema21: Boolean(summary?.maStates?.ema21), sma50: Boolean(summary?.maStates?.sma50), sma200: Boolean(summary?.maStates?.sma200) },
         divergence_states: { 1: String(states['1'] || 'neutral'), 3: String(states['3'] || 'neutral'), 7: String(states['7'] || 'neutral'), 14: String(states['14'] || 'neutral'), 28: String(states['28'] || 'neutral') },
         vdf_detected: !!vdfData, vdf_score: vdfData?.score || 0, vdf_proximity: vdfData?.proximityLevel || 'none',
+        bull_flag_confidence: vdfData?.bullFlagConfidence ?? null,
       };
     });
     return reply.send(enrichedRows);
@@ -721,7 +724,7 @@ app.get('/api/divergence/signals', async (request, reply) => {
       if (tickers.length > 0) {
         const vdfTradeDate = currentEtDateString();
         const vdfRes = await divergencePool!.query(
-          `SELECT ticker, best_zone_score, proximity_level, num_zones FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
+          `SELECT ticker, best_zone_score, proximity_level, num_zones, bull_flag_confidence FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
           [vdfTradeDate, tickers],
         );
         for (const row of vdfRes.rows) {
@@ -729,6 +732,7 @@ app.get('/api/divergence/signals', async (request, reply) => {
             score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
             proximityLevel: row.proximity_level || 'none',
             numZones: Number(row.num_zones) || 0,
+            bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
           });
         }
       }
@@ -744,6 +748,7 @@ app.get('/api/divergence/signals', async (request, reply) => {
         ma_states: { ema8: Boolean(summary?.maStates?.ema8), ema21: Boolean(summary?.maStates?.ema21), sma50: Boolean(summary?.maStates?.sma50), sma200: Boolean(summary?.maStates?.sma200) },
         divergence_states: { 1: String(states['1'] || 'neutral'), 3: String(states['3'] || 'neutral'), 7: String(states['7'] || 'neutral'), 14: String(states['14'] || 'neutral'), 28: String(states['28'] || 'neutral') },
         vdf_detected: !!vdfData, vdf_score: vdfData?.score || 0, vdf_proximity: vdfData?.proximityLevel || 'none',
+        bull_flag_confidence: vdfData?.bullFlagConfidence ?? null,
       };
     });
     return reply.send(enrichedRows);

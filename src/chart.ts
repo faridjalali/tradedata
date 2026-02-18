@@ -102,6 +102,7 @@ let chartPrefetchInFlight = new Map<string, Promise<void>>();
 let vdfButtonEl: HTMLButtonElement | null = null;
 let vdfRefreshButtonEl: HTMLButtonElement | null = null;
 let vdfToolbarEl: HTMLDivElement | null = null;
+let bullFlagButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
 let vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
@@ -2974,6 +2975,7 @@ function ensureSettingsUI(
 ): void {
   const priceBtn = createSettingsButton(chartContainer, 'price');
   ensureVDFButton(chartContainer);
+  ensureBullFlagButton(chartContainer);
   const vdfRefBtn = ensureVDFRefreshButton(chartContainer);
   const volumeDeltaRsiBtn = createSettingsButton(volumeDeltaRsiContainer, 'volumeDeltaRsi');
   const rsiBtn = createSettingsButton(rsiContainer, 'rsi');
@@ -4376,7 +4378,7 @@ function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.padding = '0 5px';
   btn.style.color = VDF_COLOR_LOADING();
-  btn.style.fontSize = '9px';
+  btn.style.fontSize = '12px';
   btn.style.fontWeight = '700';
   btn.style.letterSpacing = '0.5px';
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
@@ -4439,6 +4441,47 @@ function updateVDFButton(entry: VDFCacheEntry): void {
     vdfButtonEl.style.borderColor = '';
   }
   vdfButtonEl.removeAttribute('title');
+}
+
+function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement {
+  const toolbar = ensureVDFToolbar(container);
+  if (bullFlagButtonEl && bullFlagButtonEl.parentElement === toolbar) return bullFlagButtonEl;
+  if (bullFlagButtonEl && bullFlagButtonEl.parentElement) {
+    bullFlagButtonEl.parentElement.removeChild(bullFlagButtonEl);
+  }
+
+  const btn = document.createElement('button');
+  btn.className = 'pane-btn label bull-flag-indicator-btn';
+  btn.type = 'button';
+  btn.textContent = 'BF';
+  btn.style.width = 'auto';
+  btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  btn.style.padding = '0 5px';
+  btn.style.color = tc().textMuted;
+  btn.style.fontSize = '12px';
+  btn.style.fontWeight = '700';
+  btn.style.letterSpacing = '0.5px';
+  btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
+  toolbar.appendChild(btn);
+  bullFlagButtonEl = btn;
+  return btn;
+}
+
+function updateBullFlagButton(entry: VDFCacheEntry): void {
+  if (!bullFlagButtonEl) return;
+  const confidence = entry.bull_flag_confidence;
+  if (confidence != null && confidence >= 50) {
+    bullFlagButtonEl.textContent = 'BF';
+    bullFlagButtonEl.style.color = '#4caf50';
+    bullFlagButtonEl.style.borderColor = '#4caf50';
+    bullFlagButtonEl.title = `Bull flag (${confidence}%)`;
+  } else {
+    bullFlagButtonEl.textContent = 'BF';
+    bullFlagButtonEl.style.color = tc().textMuted;
+    bullFlagButtonEl.style.borderColor = '';
+    bullFlagButtonEl.title = '';
+  }
 }
 
 function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
@@ -4665,6 +4708,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
   if (!force && vdfResultCache.has(cacheKey)) {
     const cached = vdfResultCache.get(cacheKey)!;
     updateVDFButton(cached);
+    updateBullFlagButton(cached);
     renderVDZones(cached);
     renderVDFAnalysisPanel(cached, ticker);
     return;
@@ -4687,6 +4731,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
       composite_score: Number(result.composite_score) || 0,
       status: result.status || '',
       weeks: Number(result.weeks) || 0,
+      bull_flag_confidence: result.bull_flag_confidence != null ? Number(result.bull_flag_confidence) : null,
       zones: Array.isArray(result.zones) ? result.zones : [],
       allZones: Array.isArray(result.allZones) ? result.allZones : Array.isArray(result.zones) ? result.zones : [],
       distribution: Array.isArray(result.distribution) ? result.distribution : [],
@@ -4699,6 +4744,7 @@ async function runVDFDetection(ticker: string, force = false): Promise<void> {
       if (oldest !== undefined) vdfResultCache.delete(oldest);
     }
     updateVDFButton(entry);
+    updateBullFlagButton(entry);
     renderVDZones(entry);
     renderVDFAnalysisPanel(entry, ticker);
   } catch {
