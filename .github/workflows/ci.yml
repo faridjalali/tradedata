@@ -32,7 +32,7 @@ jobs:
         run: npx tsc --noEmit --project tsconfig.server.json
 
       - name: Test
-        run: node --test test/*.test.js
+        run: npm test
 
       - name: Build
         run: npm run build

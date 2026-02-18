@@ -5,15 +5,15 @@ import { registerDivergenceRoutes } from '../server/routes/divergenceRoutes.js';
 
 function createMockApp() {
   const routes = {
-    get: new Map<string, Function>(),
-    post: new Map<string, Function>(),
+    get: new Map<string, (...args: any[]) => any>(),
+    post: new Map<string, (...args: any[]) => any>(),
   };
   return {
     routes,
-    get(path: string, handler: Function) {
+    get(path: string, handler: (...args: any[]) => any) {
       routes.get.set(path, handler);
     },
-    post(path: string, handler: Function) {
+    post(path: string, handler: (...args: any[]) => any) {
       routes.post.set(path, handler);
     },
   };

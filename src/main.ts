@@ -24,7 +24,7 @@ import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 
 let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence';
 let divergenceDashboardScrollY = 0;
-let tickerOriginView: 'divergence' = 'divergence';
+let tickerOriginView = 'divergence' as const;
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
 

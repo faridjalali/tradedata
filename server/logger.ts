@@ -29,15 +29,10 @@ function formatArgs(args: unknown[]): string {
     .join(' ');
 }
 
-// @ts-ignore -- intentionally overriding console methods
 console.log = (...args: unknown[]) => logger.info(formatArgs(args));
-// @ts-ignore
 console.error = (...args: unknown[]) => logger.error(formatArgs(args));
-// @ts-ignore
 console.warn = (...args: unknown[]) => logger.warn(formatArgs(args));
-// @ts-ignore
 console.info = (...args: unknown[]) => logger.info(formatArgs(args));
-// @ts-ignore
 console.debug = (...args: unknown[]) => logger.debug(formatArgs(args));
 
 export default logger;

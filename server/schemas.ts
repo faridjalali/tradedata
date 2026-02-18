@@ -6,7 +6,7 @@ const tickerSymbol = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z][A-Z0-9.\-]{0,19}$/, 'Invalid ticker format');
+  .regex(/^[A-Z][A-Z0-9.-]{0,19}$/, 'Invalid ticker format');
 
 const etDate = z
   .string()

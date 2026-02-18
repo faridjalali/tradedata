@@ -21,7 +21,7 @@ const nodeGlobals = {
 };
 
 export default [
-  { ignores: ['node_modules/', 'dist/'] },
+  { ignores: ['node_modules/', 'dist/', 'analysis-*.js', 'bin/', 'public/*.js', 'test-*.js'] },
   js.configs.recommended,
   {
     files: ['**/*.ts'],
@@ -37,9 +37,12 @@ export default [
     },
     rules: {
       ...tseslint.configs.recommended.rules,
+      'no-undef': 'off', // TypeScript compiler handles this; ESLint no-undef doesn't understand TS globals
+      'no-useless-assignment': 'off', // TypeScript handles this; false positives on try/catch and default-init patterns
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-function-type': 'off',
       'prefer-const': 'warn',
       eqeqeq: ['warn', 'always'],
     },
