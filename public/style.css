@@ -801,14 +801,13 @@ h2 {
 .metrics-container {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: nowrap;
-  justify-content: center;
+  justify-content: start;
   white-space: nowrap;
 
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0 auto;
 }
 
 .metric-item {
@@ -1220,6 +1219,10 @@ button:hover {
 
   .metrics-container {
     gap: 4px;
+  }
+
+  .volume-text {
+    display: none;
   }
 
   .ma-dot-row {
