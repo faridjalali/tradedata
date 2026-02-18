@@ -183,6 +183,31 @@ export interface BreadthResponse {
   points: BreadthDataPoint[];
 }
 
+// --- Breadth MA (% above moving averages) types ---
+
+export interface BreadthMASnapshot {
+  index: string;       // 'SPY' | 'QQQ' | 'SMH'
+  date: string;
+  ma21: number;        // percentage 0-100
+  ma50: number;
+  ma100: number;
+  ma200: number;
+  total: number;       // total constituents evaluated
+}
+
+export interface BreadthMAHistory {
+  date: string;
+  ma21: number;
+  ma50: number;
+  ma100: number;
+  ma200: number;
+}
+
+export interface BreadthMAResponse {
+  snapshots: BreadthMASnapshot[];
+  history: Record<string, BreadthMAHistory[]>;
+}
+
 // --- Run metrics / logs types ---
 
 export interface RunTickerMetrics {

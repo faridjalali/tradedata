@@ -845,6 +845,34 @@ async function dataApiLatestQuote(symbol: string): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Grouped Daily Bars (all US stocks for a single date)
+// ---------------------------------------------------------------------------
+
+async function fetchGroupedDailyBars(
+  date: string,
+  tickerFilter?: Set<string>,
+): Promise<Map<string, number>> {
+  const url = buildDataApiUrl(`/v2/aggs/grouped/locale/us/market/stocks/${date}`, {
+    adjusted: 'true',
+  });
+  const payload = await fetchDataApiJson(url, `DataAPI grouped-daily ${date}`);
+  const results = new Map<string, number>();
+  if (!payload || typeof payload !== 'object') return results;
+  const arr = (payload as Record<string, unknown>).results;
+  if (!Array.isArray(arr)) return results;
+  for (const bar of arr) {
+    if (!bar || typeof bar !== 'object') continue;
+    const b = bar as Record<string, unknown>;
+    const ticker = String(b.T || '').toUpperCase();
+    const close = Number(b.c);
+    if (!ticker || !Number.isFinite(close) || close <= 0) continue;
+    if (tickerFilter && !tickerFilter.has(ticker)) continue;
+    results.set(ticker, close);
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -902,6 +930,9 @@ export {
   fetchDataApiMovingAverageStatesForTicker,
   dataApiQuoteSingle,
   dataApiLatestQuote,
+
+  // Grouped daily
+  fetchGroupedDailyBars,
 
   // Circuit breaker
   CircuitOpenError,

@@ -802,6 +802,14 @@ function bootstrapApplication(): void {
     });
   });
 
+  // Breadth MA index buttons
+  document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const index = (btn as HTMLElement).dataset.index as 'SPY' | 'QQQ' | 'SMH';
+      loadBreadth().then((m) => m.setBreadthMAIndex(index)).catch(() => {});
+    });
+  });
+
   // Header navigation dropdown & column timeframe dropdowns
   initHeaderNavDropdown();
   initColumnTimeframeButtons();

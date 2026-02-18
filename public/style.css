@@ -1346,6 +1346,51 @@ button:hover {
   }
 }
 
+/* ===== Breadth MA Section ===== */
+.breadth-ma-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+.breadth-gauges-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.breadth-gauge-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.breadth-gauge-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.breadth-gauge-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+}
+.breadth-gauge-bar {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.breadth-gauge-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+@media (max-width: 768px) {
+  .breadth-gauges-row { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* ===== Custom Chart Section ===== */
 .custom-chart-section {
   background: var(--card-bg);

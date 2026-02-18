@@ -93,7 +93,9 @@ import { runDivergenceTableBuild } from './server/orchestrators/tableBuildOrches
 import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOrchestrator.js';
 import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeeklyOrchestrator.js';
 import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestrator.js';
-import { scheduleNextDivergenceScan } from './server/services/schedulerService.js';
+import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
+import { initBreadthTables } from './server/data/breadthStore.js';
+import { runBreadthComputation, bootstrapBreadthHistory, getLatestBreadthData, cleanupBreadthData } from './server/services/breadthService.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
 import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote, getDataApiCircuitBreakerInfo, resetDataApiCircuitBreaker } from './server/services/dataApi.js';
@@ -863,6 +865,54 @@ app.get('/api/breadth', async (request, reply) => {
   }
 });
 
+// --- Breadth MA (% above moving averages) ---
+app.get('/api/breadth/ma', async (request, reply) => {
+  if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
+  const q = request.query as any;
+  const days = Math.min(Math.max(parseInt(String(q.days)) || 60, 1), 365);
+  try {
+    const data = await getLatestBreadthData(divergencePool, days);
+    return reply.send(data);
+  } catch (err: any) {
+    console.error('Breadth MA API Error:', err);
+    return reply.code(500).send({ error: 'Failed to fetch breadth MA data' });
+  }
+});
+
+app.post('/api/breadth/ma/bootstrap', async (request, reply) => {
+  if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
+  const q = request.query as any;
+  const secret = String(q.secret || '');
+  if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
+    return reply.code(403).send({ error: 'Forbidden' });
+  }
+  const numDays = Math.min(Math.max(parseInt(String(q.days)) || 220, 10), 500);
+  // Run in background
+  bootstrapBreadthHistory(divergencePool, numDays)
+    .then((r) => console.log(`[breadth] Bootstrap complete: fetched=${r.fetchedDays}, computed=${r.computedDays}`))
+    .catch((err) => console.error('[breadth] Bootstrap failed:', err));
+  return reply.send({ status: 'started', days: numDays });
+});
+
+app.post('/api/breadth/ma/refresh', async (request, reply) => {
+  if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
+  const q = request.query as any;
+  const secret = String(q.secret || '');
+  if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
+    return reply.code(403).send({ error: 'Forbidden' });
+  }
+  const today = new Date();
+  const tradeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  try {
+    await runBreadthComputation(divergencePool, tradeDate);
+    await cleanupBreadthData(divergencePool);
+    return reply.send({ status: 'done', date: tradeDate });
+  } catch (err: any) {
+    console.error('Breadth refresh error:', err);
+    return reply.code(500).send({ error: err.message });
+  }
+});
+
 // --- Chart pre-warming ---
 const prewarmDeps = {
   getOrBuildChartResult: (params: Record<string, unknown>) => getOrBuildChartResult(params),
@@ -1075,6 +1125,7 @@ let pruneOldAlertsIntervalTimer: ReturnType<typeof setInterval> | null = null;
 try {
   await initDB();
   await initDivergenceDB();
+  if (divergencePool) await initBreadthTables(divergencePool);
 } catch (err: any) {
   console.error('Fatal: database initialization failed, exiting.', err);
   process.exit(1);
@@ -1089,6 +1140,7 @@ await tradingCalendar
 await app.listen({ port, host: '0.0.0.0' });
 console.log(`Server running on port ${port}`);
 scheduleNextDivergenceScan();
+scheduleNextBreadthComputation();
 pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000);
 pruneOldAlertsIntervalTimer = setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
 

@@ -550,6 +550,25 @@
             <canvas id="breadth-chart"></canvas>
           </div>
           <div id="breadth-error" class="single-page-status" style="display: none"></div>
+
+          <!-- Breadth MA: % Above Moving Averages -->
+          <div class="breadth-ma-section">
+            <div class="single-page-header">
+              <div class="single-page-controls">
+                <div id="breadth-ma-index-btns" class="feed-controls-group">
+                  <button class="pane-btn active" data-index="SPY">SPY</button>
+                  <button class="pane-btn" data-index="QQQ">QQQ</button>
+                  <button class="pane-btn" data-index="SMH">SMH</button>
+                </div>
+              </div>
+              <span id="breadth-ma-subtitle" class="single-page-subtitle">SPY — % Above Moving Averages</span>
+            </div>
+            <div id="breadth-ma-gauges" class="breadth-gauges-row"></div>
+            <div class="single-page-chart-wrapper">
+              <canvas id="breadth-ma-chart"></canvas>
+            </div>
+            <div id="breadth-ma-error" class="single-page-status" style="display: none"></div>
+          </div>
         </div>
       </main>
     </div>
