@@ -15,6 +15,11 @@ let breadthMAChart: any = null;
 let currentMAIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
 let breadthMAData: BreadthMAResponse | null = null;
 
+// Comparative Breadth state
+let breadthCompareChart: any = null;
+let currentCompareMA: 'ma21' | 'ma50' | 'ma100' | 'ma200' = 'ma21';
+let currentCompareTfDays: number = 5;
+
 export function getCurrentBreadthTimeframe(): number {
   return currentTimeframeDays;
 }
@@ -436,6 +441,7 @@ async function loadBreadthMA(): Promise<void> {
   try {
     breadthMAData = await fetchBreadthMA(60);
     renderBreadthMAForIndex(currentMAIndex);
+    renderBreadthCompareChart();
   } catch (err) {
     console.error('Breadth MA load error:', err);
     if (errorEl) {
@@ -443,6 +449,153 @@ async function loadBreadthMA(): Promise<void> {
       errorEl.style.display = 'block';
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Comparative Breadth: Normalized SPY vs QQQ vs SMH
+// ---------------------------------------------------------------------------
+
+function normalizeCompare(values: number[]): number[] {
+  if (values.length === 0) return [];
+  const base = values[0];
+  if (base === 0) return values.map(() => 100);
+  return values.map(v => (v / base) * 100);
+}
+
+function renderBreadthCompareChart(): void {
+  const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
+  if (!canvas || !breadthMAData) return;
+  const c = getThemeColors();
+
+  if (breadthCompareChart) {
+    breadthCompareChart.destroy();
+    breadthCompareChart = null;
+  }
+
+  const indices: Array<'SPY' | 'QQQ' | 'SMH'> = ['SPY', 'QQQ', 'SMH'];
+  const maKey = currentCompareMA;
+
+  const sliced: Record<string, BreadthMAHistory[]> = {};
+  for (const idx of indices) {
+    const full = breadthMAData.history[idx] || [];
+    sliced[idx] = full.slice(-currentCompareTfDays);
+  }
+
+  const labels = (sliced['SPY'] || []).map(h => {
+    const date = new Date(h.date + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  });
+
+  const colors: Record<string, string> = {
+    SPY: '#58a6ff',
+    QQQ: '#bc8cff',
+    SMH: '#f0883e',
+  };
+
+  const datasets = indices.map(idx => {
+    const raw = (sliced[idx] || []).map(h => h[maKey]);
+    const normed = normalizeCompare(raw);
+    return {
+      label: idx,
+      data: normed,
+      borderColor: colors[idx],
+      backgroundColor: 'transparent',
+      borderWidth: 2.5,
+      pointRadius: normed.length > 15 ? 0 : 3,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      fill: false,
+    };
+  });
+
+  breadthCompareChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            color: c.textPrimary,
+            font: { size: 12 },
+            usePointStyle: true,
+            pointStyle: 'line',
+          },
+        },
+        tooltip: {
+          backgroundColor: c.cardBgOverlay95,
+          borderColor: c.borderColor,
+          borderWidth: 1,
+          titleColor: c.textPrimary,
+          bodyColor: c.textSecondary,
+          padding: 12,
+          callbacks: {
+            label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`,
+          },
+        },
+        annotation: {
+          annotations: {
+            baseline100: {
+              type: 'line',
+              yMin: 100,
+              yMax: 100,
+              borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
+              borderWidth: 1,
+              borderDash: [4, 4],
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: c.textSecondary,
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 10,
+            font: { size: 11 },
+          },
+          grid: { color: c.borderOverlay30 },
+        },
+        y: {
+          ticks: {
+            color: c.textSecondary,
+            font: { size: 11 },
+            callback: (value: number | string) => `${(value as number).toFixed(1)}`,
+          },
+          grid: { color: c.borderOverlay30 },
+        },
+      },
+    },
+  });
+}
+
+function updateBreadthCompareSubtitle(): void {
+  const subtitle = document.getElementById('breadth-compare-subtitle');
+  if (subtitle) {
+    const maLabel = currentCompareMA.replace('ma', '');
+    subtitle.textContent = `Comparative Breadth — % Above ${maLabel} MA (${currentCompareTfDays}d)`;
+  }
+}
+
+export function setBreadthCompareMA(ma: 'ma21' | 'ma50' | 'ma100' | 'ma200'): void {
+  currentCompareMA = ma;
+  document.querySelectorAll('#breadth-compare-ma-btns .pane-btn:not(.label)').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.ma === ma);
+  });
+  updateBreadthCompareSubtitle();
+  renderBreadthCompareChart();
+}
+
+export function setBreadthCompareTf(days: number): void {
+  currentCompareTfDays = days;
+  document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach(btn => {
+    btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
+  });
+  updateBreadthCompareSubtitle();
+  renderBreadthCompareChart();
 }
 
 export function initBreadth(): void {
@@ -456,5 +609,8 @@ window.addEventListener('themechange', () => {
   }
   if (breadthMAData) {
     renderBreadthMAForIndex(currentMAIndex);
+  }
+  if (breadthCompareChart) {
+    renderBreadthCompareChart();
   }
 });

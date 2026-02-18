@@ -1390,6 +1390,12 @@ button:hover {
 @media (max-width: 768px) {
   .breadth-gauges-row { grid-template-columns: repeat(2, 1fr); }
 }
+/* ===== Comparative Breadth Section ===== */
+.breadth-compare-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
 
 /* ===== Custom Chart Section ===== */
 .custom-chart-section {

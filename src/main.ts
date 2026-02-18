@@ -811,6 +811,22 @@ function bootstrapApplication(): void {
     });
   });
 
+  // Comparative Breadth: MA window buttons
+  document.querySelectorAll('#breadth-compare-ma-btns .pane-btn:not(.label)').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ma = (btn as HTMLElement).dataset.ma as 'ma21' | 'ma50' | 'ma100' | 'ma200';
+      loadBreadth().then((m) => m.setBreadthCompareMA(ma)).catch(() => {});
+    });
+  });
+
+  // Comparative Breadth: Timeframe buttons
+  document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const days = Number((btn as HTMLElement).dataset.days);
+      loadBreadth().then((m) => m.setBreadthCompareTf(days)).catch(() => {});
+    });
+  });
+
   // Header navigation dropdown & column timeframe dropdowns
   initHeaderNavDropdown();
   initColumnTimeframeButtons();

@@ -569,6 +569,32 @@
             </div>
             <div id="breadth-ma-error" class="single-page-status" style="display: none"></div>
           </div>
+
+          <!-- Comparative Breadth: Normalized SPY vs QQQ vs SMH -->
+          <div class="breadth-compare-section">
+            <div class="single-page-header">
+              <div class="single-page-controls">
+                <div id="breadth-compare-ma-btns" class="feed-controls-group">
+                  <button class="pane-btn label">MA</button>
+                  <button class="pane-btn active" data-ma="ma21">21</button>
+                  <button class="pane-btn" data-ma="ma50">50</button>
+                  <button class="pane-btn" data-ma="ma100">100</button>
+                  <button class="pane-btn" data-ma="ma200">200</button>
+                </div>
+                <div id="breadth-compare-tf-btns" class="feed-controls-group">
+                  <button class="pane-btn active" data-days="5">5d</button>
+                  <button class="pane-btn" data-days="10">10d</button>
+                  <button class="pane-btn" data-days="20">20d</button>
+                  <button class="pane-btn" data-days="30">30d</button>
+                </div>
+              </div>
+              <span id="breadth-compare-subtitle" class="single-page-subtitle">Comparative Breadth — % Above 21 MA (5d)</span>
+            </div>
+            <div class="single-page-chart-wrapper">
+              <canvas id="breadth-compare-chart"></canvas>
+            </div>
+            <div id="breadth-compare-error" class="single-page-status" style="display: none"></div>
+          </div>
         </div>
       </main>
     </div>
