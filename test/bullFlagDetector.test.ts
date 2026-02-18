@@ -120,7 +120,7 @@ test('detects a clear bull flag formation', () => {
   assert.ok(result!.r2 > 0.3, `r2 ${result!.r2} should indicate orderliness`);
 });
 
-test('rejects a flag with too much retracement (> 61.8%)', () => {
+test('rejects a flag with too much retracement (> 50%)', () => {
   // Uptrend: 100 → 110 (10% gain, height = 10)
   const uptrend = generateUptrend(100, 6, 1.67);
   const lastPrice = uptrend[uptrend.length - 1].close; // ~110

@@ -7,6 +7,11 @@
  * 1. Bull Flag: gentle, orderly downward-drifting parallel channel
  * 2. Bull Pennant: converging triangle (descending highs + ascending lows)
  *
+ * Optimized for daily charts with highest-probability breakout characteristics:
+ * - Duration: 1–4 weeks (5–20 trading days) is ideal
+ * - Depth: "high and tight" — retracement should stay under 38.2% Fibonacci
+ * - Slope: gentle downward drift preferred; flat is acceptable
+ *
  * Does NOT require a specific flagpole structure or breakout confirmation.
  * Focuses on identifying consolidation formations currently in progress.
  */
@@ -16,12 +21,12 @@
 /** Minimum total bars needed to evaluate. */
 const MIN_TOTAL_BARS = 10;
 /** Maximum bars to consider from the end of the dataset. */
-const MAX_LOOKBACK_BARS = 30;
+const MAX_LOOKBACK_BARS = 40;
 
 /** Minimum bars in the consolidation zone. */
 const FLAG_MIN_BARS = 4;
-/** Maximum bars in the consolidation zone. */
-const FLAG_MAX_BARS = 15;
+/** Maximum bars in the consolidation zone (4 weeks ≈ 20 trading days). */
+const FLAG_MAX_BARS = 20;
 
 /**
  * Flag slope bounds (normalized % per bar).
@@ -39,8 +44,15 @@ const MAX_CHANNEL_WIDTH_PCT = 8.0;
  */
 const PRIOR_UPTREND_MIN_PCT = 5.0;
 
-/** Maximum retracement of the prior move (%). */
-const MAX_RETRACE_PCT = 61.8;
+/**
+ * Maximum retracement of the prior move (%).
+ * "High and tight" flags should retrace less than 38.2% (Fibonacci).
+ * Retracements above 50% indicate bears have too much power.
+ */
+const MAX_RETRACE_PCT = 50.0;
+
+/** Ideal retracement ceiling — below this gets full score. */
+const IDEAL_RETRACE_PCT = 38.2;
 
 /** Confidence threshold to report a detection. */
 const MIN_CONFIDENCE = 50;
@@ -95,6 +107,30 @@ function linReg(ys: number[]): { slope: number; intercept: number; r2: number } 
   return { slope, intercept, r2: ssTot > 0 ? 1 - ssRes / ssTot : 0 };
 }
 
+/**
+ * Duration score: flags of 5–20 bars (1–4 weeks) are ideal.
+ * Peak score at 7–15 bars (sweet spot), tapering at edges.
+ */
+function scoreDuration(flagLen: number): number {
+  if (flagLen < 5) return (flagLen / 5) * 0.5; // short flags get partial credit
+  if (flagLen <= 7) return 0.7 + (flagLen - 5) * 0.15; // ramp up to sweet spot
+  if (flagLen <= 15) return 1.0; // sweet spot: full score
+  if (flagLen <= 20) return 1.0 - (flagLen - 15) * 0.1; // tapering off
+  return 0.3; // >20 bars: low score but not zero (may still be valid)
+}
+
+/**
+ * Retracement score: "high and tight" is best.
+ * Under 38.2%: full score. 38.2–50%: partial. Above 50%: rejected.
+ */
+function scoreRetracement(retracePct: number): number {
+  if (retracePct <= 0) return 1.0;
+  if (retracePct <= IDEAL_RETRACE_PCT) return 1.0 - (retracePct / IDEAL_RETRACE_PCT) * 0.15;
+  // 38.2% to 50%: steep dropoff
+  const excess = (retracePct - IDEAL_RETRACE_PCT) / (MAX_RETRACE_PCT - IDEAL_RETRACE_PCT);
+  return Math.max(0, 0.85 - excess * 0.85);
+}
+
 // --- Scoring: Flag pattern (parallel channel) ---
 
 function scoreFlag(
@@ -103,6 +139,7 @@ function scoreFlag(
   channelWidthPct: number,
   retracePct: number,
   priorGainPct: number,
+  flagLen: number,
 ): { confidence: number; slopePerBar: number; r2: number } | null {
   const reg = linReg(flagCloses);
   const slopePerBar = (reg.slope / flagMean) * 100;
@@ -110,24 +147,28 @@ function scoreFlag(
   if (slopePerBar > FLAG_SLOPE_MAX) return null; // drifting up — not a flag
   if (slopePerBar < FLAG_SLOPE_MIN) return null; // dropping too fast — breakdown
 
-  // 1. Orderliness (R²): how well do closes follow a straight line? (0–25 pts)
-  const sR2 = Math.max(0, reg.r2) * 25;
+  // 1. Orderliness (R²): how well do closes follow a straight line? (0–20 pts)
+  const sR2 = Math.max(0, reg.r2) * 20;
 
-  // 2. Channel tightness (price-normalized): tighter is better (0–25 pts)
-  const sTight = Math.max(0, 1 - channelWidthPct / MAX_CHANNEL_WIDTH_PCT) * 25;
+  // 2. Channel tightness (price-normalized): tighter is better (0–20 pts)
+  const sTight = Math.max(0, 1 - channelWidthPct / MAX_CHANNEL_WIDTH_PCT) * 20;
 
-  // 3. Slope quality: gentle downslope is ideal, around -0.3% per bar (0–20 pts)
+  // 3. Slope quality: gentle downslope is ideal, around -0.3% per bar (0–15 pts)
+  //    Flat (0%) is acceptable but scores slightly less than gentle down
   const idealSlope = -0.3;
   const slopeDev = Math.abs(slopePerBar - idealSlope);
-  const sSlope = Math.max(0, 1 - slopeDev / 1.2) * 20;
+  const sSlope = Math.max(0, 1 - slopeDev / 1.2) * 15;
 
-  // 4. Low retracement: less retracement = stronger (0–15 pts)
-  const sRetrace = (1 - retracePct / MAX_RETRACE_PCT) * 15;
+  // 4. Retracement depth: high-and-tight preferred (0–20 pts)
+  const sRetrace = scoreRetracement(retracePct) * 20;
 
-  // 5. Prior uptrend strength: stronger preceding move = better setup (0–15 pts)
+  // 5. Duration: 1–4 weeks ideal (0–10 pts)
+  const sDuration = scoreDuration(flagLen) * 10;
+
+  // 6. Prior uptrend strength: stronger preceding move = better setup (0–15 pts)
   const sPrior = Math.min(1, (priorGainPct - PRIOR_UPTREND_MIN_PCT) / 25) * 15;
 
-  const confidence = Math.round(sR2 + sTight + sSlope + sRetrace + sPrior);
+  const confidence = Math.round(sR2 + sTight + sSlope + sRetrace + sDuration + sPrior);
   return {
     confidence,
     slopePerBar: Math.round(slopePerBar * 100) / 100,
@@ -144,6 +185,7 @@ function scorePennant(
   _channelWidthPct: number,
   retracePct: number,
   priorGainPct: number,
+  flagLen: number,
 ): { confidence: number; slopePerBar: number; r2: number } | null {
   if (flagBars.length < 4) return null; // need at least 4 bars for convergence
 
@@ -179,31 +221,33 @@ function scorePennant(
 
   // --- Scoring ---
 
-  // 1. Convergence quality: how much range narrows (0–25 pts)
-  //    convergenceRatio 0.2 = great, 0.85 = barely converging
-  const sConv = Math.max(0, 1 - (convergenceRatio - 0.15) / 0.7) * 25;
+  // 1. Convergence quality: how much range narrows (0–20 pts)
+  const sConv = Math.max(0, 1 - (convergenceRatio - 0.15) / 0.7) * 20;
 
-  // 2. Orderliness of highs and lows regressions (average R²): (0–25 pts)
+  // 2. Orderliness of highs and lows regressions (average R²): (0–20 pts)
   const avgR2 = (Math.max(0, regHighs.r2) + Math.max(0, regLows.r2)) / 2;
-  const sOrd = avgR2 * 25;
+  const sOrd = avgR2 * 20;
 
-  // 3. Slope symmetry: highs and lows converging at similar rates is ideal (0–10 pts)
+  // 3. Slope symmetry: highs and lows converging at similar rates is ideal (0–5 pts)
   const highMag = Math.abs(highSlopeNorm);
   const lowMag = Math.abs(lowSlopeNorm);
   const maxMag = Math.max(highMag, lowMag, 0.001);
   const asymmetry = Math.abs(highMag - lowMag) / maxMag;
-  const sSym = Math.max(0, 1 - asymmetry) * 10;
+  const sSym = Math.max(0, 1 - asymmetry) * 5;
 
-  // 4. Low retracement: less retracement = stronger (0–15 pts)
-  const sRetrace = (1 - retracePct / MAX_RETRACE_PCT) * 15;
+  // 4. Retracement depth: high-and-tight preferred (0–20 pts)
+  const sRetrace = scoreRetracement(retracePct) * 20;
 
-  // 5. Prior uptrend strength (0–15 pts)
+  // 5. Duration: 1–4 weeks ideal (0–10 pts)
+  const sDuration = scoreDuration(flagLen) * 10;
+
+  // 6. Prior uptrend strength (0–15 pts)
   const sPrior = Math.min(1, (priorGainPct - PRIOR_UPTREND_MIN_PCT) / 25) * 15;
 
-  // 6. Overall close orderliness R² (0–10 pts)
+  // 7. Overall close orderliness R² (0–10 pts)
   const sCloseR2 = Math.max(0, regCloses.r2) * 10;
 
-  const confidence = Math.round(sConv + sOrd + sSym + sRetrace + sPrior + sCloseR2);
+  const confidence = Math.round(sConv + sOrd + sSym + sRetrace + sDuration + sPrior + sCloseR2);
   return {
     confidence,
     slopePerBar: Math.round(closeSlopeNorm * 100) / 100,
@@ -257,7 +301,7 @@ export function detectBullFlag(bars: Bar[]): BullFlagDetection | null {
     if (channelWidthPct > MAX_CHANNEL_WIDTH_PCT) continue;
 
     // Try both patterns, take the better score
-    const flagResult = scoreFlag(flagCloses, flagMean, channelWidthPct, retracePct, priorGainPct);
+    const flagResult = scoreFlag(flagCloses, flagMean, channelWidthPct, retracePct, priorGainPct, flagLen);
     const pennantResult = scorePennant(
       flagBars,
       flagCloses,
@@ -265,6 +309,7 @@ export function detectBullFlag(bars: Bar[]): BullFlagDetection | null {
       channelWidthPct,
       retracePct,
       priorGainPct,
+      flagLen,
     );
 
     const chosen =
