@@ -1001,7 +1001,7 @@ async function pruneOldAlerts() {
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - ALERT_RETENTION_DAYS);
-    const result = await pool.query('DELETE FROM alerts WHERE created_at < $1', [cutoffDate]);
+    const result = await pool.query('DELETE FROM alerts WHERE timestamp < $1', [cutoffDate]);
     if (result.rowCount && result.rowCount > 0) {
       console.log(`Pruned ${result.rowCount} old alerts created before ${cutoffDate.toISOString()}`);
     }
