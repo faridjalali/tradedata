@@ -73,10 +73,24 @@ export async function getClosesForTickers(
   dbPool: Pool,
   tickers: string[],
   limit: number,
+  beforeDate?: string,
 ): Promise<Map<string, number[]>> {
   if (tickers.length === 0) return new Map();
-  const { rows } = await dbPool.query(
-    `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
+  let query: string;
+  let params: any[];
+  if (beforeDate) {
+    query = `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
+     FROM (
+       SELECT ticker, trade_date, close
+       FROM breadth_daily_closes
+       WHERE ticker = ANY($1) AND trade_date <= $3::date
+       ORDER BY trade_date DESC
+       LIMIT $2 * array_length($1, 1)
+     ) sub
+     GROUP BY ticker`;
+    params = [tickers, limit, beforeDate];
+  } else {
+    query = `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
      FROM (
        SELECT ticker, trade_date, close
        FROM breadth_daily_closes
@@ -84,9 +98,10 @@ export async function getClosesForTickers(
        ORDER BY trade_date DESC
        LIMIT $2 * array_length($1, 1)
      ) sub
-     GROUP BY ticker`,
-    [tickers, limit],
-  );
+     GROUP BY ticker`;
+    params = [tickers, limit];
+  }
+  const { rows } = await dbPool.query(query, params);
   const result = new Map<string, number[]>();
   for (const row of rows) {
     result.set(row.ticker, row.closes);

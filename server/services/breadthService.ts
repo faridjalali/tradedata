@@ -164,15 +164,14 @@ export async function bootstrapBreadthHistory(
     }
   }
 
-  // Compute snapshots for dates that have enough history (200+ days from start)
+  // Compute snapshots for dates that have enough history (at least 21 days for shortest SMA)
   let computedDays = 0;
   const allTickers = [...ALL_BREADTH_TICKERS];
 
-  // For each date from ~200th day onward, compute breadth
-  const computeDates = tradingDates.slice(Math.max(0, 199));
+  const computeDates = tradingDates.slice(Math.max(0, 20));
   for (const date of computeDates) {
     try {
-      const allCloses = await getClosesForTickers(dbPool, allTickers, 200);
+      const allCloses = await getClosesForTickers(dbPool, allTickers, 200, date);
       for (const index of ALL_BREADTH_INDICES) {
         const constituents = getConstituentsForIndex(index);
         const pcts = computeBreadthForIndex(allCloses, constituents);

@@ -94,7 +94,7 @@ import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOr
 import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeeklyOrchestrator.js';
 import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestrator.js';
 import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
-import { initBreadthTables } from './server/data/breadthStore.js';
+import { initBreadthTables, getLatestBreadthSnapshots } from './server/data/breadthStore.js';
 import { runBreadthComputation, bootstrapBreadthHistory, getLatestBreadthData, cleanupBreadthData } from './server/services/breadthService.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
@@ -1141,6 +1141,21 @@ await app.listen({ port, host: '0.0.0.0' });
 console.log(`Server running on port ${port}`);
 scheduleNextDivergenceScan();
 scheduleNextBreadthComputation();
+
+// Auto-bootstrap breadth if no snapshots exist yet
+if (divergencePool) {
+  getLatestBreadthSnapshots(divergencePool).then(async (snapshots) => {
+    if (snapshots.length === 0) {
+      console.log('[breadth] No snapshots found — auto-bootstrapping in background...');
+      try {
+        await bootstrapBreadthHistory(divergencePool!, 220);
+      } catch (err: any) {
+        console.error('[breadth] Auto-bootstrap failed:', err.message);
+      }
+    }
+  }).catch(() => {});
+}
+
 pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000);
 pruneOldAlertsIntervalTimer = setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
 

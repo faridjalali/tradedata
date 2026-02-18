@@ -8,7 +8,6 @@ import {
 } from './chartApi';
 import { RSIChart } from './rsi';
 import { DIVERGENCE_LOOKBACK_DAYS, DivergenceSummaryEntry, getTickerDivergenceSummary } from './divergenceTable';
-import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import {
   ensureVDFAnalysisPanel,
   clearVDFAnalysisPanel,
@@ -42,22 +41,40 @@ import {
   setRefreshButtonLoading,
 } from './chartVDF';
 import {
+  initSettingsUI, persistSettingsToStorage, ensureSettingsLoadedFromStorage,
+  hideSettingsPanels, syncPriceSettingsPanelValues, syncRSISettingsPanelValues,
+  syncVolumeDeltaSettingsPanelValues, syncVolumeDeltaRSISettingsPanelValues,
+  createPriceSettingsPanel, createRSISettingsPanel,
+  createVolumeDeltaSettingsPanel, createVolumeDeltaRSISettingsPanel,
+  getPriceSettingsPanel, getRsiSettingsPanel,
+  getVolumeDeltaSettingsPanel, getVolumeDeltaRsiSettingsPanel,
+} from './chartSettingsUI';
+import {
+  initDivergencePlot,
+  isRsiDivergencePlotToolActive, isVolumeDeltaRsiDivergencePlotToolActive,
+  toggleRsiDivergencePlotTool, toggleVolumeDeltaRsiDivergencePlotTool,
+  deactivateRsiDivergencePlotTool, deactivateVolumeDeltaRsiDivergencePlotTool,
+  updateRsiDivergencePlotPoint, updateVolumeDeltaRsiDivergencePlotPoint,
+  refreshActiveDivergenceOverlays, deactivateInteractivePaneToolsFromEscape,
+  getDivergenceOverlayChart,
+} from './chartDivergencePlot';
+import {
   type MidlineStyle,
   type PaneId, type TrendToolPane, type PaneControlType,
-  type PersistedChartSettings, type RSIPersistedTrendline,
+  type RSIPersistedTrendline,
   TREND_ICON, ERASE_ICON, DIVERGENCE_ICON, SETTINGS_ICON,
   INTERVAL_SWITCH_DEBOUNCE_MS, CHART_LIVE_REFRESH_MS,
   RIGHT_MARGIN_BARS, FUTURE_TIMELINE_TRADING_DAYS, SCALE_LABEL_CHARS, SCALE_MIN_WIDTH_PX,
-  INVALID_SYMBOL_MESSAGE, SETTINGS_STORAGE_KEY,
+  INVALID_SYMBOL_MESSAGE,
   TOP_PANE_TICKER_LABEL_CLASS, TOP_PANE_BADGE_CLASS, TOP_PANE_BADGE_START_LEFT_PX, TOP_PANE_BADGE_GAP_PX,
   PANE_SETTINGS_BUTTON_LEFT_PX, PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
   VOLUME_DELTA_MIDLINE, RSI_MIDLINE_VALUE,
   VOLUME_DELTA_AXIS_MIN, VOLUME_DELTA_AXIS_MAX, VOLUME_DELTA_DATA_MIN, VOLUME_DELTA_DATA_MAX,
   VOLUME_DELTA_MAX_HIGHLIGHT_POINTS, DIVERGENCE_HIGHLIGHT_COLOR, TRENDLINE_COLOR,
-  VOLUME_DELTA_POSITIVE_COLOR, VOLUME_DELTA_NEGATIVE_COLOR, VOLUME_DELTA_SOURCE_OPTIONS,
+  VOLUME_DELTA_POSITIVE_COLOR, VOLUME_DELTA_NEGATIVE_COLOR,
   PREFETCH_INTERVAL_TARGETS,
   PANE_HEIGHT_MIN, PANE_HEIGHT_MAX, DEFAULT_PANE_ORDER, DEFAULT_PANE_HEIGHTS, normalizePaneOrder,
-  DEFAULT_RSI_SETTINGS, DEFAULT_VOLUME_DELTA_RSI_SETTINGS, DEFAULT_VOLUME_DELTA_SETTINGS, DEFAULT_PRICE_SETTINGS,
+  DEFAULT_VOLUME_DELTA_SETTINGS,
   rsiSettings, volumeDeltaRsiSettings, volumeDeltaSettings, priceChartSettings,
   paneOrder, setPaneOrder, paneHeights,
 } from './chartTypes';
@@ -113,22 +130,7 @@ let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaRsiMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaMonthGridOverlayEl: HTMLDivElement | null = null;
 let rsiMonthGridOverlayEl: HTMLDivElement | null = null;
-let priceSettingsPanelEl: HTMLDivElement | null = null;
-let volumeDeltaSettingsPanelEl: HTMLDivElement | null = null;
-let volumeDeltaRsiSettingsPanelEl: HTMLDivElement | null = null;
-let rsiSettingsPanelEl: HTMLDivElement | null = null;
 let volumeDeltaDivergenceSummaryEl: HTMLDivElement | null = null;
-let rsiDivergencePlotToolActive = false;
-let volumeDeltaRsiDivergencePlotToolActive = false;
-let rsiDivergencePlotSelected = false;
-let volumeDeltaRsiDivergencePlotSelected = false;
-let rsiDivergencePlotStartIndex: number | null = null;
-let volumeDeltaRsiDivergencePlotStartIndex: number | null = null;
-let rsiDivergenceOverlayEl: HTMLDivElement | null = null;
-let volumeDeltaRsiDivergenceOverlayEl: HTMLDivElement | null = null;
-let rsiDivergenceOverlayChart: any = null;
-let volumeDeltaRsiDivergenceOverlayChart: any = null;
-let hasLoadedSettingsFromStorage = false;
 let chartFetchAbortController: AbortController | null = null;
 let prefetchAbortController: AbortController | null = null;
 let chartActivelyLoading = false;
@@ -282,6 +284,37 @@ initVDF({
   getCurrentBars: () => currentBars,
   getCurrentTicker: () => currentChartTicker,
 });
+initSettingsUI({
+  applyMovingAverages,
+  applyPriceGridOptions,
+  applyRSISettings,
+  applyVolumeDeltaRSISettings,
+  applyPricePaneDivergentBarColors,
+  clearMovingAverageSeries,
+  applyPaneOrderAndRefreshLayout,
+  renderVolumeDeltaDivergenceSummary,
+  scheduleChartLayoutRefresh,
+  renderCustomChart,
+  getCurrentTicker: () => currentChartTicker,
+  getCurrentInterval: () => currentChartInterval,
+  getCurrentBars: () => currentBars,
+  getVolumeDeltaPaneContainer: () => volumeDeltaPaneContainerEl,
+  getRsiChart: () => rsiChart,
+});
+initDivergencePlot({
+  getCurrentInterval: () => currentChartInterval,
+  getCurrentBars: () => currentBars,
+  getBarIndexByTime: () => barIndexByTime,
+  getRsiByTime: () => rsiByTime,
+  getVolumeDeltaRsiByTime: () => volumeDeltaRsiByTime,
+  getRsiDivergenceToolActive: () => rsiDivergenceToolActive,
+  setRsiDivergenceToolActive: (v: boolean) => { rsiDivergenceToolActive = v; },
+  getVolumeDeltaDivergenceToolActive: () => volumeDeltaDivergenceToolActive,
+  deactivateVolumeDeltaDivergenceTool,
+  getRsiChart: () => rsiChart,
+  setPaneTrendlineToolActive,
+  setPaneToolButtonActive,
+});
 
 
 function formatVolumeDeltaScaleLabel(value: number): string {
@@ -391,175 +424,6 @@ function persistTrendlinesForCurrentContext(): void {
   saveTrendlineStorage(storage);
 }
 
-function persistSettingsToStorage(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const payload: PersistedChartSettings = {
-      price: {
-        maSourceMode: priceChartSettings.maSourceMode,
-        verticalGridlines: priceChartSettings.verticalGridlines,
-        horizontalGridlines: priceChartSettings.horizontalGridlines,
-        ma: priceChartSettings.ma.map((ma) => ({
-          enabled: ma.enabled,
-          type: ma.type,
-          length: ma.length,
-          color: ma.color,
-        })),
-      },
-      rsi: {
-        length: rsiSettings.length,
-        lineColor: rsiSettings.lineColor,
-        midlineColor: rsiSettings.midlineColor,
-        midlineStyle: rsiSettings.midlineStyle,
-      },
-      volumeDelta: {
-        sourceInterval: volumeDeltaSettings.sourceInterval,
-        divergenceTable: volumeDeltaSettings.divergenceTable,
-        divergentPriceBars: volumeDeltaSettings.divergentPriceBars,
-        bullishDivergentColor: volumeDeltaSettings.bullishDivergentColor,
-        bearishDivergentColor: volumeDeltaSettings.bearishDivergentColor,
-        neutralDivergentColor: volumeDeltaSettings.neutralDivergentColor,
-      },
-      volumeDeltaRsi: {
-        length: volumeDeltaRsiSettings.length,
-        lineColor: volumeDeltaRsiSettings.lineColor,
-        midlineColor: volumeDeltaRsiSettings.midlineColor,
-        midlineStyle: volumeDeltaRsiSettings.midlineStyle,
-        sourceInterval: volumeDeltaRsiSettings.sourceInterval,
-      },
-      paneOrder: [...paneOrder],
-      paneHeights: { ...paneHeights },
-    };
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Ignore storage errors (private mode/quota/etc.)
-  }
-}
-
-function ensureSettingsLoadedFromStorage(): void {
-  if (hasLoadedSettingsFromStorage || typeof window === 'undefined') return;
-  hasLoadedSettingsFromStorage = true;
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as Partial<PersistedChartSettings>;
-
-    const persistedPrice = parsed?.price;
-    if (persistedPrice) {
-      priceChartSettings.maSourceMode = persistedPrice.maSourceMode === 'timeframe' ? 'timeframe' : 'daily';
-      if (typeof persistedPrice.verticalGridlines === 'boolean') {
-        priceChartSettings.verticalGridlines = persistedPrice.verticalGridlines;
-      }
-      if (typeof persistedPrice.horizontalGridlines === 'boolean') {
-        priceChartSettings.horizontalGridlines = persistedPrice.horizontalGridlines;
-      }
-      if (Array.isArray(persistedPrice.ma)) {
-        for (let i = 0; i < priceChartSettings.ma.length; i++) {
-          const persisted = persistedPrice.ma[i];
-          if (!persisted) continue;
-          priceChartSettings.ma[i].enabled = Boolean(persisted.enabled);
-          priceChartSettings.ma[i].type = persisted.type === 'EMA' ? 'EMA' : 'SMA';
-          priceChartSettings.ma[i].length = Math.max(
-            1,
-            Math.floor(Number(persisted.length) || priceChartSettings.ma[i].length),
-          );
-          if (typeof persisted.color === 'string' && persisted.color.trim()) {
-            priceChartSettings.ma[i].color = persisted.color;
-          }
-        }
-      }
-    }
-
-    const persistedRSI = parsed?.rsi;
-    if (persistedRSI) {
-      rsiSettings.length = Math.max(1, Math.floor(Number(persistedRSI.length) || rsiSettings.length));
-      if (typeof persistedRSI.lineColor === 'string' && persistedRSI.lineColor.trim()) {
-        rsiSettings.lineColor = persistedRSI.lineColor;
-      }
-      if (typeof persistedRSI.midlineColor === 'string' && persistedRSI.midlineColor.trim()) {
-        rsiSettings.midlineColor = persistedRSI.midlineColor;
-      }
-      rsiSettings.midlineStyle = persistedRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
-    }
-
-    const persistedVolumeDelta = parsed?.volumeDelta;
-    if (persistedVolumeDelta) {
-      const source = String(persistedVolumeDelta.sourceInterval || '');
-      if (
-        source === '1min' ||
-        source === '5min' ||
-        source === '15min' ||
-        source === '30min' ||
-        source === '1hour' ||
-        source === '4hour'
-      ) {
-        volumeDeltaSettings.sourceInterval = source;
-      }
-      if (typeof persistedVolumeDelta.divergenceTable === 'boolean') {
-        volumeDeltaSettings.divergenceTable = persistedVolumeDelta.divergenceTable;
-      }
-      if (typeof persistedVolumeDelta.divergentPriceBars === 'boolean') {
-        volumeDeltaSettings.divergentPriceBars = persistedVolumeDelta.divergentPriceBars;
-      }
-      if (
-        typeof persistedVolumeDelta.bullishDivergentColor === 'string' &&
-        persistedVolumeDelta.bullishDivergentColor.trim()
-      ) {
-        volumeDeltaSettings.bullishDivergentColor = persistedVolumeDelta.bullishDivergentColor;
-      }
-      if (
-        typeof persistedVolumeDelta.bearishDivergentColor === 'string' &&
-        persistedVolumeDelta.bearishDivergentColor.trim()
-      ) {
-        volumeDeltaSettings.bearishDivergentColor = persistedVolumeDelta.bearishDivergentColor;
-      }
-      if (
-        typeof persistedVolumeDelta.neutralDivergentColor === 'string' &&
-        persistedVolumeDelta.neutralDivergentColor.trim()
-      ) {
-        volumeDeltaSettings.neutralDivergentColor = persistedVolumeDelta.neutralDivergentColor;
-      }
-    }
-
-    const persistedVolumeDeltaRSI = parsed?.volumeDeltaRsi;
-    if (persistedVolumeDeltaRSI) {
-      volumeDeltaRsiSettings.length = Math.max(
-        1,
-        Math.floor(Number(persistedVolumeDeltaRSI.length) || volumeDeltaRsiSettings.length),
-      );
-      if (typeof persistedVolumeDeltaRSI.lineColor === 'string' && persistedVolumeDeltaRSI.lineColor.trim()) {
-        volumeDeltaRsiSettings.lineColor = persistedVolumeDeltaRSI.lineColor;
-      }
-      if (typeof persistedVolumeDeltaRSI.midlineColor === 'string' && persistedVolumeDeltaRSI.midlineColor.trim()) {
-        volumeDeltaRsiSettings.midlineColor = persistedVolumeDeltaRSI.midlineColor;
-      }
-      volumeDeltaRsiSettings.midlineStyle = persistedVolumeDeltaRSI.midlineStyle === 'solid' ? 'solid' : 'dotted';
-      const source = String(persistedVolumeDeltaRSI.sourceInterval || '');
-      if (
-        source === '1min' ||
-        source === '5min' ||
-        source === '15min' ||
-        source === '30min' ||
-        source === '1hour' ||
-        source === '4hour'
-      ) {
-        volumeDeltaRsiSettings.sourceInterval = source;
-      }
-    }
-
-    setPaneOrder(normalizePaneOrder(parsed?.paneOrder));
-
-    if (parsed?.paneHeights && typeof parsed.paneHeights === 'object') {
-      for (const [id, h] of Object.entries(parsed.paneHeights)) {
-        if (typeof h === 'number' && h >= PANE_HEIGHT_MIN && h <= PANE_HEIGHT_MAX) {
-          paneHeights[id] = h;
-        }
-      }
-    }
-  } catch {
-    // Ignore malformed storage content.
-  }
-}
 
 function clearMovingAverageSeries(): void {
   for (const setting of priceChartSettings.ma) {
@@ -756,109 +620,6 @@ function applyPriceGridOptions(): void {
   scheduleChartLayoutRefresh();
 }
 
-function syncPriceSettingsPanelValues(): void {
-  if (!priceSettingsPanelEl) return;
-  const sourceSelect = priceSettingsPanelEl.querySelector(
-    '[data-price-setting="ma-source"]',
-  ) as HTMLSelectElement | null;
-  const vGrid = priceSettingsPanelEl.querySelector('[data-price-setting="v-grid"]') as HTMLInputElement | null;
-  const hGrid = priceSettingsPanelEl.querySelector('[data-price-setting="h-grid"]') as HTMLInputElement | null;
-  if (sourceSelect) sourceSelect.value = priceChartSettings.maSourceMode;
-  if (vGrid) vGrid.checked = priceChartSettings.verticalGridlines;
-  if (hGrid) hGrid.checked = priceChartSettings.horizontalGridlines;
-
-  for (let i = 0; i < priceChartSettings.ma.length; i++) {
-    const ma = priceChartSettings.ma[i];
-    const enabled = priceSettingsPanelEl.querySelector(
-      `[data-price-setting="ma-enabled-${i}"]`,
-    ) as HTMLInputElement | null;
-    const type = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-type-${i}"]`) as HTMLSelectElement | null;
-    const length = priceSettingsPanelEl.querySelector(
-      `[data-price-setting="ma-length-${i}"]`,
-    ) as HTMLInputElement | null;
-    const color = priceSettingsPanelEl.querySelector(`[data-price-setting="ma-color-${i}"]`) as HTMLInputElement | null;
-    if (enabled) enabled.checked = ma.enabled;
-    if (type) type.value = ma.type;
-    if (length) length.value = String(ma.length);
-    if (color) color.value = ma.color;
-  }
-  // VDF button doesn't need settings sync
-}
-
-function syncRSISettingsPanelValues(): void {
-  if (!rsiSettingsPanelEl) return;
-  const length = rsiSettingsPanelEl.querySelector('[data-rsi-setting="length"]') as HTMLInputElement | null;
-  const color = rsiSettingsPanelEl.querySelector('[data-rsi-setting="line-color"]') as HTMLInputElement | null;
-  const midlineColor = rsiSettingsPanelEl.querySelector(
-    '[data-rsi-setting="midline-color"]',
-  ) as HTMLInputElement | null;
-  const midlineStyle = rsiSettingsPanelEl.querySelector(
-    '[data-rsi-setting="midline-style"]',
-  ) as HTMLSelectElement | null;
-  if (length) length.value = String(rsiSettings.length);
-  if (color) color.value = rsiSettings.lineColor;
-  if (midlineColor) midlineColor.value = rsiSettings.midlineColor;
-  if (midlineStyle) midlineStyle.value = rsiSettings.midlineStyle;
-}
-
-function syncVolumeDeltaSettingsPanelValues(): void {
-  if (!volumeDeltaSettingsPanelEl) return;
-  const source = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="source-interval"]',
-  ) as HTMLSelectElement | null;
-  const divergenceTable = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="divergence-table"]',
-  ) as HTMLInputElement | null;
-  const divergent = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="divergent-price-bars"]',
-  ) as HTMLInputElement | null;
-  const bullish = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="divergent-bullish-color"]',
-  ) as HTMLInputElement | null;
-  const bearish = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="divergent-bearish-color"]',
-  ) as HTMLInputElement | null;
-  const neutral = volumeDeltaSettingsPanelEl.querySelector(
-    '[data-vd-setting="divergent-neutral-color"]',
-  ) as HTMLInputElement | null;
-  if (source) source.value = volumeDeltaSettings.sourceInterval;
-  if (divergenceTable) divergenceTable.checked = volumeDeltaSettings.divergenceTable;
-  if (divergent) divergent.checked = volumeDeltaSettings.divergentPriceBars;
-  if (bullish) bullish.value = volumeDeltaSettings.bullishDivergentColor;
-  if (bearish) bearish.value = volumeDeltaSettings.bearishDivergentColor;
-  if (neutral) neutral.value = volumeDeltaSettings.neutralDivergentColor;
-}
-
-function syncVolumeDeltaRSISettingsPanelValues(): void {
-  if (!volumeDeltaRsiSettingsPanelEl) return;
-  const length = volumeDeltaRsiSettingsPanelEl.querySelector(
-    '[data-vd-rsi-setting="length"]',
-  ) as HTMLInputElement | null;
-  const color = volumeDeltaRsiSettingsPanelEl.querySelector(
-    '[data-vd-rsi-setting="line-color"]',
-  ) as HTMLInputElement | null;
-  const midlineColor = volumeDeltaRsiSettingsPanelEl.querySelector(
-    '[data-vd-rsi-setting="midline-color"]',
-  ) as HTMLInputElement | null;
-  const midlineStyle = volumeDeltaRsiSettingsPanelEl.querySelector(
-    '[data-vd-rsi-setting="midline-style"]',
-  ) as HTMLSelectElement | null;
-  const source = volumeDeltaRsiSettingsPanelEl.querySelector(
-    '[data-vd-rsi-setting="source-interval"]',
-  ) as HTMLSelectElement | null;
-  if (length) length.value = String(volumeDeltaRsiSettings.length);
-  if (color) color.value = volumeDeltaRsiSettings.lineColor;
-  if (midlineColor) midlineColor.value = volumeDeltaRsiSettings.midlineColor;
-  if (midlineStyle) midlineStyle.value = volumeDeltaRsiSettings.midlineStyle;
-  if (source) source.value = volumeDeltaRsiSettings.sourceInterval;
-}
-
-function hideSettingsPanels(): void {
-  if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = 'none';
-  if (volumeDeltaSettingsPanelEl) volumeDeltaSettingsPanelEl.style.display = 'none';
-  if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = 'none';
-  if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = 'none';
-}
 
 function getTopPaneId(): PaneId {
   return normalizePaneOrder(paneOrder)[0];
@@ -1194,67 +955,6 @@ function applyVolumeDeltaRSISettings(refetch: boolean): void {
   renderCustomChart(currentChartTicker, currentChartInterval);
 }
 
-function resetPriceSettingsToDefault(): void {
-  clearMovingAverageSeries();
-  priceChartSettings.maSourceMode = DEFAULT_PRICE_SETTINGS.maSourceMode;
-  priceChartSettings.verticalGridlines = DEFAULT_PRICE_SETTINGS.verticalGridlines;
-  priceChartSettings.horizontalGridlines = DEFAULT_PRICE_SETTINGS.horizontalGridlines;
-  for (let i = 0; i < priceChartSettings.ma.length; i++) {
-    const defaults = DEFAULT_PRICE_SETTINGS.ma[i];
-    if (!defaults) continue;
-    priceChartSettings.ma[i].enabled = defaults.enabled;
-    priceChartSettings.ma[i].type = defaults.type;
-    priceChartSettings.ma[i].length = defaults.length;
-    priceChartSettings.ma[i].color = defaults.color;
-    priceChartSettings.ma[i].series = null;
-    priceChartSettings.ma[i].values = [];
-  }
-  setPaneOrder([...DEFAULT_PANE_ORDER]);
-  const chartContent = document.getElementById('chart-content');
-  if (chartContent && chartContent instanceof HTMLElement) {
-    applyPaneOrderAndRefreshLayout(chartContent);
-  }
-  applyPriceGridOptions();
-  applyMovingAverages();
-  syncPriceSettingsPanelValues();
-  persistSettingsToStorage();
-}
-
-function resetRSISettingsToDefault(): void {
-  rsiSettings.length = DEFAULT_RSI_SETTINGS.length;
-  rsiSettings.lineColor = DEFAULT_RSI_SETTINGS.lineColor;
-  rsiSettings.midlineColor = DEFAULT_RSI_SETTINGS.midlineColor;
-  rsiSettings.midlineStyle = DEFAULT_RSI_SETTINGS.midlineStyle;
-  applyRSISettings();
-  syncRSISettingsPanelValues();
-  persistSettingsToStorage();
-}
-
-function resetVolumeDeltaSettingsToDefault(): void {
-  volumeDeltaSettings.sourceInterval = DEFAULT_VOLUME_DELTA_SETTINGS.sourceInterval;
-  volumeDeltaSettings.divergenceTable = DEFAULT_VOLUME_DELTA_SETTINGS.divergenceTable;
-  volumeDeltaSettings.divergentPriceBars = DEFAULT_VOLUME_DELTA_SETTINGS.divergentPriceBars;
-  volumeDeltaSettings.bullishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bullishDivergentColor;
-  volumeDeltaSettings.bearishDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.bearishDivergentColor;
-  volumeDeltaSettings.neutralDivergentColor = DEFAULT_VOLUME_DELTA_SETTINGS.neutralDivergentColor;
-  if (currentChartTicker) {
-    renderCustomChart(currentChartTicker, currentChartInterval);
-  }
-  applyPricePaneDivergentBarColors();
-  syncVolumeDeltaSettingsPanelValues();
-  persistSettingsToStorage();
-}
-
-function resetVolumeDeltaRSISettingsToDefault(): void {
-  volumeDeltaRsiSettings.length = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.length;
-  volumeDeltaRsiSettings.lineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.lineColor;
-  volumeDeltaRsiSettings.midlineColor = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineColor;
-  volumeDeltaRsiSettings.midlineStyle = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.midlineStyle;
-  volumeDeltaRsiSettings.sourceInterval = DEFAULT_VOLUME_DELTA_RSI_SETTINGS.sourceInterval;
-  applyVolumeDeltaRSISettings(true);
-  syncVolumeDeltaRSISettingsPanelValues();
-  persistSettingsToStorage();
-}
 
 function createSettingsButton(container: HTMLElement, pane: PaneControlType): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
@@ -1394,7 +1094,7 @@ function toggleRSITrendlineTool(): void {
     setPaneTrendlineToolActive('rsi', false);
     return;
   }
-  if (rsiDivergencePlotToolActive) {
+  if (isRsiDivergencePlotToolActive()) {
     deactivateRsiDivergencePlotTool();
   }
   rsiChart.activateDivergenceTool();
@@ -1418,7 +1118,7 @@ function toggleVolumeDeltaRSITrendlineTool(): void {
     setPaneTrendlineToolActive('volumeDeltaRsi', false);
     return;
   }
-  if (volumeDeltaRsiDivergencePlotToolActive) {
+  if (isVolumeDeltaRsiDivergencePlotToolActive()) {
     deactivateVolumeDeltaRsiDivergencePlotTool();
   }
   activateVolumeDeltaDivergenceTool();
@@ -1433,796 +1133,7 @@ function clearVolumeDeltaRSITrendlines(): void {
   persistTrendlinesForCurrentContext();
 }
 
-function formatDivergenceOverlayTimeLabel(time: string | number): string {
-  const unix = unixSecondsFromTimeValue(time);
-  if (unix === null) return '';
-  const date = new Date(unix * 1000);
-  if (currentChartInterval === '1day' || currentChartInterval === '1week') {
-    return getAppTimeZoneFormatter('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit',
-    }).format(date);
-  }
-  return date.toLocaleString('en-US', {
-    timeZone: getAppTimeZone(),
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
 
-function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolPane): HTMLDivElement {
-  const existing = pane === 'rsi' ? rsiDivergenceOverlayEl : volumeDeltaRsiDivergenceOverlayEl;
-  if (existing && existing.parentElement === container) {
-    existing.style.top = '0';
-    existing.style.right = '0';
-    existing.style.maxWidth = '100%';
-    return existing;
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = `divergence-plot-overlay divergence-plot-overlay-${pane}`;
-  overlay.style.position = 'absolute';
-  overlay.style.top = '0';
-  overlay.style.right = '0';
-  overlay.style.width = '468px';
-  overlay.style.maxWidth = '100%';
-  overlay.style.height = '286px';
-  overlay.style.border = `1px solid ${tc().borderColor}`;
-  overlay.style.borderRadius = '6px';
-  overlay.style.background = tc().bgOverlay95;
-  overlay.style.backdropFilter = 'blur(4px)';
-  overlay.style.zIndex = '35';
-  overlay.style.pointerEvents = 'none';
-  overlay.style.display = 'none';
-  overlay.style.padding = '8px';
-  overlay.style.boxSizing = 'border-box';
-
-  const canvasWrap = document.createElement('div');
-  canvasWrap.style.position = 'relative';
-  canvasWrap.style.width = '100%';
-  canvasWrap.style.height = '100%';
-  const canvas = document.createElement('canvas');
-  canvas.className = 'divergence-plot-overlay-canvas';
-  canvasWrap.appendChild(canvas);
-  overlay.appendChild(canvasWrap);
-  container.appendChild(overlay);
-
-  if (pane === 'rsi') {
-    rsiDivergenceOverlayEl = overlay;
-  } else {
-    volumeDeltaRsiDivergenceOverlayEl = overlay;
-  }
-  return overlay;
-}
-
-function getDivergenceOverlayChart(pane: TrendToolPane): any {
-  return pane === 'rsi' ? rsiDivergenceOverlayChart : volumeDeltaRsiDivergenceOverlayChart;
-}
-
-function setDivergenceOverlayChart(pane: TrendToolPane, chart: any | null): void {
-  if (pane === 'rsi') {
-    rsiDivergenceOverlayChart = chart;
-  } else {
-    volumeDeltaRsiDivergenceOverlayChart = chart;
-  }
-}
-
-function hideDivergenceOverlay(pane: TrendToolPane): void {
-  const overlay = pane === 'rsi' ? rsiDivergenceOverlayEl : volumeDeltaRsiDivergenceOverlayEl;
-  if (overlay) overlay.style.display = 'none';
-  const chart = getDivergenceOverlayChart(pane);
-  if (chart) {
-    try {
-      chart.destroy();
-    } catch {
-      // Ignore stale chart teardown errors.
-    }
-    setDivergenceOverlayChart(pane, null);
-  }
-}
-
-function findNearestBarIndex(time: string | number): number | null {
-  if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
-  const direct = barIndexByTime.get(timeKey(time));
-  if (direct !== undefined) return direct;
-  const targetUnix = unixSecondsFromTimeValue(time);
-  if (targetUnix === null) return null;
-  let bestIndex = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < currentBars.length; i++) {
-    const unix = unixSecondsFromTimeValue(currentBars[i]?.time);
-    if (unix === null) continue;
-    const distance = Math.abs(unix - targetUnix);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = i;
-    }
-  }
-  return Number.isFinite(bestDistance) ? bestIndex : null;
-}
-
-function buildDivergenceOverlayData(startIndex: number): {
-  labels: string[];
-  rsiValues: number[];
-  volumeDeltaRsiValues: number[];
-} {
-  const labels: string[] = [];
-  const rsiValues: number[] = [];
-  const volumeDeltaRsiValues: number[] = [];
-  for (let i = startIndex; i < currentBars.length; i++) {
-    const bar = currentBars[i];
-    const key = timeKey(bar.time);
-    const rsiValue = Number(rsiByTime.get(key));
-    const vdRsiValue = Number(volumeDeltaRsiByTime.get(key));
-    if (!Number.isFinite(rsiValue) || !Number.isFinite(vdRsiValue)) continue;
-    labels.push(formatDivergenceOverlayTimeLabel(bar.time));
-    rsiValues.push(rsiValue);
-    volumeDeltaRsiValues.push(vdRsiValue);
-  }
-  return { labels, rsiValues, volumeDeltaRsiValues };
-}
-
-function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: number): void {
-  const container =
-    pane === 'rsi' ? document.getElementById('rsi-chart-container') : document.getElementById('vd-rsi-chart-container');
-  if (!container || !(container instanceof HTMLElement)) return;
-  const overlay = ensureDivergenceOverlay(container, pane);
-  const canvas = overlay.querySelector('.divergence-plot-overlay-canvas') as HTMLCanvasElement | null;
-  if (!canvas) return;
-  if (!currentBars.length || startIndex < 0 || startIndex >= currentBars.length) {
-    hideDivergenceOverlay(pane);
-    return;
-  }
-
-  const data = buildDivergenceOverlayData(startIndex);
-  if (data.rsiValues.length < 2) {
-    hideDivergenceOverlay(pane);
-    return;
-  }
-
-  overlay.style.display = 'block';
-  const existingChart = getDivergenceOverlayChart(pane);
-  if (existingChart) {
-    existingChart.data.labels = data.labels;
-    existingChart.data.datasets[0].data = data.rsiValues;
-    existingChart.data.datasets[0].borderColor = rsiSettings.lineColor;
-    existingChart.data.datasets[1].data = data.volumeDeltaRsiValues;
-    existingChart.data.datasets[1].borderColor = volumeDeltaRsiSettings.lineColor;
-    existingChart.update('none');
-    return;
-  }
-
-  const chart = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: data.labels,
-      datasets: [
-        {
-          label: 'RSI',
-          data: data.rsiValues,
-          borderColor: rsiSettings.lineColor,
-          backgroundColor: 'transparent',
-          borderWidth: 1,
-          pointRadius: data.rsiValues.length > 24 ? 0 : 2,
-          tension: 0.2,
-        },
-        {
-          label: 'VD RSI',
-          data: data.volumeDeltaRsiValues,
-          borderColor: volumeDeltaRsiSettings.lineColor,
-          backgroundColor: 'transparent',
-          borderWidth: 1,
-          pointRadius: data.volumeDeltaRsiValues.length > 24 ? 0 : 2,
-          tension: 0.2,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: {
-        mode: 'index',
-        intersect: false,
-      },
-      plugins: {
-        legend: {
-          display: false,
-        },
-        tooltip: {
-          backgroundColor: tc().cardBgOverlay95,
-          borderColor: tc().borderColor,
-          borderWidth: 1,
-          titleColor: tc().textPrimary,
-          bodyColor: tc().textSecondary,
-        },
-      },
-      scales: {
-        x: {
-          display: false,
-          ticks: {
-            color: tc().textSecondary,
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 6,
-            font: { size: 10 },
-          },
-          grid: { color: tc().borderOverlay22 },
-        },
-        y: {
-          display: false,
-          min: 0,
-          max: 100,
-          ticks: {
-            color: tc().textSecondary,
-            font: { size: 10 },
-          },
-          grid: { color: tc().borderOverlay22 },
-        },
-      },
-    },
-  });
-  setDivergenceOverlayChart(pane, chart);
-}
-
-function deactivateRsiDivergencePlotTool(): void {
-  rsiDivergencePlotToolActive = false;
-  rsiDivergencePlotSelected = false;
-  rsiDivergencePlotStartIndex = null;
-  setPaneToolButtonActive('rsi', 'divergence', false);
-  hideDivergenceOverlay('rsi');
-}
-
-function deactivateVolumeDeltaRsiDivergencePlotTool(): void {
-  volumeDeltaRsiDivergencePlotToolActive = false;
-  volumeDeltaRsiDivergencePlotSelected = false;
-  volumeDeltaRsiDivergencePlotStartIndex = null;
-  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', false);
-  hideDivergenceOverlay('volumeDeltaRsi');
-}
-
-function updateRsiDivergencePlotPoint(time: string | number, fromMove: boolean): void {
-  if (!rsiDivergencePlotToolActive) return;
-  if (fromMove && !rsiDivergencePlotSelected) return;
-  const index = findNearestBarIndex(time);
-  if (index === null) return;
-  rsiDivergencePlotSelected = true;
-  rsiDivergencePlotStartIndex = index;
-  renderDivergenceOverlayForPane('rsi', index);
-}
-
-function updateVolumeDeltaRsiDivergencePlotPoint(time: string | number, fromMove: boolean): void {
-  if (!volumeDeltaRsiDivergencePlotToolActive) return;
-  if (fromMove && !volumeDeltaRsiDivergencePlotSelected) return;
-  const index = findNearestBarIndex(time);
-  if (index === null) return;
-  volumeDeltaRsiDivergencePlotSelected = true;
-  volumeDeltaRsiDivergencePlotStartIndex = index;
-  renderDivergenceOverlayForPane('volumeDeltaRsi', index);
-}
-
-function toggleRsiDivergencePlotTool(): void {
-  if (rsiDivergencePlotToolActive) {
-    deactivateRsiDivergencePlotTool();
-    return;
-  }
-  if (rsiDivergenceToolActive) {
-    rsiChart?.deactivateDivergenceTool();
-    rsiDivergenceToolActive = false;
-    setPaneTrendlineToolActive('rsi', false);
-  }
-  rsiDivergencePlotToolActive = true;
-  rsiDivergencePlotSelected = false;
-  rsiDivergencePlotStartIndex = null;
-  setPaneToolButtonActive('rsi', 'divergence', true);
-}
-
-function toggleVolumeDeltaRsiDivergencePlotTool(): void {
-  if (volumeDeltaRsiDivergencePlotToolActive) {
-    deactivateVolumeDeltaRsiDivergencePlotTool();
-    return;
-  }
-  if (volumeDeltaDivergenceToolActive) {
-    deactivateVolumeDeltaDivergenceTool();
-    setPaneTrendlineToolActive('volumeDeltaRsi', false);
-  }
-  volumeDeltaRsiDivergencePlotToolActive = true;
-  volumeDeltaRsiDivergencePlotSelected = false;
-  volumeDeltaRsiDivergencePlotStartIndex = null;
-  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', true);
-}
-
-function refreshActiveDivergenceOverlays(): void {
-  if (rsiDivergencePlotToolActive && rsiDivergencePlotSelected && rsiDivergencePlotStartIndex !== null) {
-    renderDivergenceOverlayForPane('rsi', rsiDivergencePlotStartIndex);
-  }
-  if (
-    volumeDeltaRsiDivergencePlotToolActive &&
-    volumeDeltaRsiDivergencePlotSelected &&
-    volumeDeltaRsiDivergencePlotStartIndex !== null
-  ) {
-    renderDivergenceOverlayForPane('volumeDeltaRsi', volumeDeltaRsiDivergencePlotStartIndex);
-  }
-}
-
-function deactivateInteractivePaneToolsFromEscape(): void {
-  if (rsiDivergenceToolActive) {
-    rsiChart?.deactivateDivergenceTool();
-    rsiDivergenceToolActive = false;
-    setPaneTrendlineToolActive('rsi', false);
-  }
-  if (volumeDeltaDivergenceToolActive) {
-    deactivateVolumeDeltaDivergenceTool();
-    setPaneTrendlineToolActive('volumeDeltaRsi', false);
-  }
-  if (rsiDivergencePlotToolActive) {
-    deactivateRsiDivergencePlotTool();
-  }
-  if (volumeDeltaRsiDivergencePlotToolActive) {
-    deactivateVolumeDeltaRsiDivergencePlotTool();
-  }
-}
-
-function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
-  panel.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-  panel.style.fontSize = '12px';
-  panel.style.fontWeight = '500';
-  panel.style.lineHeight = '1.2';
-  panel.querySelectorAll<HTMLElement>('div, span, label, input, select, button').forEach((el) => {
-    el.style.fontFamily = 'inherit';
-    el.style.fontSize = 'inherit';
-    el.style.fontWeight = 'inherit';
-    el.style.fontStyle = 'normal';
-    el.style.letterSpacing = 'normal';
-  });
-  panel.querySelectorAll<HTMLElement>('label').forEach((label) => {
-    label.style.display = 'flex';
-    label.style.justifyContent = 'space-between';
-    label.style.alignItems = 'center';
-    label.style.gap = '8px';
-    label.style.minHeight = '26px';
-  });
-  panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((checkbox) => {
-    checkbox.style.width = '14px';
-    checkbox.style.height = '14px';
-    checkbox.style.margin = '0';
-  });
-  panel.querySelectorAll<HTMLElement>('input, select, button').forEach((control) => {
-    control.style.boxSizing = 'border-box';
-    control.style.lineHeight = '1.2';
-  });
-}
-
-function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
-  const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel price-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '280px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
-
-  panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Chart</div>
-      <button type="button" data-price-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
-    <label style="margin-bottom:6px;">
-      <span>Vertical gridlines</span>
-      <input type="checkbox" data-price-setting="v-grid" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Horizontal gridlines</span>
-      <input type="checkbox" data-price-setting="h-grid" />
-    </label>
-    <label style="margin-bottom:4px;">
-      <span>MA source</span>
-      <select data-price-setting="ma-source" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="daily">Daily</option>
-        <option value="timeframe">Chart</option>
-      </select>
-    </label>
-    ${priceChartSettings.ma
-      .map(
-        (_, i) => `
-      <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; min-height:26px; margin-bottom:6px;">
-        <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
-        <select data-price-setting="ma-type-${i}" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-          <option value="SMA">SMA</option>
-          <option value="EMA">EMA</option>
-        </select>
-        <input data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" style="width:58px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-        <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
-      </div>
-    `,
-      )
-      .join('')}
-  `;
-  applyUniformSettingsPanelTypography(panel);
-
-  panel.addEventListener('input', (event) => {
-    const target = event.target as HTMLElement;
-    if (!target) return;
-
-    const setting = (target as HTMLInputElement | HTMLSelectElement).dataset.priceSetting || '';
-    if (setting === 'ma-source') {
-      priceChartSettings.maSourceMode = (target as HTMLSelectElement).value === 'timeframe' ? 'timeframe' : 'daily';
-      applyMovingAverages();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'v-grid') {
-      priceChartSettings.verticalGridlines = (target as HTMLInputElement).checked;
-      scheduleChartLayoutRefresh();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'h-grid') {
-      priceChartSettings.horizontalGridlines = (target as HTMLInputElement).checked;
-      applyPriceGridOptions();
-      persistSettingsToStorage();
-      return;
-    }
-
-    const maMatch = setting.match(/^ma-(enabled|type|length|color)-(\d)$/);
-    if (!maMatch) return;
-    const key = maMatch[1];
-    const index = Number(maMatch[2]);
-    const ma = priceChartSettings.ma[index];
-    if (!ma) return;
-
-    if (key === 'enabled') {
-      ma.enabled = (target as HTMLInputElement).checked;
-    } else if (key === 'type') {
-      ma.type = (target as HTMLSelectElement).value === 'EMA' ? 'EMA' : 'SMA';
-    } else if (key === 'length') {
-      ma.length = Math.max(1, Math.floor(Number((target as HTMLInputElement).value) || 14));
-    } else if (key === 'color') {
-      ma.color = (target as HTMLInputElement).value || ma.color;
-    }
-    applyMovingAverages();
-    persistSettingsToStorage();
-  });
-
-  panel.addEventListener('click', (event) => {
-    const target = event.target as HTMLButtonElement | null;
-    if (!target) return;
-    if (target.dataset.priceSetting !== 'reset') return;
-    event.preventDefault();
-    resetPriceSettingsToDefault();
-  });
-
-  container.appendChild(panel);
-  return panel;
-}
-
-function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
-  const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel rsi-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
-
-  panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">RSI</div>
-      <button type="button" data-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
-    <label style="margin-bottom:6px;">
-      <span>Length</span>
-      <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Line color</span>
-      <input data-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline color</span>
-      <input data-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline style</span>
-      <select data-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="dotted">Dotted</option>
-        <option value="solid">Solid</option>
-      </select>
-    </label>
-  `;
-  applyUniformSettingsPanelTypography(panel);
-
-  panel.addEventListener('input', (event) => {
-    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
-    if (!target) return;
-    const setting = target.dataset.rsiSetting || '';
-    if (setting === 'length') {
-      rsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
-      applyRSISettings();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'line-color') {
-      rsiSettings.lineColor = target.value || rsiSettings.lineColor;
-      rsiChart?.setLineColor(rsiSettings.lineColor);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'midline-color') {
-      rsiSettings.midlineColor = target.value || rsiSettings.midlineColor;
-      rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'midline-style') {
-      rsiSettings.midlineStyle = target.value === 'solid' ? 'solid' : 'dotted';
-      rsiChart?.setMidlineOptions(rsiSettings.midlineColor, rsiSettings.midlineStyle);
-      persistSettingsToStorage();
-      return;
-    }
-  });
-
-  panel.addEventListener('click', (event) => {
-    const target = event.target as HTMLButtonElement | null;
-    if (!target) return;
-    if (target.dataset.rsiSetting !== 'reset') return;
-    event.preventDefault();
-    resetRSISettingsToDefault();
-  });
-
-  container.appendChild(panel);
-  return panel;
-}
-
-function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement {
-  const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel volume-delta-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
-
-  panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Volume Delta</div>
-      <button type="button" data-vd-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
-    <label style="margin-bottom:6px;">
-      <span>Source</span>
-      <select data-vd-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
-      </select>
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Divergence table</span>
-      <input type="checkbox" data-vd-setting="divergence-table" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Divergent price bars</span>
-      <input type="checkbox" data-vd-setting="divergent-price-bars" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Bullish</span>
-      <input type="color" data-vd-setting="divergent-bullish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Bearish</span>
-      <input type="color" data-vd-setting="divergent-bearish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Neutral</span>
-      <input type="color" data-vd-setting="divergent-neutral-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-  `;
-  applyUniformSettingsPanelTypography(panel);
-
-  panel.addEventListener('input', (event) => {
-    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
-    if (!target) return;
-    const setting = target.dataset.vdSetting || '';
-    if (setting === 'source-interval') {
-      const nextValue = String((target as HTMLSelectElement).value || '');
-      if (
-        nextValue !== '1min' &&
-        nextValue !== '5min' &&
-        nextValue !== '15min' &&
-        nextValue !== '30min' &&
-        nextValue !== '1hour' &&
-        nextValue !== '4hour'
-      )
-        return;
-      volumeDeltaSettings.sourceInterval = nextValue;
-      if (currentChartTicker) {
-        renderCustomChart(currentChartTicker, currentChartInterval);
-      }
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'divergence-table') {
-      volumeDeltaSettings.divergenceTable = (target as HTMLInputElement).checked;
-      if (volumeDeltaPaneContainerEl) {
-        renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
-      }
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'divergent-price-bars') {
-      volumeDeltaSettings.divergentPriceBars = (target as HTMLInputElement).checked;
-      applyPricePaneDivergentBarColors();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'divergent-bullish-color') {
-      volumeDeltaSettings.bullishDivergentColor =
-        (target as HTMLInputElement).value || volumeDeltaSettings.bullishDivergentColor;
-      applyPricePaneDivergentBarColors();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'divergent-bearish-color') {
-      volumeDeltaSettings.bearishDivergentColor =
-        (target as HTMLInputElement).value || volumeDeltaSettings.bearishDivergentColor;
-      applyPricePaneDivergentBarColors();
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'divergent-neutral-color') {
-      volumeDeltaSettings.neutralDivergentColor =
-        (target as HTMLInputElement).value || volumeDeltaSettings.neutralDivergentColor;
-      applyPricePaneDivergentBarColors();
-      persistSettingsToStorage();
-      return;
-    }
-  });
-
-  panel.addEventListener('click', (event) => {
-    const target = event.target as HTMLButtonElement | null;
-    if (!target) return;
-    if (target.dataset.vdSetting !== 'reset') return;
-    event.preventDefault();
-    resetVolumeDeltaSettingsToDefault();
-  });
-
-  container.appendChild(panel);
-  return panel;
-}
-
-function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivElement {
-  const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel volume-delta-rsi-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
-
-  panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Volume Delta RSI</div>
-      <button type="button" data-vd-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
-    </div>
-    <label style="margin-bottom:6px;">
-      <span>Length</span>
-      <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Source</span>
-      <select data-vd-rsi-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
-      </select>
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Line color</span>
-      <input data-vd-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline color</span>
-      <input data-vd-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline style</span>
-      <select data-vd-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="dotted">Dotted</option>
-        <option value="solid">Solid</option>
-      </select>
-    </label>
-  `;
-  applyUniformSettingsPanelTypography(panel);
-
-  panel.addEventListener('input', (event) => {
-    const target = event.target as HTMLInputElement | HTMLSelectElement | null;
-    if (!target) return;
-    const setting = target.dataset.vdRsiSetting || '';
-    if (setting === 'length') {
-      volumeDeltaRsiSettings.length = Math.max(1, Math.floor(Number(target.value) || 14));
-      applyVolumeDeltaRSISettings(true);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'source-interval') {
-      const nextValue = String((target as HTMLSelectElement).value || '');
-      if (
-        nextValue !== '1min' &&
-        nextValue !== '5min' &&
-        nextValue !== '15min' &&
-        nextValue !== '30min' &&
-        nextValue !== '1hour' &&
-        nextValue !== '4hour'
-      )
-        return;
-      volumeDeltaRsiSettings.sourceInterval = nextValue;
-      applyVolumeDeltaRSISettings(true);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'line-color') {
-      volumeDeltaRsiSettings.lineColor = target.value || volumeDeltaRsiSettings.lineColor;
-      applyVolumeDeltaRSISettings(false);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'midline-color') {
-      volumeDeltaRsiSettings.midlineColor = target.value || volumeDeltaRsiSettings.midlineColor;
-      applyVolumeDeltaRSISettings(false);
-      persistSettingsToStorage();
-      return;
-    }
-    if (setting === 'midline-style') {
-      volumeDeltaRsiSettings.midlineStyle = target.value === 'solid' ? 'solid' : 'dotted';
-      applyVolumeDeltaRSISettings(false);
-      persistSettingsToStorage();
-      return;
-    }
-  });
-
-  panel.addEventListener('click', (event) => {
-    const target = event.target as HTMLButtonElement | null;
-    if (!target) return;
-    if (target.dataset.vdRsiSetting !== 'reset') return;
-    event.preventDefault();
-    resetVolumeDeltaRSISettingsToDefault();
-  });
-
-  container.appendChild(panel);
-  return panel;
-}
 
 function ensureSettingsUI(
   chartContainer: HTMLElement,
@@ -2253,29 +1164,29 @@ function ensureSettingsUI(
   const rsiEraseBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'erase', 1);
   const rsiDivergenceBtn = createPaneTrendlineButton(rsiContainer, 'rsi', 'divergence', 2);
 
-  if (!priceSettingsPanelEl || priceSettingsPanelEl.parentElement !== chartContainer) {
-    if (priceSettingsPanelEl?.parentElement) {
-      priceSettingsPanelEl.parentElement.removeChild(priceSettingsPanelEl);
+  if (!getPriceSettingsPanel() || getPriceSettingsPanel()!.parentElement !== chartContainer) {
+    if (getPriceSettingsPanel()?.parentElement) {
+      getPriceSettingsPanel()!.parentElement!.removeChild(getPriceSettingsPanel()!);
     }
-    priceSettingsPanelEl = createPriceSettingsPanel(chartContainer);
+    createPriceSettingsPanel(chartContainer);
   }
-  if (!rsiSettingsPanelEl || rsiSettingsPanelEl.parentElement !== rsiContainer) {
-    if (rsiSettingsPanelEl?.parentElement) {
-      rsiSettingsPanelEl.parentElement.removeChild(rsiSettingsPanelEl);
+  if (!getRsiSettingsPanel() || getRsiSettingsPanel()!.parentElement !== rsiContainer) {
+    if (getRsiSettingsPanel()?.parentElement) {
+      getRsiSettingsPanel()!.parentElement!.removeChild(getRsiSettingsPanel()!);
     }
-    rsiSettingsPanelEl = createRSISettingsPanel(rsiContainer);
+    createRSISettingsPanel(rsiContainer);
   }
-  if (!volumeDeltaRsiSettingsPanelEl || volumeDeltaRsiSettingsPanelEl.parentElement !== volumeDeltaRsiContainer) {
-    if (volumeDeltaRsiSettingsPanelEl?.parentElement) {
-      volumeDeltaRsiSettingsPanelEl.parentElement.removeChild(volumeDeltaRsiSettingsPanelEl);
+  if (!getVolumeDeltaRsiSettingsPanel() || getVolumeDeltaRsiSettingsPanel()!.parentElement !== volumeDeltaRsiContainer) {
+    if (getVolumeDeltaRsiSettingsPanel()?.parentElement) {
+      getVolumeDeltaRsiSettingsPanel()!.parentElement!.removeChild(getVolumeDeltaRsiSettingsPanel()!);
     }
-    volumeDeltaRsiSettingsPanelEl = createVolumeDeltaRSISettingsPanel(volumeDeltaRsiContainer);
+    createVolumeDeltaRSISettingsPanel(volumeDeltaRsiContainer);
   }
-  if (!volumeDeltaSettingsPanelEl || volumeDeltaSettingsPanelEl.parentElement !== volumeDeltaContainer) {
-    if (volumeDeltaSettingsPanelEl?.parentElement) {
-      volumeDeltaSettingsPanelEl.parentElement.removeChild(volumeDeltaSettingsPanelEl);
+  if (!getVolumeDeltaSettingsPanel() || getVolumeDeltaSettingsPanel()!.parentElement !== volumeDeltaContainer) {
+    if (getVolumeDeltaSettingsPanel()?.parentElement) {
+      getVolumeDeltaSettingsPanel()!.parentElement!.removeChild(getVolumeDeltaSettingsPanel()!);
     }
-    volumeDeltaSettingsPanelEl = createVolumeDeltaSettingsPanel(volumeDeltaContainer);
+    createVolumeDeltaSettingsPanel(volumeDeltaContainer);
   }
 
   syncPriceSettingsPanelValues();
@@ -2286,36 +1197,36 @@ function ensureSettingsUI(
   if (!priceBtn.dataset.bound) {
     priceBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      const nextDisplay = priceSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      const nextDisplay = getPriceSettingsPanel()?.style.display === 'block' ? 'none' : 'block';
       hideSettingsPanels();
-      if (priceSettingsPanelEl) priceSettingsPanelEl.style.display = nextDisplay;
+      if (getPriceSettingsPanel()) getPriceSettingsPanel()!.style.display = nextDisplay;
     });
     priceBtn.dataset.bound = '1';
   }
   if (!volumeDeltaRsiBtn.dataset.bound) {
     volumeDeltaRsiBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      const nextDisplay = volumeDeltaRsiSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      const nextDisplay = getVolumeDeltaRsiSettingsPanel()?.style.display === 'block' ? 'none' : 'block';
       hideSettingsPanels();
-      if (volumeDeltaRsiSettingsPanelEl) volumeDeltaRsiSettingsPanelEl.style.display = nextDisplay;
+      if (getVolumeDeltaRsiSettingsPanel()) getVolumeDeltaRsiSettingsPanel()!.style.display = nextDisplay;
     });
     volumeDeltaRsiBtn.dataset.bound = '1';
   }
   if (!volumeDeltaBtn.dataset.bound) {
     volumeDeltaBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      const nextDisplay = volumeDeltaSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      const nextDisplay = getVolumeDeltaSettingsPanel()?.style.display === 'block' ? 'none' : 'block';
       hideSettingsPanels();
-      if (volumeDeltaSettingsPanelEl) volumeDeltaSettingsPanelEl.style.display = nextDisplay;
+      if (getVolumeDeltaSettingsPanel()) getVolumeDeltaSettingsPanel()!.style.display = nextDisplay;
     });
     volumeDeltaBtn.dataset.bound = '1';
   }
   if (!rsiBtn.dataset.bound) {
     rsiBtn.addEventListener('click', (event) => {
       event.stopPropagation();
-      const nextDisplay = rsiSettingsPanelEl?.style.display === 'block' ? 'none' : 'block';
+      const nextDisplay = getRsiSettingsPanel()?.style.display === 'block' ? 'none' : 'block';
       hideSettingsPanels();
-      if (rsiSettingsPanelEl) rsiSettingsPanelEl.style.display = nextDisplay;
+      if (getRsiSettingsPanel()) getRsiSettingsPanel()!.style.display = nextDisplay;
     });
     rsiBtn.dataset.bound = '1';
   }
@@ -2384,8 +1295,8 @@ function ensureSettingsUI(
 
   setPaneTrendlineToolActive('rsi', rsiDivergenceToolActive);
   setPaneTrendlineToolActive('volumeDeltaRsi', volumeDeltaDivergenceToolActive);
-  setPaneToolButtonActive('rsi', 'divergence', rsiDivergencePlotToolActive);
-  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', volumeDeltaRsiDivergencePlotToolActive);
+  setPaneToolButtonActive('rsi', 'divergence', isRsiDivergencePlotToolActive());
+  setPaneToolButtonActive('volumeDeltaRsi', 'divergence', isVolumeDeltaRsiDivergencePlotToolActive());
 
   if (!document.body.dataset.chartSettingsBound) {
     document.addEventListener('click', (event) => {
@@ -3140,7 +2051,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
 
   chart.subscribeClick((param: any) => {
     if (!param || !param.time) return;
-    if (volumeDeltaRsiDivergencePlotToolActive) {
+    if (isVolumeDeltaRsiDivergencePlotToolActive()) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, false);
       return;
     }
@@ -4118,16 +3029,10 @@ export async function renderCustomChart(
   const cacheKey = buildChartDataCacheKey(ticker, interval);
 
   if (contextChanged) {
-    rsiDivergencePlotSelected = false;
-    volumeDeltaRsiDivergencePlotSelected = false;
-    rsiDivergencePlotStartIndex = null;
-    volumeDeltaRsiDivergencePlotStartIndex = null;
-    rsiDivergencePlotToolActive = false;
-    volumeDeltaRsiDivergencePlotToolActive = false;
+    deactivateRsiDivergencePlotTool();
+    deactivateVolumeDeltaRsiDivergencePlotTool();
     volumeDeltaDivergenceToolActive = false;
     rsiDivergenceToolActive = false;
-    hideDivergenceOverlay('rsi');
-    hideDivergenceOverlay('volumeDeltaRsi');
     // Re-bind chart sync on next setupChartSync call since charts may be recreated.
     isChartSyncBound = false;
     crosshairHidden = false;
@@ -4617,7 +3522,7 @@ function setupChartSync() {
       return;
     }
     if (crosshairHidden) return;
-    if (volumeDeltaRsiDivergencePlotToolActive) {
+    if (isVolumeDeltaRsiDivergencePlotToolActive()) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
     }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
@@ -4635,7 +3540,7 @@ function setupChartSync() {
       return;
     }
     if (crosshairHidden) return;
-    if (rsiDivergencePlotToolActive) {
+    if (isRsiDivergencePlotToolActive()) {
       updateRsiDivergencePlotPoint(param.time, true);
     }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
@@ -4661,7 +3566,7 @@ function setupChartSync() {
 
   rsiChartInstance.subscribeClick((param: any) => {
     if (!param || !param.time) return;
-    if (!rsiDivergencePlotToolActive) return;
+    if (!isRsiDivergencePlotToolActive()) return;
     updateRsiDivergencePlotPoint(param.time, false);
   });
 
