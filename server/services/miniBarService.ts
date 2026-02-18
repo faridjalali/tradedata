@@ -3,9 +3,21 @@ import { divergencePool } from '../db.js';
 import { MINI_BARS_CACHE_MAX_TICKERS } from '../config.js';
 import { etDateStringFromUnixSeconds } from '../lib/dateUtils.js';
 import { dataApiIntradayChartHistory, convertToLATime } from './chartEngine.js';
-import { CHART_INTRADAY_LOOKBACK_DAYS } from './chartEngine.js';
 
 export const miniBarsCacheByTicker = new LRUCache({ max: MINI_BARS_CACHE_MAX_TICKERS });
+
+/** Maximum number of daily bars returned for mini-charts (~30 trading days). */
+const MINI_CHART_MAX_BARS = 30;
+/** Lookback days when fetching from API — enough to guarantee MINI_CHART_MAX_BARS trading days. */
+const MINI_CHART_API_LOOKBACK_DAYS = 50;
+
+type MiniBar = { time: number; open: number; high: number; low: number; close: number };
+
+/** Keep only the most recent MINI_CHART_MAX_BARS bars. */
+export function trimMiniChartBars<T>(bars: T[]): T[] {
+  return bars.length > MINI_CHART_MAX_BARS ? bars.slice(-MINI_CHART_MAX_BARS) : bars;
+}
+const trimBars = trimMiniChartBars;
 
 
 export async function persistMiniChartBars(ticker: string, bars: Array<{ time: number; open: number; high: number; low: number; close: number }>) {
@@ -42,7 +54,7 @@ export async function persistMiniChartBars(ticker: string, bars: Array<{ time: n
 }
 
 
-export async function loadMiniChartBarsFromDb(ticker: string) {
+export async function loadMiniChartBarsFromDb(ticker: string): Promise<MiniBar[]> {
   if (!divergencePool || !ticker) return [];
   const result = await divergencePool.query(
     `
@@ -50,21 +62,25 @@ export async function loadMiniChartBarsFromDb(ticker: string) {
            low_price AS low, close_price AS close
     FROM mini_chart_bars
     WHERE ticker = $1
-    ORDER BY trade_date ASC
+    ORDER BY trade_date DESC
+    LIMIT $2
   `,
-    [ticker.toUpperCase()],
+    [ticker.toUpperCase(), MINI_CHART_MAX_BARS],
   );
-  return result.rows.map((r) => ({
-    time: Number(r.time),
-    open: Number(r.open),
-    high: Number(r.high),
-    low: Number(r.low),
-    close: Number(r.close),
-  }));
+  // Query returns DESC order; reverse to ASC for chart rendering.
+  return result.rows
+    .map((r) => ({
+      time: Number(r.time),
+      open: Number(r.open),
+      high: Number(r.high),
+      low: Number(r.low),
+      close: Number(r.close),
+    }))
+    .reverse();
 }
 
 
-export async function loadMiniChartBarsFromDbBatch(tickers: string[]) {
+export async function loadMiniChartBarsFromDbBatch(tickers: string[]): Promise<Record<string, MiniBar[]>> {
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) return {};
   const upper = tickers.map((t) => t.toUpperCase());
   const placeholders = upper.map((_, i) => `$${i + 1}`).join(',');
@@ -78,7 +94,7 @@ export async function loadMiniChartBarsFromDbBatch(tickers: string[]) {
   `,
     upper,
   );
-  const grouped: Record<string, Array<{ time: number; open: number; high: number; low: number; close: number }>> = {};
+  const grouped: Record<string, MiniBar[]> = {};
   for (const r of result.rows) {
     const t = r.ticker;
     if (!grouped[t]) grouped[t] = [];
@@ -90,23 +106,29 @@ export async function loadMiniChartBarsFromDbBatch(tickers: string[]) {
       close: Number(r.close),
     });
   }
+  // Trim each ticker to the most recent bars.
+  for (const t of Object.keys(grouped)) {
+    grouped[t] = trimBars(grouped[t]);
+  }
   return grouped;
 }
 
 
-export async function fetchMiniChartBarsFromApi(ticker: string) {
+export async function fetchMiniChartBarsFromApi(ticker: string): Promise<MiniBar[]> {
   if (!ticker) return [];
   try {
-    const rows = await dataApiIntradayChartHistory(ticker, '1day', CHART_INTRADAY_LOOKBACK_DAYS);
+    const rows = await dataApiIntradayChartHistory(ticker, '1day', MINI_CHART_API_LOOKBACK_DAYS);
     if (!Array.isArray(rows) || rows.length === 0) return [];
     const dailyBars = convertToLATime(rows, '1day').sort((a, b) => Number(a.time) - Number(b.time));
-    const bars = dailyBars.map((b) => ({
-      time: Number(b.time),
-      open: Number(b.open),
-      high: Number(b.high),
-      low: Number(b.low),
-      close: Number(b.close),
-    }));
+    const bars = trimBars(
+      dailyBars.map((b) => ({
+        time: Number(b.time),
+        open: Number(b.open),
+        high: Number(b.high),
+        low: Number(b.low),
+        close: Number(b.close),
+      })),
+    );
     // Persist to DB and memory for future requests.
     if (bars.length > 0) {
       miniBarsCacheByTicker.set(ticker.toUpperCase(), bars);

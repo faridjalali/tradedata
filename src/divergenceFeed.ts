@@ -20,7 +20,13 @@ import {
   fetchDivergenceScanStatus,
   DivergenceScanStatus,
 } from './divergenceApi';
-import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
+import {
+  setDivergenceSignals,
+  setDivergenceSignalsByTimeframe,
+  getDivergenceSignals,
+  addPendingFavoriteToggle,
+  removePendingFavoriteToggle,
+} from './divergenceState';
 import { createAlertCard } from './components';
 import {
   hydrateAlertCardDivergenceTables,
@@ -1567,37 +1573,42 @@ function createInlineChart(
   ticker: string,
   bars: Array<{ time: string | number; open: number; high: number; low: number; close: number }>,
 ): void {
-  const _tc = getThemeColors();
-  const w = wrapper.clientWidth;
-  const h = wrapper.clientHeight || 120;
-  const chart = createChart(wrapper, {
-    width: w,
-    height: h,
-    layout: {
-      background: { color: _tc.bgColor },
-      textColor: _tc.textPrimary,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
-      attributionLogo: false,
-    },
-    grid: { vertLines: { visible: false }, horzLines: { visible: false } },
-    rightPriceScale: { visible: false },
-    timeScale: { visible: false },
-    handleScroll: false,
-    handleScale: false,
-    crosshair: { vertLine: { visible: false }, horzLine: { visible: false } },
+  // Defer to next frame so the wrapper has computed layout dimensions.
+  requestAnimationFrame(() => {
+    if (!wrapper.isConnected || inlineChartInstances.has(ticker)) return;
+    const w = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 300;
+    const h = wrapper.clientHeight || 120;
+    if (w <= 0) return;
+    const _tc = getThemeColors();
+    const chart = createChart(wrapper, {
+      width: w,
+      height: h,
+      layout: {
+        background: { color: _tc.bgColor },
+        textColor: _tc.textPrimary,
+        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+        attributionLogo: false,
+      },
+      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+      rightPriceScale: { visible: false },
+      timeScale: { visible: false },
+      handleScroll: false,
+      handleScale: false,
+      crosshair: { vertLine: { visible: false }, horzLine: { visible: false } },
+    });
+    const series = chart.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    series.setData(bars as any);
+    chart.timeScale().fitContent();
+    inlineChartInstances.set(ticker, chart);
   });
-  const series = chart.addCandlestickSeries({
-    upColor: '#26a69a',
-    downColor: '#ef5350',
-    borderVisible: false,
-    wickUpColor: '#26a69a',
-    wickDownColor: '#ef5350',
-    priceLineVisible: false,
-    lastValueVisible: false,
-  });
-  series.setData(bars as any);
-  chart.timeScale().fitContent();
-  inlineChartInstances.set(ticker, chart);
 }
 
 function renderInlineMinicharts(container: HTMLElement): void {
@@ -1624,6 +1635,23 @@ function renderInlineMinicharts(container: HTMLElement): void {
   }
 }
 
+function applyFavIconState(star: Element, isFavorite: boolean): void {
+  const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
+  if (isFavorite) {
+    star.classList.add('filled');
+    if (checkmark) {
+      checkmark.style.visibility = 'visible';
+      checkmark.style.opacity = '1';
+    }
+  } else {
+    star.classList.remove('filled');
+    if (checkmark) {
+      checkmark.style.visibility = 'hidden';
+      checkmark.style.opacity = '0';
+    }
+  }
+}
+
 function handleFavoriteClick(e: Event): void {
   const target = e.target as HTMLElement;
   const starBtn = target.closest('.fav-icon');
@@ -1634,67 +1662,50 @@ function handleFavoriteClick(e: Event): void {
   const source = 'DataAPI';
   if (!id) return;
 
+  const numericId = Number(id);
   const allStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
   const isCurrentlyFilled = starBtn.classList.contains('filled');
+  const optimisticValue = !isCurrentlyFilled;
 
-  allStars.forEach((star) => {
-    const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-    if (!isCurrentlyFilled) {
-      star.classList.add('filled');
-      if (checkmark) {
-        checkmark.style.visibility = 'visible';
-        checkmark.style.opacity = '1';
-      }
-    } else {
-      star.classList.remove('filled');
-      if (checkmark) {
-        checkmark.style.visibility = 'hidden';
-        checkmark.style.opacity = '0';
-      }
-    }
-  });
-  toggleDivergenceFavorite(Number(id))
+  // 1. Optimistic DOM update
+  allStars.forEach((star) => applyFavIconState(star, optimisticValue));
+
+  // 2. Optimistic in-memory state update — prevents stale re-renders
+  const all = getDivergenceSignals();
+  const idx = all.findIndex((a) => a.id === numericId);
+  if (idx !== -1) {
+    all[idx].is_favorite = optimisticValue;
+    setDivergenceSignals(all);
+  }
+
+  // 3. Track pending toggle so server-refresh doesn't overwrite
+  addPendingFavoriteToggle(numericId, optimisticValue);
+
+  toggleDivergenceFavorite(numericId)
     .then((updatedAlert) => {
-      const all = getDivergenceSignals();
-      const idx = all.findIndex((a) => a.id === updatedAlert.id);
-      if (idx !== -1) {
-        all[idx].is_favorite = updatedAlert.is_favorite;
-        setDivergenceSignals(all);
+      // Server confirmed — update in-memory state with authoritative value
+      removePendingFavoriteToggle(numericId);
+      const current = getDivergenceSignals();
+      const curIdx = current.findIndex((a) => a.id === updatedAlert.id);
+      if (curIdx !== -1) {
+        current[curIdx].is_favorite = updatedAlert.is_favorite;
+        setDivergenceSignals(current);
       }
-      allStars.forEach((star) => {
-        const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-        if (updatedAlert.is_favorite) {
-          star.classList.add('filled');
-          if (checkmark) {
-            checkmark.style.visibility = 'visible';
-            checkmark.style.opacity = '1';
-          }
-        } else {
-          star.classList.remove('filled');
-          if (checkmark) {
-            checkmark.style.visibility = 'hidden';
-            checkmark.style.opacity = '0';
-          }
-        }
-      });
+      // Re-apply DOM state (elements may have been replaced by a re-render)
+      const freshStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
+      freshStars.forEach((star) => applyFavIconState(star, updatedAlert.is_favorite));
     })
     .catch(() => {
-      allStars.forEach((star) => {
-        const checkmark = star.querySelector('.check-mark') as HTMLElement | null;
-        if (isCurrentlyFilled) {
-          star.classList.add('filled');
-          if (checkmark) {
-            checkmark.style.visibility = 'visible';
-            checkmark.style.opacity = '1';
-          }
-        } else {
-          star.classList.remove('filled');
-          if (checkmark) {
-            checkmark.style.visibility = 'hidden';
-            checkmark.style.opacity = '0';
-          }
-        }
-      });
+      // Revert optimistic state on error
+      removePendingFavoriteToggle(numericId);
+      const current = getDivergenceSignals();
+      const curIdx = current.findIndex((a) => a.id === numericId);
+      if (curIdx !== -1) {
+        current[curIdx].is_favorite = isCurrentlyFilled;
+        setDivergenceSignals(current);
+      }
+      const freshStars = document.querySelectorAll(`.fav-icon[data-id="${id}"][data-source="${source}"]`);
+      freshStars.forEach((star) => applyFavIconState(star, isCurrentlyFilled));
     });
 }
 

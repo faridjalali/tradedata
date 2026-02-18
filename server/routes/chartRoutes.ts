@@ -206,7 +206,7 @@ function registerChartRoutes(options: {
         return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
       }
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
-      let bars = cache ? cache.get(ticker) || [] : [];
+      let bars: unknown[] = cache ? cache.get(ticker) || [] : [];
       // Fall back to DB if in-memory cache is empty (e.g. after server restart).
       if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
         bars = await loadMiniChartBarsFromDb(ticker);
@@ -218,6 +218,8 @@ function registerChartRoutes(options: {
       if (bars.length === 0 && typeof fetchMiniChartBarsFromApi === 'function') {
         bars = await fetchMiniChartBarsFromApi(ticker);
       }
+      // Trim to most recent ~30 bars (in-memory cache may contain older untrimmed data).
+      if (bars.length > 30) bars = bars.slice(-30);
       res.header('Cache-Control', 'public, max-age=300');
       return res.code(200).send({ ticker, bars });
     } catch (err: any) {
@@ -249,9 +251,10 @@ function registerChartRoutes(options: {
       const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
       const dbNeeded = [];
 
-      // 1. Check in-memory cache first
+      // 1. Check in-memory cache first (trim to ~30 bars in case of stale data)
       for (const t of tickers) {
-        const cached = cache ? cache.get(t) || [] : [];
+        let cached: unknown[] = cache ? cache.get(t) || [] : [];
+        if (cached.length > 30) cached = cached.slice(-30);
         if (cached.length > 0) {
           results[t] = cached;
         } else {
