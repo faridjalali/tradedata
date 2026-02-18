@@ -1,5 +1,5 @@
 [build]
-buildCommand = "npm ci && npm run build"
+buildCommand = "rm -rf node_modules/.vite && npm ci && npm run build"
 
 [deploy]
 startCommand = "npm start"
