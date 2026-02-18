@@ -148,7 +148,7 @@ validateStartupEnvironment();
 // --- Plugin registration ---
 await app.register(fastifyCors, CORS_ORIGIN
   ? { origin: CORS_ORIGIN.split(',').map((o: string) => o.trim()), credentials: true }
-  : { origin: true },
+  : { origin: false },
 );
 
 await app.register(fastifyHelmet, {
@@ -587,7 +587,8 @@ app.get('/api/alerts', async (request, reply) => {
     const days = parseInt(String(q.days)) || 0;
     const startDate = String(q.start_date || '').trim();
     const endDate = String(q.end_date || '').trim();
-    const hasDateKeyRange = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate);
+    const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime());
+    const hasDateKeyRange = isValidCalendarDate(startDate) && isValidCalendarDate(endDate);
 
     let query = 'SELECT * FROM alerts ORDER BY timestamp DESC LIMIT 100';
     let values: unknown[] = [];
@@ -693,7 +694,8 @@ app.get('/api/divergence/signals', async (request, reply) => {
     const days = parseInt(String(q.days)) || 0;
     const startDate = String(q.start_date || '').trim();
     const endDate = String(q.end_date || '').trim();
-    const hasDateKeyRange = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate);
+    const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime());
+    const hasDateKeyRange = isValidCalendarDate(startDate) && isValidCalendarDate(endDate);
     const timeframeParam = q.timeframe;
     const allowedTimeframes = timeframeParam === '1d' ? ['1d'] : timeframeParam === '1w' ? ['1w'] : ['1d', '1w'];
     const publishedTradeDate = await getPublishedTradeDateForSourceInterval(DIVERGENCE_SOURCE_INTERVAL);
@@ -931,8 +933,28 @@ function schedulePostLoadPrewarmSequence(options = {}) {
   chartPrewarm.schedulePostLoadPrewarmSequence(options, prewarmDeps);
 }
 
+const CHART_BUILD_TIMEOUT_MS = 45_000;
+
+function withChartTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => {
+        const err = new Error(`Chart build timed out after ${CHART_BUILD_TIMEOUT_MS}ms (${label})`);
+        (err as any).httpStatus = 503;
+        reject(err);
+      }, CHART_BUILD_TIMEOUT_MS),
+    ),
+  ]);
+}
+
 async function getOrBuildChartResult(params: Record<string, unknown>) {
   const ticker = String(params.ticker || '');
+  if (!isValidTickerSymbol(ticker)) {
+    const err = new Error('Invalid ticker format');
+    (err as any).httpStatus = 400;
+    throw err;
+  }
   const interval = String(params.interval || '');
   const vdRsiLength = Number(params.vdRsiLength) || 14;
   const vdSourceInterval = String(params.vdSourceInterval || '');
@@ -988,7 +1010,7 @@ async function getOrBuildChartResult(params: Record<string, unknown>) {
     CHART_IN_FLIGHT_REQUESTS.set(requestKey, buildPromise);
     buildPromise.finally(() => { if (CHART_IN_FLIGHT_REQUESTS.get(requestKey) === buildPromise) CHART_IN_FLIGHT_REQUESTS.delete(requestKey); }).catch(() => {});
   }
-  const { result, serverTiming } = await buildPromise as { result: unknown; serverTiming: string };
+  const { result, serverTiming } = await withChartTimeout(buildPromise, `${ticker}/${interval}`) as { result: unknown; serverTiming: string };
   if (isDedupedWait && CHART_TIMING_LOG_ENABLED) console.log(`[chart-dedupe] ${ticker} ${interval} request joined in-flight key=${requestKey}`);
   return { result, serverTiming, cacheHit: false };
 }
@@ -1095,7 +1117,7 @@ registerHealthRoutes({ app, debugMetricsSecret: DEBUG_METRICS_SECRET, getDebugMe
 // Circuit breaker manual reset (admin only — requires debug secret)
 app.post('/api/admin/circuit-breaker/reset', (request, reply) => {
   const secret = String((request.query as any).secret || request.headers['x-debug-secret'] || '').trim();
-  if (DEBUG_METRICS_SECRET && secret !== DEBUG_METRICS_SECRET) {
+  if (DEBUG_METRICS_SECRET && !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
     return reply.code(401).send({ error: 'Unauthorized' });
   }
   resetDataApiCircuitBreaker();

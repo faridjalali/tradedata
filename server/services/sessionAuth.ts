@@ -73,8 +73,3 @@ export function clearSessionCookie(reply: { header: (name: string, value: string
 }
 
 export { COOKIE_NAME };
-
-/** @deprecated Not meaningful for stateless tokens — always returns 0. */
-export function getActiveSessionCount(): number {
-  return 0;
-}

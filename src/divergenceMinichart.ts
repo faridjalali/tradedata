@@ -4,7 +4,7 @@
  */
 
 import { createChart } from 'lightweight-charts';
-import type { IChartApi } from 'lightweight-charts';
+import type { IChartApi, CandlestickData } from 'lightweight-charts';
 import { getThemeColors } from './theme';
 import { detectBullFlag } from '../shared/bullFlagDetector';
 import { isMobileTouch } from './chart';
@@ -249,7 +249,7 @@ export async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, is
     priceLineVisible: false,
     lastValueVisible: false,
   });
-  candleSeries.setData(bars as any);
+  candleSeries.setData(bars as unknown as CandlestickData[]);
   chart.timeScale().fitContent();
 
   // Bull flag / pennant detection — show icon if pattern detected
@@ -390,7 +390,7 @@ function createInlineChart(wrapper: HTMLElement, _ticker: string, bars: OHLC[]):
       priceLineVisible: false,
       lastValueVisible: false,
     });
-    series.setData(bars as any);
+    series.setData(bars as unknown as CandlestickData[]);
     chart.timeScale().fitContent();
     inlineChartInstances.set(wrapper, chart);
     wrapper.dataset.minichartLoaded = '1';

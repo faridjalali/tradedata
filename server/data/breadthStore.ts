@@ -159,16 +159,19 @@ export async function getBreadthHistory(
   days: number,
 ): Promise<BreadthMAHistory[]> {
   const { rows } = await dbPool.query(
-    `SELECT trade_date::text AS date,
-            pct_above_ma21::float AS ma21, pct_above_ma50::float AS ma50,
-            pct_above_ma100::float AS ma100, pct_above_ma200::float AS ma200
-     FROM breadth_snapshots
-     WHERE index_name = $1
-     ORDER BY trade_date DESC
-     LIMIT $2`,
+    `SELECT date, ma21, ma50, ma100, ma200 FROM (
+       SELECT trade_date::text AS date,
+              pct_above_ma21::float AS ma21, pct_above_ma50::float AS ma50,
+              pct_above_ma100::float AS ma100, pct_above_ma200::float AS ma200
+       FROM breadth_snapshots
+       WHERE index_name = $1
+       ORDER BY trade_date DESC
+       LIMIT $2
+     ) sub
+     ORDER BY date ASC`,
     [indexName, days],
   );
-  return rows.reverse(); // chronological order
+  return rows;
 }
 
 /**
@@ -202,9 +205,13 @@ export async function cleanupOldCloses(dbPool: Pool, keepDays: number): Promise<
   const { rowCount } = await dbPool.query(
     `DELETE FROM breadth_daily_closes
      WHERE trade_date < (
-       SELECT trade_date FROM breadth_daily_closes
-       ORDER BY trade_date DESC
-       OFFSET $1 LIMIT 1
+       SELECT trade_date FROM (
+         SELECT DISTINCT trade_date FROM breadth_daily_closes
+         ORDER BY trade_date DESC
+         LIMIT $1
+       ) sub
+       ORDER BY trade_date ASC
+       LIMIT 1
      )`,
     [keepDays],
   );
