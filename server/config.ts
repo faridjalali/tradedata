@@ -11,6 +11,8 @@ export const BASIC_AUTH_PASSWORD = String(process.env.BASIC_AUTH_PASSWORD || '')
 export const BASIC_AUTH_REALM = String(process.env.BASIC_AUTH_REALM || 'Catvue');
 export const SITE_LOCK_PASSCODE = String(process.env.SITE_LOCK_PASSCODE || '').trim();
 export const SITE_LOCK_ENABLED = SITE_LOCK_PASSCODE.length > 0;
+/** Secret for signing session tokens. Falls back to passcode if not explicitly set. */
+export const SESSION_SECRET = String(process.env.SESSION_SECRET || SITE_LOCK_PASSCODE || 'changeme').trim();
 export const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 export const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 
@@ -110,6 +112,7 @@ export function validateStartupEnvironment() {
   };
 
   requireNonEmpty('DATABASE_URL');
+  warnIfMissing('SITE_LOCK_PASSCODE');
   if (BASIC_AUTH_ENABLED && !String(BASIC_AUTH_PASSWORD || '').trim()) {
     errors.push('BASIC_AUTH_PASSWORD must be set when BASIC_AUTH_ENABLED is true');
   }

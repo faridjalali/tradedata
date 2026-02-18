@@ -1153,23 +1153,27 @@ if (SITE_LOCK_ENABLED) {
 scheduleNextDivergenceScan();
 scheduleNextBreadthComputation();
 
-// Auto-bootstrap breadth if no snapshots exist, or if 200d MA history is invalid (zeros)
+// Auto-bootstrap breadth — delayed 15 s after startup so the server is fully
+// warm before the heavy data-fetch begins. Runs only when data is absent or
+// the 200d MA history contains zeros (stale bootstrap with insufficient history).
 if (divergencePool) {
-  (async () => {
-    try {
-      const snapshots = await getLatestBreadthSnapshots(divergencePool!);
-      const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid(divergencePool!) : false;
-      if (snapshots.length === 0) {
-        console.log('[breadth] No snapshots found — auto-bootstrapping (300d) in background...');
-        await bootstrapBreadthHistory(divergencePool!, 300);
-      } else if (!ma200Valid) {
-        console.log('[breadth] 200d MA history has zeros — re-bootstrapping with 300d closes to fix...');
-        await bootstrapBreadthHistory(divergencePool!, 300);
+  setTimeout(() => {
+    (async () => {
+      try {
+        const snapshots = await getLatestBreadthSnapshots(divergencePool!);
+        const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid(divergencePool!) : false;
+        if (snapshots.length === 0) {
+          console.log('[breadth] No snapshots — auto-bootstrapping 300d in background...');
+          await bootstrapBreadthHistory(divergencePool!, 300);
+        } else if (!ma200Valid) {
+          console.log('[breadth] 200d MA zeros detected — re-bootstrapping 300d to fix...');
+          await bootstrapBreadthHistory(divergencePool!, 300);
+        }
+      } catch (err: any) {
+        console.error('[breadth] Auto-bootstrap failed:', err.message);
       }
-    } catch (err: any) {
-      console.error('[breadth] Auto-bootstrap failed:', err.message);
-    }
-  })();
+    })();
+  }, 15_000);
 }
 
 pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000);

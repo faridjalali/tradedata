@@ -25,6 +25,32 @@ import {
 import * as tradingCalendar from './tradingCalendar.js';
 
 // ---------------------------------------------------------------------------
+// Index price cache — avoids 3 dataApiDaily calls on every /api/breadth/ma request
+// ---------------------------------------------------------------------------
+
+const INDEX_PRICE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+interface IndexPriceEntry {
+  closeMap: Map<string, number>;
+  fetchedAt: number;
+}
+const indexPriceCache = new Map<string, IndexPriceEntry>();
+
+async function getCachedIndexPrices(ticker: string): Promise<Map<string, number>> {
+  const cached = indexPriceCache.get(ticker);
+  if (cached && Date.now() - cached.fetchedAt < INDEX_PRICE_CACHE_TTL_MS) {
+    return cached.closeMap;
+  }
+  const bars = await dataApiDaily(ticker);
+  const closeMap = new Map<string, number>();
+  if (bars) {
+    for (const bar of bars) closeMap.set(bar.date, bar.close);
+  }
+  indexPriceCache.set(ticker, { closeMap, fetchedAt: Date.now() });
+  return closeMap;
+}
+
+// ---------------------------------------------------------------------------
 // SMA helpers
 // ---------------------------------------------------------------------------
 
@@ -201,17 +227,13 @@ export async function getLatestBreadthData(
 ): Promise<BreadthMAResponse> {
   const snapshots = await getLatestBreadthSnapshots(dbPool);
 
-  // Fetch index ETF prices in parallel for the normalized comparison chart
+  // Fetch index ETF prices in parallel (cached up to 1 hour) for the normalized comparison chart
   const indexTickers = ALL_BREADTH_INDICES as string[];
-  const priceResults = await Promise.allSettled(indexTickers.map((t) => dataApiDaily(t)));
+  const priceResults = await Promise.allSettled(indexTickers.map((t) => getCachedIndexPrices(t)));
   const priceByIndex: Record<string, Map<string, number>> = {};
   for (let i = 0; i < indexTickers.length; i++) {
     const r = priceResults[i];
-    const closeMap = new Map<string, number>();
-    if (r.status === 'fulfilled' && r.value) {
-      for (const bar of r.value) closeMap.set(bar.date, bar.close);
-    }
-    priceByIndex[indexTickers[i]] = closeMap;
+    priceByIndex[indexTickers[i]] = r.status === 'fulfilled' ? r.value : new Map();
   }
 
   const history: Record<string, any[]> = {};
