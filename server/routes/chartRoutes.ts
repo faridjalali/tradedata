@@ -8,6 +8,18 @@ function invalidIntervalErrorMessage(): string {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
 
+function classifyChartError(err: any): string {
+  if (!err) return 'INTERNAL_ERROR';
+  if (err.isDataApiRateLimited) return 'RATE_LIMITED';
+  if (err.isDataApiPaused) return 'API_PAUSED';
+  if (err.isTaskTimeout) return 'BUILD_TIMEOUT';
+  if (err.name === 'CircuitOpenError') return 'CIRCUIT_OPEN';
+  if (err.isDataApiSubscriptionRestricted) return 'SUBSCRIPTION_RESTRICTED';
+  if (Number(err.httpStatus) === 400) return 'BAD_REQUEST';
+  if (Number(err.httpStatus) === 503) return 'SERVICE_UNAVAILABLE';
+  return 'INTERNAL_ERROR';
+}
+
 /**
  * Extract a deduplicated, uppercased ticker list from query params.
  */
@@ -132,7 +144,7 @@ function registerChartRoutes(options: {
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
-        .send({ error: 'Failed to fetch chart data' });
+        .send({ error: 'Failed to fetch chart data', code: classifyChartError(err) });
     }
   });
 
@@ -193,7 +205,7 @@ function registerChartRoutes(options: {
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
-        .send({ error: 'Failed to fetch latest chart data' });
+        .send({ error: 'Failed to fetch latest chart data', code: classifyChartError(err) });
     }
   });
 

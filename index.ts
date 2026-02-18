@@ -1110,6 +1110,7 @@ async function getReadyPayload() {
     isShuttingDown, divergenceScanRunning,
     lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
     circuitBreakerInfo: getDataApiCircuitBreakerInfo(),
+    getPoolStats: () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount, max: 20 }),
   });
 }
 

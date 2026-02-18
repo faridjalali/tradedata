@@ -94,20 +94,32 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
   let totalSymbols = Math.max(0, Number(resumeState?.totalSymbols || symbols.length));
   let nextIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
 
+  const buildResumeSnapshot = () => normalizeDivergenceScanResumeState({
+    runDateEt: runDate,
+    trigger,
+    symbols,
+    nextIndex,
+    processed,
+    bullishCount,
+    bearishCount,
+    errorCount,
+    latestScannedTradeDate,
+    summaryProcessedTickers,
+    scanJobId,
+  });
+
   const persistResumeState = () => {
-    setDivergenceScanResumeState(normalizeDivergenceScanResumeState({
-      runDateEt: runDate,
-      trigger,
-      symbols,
-      nextIndex,
-      processed,
-      bullishCount,
-      bearishCount,
-      errorCount,
-      latestScannedTradeDate,
-      summaryProcessedTickers,
-      scanJobId,
-    }));
+    setDivergenceScanResumeState(buildResumeSnapshot());
+  };
+
+  // Persist resume state to the DB so it survives a server restart.
+  const flushResumeStateToDb = async () => {
+    if (!scanJobId) return;
+    try {
+      await updateDivergenceScanJob(scanJobId, { notes: JSON.stringify(buildResumeSnapshot()) });
+    } catch {
+      // Best-effort — don't fail the scan if we can't write notes.
+    }
   };
 
   try {
@@ -315,6 +327,9 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
         upsertDivergenceSignalsBatch(batchSignals, scanJobId),
       ]);
 
+      nextIndex = Math.min(symbols.length, i + DIVERGENCE_SCAN_CONCURRENCY);
+      persistResumeState();
+
       if (scanJobId && (processed % DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY === 0 || processed === totalSymbols)) {
         await updateDivergenceScanJob(scanJobId, {
           processed_symbols: processed,
@@ -322,11 +337,11 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
           bearish_count: bearishCount,
           error_count: errorCount,
           scanned_trade_date: latestScannedTradeDate || null,
+          notes: JSON.stringify(buildResumeSnapshot()),
         });
+      } else {
+        void flushResumeStateToDb();
       }
-
-      nextIndex = Math.min(symbols.length, i + DIVERGENCE_SCAN_CONCURRENCY);
-      persistResumeState();
       if (targetSpacingMs > 0) {
         try {
           await sleepWithAbort(targetSpacingMs, scanAbortController.signal);

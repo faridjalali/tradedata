@@ -72,12 +72,13 @@ interface ReadyPayloadOptions {
   divergenceScanRunning: boolean;
   lastScanDateEt: string | null;
   circuitBreakerInfo?: { state: string; consecutiveFailures?: number; failures?: number } | null;
+  getPoolStats?: () => { total: number; idle: number; waiting: number; max: number } | null;
 }
 
 const DATA_STALENESS_WARN_HOURS = 25;
 
 async function buildReadyPayload(options: ReadyPayloadOptions) {
-  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt, circuitBreakerInfo } =
+  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt, circuitBreakerInfo, getPoolStats } =
     options;
 
   const primaryDb = await checkDatabaseReady(pool);
@@ -97,6 +98,13 @@ async function buildReadyPayload(options: ReadyPayloadOptions) {
       warnings.push(`divergence scan data is stale — last scan: ${lastScanDateEt} (${Math.floor(hoursSinceScan)}h ago)`);
     }
   }
+  const poolStats = typeof getPoolStats === 'function' ? getPoolStats() : null;
+  if (poolStats && poolStats.max > 0) {
+    const utilization = poolStats.total / poolStats.max;
+    if (poolStats.waiting > 0) warnings.push(`DB pool has ${poolStats.waiting} waiting connection(s)`);
+    else if (utilization >= 0.9) warnings.push(`DB pool near capacity (${poolStats.total}/${poolStats.max} connections)`);
+  }
+
   const degraded = warnings.length > 0;
   const statusCode = !ready ? 503 : 200;
 
@@ -112,6 +120,7 @@ async function buildReadyPayload(options: ReadyPayloadOptions) {
       divergenceScanRunning,
       lastScanDateEt,
       circuitBreaker: cbState,
+      dbPool: poolStats ?? undefined,
       warnings: degraded ? warnings : undefined,
       errors: {
         primaryDb: primaryDb.error || null,

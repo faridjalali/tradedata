@@ -20,6 +20,8 @@ export interface CircuitBreakerOptions {
   cooldownMs?: number;
   /** Classify an error as infrastructure failure (trips breaker). */
   isInfraError?: (err: unknown) => boolean;
+  /** Called whenever the circuit state transitions. */
+  onStateChange?: (from: CircuitState, to: CircuitState) => void;
 }
 
 export class CircuitBreaker {
@@ -29,11 +31,13 @@ export class CircuitBreaker {
   private readonly failureThreshold: number;
   private readonly cooldownMs: number;
   private readonly isInfraError: (err: unknown) => boolean;
+  private readonly onStateChange: ((from: CircuitState, to: CircuitState) => void) | null;
 
   constructor(options: CircuitBreakerOptions = {}) {
     this.failureThreshold = Math.max(1, options.failureThreshold ?? 5);
     this.cooldownMs = Math.max(1_000, options.cooldownMs ?? 30_000);
     this.isInfraError = options.isInfraError ?? (() => true);
+    this.onStateChange = options.onStateChange ?? null;
   }
 
   getState(): CircuitState {
@@ -83,13 +87,16 @@ export class CircuitBreaker {
 
   private evaluateState(): void {
     if (this.state === 'OPEN' && Date.now() - this.lastFailureMs >= this.cooldownMs) {
+      this.onStateChange?.('OPEN', 'HALF_OPEN');
       this.state = 'HALF_OPEN';
     }
   }
 
   private onSuccess(): void {
+    const prev = this.state;
     this.consecutiveFailures = 0;
     this.state = 'CLOSED';
+    if (prev !== 'CLOSED') this.onStateChange?.(prev, 'CLOSED');
   }
 
   private onError(err: unknown): void {
@@ -98,8 +105,10 @@ export class CircuitBreaker {
     this.consecutiveFailures++;
     this.lastFailureMs = Date.now();
 
-    if (this.consecutiveFailures >= this.failureThreshold) {
+    if (this.consecutiveFailures >= this.failureThreshold && this.state !== 'OPEN') {
+      const prev = this.state;
       this.state = 'OPEN';
+      this.onStateChange?.(prev, 'OPEN');
     }
   }
 

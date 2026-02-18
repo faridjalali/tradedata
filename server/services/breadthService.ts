@@ -191,12 +191,35 @@ export async function bootstrapBreadthHistory(
     }
   }
 
+  // Load set of dates that already have complete, non-zero snapshots for all indices.
+  let alreadyComputed = new Set<string>();
+  try {
+    const { rows: doneRows } = await dbPool.query(
+      `SELECT trade_date::text AS d FROM breadth_snapshots
+       WHERE pct_above_ma200 > 0
+       GROUP BY trade_date
+       HAVING COUNT(DISTINCT index_name) >= $1`,
+      [ALL_BREADTH_INDICES.length],
+    );
+    alreadyComputed = new Set(doneRows.map((r: { d: string }) => r.d));
+    if (alreadyComputed.size > 0) {
+      console.log(`[breadth] Skipping ${alreadyComputed.size} already-computed dates.`);
+    }
+  } catch (err: any) {
+    console.warn(`[breadth] Could not load existing snapshot dates — will recompute all: ${err.message}`);
+  }
+
   // Compute snapshots for dates that have enough history (at least 21 days for shortest SMA)
   let computedDays = 0;
+  let skippedDays = 0;
   const allTickers = [...ALL_BREADTH_TICKERS];
 
   const computeDates = tradingDates.slice(Math.max(0, 20));
   for (const date of computeDates) {
+    if (alreadyComputed.has(date)) {
+      skippedDays++;
+      continue;
+    }
     try {
       const allCloses = await getClosesForTickers(dbPool, allTickers, 200, date);
       for (const index of ALL_BREADTH_INDICES) {
@@ -212,6 +235,7 @@ export async function bootstrapBreadthHistory(
       console.error(`[breadth] Failed to compute breadth for ${date}: ${err.message}`);
     }
   }
+  if (skippedDays > 0) console.log(`[breadth] Skipped ${skippedDays} already-complete dates.`);
 
   console.log(`[breadth] Bootstrap done in ${Math.round((Date.now() - t0) / 1000)}s: fetched=${fetchedDays}, computed=${computedDays}`);
   return { fetchedDays, computedDays };

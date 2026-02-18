@@ -82,6 +82,15 @@ const dataApiCircuitBreaker = new CircuitBreaker({
   failureThreshold: 5,
   cooldownMs: 30_000,
   isInfraError: isInfrastructureError,
+  onStateChange: (from, to) => {
+    if (to === 'OPEN') {
+      console.error(`[circuit-breaker] data-api: ${from} → OPEN — external market-data calls blocked`);
+    } else if (to === 'HALF_OPEN') {
+      console.warn(`[circuit-breaker] data-api: OPEN → HALF_OPEN — probing recovery`);
+    } else {
+      console.log(`[circuit-breaker] data-api: ${from} → CLOSED — market-data calls resumed`);
+    }
+  },
 });
 
 /** Expose circuit breaker info for health/status endpoints. */
