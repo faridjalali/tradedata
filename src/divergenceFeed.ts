@@ -482,9 +482,9 @@ function setFetchWeeklyControlButtonState(status: DivergenceScanStatus | null): 
 function toStatusTextFromError(error: unknown): string {
   const message = String((error as any)?.message || error || '').trim();
   if (!message) return 'Run failed';
-  if (/not configured/i.test(message)) return 'DB not configured';
+  if (/not configured/i.test(message)) return 'DB issue';
   if (/unauthorized/i.test(message)) return 'Unauthorized';
-  if (/already running|running/i.test(message)) return 'Already running';
+  if (/already running|running/i.test(message)) return 'Running';
   return message.length > 56 ? `${message.slice(0, 56)}...` : message;
 }
 
@@ -651,13 +651,13 @@ function summarizeFetchDailyStatus(status: DivergenceScanStatus): string {
       return 'Stopping';
     }
     if (fetchDailyState === 'running-retry') {
-      return `${processed} / ${total} (Retrying)`;
+      return 'Retrying';
     }
     if (fetchDailyState === 'running-ma') {
       return `MA ${processed} / ${total}`;
     }
     if (fetchDailyState === 'running-ma-retry') {
-      return `MA ${processed} / ${total} (Retrying)`;
+      return 'MA - Retrying';
     }
     return `${processed} / ${total}`;
   }
@@ -702,13 +702,13 @@ function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
       return 'Stopping';
     }
     if (fetchWeeklyState === 'running-retry') {
-      return `${processed} / ${total} (Retrying)`;
+      return 'Retrying';
     }
     if (fetchWeeklyState === 'running-ma') {
       return `MA ${processed} / ${total}`;
     }
     if (fetchWeeklyState === 'running-ma-retry') {
-      return `MA ${processed} / ${total} (Retrying)`;
+      return 'MA - Retrying';
     }
     return `${processed} / ${total}`;
   }
@@ -744,7 +744,7 @@ function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
       return 'Stopping';
     }
     if (state === 'running-retry') {
-      return `${processed} / ${total} (Retrying)`;
+      return 'Retrying';
     }
     return `${processed} / ${total}`;
   }

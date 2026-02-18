@@ -1,0 +1,60 @@
+operation,internal_state,condition,display_text
+fetch-daily,no-data,has date,Fetched {mm/dd}
+fetch-daily,no-data,no date,Due for Fetch
+fetch-daily,stopping,(any),Stopping
+fetch-daily,stopped,can_resume=true,Resumable Stop
+fetch-daily,stopped,can_resume=false,Stopped
+fetch-daily,running,stop_requested=true,Stopping
+fetch-daily,running-retry,(active),Retrying
+fetch-daily,running-ma,(active),MA {processed} / {total}
+fetch-daily,running-ma-retry,(active),MA - Retrying
+fetch-daily,running,(active),{processed} / {total}
+fetch-daily,completed,has date,Fetched {mm/dd}
+fetch-daily,completed,no date,Due for Fetch
+fetch-daily,completed-with-errors,has date,Fetched (E) {mm/dd}
+fetch-daily,completed-with-errors,no date,Due for Fetch
+fetch-daily,failed,has date,Failed {mm/dd}
+fetch-daily,failed,no date,Due for Fetch
+fetch-daily,fallback,has date,Fetched {mm/dd}
+fetch-daily,fallback,no date,Due for Fetch
+
+fetch-weekly,no-data,has date,Fetched {mm/dd}
+fetch-weekly,no-data,no date,Due for Fetch
+fetch-weekly,stopping,(any),Stopping
+fetch-weekly,stopped,can_resume=true,Resumable Stop
+fetch-weekly,stopped,can_resume=false,Stopped
+fetch-weekly,running,stop_requested=true,Stopping
+fetch-weekly,running-retry,(active),Retrying
+fetch-weekly,running-ma,(active),MA {processed} / {total}
+fetch-weekly,running-ma-retry,(active),MA - Retrying
+fetch-weekly,running,(active),{processed} / {total}
+fetch-weekly,completed,has date,Fetched {mm/dd}
+fetch-weekly,completed,no date,Due for Fetch
+fetch-weekly,completed-with-errors,has date,Fetched (E) {mm/dd}
+fetch-weekly,completed-with-errors,no date,Due for Fetch
+fetch-weekly,failed,has date,Failed {mm/dd}
+fetch-weekly,failed,no date,Due for Fetch
+fetch-weekly,fallback,has date,Fetched {mm/dd}
+fetch-weekly,fallback,no date,Due for Fetch
+
+analyze,no-data,(any),Due for Fetch
+analyze,stopping,(any),Stopping
+analyze,stopped,can_resume=true,Resumable Stop
+analyze,stopped,can_resume=false,Stopped
+analyze,running,stop_requested=true,Stopping
+analyze,running-retry,(active),Retrying
+analyze,running,(active),{processed} / {total}
+analyze,completed,has date,Ran {mm/dd}
+analyze,completed,no date,Due for Fetch
+analyze,completed-with-errors,has date,Ran (E) {mm/dd}
+analyze,completed-with-errors,no date,Due for Fetch
+analyze,failed,has date,Failed {mm/dd}
+analyze,failed,no date,Due for Fetch
+analyze,fallback,has date,Ran {mm/dd}
+analyze,fallback,no date,Due for Fetch
+
+error,db-not-configured,(any),DB issue
+error,unauthorized,(any),Unauthorized
+error,already-running,(any),Running
+error,generic,(any),Run failed
+error,other,(any),{truncated message max 56 chars}
