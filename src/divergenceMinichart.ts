@@ -46,8 +46,12 @@ let miniChartPrefetchInFlight = false;
 // Module-level state — inline charts (mobile)
 // ---------------------------------------------------------------------------
 
-const inlineChartInstances = new Map<string, IChartApi>();
+/** Keyed by wrapper element (not ticker) so duplicate tickers each get their own chart. */
+const inlineChartInstances = new Map<HTMLElement, IChartApi>();
+/** Wrappers with a fetch already in flight — prevents duplicate requests. */
+const inlineChartPending = new Set<HTMLElement>();
 let inlineChartObserver: IntersectionObserver | null = null;
+let inlineChartSweepTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ---------------------------------------------------------------------------
 // Cache management
@@ -292,23 +296,25 @@ function isMobileMinichartEnabled(): boolean {
 
 /** Load (or fetch-then-create) the inline chart for a wrapper already in/near the viewport. */
 function loadChartForWrapper(wrapper: HTMLElement, ticker: string): void {
-  if (inlineChartInstances.has(ticker)) return;
-  const cached = miniChartDataCache.get(ticker);
+  if (inlineChartInstances.has(wrapper) || inlineChartPending.has(wrapper)) return;
+  const cached = miniChartDataCache.get(ticker.toUpperCase());
   if (cached && cached.length > 0) {
     createInlineChart(wrapper, ticker, cached);
   } else {
+    inlineChartPending.add(wrapper);
     fetch(`/api/chart/mini-bars?ticker=${encodeURIComponent(ticker)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        inlineChartPending.delete(wrapper);
         const bars = Array.isArray(data?.bars) ? data.bars : [];
         if (bars.length > 0) {
-          miniChartDataCache.set(ticker, bars);
-          if (wrapper.isConnected && !inlineChartInstances.has(ticker)) {
+          miniChartDataCache.set(ticker.toUpperCase(), bars);
+          if (wrapper.isConnected && !inlineChartInstances.has(wrapper)) {
             createInlineChart(wrapper, ticker, bars);
           }
         }
       })
-      .catch(() => {});
+      .catch(() => { inlineChartPending.delete(wrapper); });
   }
 }
 
@@ -325,11 +331,12 @@ function getInlineChartObserver(): IntersectionObserver {
           loadChartForWrapper(wrapper, ticker);
         } else {
           // Left viewport zone — destroy chart to free memory
-          const chart = inlineChartInstances.get(ticker);
+          const chart = inlineChartInstances.get(wrapper);
           if (chart) {
-            chart.remove();
-            inlineChartInstances.delete(ticker);
+            try { chart.remove(); } catch { /* ignore */ }
+            inlineChartInstances.delete(wrapper);
             wrapper.innerHTML = '';
+            delete wrapper.dataset.minichartLoaded;
           }
         }
       }
@@ -343,13 +350,20 @@ function getInlineChartObserver(): IntersectionObserver {
   return inlineChartObserver;
 }
 
-function createInlineChart(wrapper: HTMLElement, ticker: string, bars: OHLC[]): void {
-  // Defer to next frame so the wrapper has computed layout dimensions.
-  requestAnimationFrame(() => {
-    if (!wrapper.isConnected || inlineChartInstances.has(ticker)) return;
-    const w = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 300;
+function createInlineChart(wrapper: HTMLElement, _ticker: string, bars: OHLC[]): void {
+  let attempts = 0;
+  const tryCreate = () => {
+    if (!wrapper.isConnected || inlineChartInstances.has(wrapper)) return;
+    const w = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 0;
     const h = wrapper.clientHeight || 120;
-    if (w <= 0) return;
+    if (w <= 0) {
+      // Layout not ready — retry with increasing backoff (up to 4 attempts)
+      attempts++;
+      if (attempts < 5) {
+        setTimeout(tryCreate, attempts * 120);
+      }
+      return;
+    }
     const _tc = getThemeColors();
     const chart = createChart(wrapper, {
       width: w,
@@ -378,8 +392,10 @@ function createInlineChart(wrapper: HTMLElement, ticker: string, bars: OHLC[]): 
     });
     series.setData(bars as any);
     chart.timeScale().fitContent();
-    inlineChartInstances.set(ticker, chart);
-  });
+    inlineChartInstances.set(wrapper, chart);
+    wrapper.dataset.minichartLoaded = '1';
+  };
+  requestAnimationFrame(tryCreate);
 }
 
 function removeInlineMinicharts(container: HTMLElement): void {
@@ -387,15 +403,33 @@ function removeInlineMinicharts(container: HTMLElement): void {
   const wrappers = container.querySelectorAll<HTMLElement>('.inline-minichart');
   for (const wrapper of wrappers) {
     if (observer) observer.unobserve(wrapper);
-    const ticker = wrapper.dataset.ticker;
-    if (ticker) {
-      const chart = inlineChartInstances.get(ticker);
-      if (chart) {
-        chart.remove();
-        inlineChartInstances.delete(ticker);
-      }
+    inlineChartPending.delete(wrapper);
+    const chart = inlineChartInstances.get(wrapper);
+    if (chart) {
+      try { chart.remove(); } catch { /* ignore */ }
+      inlineChartInstances.delete(wrapper);
     }
     wrapper.remove();
+  }
+}
+
+/**
+ * Sweep all visible unloaded wrappers and try to create their charts.
+ * Called on a delayed schedule after initial render to catch anything that
+ * slipped through the IntersectionObserver on iOS.
+ */
+function sweepUnloadedVisible(): void {
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const margin = 400;
+  const wrappers = document.querySelectorAll<HTMLElement>('.inline-minichart:not([data-minichart-loaded])');
+  for (const wrapper of wrappers) {
+    if (!wrapper.isConnected) continue;
+    const ticker = wrapper.dataset.ticker;
+    if (!ticker) continue;
+    const rect = wrapper.getBoundingClientRect();
+    if (rect.top < vh + margin && rect.bottom > -margin) {
+      loadChartForWrapper(wrapper, ticker);
+    }
   }
 }
 
@@ -403,6 +437,11 @@ export function renderInlineMinicharts(container: HTMLElement): void {
   if (!isMobileMinichartEnabled()) {
     removeInlineMinicharts(container);
     return;
+  }
+  // Cancel any pending sweep from a previous render call
+  if (inlineChartSweepTimer !== null) {
+    clearTimeout(inlineChartSweepTimer);
+    inlineChartSweepTimer = null;
   }
   const observer = getInlineChartObserver();
   const cards = container.querySelectorAll<HTMLElement>('.alert-card');
@@ -418,17 +457,37 @@ export function renderInlineMinicharts(container: HTMLElement): void {
     wrapper.className = 'inline-minichart';
     wrapper.dataset.ticker = ticker;
     card.after(wrapper);
-    // Let IntersectionObserver handle chart creation when wrapper scrolls into view
     observer.observe(wrapper);
-    // Safari/iPad does not reliably fire IntersectionObserver for elements already
-    // in the viewport when observe() is first called — trigger immediately if visible.
-    const rect = wrapper.getBoundingClientRect();
-    const margin = 300;
-    if (
-      rect.top < (window.innerHeight || document.documentElement.clientHeight) + margin &&
-      rect.bottom > -margin
-    ) {
-      loadChartForWrapper(wrapper, ticker);
-    }
+  }
+  // iOS Safari does not reliably fire IntersectionObserver for elements already in
+  // the viewport. Run a sweep at increasing delays to catch anything missed.
+  // Delay the first sweep so the DOM/layout has settled after all wrappers are inserted.
+  const runSweeps = () => {
+    sweepUnloadedVisible();
+    inlineChartSweepTimer = setTimeout(() => {
+      sweepUnloadedVisible();
+      inlineChartSweepTimer = setTimeout(() => {
+        sweepUnloadedVisible();
+        inlineChartSweepTimer = null;
+      }, 1000);
+    }, 400);
+  };
+  inlineChartSweepTimer = setTimeout(runSweeps, 150);
+}
+
+/** Update theme colors on all live inline charts when the theme changes. */
+function refreshInlineMinichartThemes(): void {
+  const _tc = getThemeColors();
+  for (const [, chart] of inlineChartInstances) {
+    try {
+      chart.applyOptions({
+        layout: {
+          background: { color: _tc.bgColor },
+          textColor: _tc.textPrimary,
+        },
+      });
+    } catch { /* ignore */ }
   }
 }
+
+window.addEventListener('themechange', refreshInlineMinichartThemes);
