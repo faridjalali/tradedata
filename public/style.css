@@ -1210,11 +1210,11 @@ button:hover {
   }
 
   .metrics-container {
-    gap: 6px;
+    gap: 4px;
   }
 
   .ma-dot-row {
-    margin-left: 6px;
+    margin-left: 7px;
   }
 }
 
