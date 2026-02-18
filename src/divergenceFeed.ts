@@ -36,6 +36,7 @@ import {
 import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading, isMobileTouch } from './chart';
 import { SortMode, Alert } from './types';
 import { createChart } from 'lightweight-charts';
+import { detectBullFlag } from './bullFlagDetector';
 
 export type ColumnFeedMode = '1' | '2' | '5' | 'custom';
 
@@ -83,6 +84,9 @@ const miniChartDataCache = new Map<
 >();
 const MINI_CHART_CACHE_MAX = 400;
 let miniChartPrefetchInFlight = false;
+
+/** Green flag/pennant icon SVG (24x24). Shown when a bull flag/pennant is detected. */
+const BULL_FLAG_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="2" x2="4" y2="22"/><path d="M4 2 L20 7 L4 12 Z" fill="#26a69a" fill-opacity="0.35" stroke="#26a69a"/></svg>`;
 
 // --- Inline minichart state (mobile only) ---
 const inlineChartInstances = new Map<string, ReturnType<typeof createChart>>();
@@ -1547,6 +1551,16 @@ async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch =
   });
   candleSeries.setData(bars as any);
   chart.timeScale().fitContent();
+
+  // Bull flag / pennant detection — show icon if pattern detected
+  const flagDetection = detectBullFlag(bars);
+  if (flagDetection) {
+    const icon = document.createElement('div');
+    icon.className = 'mini-chart-bull-flag-icon';
+    icon.innerHTML = BULL_FLAG_ICON_SVG;
+    icon.title = `Bull flag/pennant detected (confidence: ${flagDetection.confidence}%)`;
+    overlay.appendChild(icon);
+  }
 }
 
 // --- Inline minichart rendering (mobile only) ---

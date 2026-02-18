@@ -1518,6 +1518,23 @@ button:hover {
     to { opacity: 1; transform: translateY(0); }
 }
 
+.mini-chart-bull-flag-icon {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    opacity: 0;
+    animation: miniChartFadeIn 0.15s ease-out 0.2s forwards;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-overlay-95);
+    border-radius: 4px;
+    padding: 3px;
+    border: 1px solid var(--border-overlay-22);
+}
+
 /* Inline minichart (mobile) */
 .inline-minichart {
   width: 100%;
