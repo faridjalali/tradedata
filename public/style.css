@@ -1200,6 +1200,18 @@ button:hover {
   .column.collapsed .alerts-list {
     display: none;
   }
+
+  .vdf-score-badge,
+  .vdf-tag,
+  .vdf-score-placeholder,
+  .bull-flag-badge,
+  .bull-flag-placeholder {
+    margin-left: 2px;
+  }
+
+  .metrics-container {
+    gap: 6px;
+  }
 }
 
 .show-more-btn {
