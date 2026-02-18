@@ -681,24 +681,20 @@ h2 {
 
 /* Alert Cards */
 /* Alert Cards - CONSTANT SINGLE LINE */
-/* Alert Cards - CSS GRID LAYOUT */
+/* Alert Cards - 5-GROUP LAYOUT */
 .alert-card {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0 8px;
   margin-bottom: 8px;
-  
-  display: grid;
-  /* Icon | Ticker (fixed pixel width) | Metrics (Centered/Flexible) | Time (Right-Aligned) */
-  grid-template-columns: min-content 52px 1fr auto;
+
+  display: flex;
   align-items: center;
-  gap: 4px;
-  
+  justify-content: space-between;
+
   width: 100%;
   max-width: 100%;
-  margin-left: auto;
-  margin-right: auto;
 
   height: 40px;
   box-sizing: border-box;
@@ -709,12 +705,26 @@ h2 {
   /* Disable text selection so the magnifier doesn't trigger */
   -webkit-user-select: none;
   user-select: none;
-  
+
   /* Disable the native context menu (Copy/Look Up) on long press */
   -webkit-touch-callout: none;
 }
 
-/* Obsolete wrappers removed (.ac-left, .ac-middle, .ac-right) */
+.card-group {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.card-group-id {
+  gap: 4px;
+}
+.card-group-divvol {
+  gap: 4px;
+}
+.card-group-badges {
+  gap: 2px;
+}
 
 /* Favorite Icon (Checkbox Style) - STRICT VISIBILITY */
 .fav-icon {
@@ -797,17 +807,13 @@ h2 {
   overflow: hidden;
 }
 
-/* New Metrics Layout */
+/* Legacy metrics-container kept for any non-alert usage */
 .metrics-container {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
-  justify-content: start;
   white-space: nowrap;
-
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .metric-item {
@@ -817,7 +823,6 @@ h2 {
   font-size: 0.75rem;
   color: var(--text-secondary);
   white-space: nowrap;
-  flex-wrap: nowrap;
 }
 
 .divergence-mini {
@@ -897,7 +902,6 @@ h2 {
   border: 1px solid #26a69a;
   border-radius: 3px;
   padding: 0 3px;
-  margin-left: 4px;
   line-height: 16px;
   vertical-align: middle;
 }
@@ -912,7 +916,6 @@ h2 {
   border: 1px solid #26a69a;
   border-radius: 3px;
   padding: 0 3px;
-  margin-left: 4px;
   line-height: 16px;
   vertical-align: middle;
   width: 5ch;
@@ -923,7 +926,6 @@ h2 {
   box-sizing: border-box;
   font-size: 12px;
   padding: 0 3px;
-  margin-left: 4px;
   line-height: 16px;
   vertical-align: middle;
   border: 1px solid transparent;
@@ -939,7 +941,6 @@ h2 {
   border: 1px solid #4caf50;
   border-radius: 3px;
   padding: 0 3px;
-  margin-left: 4px;
   line-height: 16px;
   vertical-align: middle;
   text-align: center;
@@ -950,7 +951,6 @@ h2 {
   box-sizing: border-box;
   font-size: 12px;
   padding: 0 3px;
-  margin-left: 4px;
   line-height: 16px;
   vertical-align: middle;
   border: 1px solid transparent;
@@ -966,7 +966,7 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: 5ch;
+  flex-shrink: 0;
 }
 
 .ma-dot {
@@ -1010,11 +1010,9 @@ h2 {
 .alert-time {
   font-size: 0.75rem;
   color: var(--text-secondary);
-  white-space: nowrap !important;
+  white-space: nowrap;
   text-align: right;
-  margin: 0 !important;
-  /* Push to the far right of the grid cell */
-  justify-self: end; 
+  flex-shrink: 0;
 }
 .bull-text {
   color: var(--accent-bullish);
@@ -1209,24 +1207,8 @@ button:hover {
     display: none;
   }
 
-  .vdf-score-badge,
-  .vdf-tag,
-  .vdf-score-placeholder,
-  .bull-flag-badge,
-  .bull-flag-placeholder {
-    margin-left: 2px;
-  }
-
-  .metrics-container {
-    gap: 4px;
-  }
-
   .volume-text {
     display: none;
-  }
-
-  .ma-dot-row {
-    margin-left: 7px;
   }
 }
 

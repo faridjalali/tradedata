@@ -78,32 +78,30 @@ export function createAlertCard(alert: Alert): string {
 
   return `
         <div class="alert-card ${cardClass}" data-ticker="${escapeHtml(alert.ticker)}" data-source="${source}">
-            ${starIcon}
-            <h3>${escapeHtml(alert.ticker)}</h3>
-            
-            <div class="metrics-container">
-                <div class="metric-item">
-                    <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)">
-                        ${divergenceDots}
-                    </span>
-                </div>
-                <div class="metric-item" title="Volume">
-                    <span class="volume-text">${volStr}</span>
-                    ${
-                      alert.vdf_detected && alert.vdf_score
-                        ? `<span class="vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}" title="Score">${alert.vdf_score}</span>`
-                        : alert.vdf_detected
-                          ? '<span class="vdf-tag">VDF</span>'
-                          : '<span class="vdf-score-placeholder"></span>'
-                    }
-                    ${
-                      alert.bull_flag_confidence != null && alert.bull_flag_confidence >= 50
-                        ? `<span class="bull-flag-badge" title="Bull flag (${alert.bull_flag_confidence}%)">B</span>`
-                        : '<span class="bull-flag-placeholder"></span>'
-                    }${maDots}
-                </div>
+            <div class="card-group card-group-id">
+                ${starIcon}
+                <h3>${escapeHtml(alert.ticker)}</h3>
             </div>
-
+            <div class="card-group card-group-divvol">
+                <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)">
+                    ${divergenceDots}
+                </span>
+                <span class="volume-text">${volStr}</span>
+            </div>
+            <div class="card-group card-group-badges">
+                ${
+                  alert.vdf_detected && alert.vdf_score
+                    ? `<span class="vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}" title="Score">${alert.vdf_score}</span>`
+                    : alert.vdf_detected
+                      ? '<span class="vdf-tag">VDF</span>'
+                      : '<span class="vdf-score-placeholder"></span>'
+                }${
+                  alert.bull_flag_confidence != null && alert.bull_flag_confidence >= 50
+                    ? `<span class="bull-flag-badge" title="Bull flag (${alert.bull_flag_confidence}%)">B</span>`
+                    : '<span class="bull-flag-placeholder"></span>'
+                }
+            </div>
+            ${maDots}
             <span class="alert-time">${timeStr}</span>
         </div>
     `;
