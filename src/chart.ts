@@ -4444,8 +4444,7 @@ function updateVDFButton(entry: VDFCacheEntry): void {
 }
 
 function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement {
-  const toolbar = ensureVDFToolbar(container);
-  if (bullFlagButtonEl && bullFlagButtonEl.parentElement === toolbar) return bullFlagButtonEl;
+  if (bullFlagButtonEl && bullFlagButtonEl.parentElement === container) return bullFlagButtonEl;
   if (bullFlagButtonEl && bullFlagButtonEl.parentElement) {
     bullFlagButtonEl.parentElement.removeChild(bullFlagButtonEl);
   }
@@ -4454,6 +4453,10 @@ function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement {
   btn.className = 'pane-btn label bull-flag-indicator-btn';
   btn.type = 'button';
   btn.textContent = 'BF';
+  btn.style.position = 'absolute';
+  btn.style.top = `${PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX}px`;
+  btn.style.right = `${SCALE_MIN_WIDTH_PX + 8}px`;
+  btn.style.zIndex = '34';
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
@@ -4463,7 +4466,8 @@ function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement {
   btn.style.fontWeight = '700';
   btn.style.letterSpacing = '0.5px';
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  toolbar.appendChild(btn);
+  btn.style.pointerEvents = 'auto';
+  container.appendChild(btn);
   bullFlagButtonEl = btn;
   return btn;
 }
