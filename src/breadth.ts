@@ -1,22 +1,36 @@
 import { getAppTimeZone } from './timezone';
 import { getThemeColors } from './theme';
 
-// Chart.js is loaded globally via CDN in index.html
-declare const Chart: any;
+/**
+ * Minimal interface for Chart.js instances.
+ * Chart.js is loaded via CDN (with the chartjs-plugin-annotation extension),
+ * so we declare only the methods we actually call rather than importing the
+ * full package types, which don't include CDN-only plugin options.
+ */
+interface ChartInstance {
+  destroy(): void;
+  update(): void;
+  data: { datasets: Array<{ data: unknown[] }> };
+}
+/** Chart.js constructor as available on the global `window.Chart` CDN export. */
+declare const Chart: new (canvas: HTMLCanvasElement, config: unknown) => ChartInstance;
 
 import type { BreadthDataPoint, BreadthResponse, BreadthMASnapshot, BreadthMAHistory, BreadthMAResponse } from '../shared/api-types';
 
-let breadthChart: any = null;
+/** Number of calendar days of MA history to request from the server. */
+const BREADTH_MA_HISTORY_DAYS = 60;
+
+let breadthChart: ChartInstance | null = null;
 let currentTimeframeDays = 5;
 let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
 
 // Breadth MA state
-let breadthMAChart: any = null;
+let breadthMAChart: ChartInstance | null = null;
 let currentMAIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
 let breadthMAData: BreadthMAResponse | null = null;
 
 // Comparative Breadth state
-let breadthCompareChart: any = null;
+let breadthCompareChart: ChartInstance | null = null;
 let currentCompareIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
 let currentCompareTfDays: number = 20;
 
@@ -265,9 +279,13 @@ function gaugeColor(pct: number): string {
 function renderBreadthGauges(snapshot: BreadthMASnapshot | undefined): void {
   const container = document.getElementById('breadth-ma-gauges');
   if (!container) return;
+  container.textContent = '';
 
   if (!snapshot) {
-    container.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem;grid-column:1/-1;text-align:center">No snapshot data available</div>';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:var(--text-secondary);font-size:0.85rem;grid-column:1/-1;text-align:center';
+    msg.textContent = 'No snapshot data available';
+    container.appendChild(msg);
     return;
   }
 
@@ -278,15 +296,35 @@ function renderBreadthGauges(snapshot: BreadthMASnapshot | undefined): void {
     { label: '200 MA', value: snapshot.ma200 },
   ];
 
-  container.innerHTML = gauges.map(g => `
-    <div class="breadth-gauge-card">
-      <div class="breadth-gauge-label">${g.label}</div>
-      <div class="breadth-gauge-value" style="color:${gaugeColor(g.value)}">${g.value.toFixed(1)}%</div>
-      <div class="breadth-gauge-bar">
-        <div class="breadth-gauge-fill" style="width:${g.value}%;background:${gaugeColor(g.value)}"></div>
-      </div>
-    </div>
-  `).join('');
+  for (const g of gauges) {
+    const color = gaugeColor(g.value);
+
+    const card = document.createElement('div');
+    card.className = 'breadth-gauge-card';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'breadth-gauge-label';
+    labelEl.textContent = g.label;
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'breadth-gauge-value';
+    valueEl.style.color = color;
+    valueEl.textContent = `${g.value.toFixed(1)}%`;
+
+    const barEl = document.createElement('div');
+    barEl.className = 'breadth-gauge-bar';
+
+    const fillEl = document.createElement('div');
+    fillEl.className = 'breadth-gauge-fill';
+    fillEl.style.width = `${g.value}%`;
+    fillEl.style.background = color;
+
+    barEl.appendChild(fillEl);
+    card.appendChild(labelEl);
+    card.appendChild(valueEl);
+    card.appendChild(barEl);
+    container.appendChild(card);
+  }
 }
 
 function renderBreadthMAChart(history: BreadthMAHistory[]): void {
@@ -439,7 +477,7 @@ async function loadBreadthMA(): Promise<void> {
   if (errorEl) errorEl.style.display = 'none';
 
   try {
-    breadthMAData = await fetchBreadthMA(60);
+    breadthMAData = await fetchBreadthMA(BREADTH_MA_HISTORY_DAYS);
     renderBreadthMAForIndex(currentMAIndex);
     renderBreadthCompareChart();
   } catch (err) {
@@ -669,14 +707,21 @@ export function initBreadth(): void {
   loadBreadthMA();
 }
 
-window.addEventListener('themechange', () => {
-  if (breadthChart) {
-    loadBreadth();
-  }
-  if (breadthMAData) {
-    renderBreadthMAForIndex(currentMAIndex);
-  }
-  if (breadthCompareChart) {
-    renderBreadthCompareChart();
-  }
-});
+/**
+ * Register the theme-change listener for breadth charts.
+ * Call this once from the app entry point after the page is ready.
+ * Keeping this out of module scope prevents side effects during testing.
+ */
+export function initBreadthThemeListener(): void {
+  window.addEventListener('themechange', () => {
+    if (breadthChart) {
+      loadBreadth();
+    }
+    if (breadthMAData) {
+      renderBreadthMAForIndex(currentMAIndex);
+    }
+    if (breadthCompareChart) {
+      renderBreadthCompareChart();
+    }
+  });
+}

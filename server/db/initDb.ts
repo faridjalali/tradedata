@@ -263,11 +263,10 @@ export async function initDivergenceDB(): Promise<void> {
       const restoredTradeDate = String(pubResult.rows[0]?.trade_date || '').trim();
       if (restoredTradeDate) {
         setDivergenceLastFetchedTradeDateEt(maxEtDateString(divergenceLastFetchedTradeDateEt, restoredTradeDate));
-        fetchDailyScan._status.lastPublishedTradeDate = maxEtDateString(
-          fetchDailyScan._status.lastPublishedTradeDate,
-          restoredTradeDate,
-        );
-        fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan._status.lastPublishedTradeDate });
+        fetchDailyScan.setStatus({
+          lastPublishedTradeDate: maxEtDateString(fetchDailyScan.readStatus().lastPublishedTradeDate || '', restoredTradeDate),
+        });
+        fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
       }
       const weeklyResult = await divergencePool.query(
         `SELECT MAX(trade_date)::text AS trade_date FROM divergence_signals WHERE timeframe = '1w' AND source_interval = $1`,
@@ -275,11 +274,10 @@ export async function initDivergenceDB(): Promise<void> {
       );
       const restoredWeeklyDate = String(weeklyResult.rows[0]?.trade_date || '').trim();
       if (restoredWeeklyDate) {
-        fetchWeeklyScan._status.lastPublishedTradeDate = maxEtDateString(
-          fetchWeeklyScan._status.lastPublishedTradeDate,
-          restoredWeeklyDate,
-        );
-        fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate });
+        fetchWeeklyScan.setStatus({
+          lastPublishedTradeDate: maxEtDateString(fetchWeeklyScan.readStatus().lastPublishedTradeDate || '', restoredWeeklyDate),
+        });
+        fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
       }
       if (restoredTradeDate || restoredWeeklyDate) {
         console.log(

@@ -94,7 +94,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
       jobFn()
         .then((summary) => { console.log(`${label} completed:`, summary); return null; })
         .catch((err: any) => { const m = err?.message || String(err); console.error(`${label} failed: ${m}`); return m; }),
-      new Promise<null>(resolve => setTimeout(resolve, 0)),
+      new Promise<null>(resolve => setTimeout(resolve, 0, null)),
     ]);
     if (earlyErr) return res.code(500).send({ error: `${label} startup failed: ${earlyErr}` });
     return res.code(202).send({ status: successStatus });

@@ -187,12 +187,12 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (vdfScan.running) {
+  if (vdfScan.isRunning) {
     return { status: 'running' };
   }
 
   const resumeRequested = options.resume === true;
-  const rs = resumeRequested ? vdfScan.resumeState : null;
+  const rs = resumeRequested ? vdfScan.currentResumeState : null;
   if (
     resumeRequested &&
     (!rs || !Array.isArray(rs.tickers) || rs.tickers.length === 0 || rs.nextIndex >= rs.tickers.length)
@@ -288,7 +288,7 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
         if (s.error) {
           errorTickers++;
           failedTickers.push(s.ticker);
-          if (!(vdfScan.stopRequested && isAbortError(s.error))) {
+          if (!(vdfScan.isStopping && isAbortError(s.error))) {
             console.error(`VDF scan error for ${s.ticker}:`, s.error?.message || s.error);
           }
         } else if (s.result && s.result.is_detected) {
@@ -341,7 +341,7 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
     const message = err && err.message ? err.message : String(err);
     console.error(`VDF scan failed: ${message}`);
 
-    if (vdfScan.stopRequested || isAbortError(err)) {
+    if (vdfScan.isStopping || isAbortError(err)) {
       const safe = vdfScan.saveResumeState(
         { tickers, totalTickers, processedTickers, errorTickers, detectedTickers },
         runConcurrency,

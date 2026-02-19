@@ -72,7 +72,7 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (divergenceScanRunning || divergenceTableBuildRunning || fetchDailyScan.running || fetchWeeklyScan.running) {
+  if (divergenceScanRunning || divergenceTableBuildRunning || fetchDailyScan.isRunning || fetchWeeklyScan.isRunning) {
     return { status: 'running' };
   }
 

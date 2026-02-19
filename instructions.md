@@ -405,6 +405,7 @@ test/divergenceRoutes.test.ts  # Route handler integration tests
 test/divergenceService.test.ts # Service logic unit tests
 test/healthRoutes.test.ts      # Health endpoint tests
 test/healthService.test.ts     # Health payload building
+test/scanState.test.ts         # ScanState lifecycle, runRetryPasses logic
 ```
 
 ### Test Patterns
@@ -541,6 +542,52 @@ When adding new configuration:
 5. Wire up start/stop/status in route handler.
 6. Add cleanup in the shutdown handler.
 
+#### ScanState API Reference
+
+All orchestrators manage lifecycle through the `ScanState` public API. Never access private underscore fields directly.
+
+```typescript
+// Starting a run
+const abortController = myScan.beginRun(resumeRequested);
+
+// Checking state
+myScan.isRunning          // true while job is active
+myScan.isStopping         // true after requestStop() called
+myScan.shouldStop         // isStopping || signal.aborted (use in worker loops)
+myScan.signal             // AbortSignal | null for the current run
+myScan.currentResumeState // previously saved resume data, or null
+
+// Reading/writing status
+myScan.readStatus()       // Readonly<ScanStatusFields> snapshot (shallow copy)
+myScan.setStatus({...})   // Merge partial updates (non-destructive)
+myScan.replaceStatus({...})  // Full replacement — use for terminal transitions only
+myScan.setExtraStatus({...}) // Domain-specific extra fields shown in getStatus()
+myScan.updateProgress(processed, errors)  // Update counters mid-run
+
+// Terminal transitions
+myScan.markStopped(fields)    // status → 'stopped'
+myScan.markCompleted(fields)  // status → 'completed' or 'completed-with-errors'
+myScan.markFailed(fields)     // status → 'failed'
+
+// Resume state
+myScan.saveResumeState(data, concurrency)  // Computes safe nextIndex, persists to _resumeState
+myScan.setResumeState(data | null)         // Direct set (mid-run persistence)
+
+// Cleanup (always in finally block)
+myScan.cleanup(abortController)  // Clears isRunning and AbortController ref
+```
+
+Late-binding normalizers/validators (call after both the ScanState instance and the
+normalizer function are defined, to avoid circular imports):
+
+```typescript
+myScan.setNormalizeResume(normalizeMyResumeState);
+myScan.setCanResumeValidator((rs) => {
+  const n = normalizeMyResumeState(rs);
+  return n.totalTickers > 0 && n.nextIndex < n.totalTickers;
+});
+```
+
 ### New Frontend Component
 
 1. Check if a shared helper already exists (e.g., `createRefreshSvgIcon`, `setRefreshButtonLoading`).
@@ -548,6 +595,8 @@ When adding new configuration:
 3. Add event handlers and rendering in the appropriate `src/*.ts` module.
 4. Use CSS custom properties for colors. Add component styles in `public/style.css`.
 5. Follow existing patterns for loading states (`.loading` class toggle, CSS animations).
+6. **DOM manipulation**: use `textContent`, `createElement`, and `style.*` rather than `innerHTML` to avoid XSS. Only use `innerHTML` with static string literals that contain no user-controlled data.
+7. **Theme change listeners**: do not register `window.addEventListener('themechange', …)` at module scope (side effect on import). Export a dedicated `initXxxThemeListener()` function and call it from `main.ts` when the view is activated.
 
 ---
 

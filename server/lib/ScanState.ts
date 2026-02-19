@@ -1,5 +1,8 @@
 /**
  * ScanState — shared state management for scan-type background jobs.
+ *
+ * All mutable fields are private. Orchestrators interact through the
+ * public API methods (beginRun, setStatus, replaceStatus, cleanup, …).
  */
 
 interface ScanStateOptions {
@@ -16,30 +19,33 @@ interface ScanStatusFields {
   errorTickers?: number;
   startedAt?: string | null;
   finishedAt?: string | null;
+  /** Domain-specific field used by fetch-daily/weekly orchestrators. */
+  lastPublishedTradeDate?: string;
   [key: string]: any;
 }
 
 class ScanState {
-  name: string;
-  metricsKey: string;
-  running: boolean;
-  stopRequested: boolean;
-  abortController: AbortController | null;
-  resumeState: Record<string, any> | null;
-  normalizeResume: ((data: Record<string, any>) => Record<string, any>) | null;
-  canResumeValidator: ((resumeState: Record<string, any>) => boolean) | null;
-  _status: ScanStatusFields;
-  _extraStatus: Record<string, unknown>;
+  readonly name: string;
+  readonly metricsKey: string;
+
+  private _running: boolean;
+  private _stopRequested: boolean;
+  private _abortController: AbortController | null;
+  private _resumeState: Record<string, any> | null;
+  private _normalizeResume: ((data: Record<string, any>) => Record<string, any>) | null;
+  private _canResumeValidator: ((resumeState: Record<string, any>) => boolean) | null;
+  private _status: ScanStatusFields;
+  private _extraStatus: Record<string, unknown>;
 
   constructor(name: string, options: ScanStateOptions = {}) {
     this.name = name;
     this.metricsKey = options.metricsKey || name;
-    this.running = false;
-    this.stopRequested = false;
-    this.abortController = null;
-    this.resumeState = null;
-    this.normalizeResume = options.normalizeResume || null;
-    this.canResumeValidator = options.canResumeValidator || null;
+    this._running = false;
+    this._stopRequested = false;
+    this._abortController = null;
+    this._resumeState = null;
+    this._normalizeResume = options.normalizeResume || null;
+    this._canResumeValidator = options.canResumeValidator || null;
     this._status = {
       running: false,
       status: 'idle',
@@ -53,24 +59,50 @@ class ScanState {
   }
 
   // ---------------------------------------------------------------------------
+  // Read-only accessors
+  // ---------------------------------------------------------------------------
+
+  /** True while a scan job owns this state object. */
+  get isRunning(): boolean {
+    return this._running;
+  }
+
+  /** True if requestStop() was called and the job has not yet acknowledged it. */
+  get isStopping(): boolean {
+    return this._stopRequested;
+  }
+
+  /** True if stop was requested OR the AbortController signal was aborted. */
+  get shouldStop(): boolean {
+    return this._stopRequested || Boolean(this._abortController?.signal?.aborted);
+  }
+
+  /** The AbortSignal for the current run, or null if not running. */
+  get signal(): AbortSignal | null {
+    return this._abortController?.signal || null;
+  }
+
+  /** The resume state persisted between runs, or null. */
+  get currentResumeState(): Record<string, any> | null {
+    return this._resumeState;
+  }
+
+  /** Read-only snapshot of the current status fields (shallow copy). */
+  readStatus(): Readonly<ScanStatusFields> {
+    return { ...this._status };
+  }
+
+  // ---------------------------------------------------------------------------
   // State queries
   // ---------------------------------------------------------------------------
 
-  get shouldStop(): boolean {
-    return this.stopRequested || Boolean(this.abortController?.signal?.aborted);
-  }
-
-  get signal(): AbortSignal | null {
-    return this.abortController?.signal || null;
-  }
-
   requestStop(): boolean {
-    if (!this.running) return false;
-    this.stopRequested = true;
+    if (!this._running) return false;
+    this._stopRequested = true;
     this._status = { ...this._status, status: 'stopping', finishedAt: null };
-    if (this.abortController && !this.abortController.signal.aborted) {
+    if (this._abortController && !this._abortController.signal.aborted) {
       try {
-        this.abortController.abort();
+        this._abortController.abort();
       } catch {
         /* ignore duplicate aborts */
       }
@@ -79,17 +111,28 @@ class ScanState {
   }
 
   canResume(): boolean {
-    if (this.running) return false;
-    if (!this.resumeState) return false;
-    if (this.canResumeValidator) return this.canResumeValidator(this.resumeState);
-    const rs = this.normalizeResume ? this.normalizeResume(this.resumeState) : this.resumeState;
+    if (this._running) return false;
+    if (!this._resumeState) return false;
+    if (this._canResumeValidator) return this._canResumeValidator(this._resumeState);
+    const rs = this._normalizeResume ? this._normalizeResume(this._resumeState) : this._resumeState;
     return Array.isArray(rs.tickers) && rs.tickers.length > 0 && rs.nextIndex < rs.tickers.length;
   }
 
-  getStatus() {
+  getStatus(): {
+    running: boolean;
+    stop_requested: boolean;
+    can_resume: boolean;
+    status: string;
+    total_tickers: number;
+    processed_tickers: number;
+    error_tickers: number;
+    started_at: string | null;
+    finished_at: string | null;
+    [key: string]: unknown;
+  } {
     return {
-      running: Boolean(this.running),
-      stop_requested: Boolean(this.stopRequested),
+      running: Boolean(this._running),
+      stop_requested: Boolean(this._stopRequested),
       can_resume: this.canResume(),
       status: String(this._status.status || 'idle'),
       total_tickers: Number(this._status.totalTickers || 0),
@@ -105,16 +148,30 @@ class ScanState {
   // Lifecycle methods
   // ---------------------------------------------------------------------------
 
+  /**
+   * Begin a new run. Creates a fresh AbortController and resets transient
+   * flags. Returns the AbortController so the orchestrator can pass its
+   * signal to workers.
+   */
   beginRun(resumeRequested = false): AbortController {
-    this.running = true;
-    this.stopRequested = false;
-    if (!resumeRequested) this.resumeState = null;
-    this.abortController = new AbortController();
-    return this.abortController;
+    this._running = true;
+    this._stopRequested = false;
+    if (!resumeRequested) this._resumeState = null;
+    this._abortController = new AbortController();
+    return this._abortController;
   }
 
+  /** Merge fields into the current status (non-destructive). */
   setStatus(fields: ScanStatusFields): void {
     this._status = { ...this._status, ...fields };
+  }
+
+  /**
+   * Completely replace the status object (not a merge).
+   * Use for terminal state transitions (stopped, completed, failed).
+   */
+  replaceStatus(fields: ScanStatusFields): void {
+    this._status = { ...fields };
   }
 
   setExtraStatus(fields: Record<string, unknown>): void {
@@ -124,25 +181,63 @@ class ScanState {
   updateProgress(processedTickers: number, errorTickers: number): void {
     this._status.processedTickers = processedTickers;
     this._status.errorTickers = errorTickers;
-    if (this.stopRequested) this._status.status = 'stopping';
+    if (this._stopRequested) this._status.status = 'stopping';
   }
 
   saveResumeState(data: Record<string, any>, concurrency: number): number {
     const total = data.totalTickers || (Array.isArray(data.tickers) ? data.tickers.length : 0);
     const safeNext = Math.max(0, Math.min(total, (data.processedTickers || 0) - (concurrency || 0)));
     const normalized = { ...data, nextIndex: safeNext, processedTickers: safeNext };
-    this.resumeState = this.normalizeResume ? this.normalizeResume(normalized) : normalized;
+    this._resumeState = this._normalizeResume ? this._normalizeResume(normalized) : normalized;
     return safeNext;
   }
 
+  /** Directly set (or clear) the resume state for mid-run persistence. */
+  setResumeState(data: Record<string, any> | null): void {
+    this._resumeState = data;
+  }
+
+  /** Set the running flag. Prefer cleanup() at the end of a run. */
+  setRunning(val: boolean): void {
+    this._running = val;
+  }
+
+  /** Late-bind the resume-state normalizer (call during app startup). */
+  setNormalizeResume(fn: (data: Record<string, any>) => Record<string, any>): void {
+    this._normalizeResume = fn;
+  }
+
+  /** Late-bind the resume-state validator (call during app startup). */
+  setCanResumeValidator(fn: (resumeState: Record<string, any>) => boolean): void {
+    this._canResumeValidator = fn;
+  }
+
+  /** Clear or set the stop-requested flag. */
+  setStopRequested(val: boolean): void {
+    this._stopRequested = val;
+  }
+
+  /**
+   * Replace the AbortController reference.
+   * Prefer beginRun() which creates a fresh one automatically.
+   */
+  setAbortControllerRef(c: AbortController | null): void {
+    this._abortController = c;
+  }
+
+  /** Returns true if the stored controller is the same object reference as `c`. */
+  hasAbortController(c: AbortController): boolean {
+    return this._abortController === c;
+  }
+
   markStopped(statusFields: ScanStatusFields): void {
-    this.stopRequested = false;
+    this._stopRequested = false;
     this._status = { running: false, status: 'stopped', ...statusFields };
   }
 
   markCompleted(statusFields: ScanStatusFields): void {
-    this.resumeState = null;
-    this.stopRequested = false;
+    this._resumeState = null;
+    this._stopRequested = false;
     const hasErrors = Number(statusFields?.errorTickers || 0) > 0;
     this._status = {
       running: false,
@@ -152,18 +247,18 @@ class ScanState {
   }
 
   markFailed(statusFields: ScanStatusFields): void {
-    this.resumeState = null;
-    this.stopRequested = false;
+    this._resumeState = null;
+    this._stopRequested = false;
     this._status = { running: false, status: 'failed', ...statusFields };
   }
 
   cleanup(abortRef?: AbortController): void {
-    if (abortRef && this.abortController === abortRef) {
-      this.abortController = null;
+    if (abortRef && this._abortController === abortRef) {
+      this._abortController = null;
     } else if (!abortRef) {
-      this.abortController = null;
+      this._abortController = null;
     }
-    this.running = false;
+    this._running = false;
   }
 
   buildRouteOptions(runFn: (options?: Record<string, unknown>) => Promise<unknown>) {
@@ -172,7 +267,7 @@ class ScanState {
       requestStop: () => this.requestStop(),
       canResume: () => this.canResume(),
       run: runFn,
-      getIsRunning: () => this.running,
+      getIsRunning: () => this._running,
     };
   }
 }
@@ -237,3 +332,4 @@ async function runRetryPasses({
 }
 
 export { ScanState, runRetryPasses };
+export type { ScanStateOptions, ScanStatusFields };

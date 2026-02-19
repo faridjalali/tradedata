@@ -239,6 +239,20 @@ export function normalizeFetchWeeklyDataResumeState(state: Record<string, any> =
 }
 
 
+// Wire normalizers and validators now that both the ScanState instances and
+// the normalizer functions are defined in this module.
+fetchDailyScan.setNormalizeResume(normalizeFetchDailyDataResumeState);
+fetchDailyScan.setCanResumeValidator((rs) => {
+  const n = normalizeFetchDailyDataResumeState(rs);
+  return Boolean(n.asOfTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
+});
+fetchWeeklyScan.setNormalizeResume(normalizeFetchWeeklyDataResumeState);
+fetchWeeklyScan.setCanResumeValidator((rs) => {
+  const n = normalizeFetchWeeklyDataResumeState(rs);
+  return Boolean(n.asOfTradeDate) && Boolean(n.weeklyTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
+});
+
+
 export function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const totalMinutes = nowEt.getHours() * 60 + nowEt.getMinutes();

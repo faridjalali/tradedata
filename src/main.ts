@@ -179,7 +179,7 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
     syncDivergenceScanUiState();
   } else if (view === 'breadth') {
     document.getElementById('view-breadth')?.classList.remove('hidden');
-    loadBreadth().then((m) => m.initBreadth()).catch(() => {});
+    loadBreadth().then((m) => { m.initBreadth(); m.initBreadthThemeListener(); }).catch(() => {});
   }
 }
 
@@ -275,6 +275,7 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
   if (currentView === 'breadth') {
     const breadth = await loadBreadth();
     breadth.initBreadth();
+    breadth.initBreadthThemeListener();
     return;
   }
 

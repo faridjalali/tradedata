@@ -52,7 +52,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (divergenceScanRunning || fetchDailyScan.running || fetchWeeklyScan.running) {
+  if (divergenceScanRunning || fetchDailyScan.isRunning || fetchWeeklyScan.isRunning) {
     return { status: 'running' };
   }
 

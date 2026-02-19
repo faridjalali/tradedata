@@ -48,12 +48,12 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
-  if (divergenceScanRunning || divergenceTableBuildRunning || fetchDailyScan.running || fetchWeeklyScan.running) {
+  if (divergenceScanRunning || divergenceTableBuildRunning || fetchDailyScan.isRunning || fetchWeeklyScan.isRunning) {
     return { status: 'running' };
   }
 
   const resumeRequested = options.resume === true;
-  const resumeState = resumeRequested ? normalizeFetchWeeklyDataResumeState(fetchWeeklyScan.resumeState || {}) : null;
+  const resumeState = resumeRequested ? normalizeFetchWeeklyDataResumeState(fetchWeeklyScan.currentResumeState || {}) : null;
   if (
     resumeRequested &&
     (!resumeState ||
@@ -65,23 +65,17 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     return { status: 'no-resume' };
   }
 
-  fetchWeeklyScan.running = true;
-  fetchWeeklyScan.stopRequested = false;
   // Clear previous run metrics immediately so stale data never leaks into
   // the new run's Logs page display (failedTickers, errors, etc.).
   runMetricsByType.fetchWeekly = null;
-  if (!resumeRequested) {
-    fetchWeeklyScan.resumeState = null;
-  }
+  const fetchWeeklyAbortController = fetchWeeklyScan.beginRun(resumeRequested);
 
   let processedTickers = Math.max(0, Number(resumeState?.processedTickers || 0));
   let totalTickers = Math.max(0, Number(resumeState?.totalTickers || 0));
   let errorTickers = Math.max(0, Number(resumeState?.errorTickers || 0));
   let lastPublishedTradeDate = String(resumeState?.lastPublishedTradeDate || '').trim();
   const startedAtIso = new Date().toISOString();
-  const fetchWeeklyAbortController = new AbortController();
-  fetchWeeklyScan.abortController = fetchWeeklyAbortController;
-  fetchWeeklyScan._status = {
+  fetchWeeklyScan.replaceStatus({
     running: true,
     status: 'running',
     totalTickers,
@@ -89,9 +83,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     errorTickers,
     startedAt: startedAtIso,
     finishedAt: null,
-    lastPublishedTradeDate: lastPublishedTradeDate || fetchWeeklyScan._status.lastPublishedTradeDate || '',
-  };
-  fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '' });
+    lastPublishedTradeDate: lastPublishedTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+  });
+  fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
 
   let tickers = resumeState?.tickers || [];
   let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
@@ -134,7 +128,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     if (!resumeRequested && !options.force) {
       const latestStoredWeeklyTradeDate = await getLatestWeeklySignalTradeDate(sourceInterval);
       if (latestStoredWeeklyTradeDate && latestStoredWeeklyTradeDate >= weeklyTradeDate) {
-        fetchWeeklyScan._status = {
+        fetchWeeklyScan.replaceStatus({
           running: false,
           status: 'skipped',
           totalTickers: 0,
@@ -143,7 +137,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
           startedAt: startedAtIso,
           finishedAt: new Date().toISOString(),
           lastPublishedTradeDate: latestStoredWeeklyTradeDate,
-        };
+        });
         fetchWeeklyScan.setExtraStatus({ last_published_trade_date: latestStoredWeeklyTradeDate || '' });
         return {
           status: 'skipped',
@@ -162,11 +156,11 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     }
 
     totalTickers = tickers.length;
-    fetchWeeklyScan._status.totalTickers = totalTickers;
+    fetchWeeklyScan.setStatus({ totalTickers });
     runMetricsTracker?.setTotals(totalTickers);
 
     const persistResumeState = (nextIdx: number) => {
-      fetchWeeklyScan.resumeState = normalizeFetchWeeklyDataResumeState({
+      fetchWeeklyScan.setResumeState(normalizeFetchWeeklyDataResumeState({
         asOfTradeDate,
         weeklyTradeDate,
         sourceInterval,
@@ -177,7 +171,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         errorTickers,
         lookbackDays: runLookbackDays,
         lastPublishedTradeDate,
-      });
+      }));
     };
 
     const markStopped = (nextIdx: number, options: { preserveResume?: boolean; rewind?: boolean } = {}) => {
@@ -189,10 +183,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       if (preserveResume) {
         persistResumeState(safeNextIndex);
       } else {
-        fetchWeeklyScan.resumeState = null;
+        fetchWeeklyScan.setResumeState(null);
       }
-      fetchWeeklyScan.stopRequested = false;
-      fetchWeeklyScan._status = {
+      fetchWeeklyScan.setStopRequested(false);
+      fetchWeeklyScan.replaceStatus({
         running: false,
         status: 'stopped',
         totalTickers,
@@ -201,10 +195,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate:
-          weeklyTradeDate || lastPublishedTradeDate || fetchWeeklyScan._status.lastPublishedTradeDate || '',
-      };
+          weeklyTradeDate || lastPublishedTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+      });
       fetchWeeklyScan.setExtraStatus({
-        last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '',
+        last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
       });
       return {
         status: 'stopped',
@@ -216,9 +210,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     };
 
     if (totalTickers === 0) {
-      fetchWeeklyScan.stopRequested = false;
-      fetchWeeklyScan.resumeState = null;
-      fetchWeeklyScan._status = {
+      fetchWeeklyScan.setStopRequested(false);
+      fetchWeeklyScan.setResumeState(null);
+      fetchWeeklyScan.replaceStatus({
         running: false,
         status: 'completed',
         totalTickers: 0,
@@ -226,10 +220,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         errorTickers: 0,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
-        lastPublishedTradeDate: fetchWeeklyScan._status.lastPublishedTradeDate || '',
-      };
+        lastPublishedTradeDate: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+      });
       fetchWeeklyScan.setExtraStatus({
-        last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '',
+        last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
       });
       return {
         status: 'completed',
@@ -330,7 +324,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     const fetchWeeklyTickerWorker = async (ticker: string) => {
       return runWithAbortAndTimeout(
         async (tickerSignal) => {
-          if (fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted) {
+          if (fetchWeeklyScan.shouldStop) {
             throw buildRequestAbortError('Fetch-weekly run stopped');
           }
           const sourceRows = await dataApiIntradayChartHistory(ticker, sourceInterval, runLookbackDays, {
@@ -446,7 +440,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         settledCount += 1;
         processedTickers = startIndex + settledCount;
         const ticker = tickerSlice[sliceIndex] || '';
-        if (result && result.error && !(fetchWeeklyScan.stopRequested && isAbortError(result.error))) {
+        if (result && result.error && !(fetchWeeklyScan.isStopping && isAbortError(result.error))) {
           errorTickers += 1;
           if (!isAbortError(result.error)) {
             failedTickers.push(ticker);
@@ -458,18 +452,20 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         } else if (result && result.tradeDate) {
           lastPublishedTradeDate = maxEtDateString(lastPublishedTradeDate, String(result.tradeDate));
         }
-        fetchWeeklyScan._status.processedTickers = processedTickers;
-        fetchWeeklyScan._status.errorTickers = errorTickers;
-        fetchWeeklyScan._status.lastPublishedTradeDate = lastPublishedTradeDate;
-        fetchWeeklyScan._status.status = fetchWeeklyScan.stopRequested ? 'stopping' : 'running';
+        fetchWeeklyScan.setStatus({
+          processedTickers,
+          errorTickers,
+          lastPublishedTradeDate,
+          status: fetchWeeklyScan.isStopping ? 'stopping' : 'running',
+        });
         fetchWeeklyScan.setExtraStatus({ last_published_trade_date: lastPublishedTradeDate });
         runMetricsTracker?.setProgress(processedTickers, errorTickers);
         persistResumeState(startIndex + settledCount);
       },
-      () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+      () => fetchWeeklyScan.shouldStop,
     );
 
-    if (fetchWeeklyScan.stopRequested) {
+    if (fetchWeeklyScan.isStopping) {
       await enqueueFlush();
       return markStopped(processedTickers);
     }
@@ -477,11 +473,11 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     await enqueueFlush();
 
     // --- Retry pass for failed tickers ---
-    if (failedTickers.length > 0 && !fetchWeeklyScan.stopRequested && !fetchWeeklyAbortController.signal.aborted) {
+    if (failedTickers.length > 0 && !fetchWeeklyScan.shouldStop) {
       const retryCount = failedTickers.length;
       console.log(`Fetch-weekly: retrying ${retryCount} failed ticker(s)...`);
       runMetricsTracker?.setPhase('retry');
-      fetchWeeklyScan._status.status = 'running-retry';
+      fetchWeeklyScan.setStatus({ status: 'running-retry' });
       let retryRecovered = 0;
       const stillFailedTickers: string[] = [];
       await mapWithConcurrency(
@@ -503,10 +499,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
             runMetricsTracker?.recordRetryRecovered(ticker);
             errorTickers = Math.max(0, errorTickers - 1);
           }
-          fetchWeeklyScan._status.errorTickers = errorTickers;
+          fetchWeeklyScan.setStatus({ errorTickers });
           runMetricsTracker?.setProgress(processedTickers, errorTickers);
         },
-        () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+        () => fetchWeeklyScan.shouldStop,
       );
       if (retryRecovered > 0) {
         console.log(`Fetch-weekly: retry recovered ${retryRecovered}/${retryCount} ticker(s)`);
@@ -515,15 +511,11 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       runMetricsTracker?.recordStallRetry();
 
       // --- Second retry pass for tickers that failed both attempts ---
-      if (
-        stillFailedTickers.length > 0 &&
-        !fetchWeeklyScan.stopRequested &&
-        !fetchWeeklyAbortController.signal.aborted
-      ) {
+      if (stillFailedTickers.length > 0 && !fetchWeeklyScan.shouldStop) {
         const retry2Count = stillFailedTickers.length;
         console.log(`Fetch-weekly: second retry for ${retry2Count} ticker(s)...`);
         runMetricsTracker?.setPhase('retry-2');
-        fetchWeeklyScan._status.status = 'running-retry';
+        fetchWeeklyScan.setStatus({ status: 'running-retry' });
         let retry2Recovered = 0;
         await mapWithConcurrency(
           stillFailedTickers,
@@ -543,10 +535,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
               runMetricsTracker?.recordRetryRecovered(ticker);
               errorTickers = Math.max(0, errorTickers - 1);
             }
-            fetchWeeklyScan._status.errorTickers = errorTickers;
+            fetchWeeklyScan.setStatus({ errorTickers });
             runMetricsTracker?.setProgress(processedTickers, errorTickers);
           },
-          () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+          () => fetchWeeklyScan.shouldStop,
         );
         if (retry2Recovered > 0) {
           console.log(`Fetch-weekly: second retry recovered ${retry2Recovered}/${retry2Count} ticker(s)`);
@@ -558,7 +550,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
 
     if (maSeedRows.length > 0) {
       runMetricsTracker?.setPhase('ma-enrichment');
-      fetchWeeklyScan._status.status = 'running-ma';
+      fetchWeeklyScan.setStatus({ status: 'running-ma' });
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
       const failedMaSeeds: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }> = [];
 
@@ -607,20 +599,20 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
             console.error(`Fetch-weekly MA enrichment failed: ${message}`);
           }
         },
-        () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+        () => fetchWeeklyScan.shouldStop,
       );
 
-      if (fetchWeeklyScan.stopRequested) {
+      if (fetchWeeklyScan.isStopping) {
         await enqueueFlush();
         return markStopped(totalTickers, { preserveResume: false, rewind: false });
       }
       await enqueueFlush();
 
       // --- Retry pass for failed MA tickers ---
-      if (failedMaSeeds.length > 0 && !fetchWeeklyScan.stopRequested && !fetchWeeklyAbortController.signal.aborted) {
+      if (failedMaSeeds.length > 0 && !fetchWeeklyScan.shouldStop) {
         const maRetryCount = failedMaSeeds.length;
         console.log(`Fetch-weekly: retrying ${maRetryCount} failed MA ticker(s)...`);
-        fetchWeeklyScan._status.status = 'running-ma-retry';
+        fetchWeeklyScan.setStatus({ status: 'running-ma-retry' });
         let maRetryRecovered = 0;
         const stillFailedMaSeeds: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }> = [];
         await mapWithConcurrency(
@@ -641,7 +633,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
               maRetryRecovered += 1;
             }
           },
-          () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+          () => fetchWeeklyScan.shouldStop,
         );
         if (maRetryRecovered > 0) {
           console.log(`Fetch-weekly: MA retry recovered ${maRetryRecovered}/${maRetryCount} ticker(s)`);
@@ -649,14 +641,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         await enqueueFlush();
 
         // --- Second retry pass for MA tickers ---
-        if (
-          stillFailedMaSeeds.length > 0 &&
-          !fetchWeeklyScan.stopRequested &&
-          !fetchWeeklyAbortController.signal.aborted
-        ) {
+        if (stillFailedMaSeeds.length > 0 && !fetchWeeklyScan.shouldStop) {
           const maRetry2Count = stillFailedMaSeeds.length;
           console.log(`Fetch-weekly: second MA retry for ${maRetry2Count} ticker(s)...`);
-          fetchWeeklyScan._status.status = 'running-ma-retry';
+          fetchWeeklyScan.setStatus({ status: 'running-ma-retry' });
           let maRetry2Recovered = 0;
           await mapWithConcurrency(
             stillFailedMaSeeds,
@@ -675,7 +663,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
                 maRetry2Recovered += 1;
               }
             },
-            () => fetchWeeklyScan.stopRequested || fetchWeeklyAbortController.signal.aborted,
+            () => fetchWeeklyScan.shouldStop,
           );
           if (maRetry2Recovered > 0) {
             console.log(`Fetch-weekly: second MA retry recovered ${maRetry2Recovered}/${maRetry2Count} ticker(s)`);
@@ -688,9 +676,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     runMetricsTracker?.setPhase('publishing');
     clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
-    fetchWeeklyScan.resumeState = null;
-    fetchWeeklyScan.stopRequested = false;
-    fetchWeeklyScan._status = {
+    fetchWeeklyScan.setResumeState(null);
+    fetchWeeklyScan.setStopRequested(false);
+    fetchWeeklyScan.replaceStatus({
       running: false,
       status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
@@ -698,9 +686,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       errorTickers,
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
-      lastPublishedTradeDate: weeklyTradeDate || fetchWeeklyScan._status.lastPublishedTradeDate || '',
-    };
-    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '' });
+      lastPublishedTradeDate: weeklyTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+    });
+    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
     return {
       status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
@@ -757,9 +745,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       );
     }
 
-    if (fetchWeeklyScan.stopRequested || isAbortError(err)) {
+    if (fetchWeeklyScan.isStopping || isAbortError(err)) {
       const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
-      fetchWeeklyScan.resumeState = normalizeFetchWeeklyDataResumeState({
+      fetchWeeklyScan.setResumeState(normalizeFetchWeeklyDataResumeState({
         asOfTradeDate,
         weeklyTradeDate,
         sourceInterval,
@@ -770,9 +758,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         errorTickers,
         lookbackDays: runLookbackDays,
         lastPublishedTradeDate,
-      });
-      fetchWeeklyScan.stopRequested = false;
-      fetchWeeklyScan._status = {
+      }));
+      fetchWeeklyScan.setStopRequested(false);
+      fetchWeeklyScan.replaceStatus({
         running: false,
         status: 'stopped',
         totalTickers,
@@ -780,10 +768,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         errorTickers,
         startedAt: startedAtIso,
         finishedAt: new Date().toISOString(),
-        lastPublishedTradeDate: weeklyTradeDate || fetchWeeklyScan._status.lastPublishedTradeDate || '',
-      };
+        lastPublishedTradeDate: weeklyTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+      });
       fetchWeeklyScan.setExtraStatus({
-        last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '',
+        last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
       });
       return {
         status: 'stopped',
@@ -793,8 +781,8 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         lastPublishedTradeDate: weeklyTradeDate || null,
       };
     }
-    fetchWeeklyScan.stopRequested = false;
-    fetchWeeklyScan._status = {
+    fetchWeeklyScan.setStopRequested(false);
+    fetchWeeklyScan.replaceStatus({
       running: false,
       status: 'failed',
       totalTickers,
@@ -802,17 +790,18 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       errorTickers,
       startedAt: startedAtIso,
       finishedAt: new Date().toISOString(),
-      lastPublishedTradeDate: fetchWeeklyScan._status.lastPublishedTradeDate || '',
-    };
-    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan._status.lastPublishedTradeDate || '' });
+      lastPublishedTradeDate: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+    });
+    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
     throw err;
   } finally {
     if (runMetricsTracker) {
-      runMetricsTracker.finish(fetchWeeklyScan._status.status || 'completed', {
+      const finalStatus = fetchWeeklyScan.readStatus();
+      runMetricsTracker.finish(finalStatus.status || 'completed', {
         totalTickers,
-        processedTickers: Number(fetchWeeklyScan._status.processedTickers || processedTickers || 0),
-        errorTickers: Number(fetchWeeklyScan._status.errorTickers || errorTickers || 0),
-        phase: fetchWeeklyScan._status.status || 'completed',
+        processedTickers: Number(finalStatus.processedTickers || processedTickers || 0),
+        errorTickers: Number(finalStatus.errorTickers || errorTickers || 0),
+        phase: finalStatus.status || 'completed',
         meta: {
           sourceInterval,
           asOfTradeDate,
@@ -822,9 +811,6 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         },
       });
     }
-    if (fetchWeeklyScan.abortController === fetchWeeklyAbortController) {
-      fetchWeeklyScan.abortController = null;
-    }
-    fetchWeeklyScan.running = false;
+    fetchWeeklyScan.cleanup(fetchWeeklyAbortController);
   }
 }

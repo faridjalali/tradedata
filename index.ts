@@ -81,8 +81,6 @@ import {
   fetchWeeklyScan,
   getDivergenceScanControlStatus,
   getDivergenceTableBuildStatus,
-  normalizeFetchDailyDataResumeState,
-  normalizeFetchWeeklyDataResumeState,
   requestPauseDivergenceScan,
   requestPauseDivergenceTableBuild,
   requestStopDivergenceScan,
@@ -390,21 +388,11 @@ registerChartRoutes({
   loadMiniChartBarsFromDb, loadMiniChartBarsFromDbBatch, fetchMiniChartBarsFromApi, getVDFStatus,
 });
 
-fetchDailyScan.normalizeResume = normalizeFetchDailyDataResumeState;
-fetchDailyScan.canResumeValidator = (rs) => {
-  const n = normalizeFetchDailyDataResumeState(rs);
-  return Boolean(n.asOfTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
-};
-fetchWeeklyScan.normalizeResume = normalizeFetchWeeklyDataResumeState;
-fetchWeeklyScan.canResumeValidator = (rs) => {
-  const n = normalizeFetchWeeklyDataResumeState(rs);
-  return Boolean(n.asOfTradeDate) && Boolean(n.weeklyTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
-};
 
 registerDivergenceRoutes({
   app, isDivergenceConfigured, divergenceScanSecret: process.env.DIVERGENCE_SCAN_SECRET,
-  getIsScanRunning: () => divergenceScanRunning, getIsFetchDailyDataRunning: () => fetchDailyScan.running,
-  getIsFetchWeeklyDataRunning: () => fetchWeeklyScan.running,
+  getIsScanRunning: () => divergenceScanRunning, getIsFetchDailyDataRunning: () => fetchDailyScan.isRunning,
+  getIsFetchWeeklyDataRunning: () => fetchWeeklyScan.isRunning,
   parseBooleanInput, parseEtDateInput, runDailyDivergenceScan, runDivergenceTableBuild,
   runDivergenceFetchDailyData, runDivergenceFetchWeeklyData, divergencePool,
   divergenceSourceInterval: DIVERGENCE_SOURCE_INTERVAL,
@@ -428,7 +416,7 @@ registerDivergenceRoutes({
   getVDFScanStatus: () => vdfScan.getStatus(),
   requestStopVDFScan: () => vdfScan.requestStop(),
   canResumeVDFScan: () => vdfScan.canResume(),
-  runVDFScan, getIsVDFScanRunning: () => vdfScan.running,
+  runVDFScan, getIsVDFScanRunning: () => vdfScan.isRunning,
 });
 
 app.get('/api/logs/run-metrics', async (request, reply) => {
