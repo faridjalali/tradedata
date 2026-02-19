@@ -719,6 +719,13 @@ library. `main.ts` owns the view-switching logic.
 - `initBreadthThemeListener()`: call from `main.ts` — do not register at module scope.
 - Normalized compare chart: each series divided by its own first value × 100 (starts at 100).
   Supports MA window selection (21/50/100/200) and timeframe (5d/10d/20d/30d).
+- **Index selector** uses `feed-controls-group feed-controls-group--wrap` (wrapping flex) for the
+  21-ETF button row. `currentMAIndex` and `currentCompareIndex` are typed as `string` (not a narrow
+  union) so new ETFs can be added without touching `breadth.ts`.
+- **ETF constituents** live in `server/data/etfConstituents.ts`. `BreadthIndex` is the union of
+  all supported tickers. After adding a new ETF, run the bootstrap endpoint to populate history.
+- **Y-axis**: the MA history chart uses Chart.js auto-scaling (no fixed min/max) with `stepSize:10`
+  to keep 10% grid intervals. The 50% annotation line remains.
 
 ### CSS Conventions
 
