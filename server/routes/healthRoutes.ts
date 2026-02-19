@@ -17,7 +17,7 @@ function registerHealthRoutes(options: HealthRoutesOptions): void {
   }
 
   app.get('/api/debug/metrics', (req: FastifyRequest, res: FastifyReply) => {
-    const providedSecret = String((req.query as any).secret || req.headers['x-debug-secret'] || '').trim();
+    const providedSecret = String((req.query as Record<string, string | undefined>).secret || req.headers['x-debug-secret'] || '').trim();
     const configuredSecret = String(debugMetricsSecret || '').trim();
     if (configuredSecret && !timingSafeStringEqual(providedSecret, configuredSecret)) {
       return res.code(401).send({ error: 'Unauthorized' });
@@ -33,8 +33,8 @@ function registerHealthRoutes(options: HealthRoutesOptions): void {
     try {
       const readyPayload = await getReadyPayload();
       return res.code(readyPayload.statusCode).send(readyPayload.body);
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Ready check failed: ${message}`);
       return res.code(503).send({
         ready: false,

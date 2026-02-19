@@ -81,7 +81,7 @@ export async function buildDailyDivergenceSummaryInput(options: { ticker?: strin
 }
 
 
-export async function persistOnDemandTickerDivergenceSummary(options: { entry?: Record<string, any>; latestDailyBar?: Record<string, any> | null } = {}) {
+export async function persistOnDemandTickerDivergenceSummary(options: { entry?: Record<string, unknown>; latestDailyBar?: Record<string, unknown> | null } = {}) {
   if (!divergencePool) return;
   const entry = options.entry || null;
   const latestDailyBar = options.latestDailyBar || null;
@@ -157,8 +157,8 @@ export async function getOrBuildTickerDivergenceSummary(options: { ticker?: stri
       const storedMap = await getStoredDivergenceSummariesForTickers([ticker], vdSourceInterval);
       const stored = storedMap.get(ticker);
       if (stored) return stored;
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Failed to persist on-demand divergence summary for ${ticker}: ${message}`);
     }
   }
@@ -197,8 +197,7 @@ export async function getDivergenceSummaryForTickers(options: { tickers?: string
       },
       (result: { error?: unknown } | void, _index: number, ticker: string) => {
         if (result && typeof result === 'object' && 'error' in result && result.error) {
-          const err = result.error as { message?: string };
-          const message = err.message || String(result.error);
+          const message = result.error instanceof Error ? result.error.message : String(result.error);
           console.error(`Failed to force-refresh divergence summary for ${ticker}: ${message}`);
         }
       },
@@ -314,7 +313,7 @@ export async function rebuildStoredDivergenceSummariesForTickers(options: { sour
 }
 
 
-export function buildLatestDailyBarSnapshotForTicker(options: { ticker?: string; sourceInterval?: string; maxTradeDateKey?: string; dailyInput?: Record<string, any> } = {}) {
+export function buildLatestDailyBarSnapshotForTicker(options: { ticker?: string; sourceInterval?: string; maxTradeDateKey?: string; dailyInput?: Record<string, unknown> } = {}) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -428,8 +427,8 @@ export async function getDivergenceTableTickerUniverseFromAlerts(): Promise<stri
         .toUpperCase();
       if (ticker && isValidTickerSymbol(ticker)) tickers.add(ticker);
     }
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`Failed to load TV ticker universe for table run: ${message}`);
   }
 
@@ -446,8 +445,8 @@ export async function getDivergenceTableTickerUniverseFromAlerts(): Promise<stri
           .toUpperCase();
         if (ticker && isValidTickerSymbol(ticker)) tickers.add(ticker);
       }
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Failed to load FML ticker universe for table run: ${message}`);
     }
   }

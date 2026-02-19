@@ -318,8 +318,8 @@ function scheduleRefresh(deps: CalendarDeps): void {
       log('Daily refresh starting');
       await refreshCalendar(deps);
       log('Daily refresh complete');
-    } catch (err: any) {
-      log(`Daily refresh failed (keeping stale data): ${err && err.message ? err.message : err}`);
+    } catch (err: unknown) {
+      log(`Daily refresh failed (keeping stale data): ${err instanceof Error ? err.message : String(err)}`);
     }
     scheduleRefresh(deps);
   }, delayMs);
@@ -330,9 +330,9 @@ function scheduleRefresh(deps: CalendarDeps): void {
 async function refreshCalendar(deps: CalendarDeps): Promise<void> {
   const [historical, upcoming] = await Promise.all([
     fetchHistoricalTradingDays(deps),
-    fetchUpcomingHolidays(deps).catch((err: any) => {
+    fetchUpcomingHolidays(deps).catch((err: unknown) => {
       const log = deps.log || defaultLog;
-      log(`Upcoming holidays fetch failed (non-fatal): ${err && err.message ? err.message : err}`);
+      log(`Upcoming holidays fetch failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       return { holidays: new Set<string>(), eCloses: new Map<string, string>() };
     }),
   ]);
@@ -374,8 +374,8 @@ async function init(deps: CalendarDeps): Promise<void> {
       `Initialized: ${tradingDays.size} trading days, ${earlyCloses.size} early closes, range ${calendarRangeStart} to ${calendarRangeEnd}`,
     );
     scheduleRefresh(deps);
-  } catch (err: any) {
-    log(`Init failed: ${err && err.message ? err.message : err}; staying in weekday-only mode`);
+  } catch (err: unknown) {
+    log(`Init failed: ${err instanceof Error ? err.message : String(err)}; staying in weekday-only mode`);
   }
 }
 

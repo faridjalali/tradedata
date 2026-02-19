@@ -550,7 +550,7 @@ async function fetchDataApiJsonOnce(
         });
       }
       return payload;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (metricsTracker && typeof metricsTracker.recordApiCall === 'function') {
         metricsTracker.recordApiCall({
           latencyMs: Date.now() - requestStartedMs,
@@ -607,9 +607,9 @@ async function fetchDataApiArrayWithFallback(
         continue;
       }
       return rows;
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
-      const message = err && err.message ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`${label} fetch failed (${sanitizeDataApiUrl(url)}): ${message}`);
       if (isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
         break;
@@ -737,9 +737,9 @@ async function dataApiDaily(symbol: string): Promise<Array<{ date: string; open:
         }
         return rows;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
-      const message = err && err.message ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`DataAPI daily failed for ${candidate} (requested ${symbol}): ${message}`);
     }
   }
@@ -817,7 +817,7 @@ async function fetchDataApiIndicatorLatestValue(
         return value;
       }
       lastError = new Error(`DataAPI ${type}${window} returned no value for ${candidate}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
       if (isDataApiRateLimitedError(err) || isDataApiPausedError(err) || isAbortError(err)) {
         throw err;

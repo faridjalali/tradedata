@@ -7,7 +7,7 @@
 import type { DivergenceScanStatus } from './divergenceApi';
 
 export function toStatusTextFromError(error: unknown): string {
-  const message = String((error as any)?.message || error || '').trim();
+  const message = (error instanceof Error ? error.message : String(error || '')).trim();
   if (!message) return 'Run failed';
   if (/not configured/i.test(message)) return 'DB issue';
   if (/unauthorized/i.test(message)) return 'Unauthorized';

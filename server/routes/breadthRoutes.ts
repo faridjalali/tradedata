@@ -18,7 +18,7 @@ import { dataApiDaily } from '../services/dataApi.js';
 
 export function registerBreadthRoutes(app: FastifyInstance): void {
   app.get('/api/breadth', async (request, reply) => {
-    const q = request.query as any;
+    const q = request.query as Record<string, string | undefined>;
     const compTicker = (q.ticker || 'SVIX').toString().toUpperCase();
     const days = Math.min(Math.max(parseInt(String(q.days)) || 5, 1), 60);
     const isIntraday = days <= 30;
@@ -50,7 +50,7 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
       // For "T" (days=1) show just last 2 daily closes so there's a visible line segment
       const sliceDays = days === 1 ? 2 : days;
       return reply.send({ intraday: false, points: allPoints.slice(-sliceDays) });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Breadth API Error:', err);
       return reply.code(500).send({ error: 'Failed to fetch breadth data' });
     }
@@ -58,12 +58,12 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
 
   app.get('/api/breadth/ma', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
-    const q = request.query as any;
+    const q = request.query as Record<string, string | undefined>;
     const days = Math.min(Math.max(parseInt(String(q.days)) || 60, 1), 365);
     try {
       const data = await getLatestBreadthData(divergencePool, days);
       return reply.send(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Breadth MA API Error:', err);
       return reply.code(500).send({ error: 'Failed to fetch breadth MA data' });
     }
@@ -71,7 +71,7 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
 
   app.post('/api/breadth/ma/bootstrap', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
-    const q = request.query as any;
+    const q = request.query as Record<string, string | undefined>;
     const secret = String(q.secret || '');
     if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -85,7 +85,7 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
 
   app.post('/api/breadth/ma/refresh', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
-    const q = request.query as any;
+    const q = request.query as Record<string, string | undefined>;
     const secret = String(q.secret || '');
     if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
       return reply.code(403).send({ error: 'Forbidden' });
@@ -96,9 +96,9 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
       await runBreadthComputation(divergencePool, tradeDate);
       await cleanupBreadthData(divergencePool);
       return reply.send({ status: 'done', date: tradeDate });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Breadth refresh error:', err);
-      return reply.code(500).send({ error: err.message });
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 }

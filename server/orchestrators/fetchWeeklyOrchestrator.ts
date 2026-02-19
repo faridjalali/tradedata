@@ -310,7 +310,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       flushChain = flushChain
         .then(() => flushBuffers())
         .catch((err) => {
-          console.error('Fetch-weekly on-the-fly flush error:', err && err.message ? err.message : String(err));
+          console.error('Fetch-weekly on-the-fly flush error:', err instanceof Error ? err.message : String(err));
         });
       return flushChain;
     };
@@ -446,7 +446,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
             failedTickers.push(ticker);
             runMetricsTracker?.recordFailedTicker(ticker);
             const err = result.error as Record<string, unknown> | undefined;
-            const message = err && err.message ? String(err.message) : String(result.error);
+            const message = err instanceof Error ? err.message : String(err);
             console.error(`Fetch-weekly divergence build failed for ${ticker}: ${message}`);
           }
         } else if (result && result.tradeDate) {
@@ -490,7 +490,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
           if (result && result.error) {
             if (!isAbortError(result.error)) {
               const err = result.error as Record<string, unknown> | undefined;
-              const message = err && err.message ? String(err.message) : String(result.error);
+              const message = err instanceof Error ? err.message : String(err);
               console.error(`Fetch-weekly retry still failed for ${ticker}: ${message}`);
               stillFailedTickers.push(ticker);
             }
@@ -527,7 +527,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
             if (result && result.error) {
               if (!isAbortError(result.error)) {
                 const err = result.error as Record<string, unknown> | undefined;
-                const message = err && err.message ? String(err.message) : String(result.error);
+                const message = err instanceof Error ? err.message : String(err);
                 console.error(`Fetch-weekly retry-2 still failed for ${ticker}: ${message}`);
               }
             } else {
@@ -595,7 +595,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
           if (result && result.error && !isAbortError(result.error)) {
             failedMaSeeds.push(maSeedRows[idx]);
             const err = result.error as Record<string, unknown> | undefined;
-            const message = err && err.message ? String(err.message) : String(result.error);
+            const message = err instanceof Error ? err.message : String(err);
             console.error(`Fetch-weekly MA enrichment failed: ${message}`);
           }
         },
@@ -625,7 +625,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
             if (result && result.error) {
               if (!isAbortError(result.error)) {
                 const err = result.error as Record<string, unknown> | undefined;
-                const message = err && err.message ? String(err.message) : String(result.error);
+                const message = err instanceof Error ? err.message : String(err);
                 console.error(`Fetch-weekly MA retry still failed for ${seed?.ticker}: ${message}`);
                 stillFailedMaSeeds.push(seed);
               }
@@ -656,7 +656,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
               if (result && result.error) {
                 if (!isAbortError(result.error)) {
                   const err = result.error as Record<string, unknown> | undefined;
-                  const message = err && err.message ? String(err.message) : String(result.error);
+                  const message = err instanceof Error ? err.message : String(err);
                   console.error(`Fetch-weekly MA retry-2 still failed for ${seed?.ticker}: ${message}`);
                 }
               } else {
@@ -696,7 +696,7 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       errorTickers,
       lastPublishedTradeDate: weeklyTradeDate || null,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     try {
       if (dailyRowsBuffer.length > 0) {
         const batch = dailyRowsBuffer.splice(0, dailyRowsBuffer.length);
@@ -738,10 +738,10 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
           [neutralTickers, neutralTradeDates, sourceInterval],
         );
       }
-    } catch (flushErr: any) {
+    } catch (flushErr: unknown) {
       console.error(
         'Fetch-weekly error-path flush failed:',
-        flushErr && flushErr.message ? flushErr.message : String(flushErr),
+        flushErr instanceof Error ? flushErr.message : String(flushErr),
       );
     }
 

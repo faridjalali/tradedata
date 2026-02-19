@@ -181,7 +181,7 @@ export function canResumeDivergenceTableBuild() {
   return !divergenceTableBuildRunning && Boolean(divergenceTableBuildResumeState);
 }
 
-export function normalizeFetchDailyDataResumeState(state: Record<string, any> = {}) {
+export function normalizeFetchDailyDataResumeState(state: Record<string, unknown> = {}) {
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const sourceInterval = String(state.sourceInterval || '').trim();
   const tickers = Array.isArray(state.tickers)
@@ -209,7 +209,7 @@ export function normalizeFetchDailyDataResumeState(state: Record<string, any> = 
 }
 
 
-export function normalizeFetchWeeklyDataResumeState(state: Record<string, any> = {}) {
+export function normalizeFetchWeeklyDataResumeState(state: Record<string, unknown> = {}) {
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const weeklyTradeDate = String(state.weeklyTradeDate || '').trim();
   const sourceInterval = String(state.sourceInterval || '').trim();
@@ -307,7 +307,7 @@ export function resolveLastClosedWeeklyCandleDate(nowUtc = new Date()) {
 }
 
 
-export function normalizeDivergenceScanResumeState(state: Record<string, any> = {}): DivergenceScanResumeState {
+export function normalizeDivergenceScanResumeState(state: Record<string, unknown> = {}): DivergenceScanResumeState {
   const runDateEt = String(state.runDateEt || '').trim();
   const trigger = String(state.trigger || 'manual').trim() || 'manual';
   const symbols = Array.isArray(state.symbols)
@@ -339,7 +339,7 @@ export function normalizeDivergenceScanResumeState(state: Record<string, any> = 
 }
 
 
-export function normalizeDivergenceTableResumeState(state: Record<string, any> = {}): DivergenceTableBuildResumeState {
+export function normalizeDivergenceTableResumeState(state: Record<string, unknown> = {}): DivergenceTableBuildResumeState {
   const sourceInterval =
     String(state.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();

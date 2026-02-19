@@ -42,8 +42,8 @@ export async function runScheduledDivergencePipeline() {
       sourceInterval: DIVERGENCE_SOURCE_INTERVAL,
     });
     console.log('Scheduled divergence table build completed after scan:', tableSummary);
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`Scheduled divergence table build failed after scan: ${message}`);
   }
 
@@ -59,8 +59,8 @@ export function scheduleNextDivergenceScan() {
   const timer = setTimeout(async () => {
     try {
       await runScheduledDivergencePipeline();
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Scheduled divergence scan failed: ${message}`);
     } finally {
       scheduleNextDivergenceScan();
@@ -113,8 +113,8 @@ export function scheduleNextBreadthComputation() {
       const tradeDate = `${y}-${m}-${d}`;
       await runBreadthComputation(divergencePool!, tradeDate);
       await cleanupBreadthData(divergencePool!);
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Scheduled breadth computation failed: ${message}`);
     } finally {
       scheduleNextBreadthComputation();

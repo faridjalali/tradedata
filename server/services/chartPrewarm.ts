@@ -108,9 +108,9 @@ async function prewarmChartResult(options: PrewarmOptions, deps: PrewarmDeps): P
       requestKey,
       skipFollowUpPrewarm: true,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (CHART_TIMING_LOG_ENABLED) {
-      const message = err && err.message ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(`[chart-prewarm] ${ticker} ${interval} failed: ${message}`);
     }
   }

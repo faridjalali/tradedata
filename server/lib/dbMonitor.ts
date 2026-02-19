@@ -7,10 +7,10 @@ import type { Pool } from 'pg';
 
 const SLOW_QUERY_THRESHOLD_MS = Math.max(0, Number(process.env.SLOW_QUERY_THRESHOLD_MS) || 500);
 
-function extractSql(args: any[]): string {
+function extractSql(args: unknown[]): string {
   const first = args[0];
-  const raw = typeof first === 'string' ? first : first?.text || '';
-  return raw.replace(/\s+/g, ' ').trim().slice(0, 200);
+  const raw = typeof first === 'string' ? first : (first as Record<string, unknown>)?.text || '';
+  return String(raw).replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 export function instrumentPool(pool: Pool, poolName = 'primary'): Pool {
@@ -18,10 +18,13 @@ export function instrumentPool(pool: Pool, poolName = 'primary'): Pool {
 
   const originalQuery = pool.query.bind(pool);
 
-  (pool as any).query = async function monitoredQuery(...args: any[]) {
+  // pg's Pool.query is not redefinable through the public interface; monkey-patching is the
+  // standard approach for transparent query instrumentation without a proxy layer.
+  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query =
+    async function monitoredQuery(...args: unknown[]) {
     const start = performance.now();
     try {
-      const result = await (originalQuery as any)(...args);
+      const result = await (originalQuery as (...a: unknown[]) => Promise<unknown>)(...args);
       const durationMs = performance.now() - start;
       if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
         console.warn(
@@ -29,10 +32,10 @@ export function instrumentPool(pool: Pool, poolName = 'primary'): Pool {
         );
       }
       return result;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const durationMs = performance.now() - start;
       console.error(
-        `[query-error] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)} error=${err && err.message ? err.message : err}`,
+        `[query-error] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)} error=${err instanceof Error ? err.message : String(err)}`,
       );
       throw err;
     }

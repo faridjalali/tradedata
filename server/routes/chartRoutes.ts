@@ -8,15 +8,16 @@ function invalidIntervalErrorMessage(): string {
   return 'Invalid interval. Use: 5min, 15min, 30min, 1hour, 4hour, 1day, or 1week';
 }
 
-function classifyChartError(err: any): string {
-  if (!err) return 'INTERNAL_ERROR';
-  if (err.isDataApiRateLimited) return 'RATE_LIMITED';
-  if (err.isDataApiPaused) return 'API_PAUSED';
-  if (err.isTaskTimeout) return 'BUILD_TIMEOUT';
-  if (err.name === 'CircuitOpenError') return 'CIRCUIT_OPEN';
-  if (err.isDataApiSubscriptionRestricted) return 'SUBSCRIPTION_RESTRICTED';
-  if (Number(err.httpStatus) === 400) return 'BAD_REQUEST';
-  if (Number(err.httpStatus) === 503) return 'SERVICE_UNAVAILABLE';
+function classifyChartError(err: unknown): string {
+  if (!err || typeof err !== 'object') return 'INTERNAL_ERROR';
+  const e = err as Record<string, unknown>;
+  if (e.isDataApiRateLimited) return 'RATE_LIMITED';
+  if (e.isDataApiPaused) return 'API_PAUSED';
+  if (e.isTaskTimeout) return 'BUILD_TIMEOUT';
+  if (e.name === 'CircuitOpenError') return 'CIRCUIT_OPEN';
+  if (e.isDataApiSubscriptionRestricted) return 'SUBSCRIPTION_RESTRICTED';
+  if (Number(e.httpStatus) === 400) return 'BAD_REQUEST';
+  if (Number(e.httpStatus) === 503) return 'SERVICE_UNAVAILABLE';
   return 'INTERNAL_ERROR';
 }
 
@@ -139,8 +140,8 @@ function registerChartRoutes(options: {
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
-    } catch (err: any) {
-      console.error('Chart API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('Chart API Error:', err instanceof Error ? err.message : String(err));
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
@@ -200,8 +201,8 @@ function registerChartRoutes(options: {
         });
       }
       await sendChartJsonResponse(req, res, payload, serverTiming);
-    } catch (err: any) {
-      console.error('Chart Latest API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('Chart Latest API Error:', err instanceof Error ? err.message : String(err));
       const statusCode = Number(err && err.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
@@ -245,8 +246,8 @@ function registerChartRoutes(options: {
       if (bars.length > 30) bars = bars.slice(-30);
       res.header('Cache-Control', 'public, max-age=300');
       return res.code(200).send({ ticker, bars });
-    } catch (err: any) {
-      console.error('Mini Bars API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('Mini Bars API Error:', err instanceof Error ? err.message : String(err));
       return res.code(500).send({ error: 'Failed to fetch mini bars' });
     }
   });
@@ -321,8 +322,8 @@ function registerChartRoutes(options: {
 
       res.header('Cache-Control', 'public, max-age=300');
       return res.code(200).send({ results });
-    } catch (err: any) {
-      console.error('Mini Bars Batch API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('Mini Bars Batch API Error:', err instanceof Error ? err.message : String(err));
       return res.code(500).send({ error: 'Failed to fetch mini bars batch' });
     }
   });
@@ -346,8 +347,8 @@ function registerChartRoutes(options: {
       const result = await options.getVDFStatus(ticker, { force, mode });
       res.header('Cache-Control', 'no-store');
       return res.code(200).send(result);
-    } catch (err: any) {
-      console.error('VDF Status API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('VDF Status API Error:', err instanceof Error ? err.message : String(err));
       return res.code(502).send({ error: 'Failed to fetch VDF status' });
     }
   });
@@ -384,8 +385,8 @@ function registerChartRoutes(options: {
       });
       res.header('Cache-Control', 'no-store');
       return res.code(200).send(payload);
-    } catch (err: any) {
-      console.error('Chart Divergence Summary API Error:', err && err.message ? err.message : err);
+    } catch (err: unknown) {
+      console.error('Chart Divergence Summary API Error:', err instanceof Error ? err.message : String(err));
       return res.code(502).send({ error: 'Failed to fetch divergence summary' });
     }
   });

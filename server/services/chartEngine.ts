@@ -341,8 +341,8 @@ async function dataApiIntraday(
           batch.map((url) =>
             fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
               .then((payload) => toArrayPayload(payload) || [])
-              .catch((err: any) => {
-                console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err.message);
+              .catch((err: unknown) => {
+                console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err instanceof Error ? err.message : String(err));
                 throw err;
               }),
           ),
@@ -383,8 +383,8 @@ async function dataApiIntraday(
   };
 
   if (cached.status === 'stale') {
-    executeFetch().catch((err: any) => {
-      console.error(`[SWR] Background refresh failed for ${cacheKey}:`, err.message);
+    executeFetch().catch((err: unknown) => {
+      console.error(`[SWR] Background refresh failed for ${cacheKey}:`, err instanceof Error ? err.message : String(err));
     });
     return cached.value as OHLCVBar[] | null;
   }
@@ -425,7 +425,7 @@ async function dataApiIntradayChartHistorySingle(
       if (Array.isArray(rows) && rows.length >= 50000) {
         console.warn(`DataAPI ${interval} single-range payload hit cap for ${symbol}; retrying with slices`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (
         isAbortError(err) ||
         isDataApiRateLimitedError(err) ||
@@ -434,7 +434,7 @@ async function dataApiIntradayChartHistorySingle(
       ) {
         throw err;
       }
-      const message = err && err.message ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(`DataAPI ${interval} single-range fetch failed for ${symbol}; falling back to slices: ${message}`);
     }
   }
@@ -464,17 +464,17 @@ async function dataApiIntradayChartHistorySingle(
           if (!row) continue;
           const rowKey = Number.isFinite(Number(row.time))
             ? String(Math.floor(Number(row.time)))
-            : String((row as any).datetime || '');
+            : String((row as Record<string, unknown>).datetime || '');
           if (!rowKey) continue;
           byDateTime.set(rowKey, row);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastSliceError = err;
       if (isAbortError(err)) {
         throw err;
       }
-      const message = err && err.message ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       console.error(
         `DataAPI ${interval} slice fetch failed for ${symbol} (${formatDateUTC(sliceStart)} to ${formatDateUTC(sliceEnd)}): ${message}`,
       );
@@ -523,12 +523,12 @@ async function dataApiIntradayChartHistory(
           }
           return rows;
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastError = err;
         if (isAbortError(err)) {
           throw err;
         }
-        const message = err && err.message ? err.message : String(err);
+        const message = err instanceof Error ? err.message : String(err);
         console.error(`DataAPI ${intervalCandidate} history failed for ${candidate} (requested ${symbol}): ${message}`);
         if (isDataApiRateLimitedError(err) || isDataApiPausedError(err)) {
           throw err;
@@ -742,8 +742,8 @@ async function sendChartJsonResponse(req: { headers: Record<string, string | und
       });
       res.header('Content-Encoding', 'br');
       return res.code(200).send(compressed);
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(`Brotli compression failed for /api/chart response: ${message}`);
     }
   }
@@ -755,8 +755,8 @@ async function sendChartJsonResponse(req: { headers: Record<string, string | und
       });
       res.header('Content-Encoding', 'gzip');
       return res.code(200).send(compressed);
-    } catch (err: any) {
-      const message = err && err.message ? err.message : String(err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(`Gzip compression failed for /api/chart response: ${message}`);
     }
   }
@@ -861,8 +861,8 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
         };
       }
       setTimedCacheValue(VD_RSI_RESULT_CACHE, vdRsiResultCacheKey, volumeDeltaRsi, cacheExpiryMs);
-    } catch (volumeDeltaErr: any) {
-      const message = volumeDeltaErr && volumeDeltaErr.message ? volumeDeltaErr.message : String(volumeDeltaErr);
+    } catch (volumeDeltaErr: unknown) {
+      const message = volumeDeltaErr instanceof Error ? volumeDeltaErr.message : String(volumeDeltaErr);
       console.warn(`Volume Delta RSI skipped for ${ticker}/${interval}: ${message}`);
     }
   }
@@ -893,7 +893,7 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
 
 async function getOrBuildChartResult(
   params: ChartRequestParams,
-  deps: { chartDebugMetrics?: Record<string, any>; schedulePostLoadPrewarmSequence?: (opts: Record<string, unknown>) => void } = {},
+  deps: { chartDebugMetrics?: Record<string, unknown>; schedulePostLoadPrewarmSequence?: (opts: Record<string, unknown>) => void } = {},
 ) {
   const {
     ticker,
@@ -1035,12 +1035,12 @@ async function getOrBuildChartResult(
 
   CHART_IN_FLIGHT_REQUESTS.set(requestKey, buildPromise);
   buildPromise
-    .catch((err: any) => {
+    .catch((err: unknown) => {
       // Suppress unhandled rejections for the stale SWR background refresh path.
       // When returning stale data, no caller awaits buildPromise, so failures must
       // be caught here. Non-stale callers receive the rejection via their own await.
       if (cachedFinalResult.status === 'stale') {
-        console.error(`[SWR] Background chart refresh failed for ${requestKey}:`, err?.message ?? err);
+        console.error(`[SWR] Background chart refresh failed for ${requestKey}:`, err instanceof Error ? err.message : String(err));
       }
     })
     .finally(() => {
@@ -1067,7 +1067,7 @@ function findPointByTime(points: Array<{ time: number | string; [key: string]: u
   return null;
 }
 
-function extractLatestChartPayload(result: Record<string, any> | null) {
+function extractLatestChartPayload(result: Record<string, unknown> | null) {
   if (!result || !Array.isArray(result.bars) || result.bars.length === 0) {
     return {
       interval: result?.interval || '',

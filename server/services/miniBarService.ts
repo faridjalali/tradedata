@@ -48,8 +48,8 @@ export async function persistMiniChartBars(ticker: string, bars: Array<{ time: n
     `,
       values,
     );
-  } catch (err: any) {
-    console.error(`persistMiniChartBars(${ticker}): ${err.message}`);
+  } catch (err: unknown) {
+    console.error(`persistMiniChartBars(${ticker}): ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -137,8 +137,8 @@ export async function fetchMiniChartBarsFromApi(ticker: string): Promise<MiniBar
       }
     }
     return bars;
-  } catch (err: any) {
-    console.error(`fetchMiniChartBarsFromApi(${ticker}): ${err.message || err}`);
+  } catch (err: unknown) {
+    console.error(`fetchMiniChartBarsFromApi(${ticker}): ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }

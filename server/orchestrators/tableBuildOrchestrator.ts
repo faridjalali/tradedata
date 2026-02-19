@@ -307,7 +307,7 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
                   errorTickers += 1;
                   divergenceTableBuildStatus.errorTickers = errorTickers;
                   const err = result.error as Record<string, unknown> | undefined;
-                  const message = err && err.message ? String(err.message) : String(result.error);
+                  const message = err instanceof Error ? err.message : String(err);
                   console.error(`Divergence table backfill failed for ${ticker}: ${message}`);
                 }
                 persistResumeState();
@@ -329,7 +329,7 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
               );
               try {
                 await sleepWithAbort(retryDelayMs, tableAbortController.signal);
-              } catch (sleepErr: any) {
+              } catch (sleepErr: unknown) {
                 if (
                   !isAbortError(sleepErr) ||
                   (!divergenceTableBuildStopRequested && !divergenceTableBuildPauseRequested)
@@ -465,7 +465,7 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
       errorTickers,
       lastPublishedTradeDate: lastPublishedTradeDate || null,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     setDivergenceTableBuildPauseRequested(false);
     setDivergenceTableBuildStopRequested(false);
     setDivergenceTableBuildStatus({

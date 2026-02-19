@@ -362,7 +362,7 @@ export async function stopVDFScan(): Promise<{ status: string }> {
 
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
   const response = await fetch('/api/divergence/scan/status');
-  const payload = await response.json().catch(() => null as any);
+  const payload = await response.json().catch(() => null) as (DivergenceScanStatus & { error?: string }) | null;
   if (!response.ok || !payload) {
     const reason =
       typeof payload?.error === 'string' && payload.error.trim()
@@ -370,14 +370,5 @@ export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus>
         : 'Failed to fetch divergence scan status';
     throw new Error(reason);
   }
-  return {
-    running: Boolean((payload as any).running),
-    lastScanDateEt: (payload as any).lastScanDateEt ?? null,
-    scanControl: (payload as any).scanControl ?? null,
-    tableBuild: (payload as any).tableBuild ?? null,
-    fetchDailyData: (payload as any).fetchDailyData ?? null,
-    fetchWeeklyData: (payload as any).fetchWeeklyData ?? null,
-    vdfScan: (payload as any).vdfScan ?? null,
-    latestJob: (payload as any).latestJob ?? null,
-  };
+  return payload;
 }

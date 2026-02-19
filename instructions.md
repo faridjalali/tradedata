@@ -24,10 +24,15 @@ fixed before committing. This is not aspirational — it is the minimum bar.
 
 2. **No `any` except bounded, documented escape hatches.**
    Acceptable uses (comment required explaining why):
-   - CDN globals that cannot be imported (e.g., `declare const Chart: ChartInstance`)
+   - CDN globals that cannot be imported (e.g., `declare const Chart: any; // LightweightCharts CDN`)
+   - Runtime monkey-patching where public API is absent (e.g., `instrumentPool` in `dbMonitor.ts`)
    - `() => null as any` when satisfying a complex return type in tests
    Unacceptable uses: `Record<string, any>` for known shapes, `(x: any)` parameters,
-   `const x: any = ...`. Use `unknown` + narrowing, generics, or proper interfaces.
+   `(err as any).prop`, `const x: any = ...`. Use `unknown` + narrowing, generics, or proper interfaces.
+   For custom error properties use `Object.assign(new Error(...), { httpStatus: 400 }) as HttpError`.
+   For Fastify request augmentation use `declare module 'fastify' { interface FastifyRequest { ... } }`.
+   For accessing unknown API response payloads, cast to the expected return type directly:
+   `const payload = await res.json() as ExpectedType | null`.
 
 3. **No dead code.** Unused functions, variables, imports, and type aliases must be deleted.
    This applies to test helpers too — if a helper is not called in a test, remove it.

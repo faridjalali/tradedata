@@ -186,8 +186,8 @@ export async function bootstrapBreadthHistory(
       if (fetchedDays % 20 === 0) {
         console.log(`[breadth] Fetched ${fetchedDays}/${tradingDates.length} days...`);
       }
-    } catch (err: any) {
-      console.error(`[breadth] Failed to fetch grouped bars for ${date}: ${err.message}`);
+    } catch (err: unknown) {
+      console.error(`[breadth] Failed to fetch grouped bars for ${date}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -205,8 +205,8 @@ export async function bootstrapBreadthHistory(
     if (alreadyComputed.size > 0) {
       console.log(`[breadth] Skipping ${alreadyComputed.size} already-computed dates.`);
     }
-  } catch (err: any) {
-    console.warn(`[breadth] Could not load existing snapshot dates — will recompute all: ${err.message}`);
+  } catch (err: unknown) {
+    console.warn(`[breadth] Could not load existing snapshot dates — will recompute all: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Compute snapshots for dates that have enough history (at least 21 days for shortest SMA)
@@ -231,8 +231,8 @@ export async function bootstrapBreadthHistory(
         );
       }
       computedDays++;
-    } catch (err: any) {
-      console.error(`[breadth] Failed to compute breadth for ${date}: ${err.message}`);
+    } catch (err: unknown) {
+      console.error(`[breadth] Failed to compute breadth for ${date}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   if (skippedDays > 0) console.log(`[breadth] Skipped ${skippedDays} already-complete dates.`);

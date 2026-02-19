@@ -3,8 +3,8 @@ async function checkDatabaseReady(poolInstance: { query: Function } | null): Pro
   try {
     await poolInstance.query('SELECT 1');
     return { ok: true };
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };
   }
 }
@@ -13,8 +13,8 @@ interface DebugMetricsOptions {
   startedAtMs: number;
   isShuttingDown: boolean;
   httpDebugMetrics: { totalRequests: number; apiRequests: number };
-  chartCacheSizes: Record<string, any>;
-  chartDebugMetrics: Record<string, any>;
+  chartCacheSizes: Record<string, unknown>;
+  chartDebugMetrics: Record<string, unknown>;
   divergence: { configured: boolean; running: boolean; lastScanDateEt: string };
   memoryUsage?: NodeJS.MemoryUsage;
 }
@@ -22,7 +22,7 @@ interface DebugMetricsOptions {
 function buildDebugMetricsPayload(options: DebugMetricsOptions) {
   const { startedAtMs, isShuttingDown, httpDebugMetrics, chartCacheSizes, chartDebugMetrics, divergence, memoryUsage } =
     options;
-  const memory = (memoryUsage || {}) as any;
+  const memory = memoryUsage ?? { rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 };
   return {
     uptimeSeconds: Math.floor((Date.now() - startedAtMs) / 1000),
     shuttingDown: isShuttingDown,

@@ -42,7 +42,7 @@ function buildManualScanRequest(options: {
 }
 
 async function fetchLatestDivergenceScanStatus(options: {
-  divergencePool: { query: (...args: any[]) => Promise<{ rows: Record<string, any>[] }> };
+  divergencePool: { query: (...args: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> };
   divergenceSourceInterval: string;
   getIsScanRunning: () => boolean;
   getLastFetchedTradeDateEt: () => string;

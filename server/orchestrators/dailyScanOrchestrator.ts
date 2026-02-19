@@ -240,7 +240,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
             try {
               const outcome = await computeSymbolDivergenceSignals(ticker, { signal: attemptController.signal });
               return { ticker, ...outcome, error: null };
-            } catch (err: any) {
+            } catch (err: unknown) {
               return { ticker, signals: [], latestTradeDate: '', error: err };
             }
           }),
@@ -306,7 +306,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
             continue;
           }
           errorCount += 1;
-          const message = result.error && result.error.message ? result.error.message : String(result.error);
+          const message = result.error instanceof Error ? result.error.message : String(result.error);
           console.error(`Divergence scan failed for ${result.ticker}: ${message}`);
           continue;
         }
@@ -345,7 +345,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
       if (targetSpacingMs > 0) {
         try {
           await sleepWithAbort(targetSpacingMs, scanAbortController.signal);
-        } catch (sleepErr: any) {
+        } catch (sleepErr: unknown) {
           if (!(isAbortError(sleepErr) && (divergenceScanStopRequested || divergenceScanPauseRequested))) {
             throw sleepErr;
           }
@@ -446,7 +446,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
       errorCount,
       summaryProcessedTickers,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (
       divergenceScanStopRequested ||
       (isAbortError(err) && scanAbortController.signal.aborted && !divergenceScanPauseRequested)
@@ -505,7 +505,7 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
       bullish_count: bullishCount,
       bearish_count: bearishCount,
       error_count: errorCount,
-      notes: String(err && err.message ? err.message : err || ''),
+      notes: String(err instanceof Error ? err.message : String(err) || ''),
     });
     throw err;
   } finally {

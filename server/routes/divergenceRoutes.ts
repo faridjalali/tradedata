@@ -15,7 +15,7 @@ interface DivergenceRoutesOptions {
   runDivergenceTableBuild?: (opts: Record<string, unknown>) => Promise<Record<string, unknown>>;
   runDivergenceFetchDailyData?: (opts: Record<string, unknown>) => Promise<Record<string, unknown>>;
   runDivergenceFetchWeeklyData?: (opts: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  divergencePool: { query: (...args: any[]) => Promise<{ rows: Record<string, any>[] }> } | null;
+  divergencePool: { query: (...args: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> } | null;
   divergenceSourceInterval: string;
   getLastFetchedTradeDateEt: () => string;
   getLastScanDateEt: () => string;
@@ -93,7 +93,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     const earlyErr = await Promise.race<string | null>([
       jobFn()
         .then((summary) => { console.log(`${label} completed:`, summary); return null; })
-        .catch((err: any) => { const m = err?.message || String(err); console.error(`${label} failed: ${m}`); return m; }),
+        .catch((err: unknown) => { const m = err instanceof Error ? err.message : String(err); console.error(`${label} failed: ${m}`); return m; }),
       new Promise<null>(resolve => setTimeout(resolve, 0, null)),
     ]);
     if (earlyErr) return res.code(500).send({ error: `${label} startup failed: ${earlyErr}` });
@@ -452,8 +452,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
         getLastFetchedTradeDateEt,
         getLastScanDateEt,
       });
-    } catch (err: any) {
-      console.error('Scan status DB query failed (returning in-memory status):', err.message);
+    } catch (err: unknown) {
+      console.error('Scan status DB query failed (returning in-memory status):', err instanceof Error ? err.message : String(err));
       statusPayload = {
         running: getIsScanRunning(),
         lastScanDateEt: getLastFetchedTradeDateEt() || getLastScanDateEt() || null,

@@ -29,7 +29,7 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
     );
     if (rows.length === 0) return null;
     const row = rows[0];
-    let parsed: Record<string, any> = {};
+    let parsed: Record<string, unknown> = {};
     try {
       parsed = row.result_json ? JSON.parse(row.result_json) : {};
     } catch {
@@ -51,14 +51,14 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
       proximity: parsed.proximity || { compositeScore: 0, level: 'none', signals: [] },
       details: parsed,
     };
-  } catch (err: any) {
-    console.error('getStoredVDFResult error:', err && err.message ? err.message : err);
+  } catch (err: unknown) {
+    console.error('getStoredVDFResult error:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
 
 
-export async function upsertVDFResult(ticker: string, tradeDate: string, result: Record<string, any>) {
+export async function upsertVDFResult(ticker: string, tradeDate: string, result: Record<string, unknown>) {
   if (!isDivergenceConfigured()) return;
   try {
     const bestScore = result.bestScore || result.score || 0;
@@ -106,8 +106,8 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
         result.bull_flag_confidence ?? null,
       ],
     );
-  } catch (err: any) {
-    console.error('upsertVDFResult error:', err && err.message ? err.message : err);
+  } catch (err: unknown) {
+    console.error('upsertVDFResult error:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -148,7 +148,7 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
 
   try {
     const fetcher = noCache
-      ? (sym: string, intv: string, days: number, opts: Record<string, any> = {}) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
+      ? (sym: string, intv: string, days: number, opts: Record<string, unknown> = {}) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
       : dataApiIntradayChartHistory;
     const result = await detectVDF(ticker, {
       dataApiFetcher: fetcher,

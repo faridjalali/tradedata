@@ -281,7 +281,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       flushChain = flushChain
         .then(() => flushBuffers())
         .catch((err) => {
-          console.error('Fetch-all on-the-fly flush error:', err && err.message ? err.message : String(err));
+          console.error('Fetch-all on-the-fly flush error:', err instanceof Error ? err.message : String(err));
         });
       return flushChain;
     };
@@ -379,7 +379,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
             failedTickers.push(ticker);
             runMetricsTracker?.recordFailedTicker(ticker);
             const err = result.error as Record<string, unknown> | undefined;
-            const message = err && err.message ? String(err.message) : String(result.error);
+            const message = err instanceof Error ? err.message : String(err);
             console.error(`Fetch-all divergence build failed for ${ticker}: ${message}`);
           }
         } else if (result && result.tradeDate) {
@@ -426,7 +426,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
           if (result && result.error) {
             if (!isAbortError(result.error)) {
               const err = result.error as Record<string, unknown> | undefined;
-              const message = err && err.message ? String(err.message) : String(result.error);
+              const message = err instanceof Error ? err.message : String(err);
               console.error(`Fetch-all retry still failed for ${ticker}: ${message}`);
               stillFailedTickers.push(ticker);
             }
@@ -463,7 +463,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
             if (result && result.error) {
               if (!isAbortError(result.error)) {
                 const err = result.error as Record<string, unknown> | undefined;
-                const message = err && err.message ? String(err.message) : String(result.error);
+                const message = err instanceof Error ? err.message : String(err);
                 console.error(`Fetch-all retry-2 still failed for ${ticker}: ${message}`);
               }
             } else {
@@ -531,7 +531,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
           if (result && result.error && !isAbortError(result.error)) {
             failedMaSeeds.push(maSeedRows[idx]);
             const err = result.error as Record<string, unknown> | undefined;
-            const message = err && err.message ? String(err.message) : String(result.error);
+            const message = err instanceof Error ? err.message : String(err);
             console.error(`Fetch-all MA enrichment failed: ${message}`);
           }
         },
@@ -561,7 +561,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
             if (result && result.error) {
               if (!isAbortError(result.error)) {
                 const err = result.error as Record<string, unknown> | undefined;
-                const message = err && err.message ? String(err.message) : String(result.error);
+                const message = err instanceof Error ? err.message : String(err);
                 console.error(`Fetch-all MA retry still failed for ${seed?.ticker}: ${message}`);
                 stillFailedMaSeeds.push(seed);
               }
@@ -592,7 +592,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
               if (result && result.error) {
                 if (!isAbortError(result.error)) {
                   const err = result.error as Record<string, unknown> | undefined;
-                  const message = err && err.message ? String(err.message) : String(result.error);
+                  const message = err instanceof Error ? err.message : String(err);
                   console.error(`Fetch-all MA retry-2 still failed for ${seed?.ticker}: ${message}`);
                 }
               } else {
@@ -643,7 +643,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       errorTickers,
       lastPublishedTradeDate: lastPublishedTradeDate || null,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Flush whatever is buffered even on error/abort
     try {
       if (dailyRowsBuffer.length > 0) {
@@ -659,10 +659,10 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
         const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
         await upsertDivergenceSummaryBatch(batch, null);
       }
-    } catch (flushErr: any) {
+    } catch (flushErr: unknown) {
       console.error(
         'Fetch-all error-path flush failed:',
-        flushErr && flushErr.message ? flushErr.message : String(flushErr),
+        flushErr instanceof Error ? flushErr.message : String(flushErr),
       );
     }
 

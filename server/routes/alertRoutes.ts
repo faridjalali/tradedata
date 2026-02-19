@@ -47,8 +47,8 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
           includeLatestFallbackForMissing: true,
         });
-      } catch (summaryErr: any) {
-        const message = summaryErr?.message || String(summaryErr);
+      } catch (summaryErr: unknown) {
+        const message = summaryErr instanceof Error ? summaryErr.message : String(summaryErr);
         console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
       }
       const neutralStates = buildNeutralDivergenceStateMap();
@@ -85,14 +85,14 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         };
       });
       return reply.send(enrichedRows);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       return reply.code(500).send('Server Error');
     }
   });
 
   app.post('/api/alerts/:id/favorite', async (request, reply) => {
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as Record<string, string>).id, 10);
     if (!Number.isFinite(id) || id <= 0) {
       return reply.code(400).send({ error: 'Invalid alert ID' });
     }
@@ -110,7 +110,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
       const result = await pool.query(query, values);
       if (result.rows.length === 0) return reply.code(404).send('Alert not found');
       return reply.send(result.rows[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error toggling favorite:', err);
       return reply.code(500).send('Server Error');
     }
@@ -190,8 +190,8 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
           includeLatestFallbackForMissing: true,
         });
-      } catch (summaryErr: any) {
-        console.error(`Failed to enrich divergence signals with divergence summaries: ${summaryErr?.message || summaryErr}`);
+      } catch (summaryErr: unknown) {
+        console.error(`Failed to enrich divergence signals with divergence summaries: ${summaryErr instanceof Error ? summaryErr.message : String(summaryErr)}`);
       }
       const neutralStates = buildNeutralDivergenceStateMap();
       let vdfDataMap = new Map();
@@ -227,7 +227,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         };
       });
       return reply.send(enrichedRows);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Divergence API error:', err);
       return reply.code(500).send({ error: 'Failed to fetch divergence signals' });
     }
@@ -235,7 +235,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
 
   app.post('/api/divergence/signals/:id/favorite', async (request, reply) => {
     if (!isDivergenceConfigured()) return reply.code(503).send({ error: 'Divergence database is not configured' });
-    const id = parseInt((request.params as any).id, 10);
+    const id = parseInt((request.params as Record<string, string>).id, 10);
     if (!Number.isFinite(id) || id <= 0) return reply.code(400).send({ error: 'Invalid signal ID' });
     const body = (request.body ?? {}) as Record<string, unknown>;
     const is_favorite = body.is_favorite;
@@ -257,7 +257,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
       const result = await divergencePool!.query(query, values);
       if (result.rows.length === 0) return reply.code(404).send({ error: 'Signal not found' });
       return reply.send(result.rows[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error toggling divergence favorite:', err);
       return reply.code(500).send({ error: 'Server Error' });
     }

@@ -20,12 +20,12 @@ import { dataApiLatestQuote } from './dataApi.js';
 import * as chartPrewarm from './chartPrewarm.js';
 import { isValidTickerSymbol } from '../middleware.js';
 
+interface HttpError extends Error { httpStatus: number; }
 
 export function parseChartRequestParams(req: { query: Record<string, unknown> }) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
   if (!isValidTickerSymbol(ticker)) {
-    const err = new Error('Invalid ticker format');
-    (err as any).httpStatus = 400;
+    const err = Object.assign(new Error('Invalid ticker format'), { httpStatus: 400 }) as HttpError;
     throw err;
   }
   const interval = (req.query.interval || '4hour').toString();
@@ -65,7 +65,7 @@ export function findPointByTime(points: Array<{ time: number | string; [key: str
 }
 
 
-export function extractLatestChartPayload(result: Record<string, any>) {
+export function extractLatestChartPayload(result: Record<string, unknown>) {
   const bars = Array.isArray(result?.bars) ? result.bars : [];
   const latestBar = bars.length ? bars[bars.length - 1] : null;
   const latestTime = latestBar ? latestBar.time : null;

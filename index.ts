@@ -127,6 +127,16 @@ import {
   buildIntradayBreadthPoints,
 } from './server/services/chartEngine.js';
 
+// Extend FastifyRequest with per-request tracing fields.
+declare module 'fastify' {
+  interface FastifyRequest {
+    requestId?: string;
+    _logStartNs?: bigint;
+  }
+}
+
+interface HttpError extends Error { httpStatus: number; }
+
 const app = Fastify({
   trustProxy: true,
   bodyLimit: 1048576,
@@ -221,7 +231,7 @@ app.addHook('onRequest', async (request, reply) => {
 // Request ID + logging
 app.addHook('onRequest', async (request, reply) => {
   const requestId = String(request.headers['x-request-id'] || '').trim() || createRequestId();
-  (request as any).requestId = requestId;
+  request.requestId = requestId;
   reply.header('x-request-id', requestId);
 
   httpDebugMetrics.totalRequests += 1;
@@ -231,7 +241,7 @@ app.addHook('onRequest', async (request, reply) => {
   }
 
   if (REQUEST_LOG_ENABLED && shouldLogRequestPath(urlPath)) {
-    (request as any)._logStartNs = process.hrtime.bigint();
+    request._logStartNs = process.hrtime.bigint();
     logStructured('info', 'request_start', {
       requestId,
       ...extractSafeRequestMeta(request),
@@ -240,11 +250,11 @@ app.addHook('onRequest', async (request, reply) => {
 });
 
 app.addHook('onResponse', async (request, reply) => {
-  const startedNs = (request as any)._logStartNs;
+  const startedNs = request._logStartNs;
   if (!startedNs) return;
   const durationMs = Number(process.hrtime.bigint() - startedNs) / 1e6;
   logStructured('info', 'request_end', {
-    requestId: (request as any).requestId,
+    requestId: request.requestId,
     statusCode: reply.statusCode,
     durationMs: Number(durationMs.toFixed(1)),
     ...extractSafeRequestMeta(request),
@@ -253,7 +263,7 @@ app.addHook('onResponse', async (request, reply) => {
 
 // --- Auth routes ---
 app.post('/api/auth/verify', async (request, reply) => {
-  const passcode = String(((request.body as any)?.passcode) || '').trim();
+  const passcode = String(((request.body as Record<string, unknown>)?.passcode) || '').trim();
   if (!SITE_LOCK_ENABLED || !passcode) {
     return reply.code(401).send({ error: 'Invalid passcode' });
   }
@@ -303,8 +313,7 @@ function withChartTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
     promise,
     new Promise<never>((_, reject) =>
       setTimeout(() => {
-        const err = new Error(`Chart build timed out after ${CHART_BUILD_TIMEOUT_MS}ms (${label})`);
-        (err as any).httpStatus = 503;
+        const err = Object.assign(new Error(`Chart build timed out after ${CHART_BUILD_TIMEOUT_MS}ms (${label})`), { httpStatus: 503 }) as HttpError;
         reject(err);
       }, CHART_BUILD_TIMEOUT_MS),
     ),
@@ -314,9 +323,7 @@ function withChartTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
 async function getOrBuildChartResult(params: Record<string, unknown>) {
   const ticker = String(params.ticker || '');
   if (!isValidTickerSymbol(ticker)) {
-    const err = new Error('Invalid ticker format');
-    (err as any).httpStatus = 400;
-    throw err;
+    throw Object.assign(new Error('Invalid ticker format'), { httpStatus: 400 }) as HttpError;
   }
   const interval = String(params.interval || '');
   const vdRsiLength = Number(params.vdRsiLength) || 14;
@@ -342,16 +349,14 @@ async function getOrBuildChartResult(params: Record<string, unknown>) {
   if (isDedupedWait) chartDebugMetrics.dedupeJoin += 1; else chartDebugMetrics.buildStarted += 1;
   if (!buildPromise) {
     if (CHART_IN_FLIGHT_REQUESTS.size >= CHART_IN_FLIGHT_MAX) {
-      const err = new Error('Server is busy processing chart requests, please retry shortly');
-      (err as any).httpStatus = 503;
-      throw err;
+      throw Object.assign(new Error('Server is busy processing chart requests, please retry shortly'), { httpStatus: 503 }) as HttpError;
     }
     buildPromise = (async () => {
       const timer = createChartStageTimer();
       const requiredIntervals = Array.from(new Set([interval, vdSourceInterval, vdRsiSourceInterval]));
       const rowsByInterval = new Map();
       const quotePromise = dataApiLatestQuote(ticker).catch((err) => {
-        if (CHART_TIMING_LOG_ENABLED) console.warn(`[chart-quote] ${ticker} ${interval} skipped: ${err?.message || err}`);
+        if (CHART_TIMING_LOG_ENABLED) console.warn(`[chart-quote] ${ticker} ${interval} skipped: ${err instanceof Error ? err.message : String(err)}`);
         return null;
       });
       await Promise.all(requiredIntervals.map(async (tf) => { rowsByInterval.set(tf, (await dataApiIntradayChartHistory(ticker, tf, lookbackDays)) || []); }));
@@ -459,7 +464,7 @@ function getHealthPayload() {
 
 async function getReadyPayload() {
   return buildReadyPayload({
-    pool, divergencePool: divergencePool as any, isDivergenceConfigured,
+    pool, divergencePool: divergencePool ?? undefined, isDivergenceConfigured,
     isShuttingDown, divergenceScanRunning,
     lastScanDateEt: divergenceLastFetchedTradeDateEt || divergenceLastScanDateEt || null,
     circuitBreakerInfo: getDataApiCircuitBreakerInfo(),
@@ -471,7 +476,7 @@ registerHealthRoutes({ app, debugMetricsSecret: DEBUG_METRICS_SECRET, getDebugMe
 
 // Circuit breaker manual reset (admin only — requires debug secret)
 app.post('/api/admin/circuit-breaker/reset', (request, reply) => {
-  const secret = String((request.query as any).secret || request.headers['x-debug-secret'] || '').trim();
+  const secret = String((request.query as Record<string, string | undefined>).secret || request.headers['x-debug-secret'] || '').trim();
   if (DEBUG_METRICS_SECRET && !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
     return reply.code(401).send({ error: 'Unauthorized' });
   }
@@ -497,8 +502,8 @@ async function pruneOldAlerts() {
     if (result.rowCount && result.rowCount > 0) {
       console.log(`Pruned ${result.rowCount} old alerts created before ${cutoffDate.toISOString()}`);
     }
-  } catch (err: any) {
-    console.error('Failed to prune old alerts:', err.message);
+  } catch (err: unknown) {
+    console.error('Failed to prune old alerts:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -509,7 +514,7 @@ try {
   await initDB();
   await initDivergenceDB();
   if (divergencePool) await initBreadthTables(divergencePool);
-} catch (err: any) {
+} catch (err: unknown) {
   console.error('Fatal: database initialization failed, exiting.', err);
   process.exit(1);
 }
@@ -517,7 +522,7 @@ try {
 await tradingCalendar
   .init({ fetchDataApiJson, buildDataApiUrl, formatDateUTC, log: (msg: string) => console.log(`[TradingCalendar] ${msg}`) })
   .catch((err) => {
-    console.warn('[TradingCalendar] Init failed (non-fatal, using weekday fallback):', err?.message || err);
+    console.warn('[TradingCalendar] Init failed (non-fatal, using weekday fallback):', err instanceof Error ? err.message : String(err));
   });
 
 await app.listen({ port, host: '0.0.0.0' });
@@ -550,8 +555,8 @@ if (divergencePool) {
           console.log('[breadth] 200d MA zeros detected — re-bootstrapping 300d to fix...');
           await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
         }
-      } catch (err: any) {
-        console.error('[breadth] Auto-bootstrap failed:', err.message);
+      } catch (err: unknown) {
+        console.error('[breadth] Auto-bootstrap failed:', err instanceof Error ? err.message : String(err));
       }
     })();
   }, 15_000);
@@ -593,8 +598,8 @@ async function shutdownServer(signal: string) {
     console.log('Shutdown complete');
     clearTimeout(forceExitTimer);
     process.exit(0);
-  } catch (err: any) {
-    console.error(`Graceful shutdown failed: ${err?.message || err}`);
+  } catch (err: unknown) {
+    console.error(`Graceful shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
     clearTimeout(forceExitTimer);
     process.exit(1);
   }

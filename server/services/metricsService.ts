@@ -320,7 +320,7 @@ export function persistRunSnapshotToDb(snapshot: RunMetricsSummary | null) {
       );
     })
     .catch((err) => {
-      console.error('Failed to persist run snapshot:', err.message);
+      console.error('Failed to persist run snapshot:', err instanceof Error ? err.message : String(err));
     });
 }
 
@@ -331,8 +331,8 @@ export async function loadRunHistoryFromDb() {
       RUN_METRICS_DB_LIMIT,
     ]);
     return result.rows.map((r) => r.snapshot);
-  } catch (err: any) {
-    console.error('Failed to load run history from DB:', err.message);
+  } catch (err: unknown) {
+    console.error('Failed to load run history from DB:', err instanceof Error ? err.message : String(err));
     return [];
   }
 }

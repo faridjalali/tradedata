@@ -12,7 +12,7 @@ export const pool = new Pool({
   statement_timeout: 30000,
 });
 pool.on('error', (err) => {
-  console.error('Unexpected idle pool client error:', err.message);
+  console.error('Unexpected idle pool client error:', err instanceof Error ? err.message : String(err));
 });
 
 const divergenceDatabaseUrl = process.env.DIVERGENCE_DATABASE_URL || '';
@@ -28,7 +28,7 @@ export const divergencePool = divergenceDatabaseUrl
   : null;
 if (divergencePool) {
   divergencePool.on('error', (err) => {
-    console.error('Unexpected idle divergence pool client error:', err.message);
+    console.error('Unexpected idle divergence pool client error:', err instanceof Error ? err.message : String(err));
   });
 }
 instrumentPool(pool, 'primary');

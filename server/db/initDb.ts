@@ -67,7 +67,7 @@ export async function initDB(): Promise<void> {
     }
 
     console.log('Database initialized successfully');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to initialize database:', err);
   }
 }
@@ -284,11 +284,11 @@ export async function initDivergenceDB(): Promise<void> {
           `Restored trade dates from DB — daily: ${restoredTradeDate || '(none)'}, weekly: ${restoredWeeklyDate || '(none)'}`,
         );
       }
-    } catch (restoreErr: any) {
-      console.error('Failed to restore trade dates from DB:', restoreErr.message);
+    } catch (restoreErr: unknown) {
+      console.error('Failed to restore trade dates from DB:', restoreErr instanceof Error ? restoreErr.message : String(restoreErr));
     }
     console.log('Divergence database initialized successfully');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to initialize divergence database:', err);
   }
 }

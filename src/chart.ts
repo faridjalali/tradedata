@@ -88,21 +88,32 @@ import {
 import { isMobileTouch } from './chartTypes';
 export { isMobileTouch } from './chartTypes';
 
-declare const Chart: any;
+// LightweightCharts is loaded from CDN and has no npm package for this version; any is required.
+declare const Chart: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 let currentChartTicker: string | null = null;
 let currentChartInterval: ChartInterval = '1day';
+// LightweightCharts objects — typed any because the CDN version has no bundled declarations.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let priceChart: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let candleSeries: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let priceTimelineSeries: any = null;
 let rsiChart: RSIChart | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaRsiChart: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaRsiSeries: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaRsiTimelineSeries: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaRsiMidlineLine: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaChart: any = null;
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaHistogramSeries: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaTimelineSeries: any = null;
 let rsiDivergenceToolActive = false;
 let chartResizeObserver: ResizeObserver | null = null;
@@ -1403,7 +1414,7 @@ function setPricePaneMessage(container: HTMLElement, message: string | null): vo
 }
 
 function isNoDataTickerError(err: unknown): boolean {
-  const message = String((err as any)?.message || err || '');
+  const message = err instanceof Error ? err.message : String(err || '');
   return /No .*data available for this ticker|No valid chart bars/i.test(message);
 }
 
@@ -2415,9 +2426,9 @@ export async function renderCustomChart(
       hideLoadingOverlay(rsiContainer);
       hideLoadingOverlay(volumeDeltaContainer);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (requestId !== latestRenderRequestId) return;
-    if (err?.name === 'AbortError') return;
+    if (err instanceof Error && err.name === 'AbortError') return;
 
     console.error('Failed to load chart:', err);
     if (silent) {

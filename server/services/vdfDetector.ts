@@ -145,14 +145,14 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
       bull_flag_confidence: bfResult?.confidence ?? null,
     };
   } catch (err: unknown) {
-    const e = err as Error;
-    if (e && (e.name === 'AbortError' || e.message === 'This operation was aborted')) throw err;
+    if (err instanceof Error && (err.name === 'AbortError' || err.message === 'This operation was aborted')) throw err;
+    const message = err instanceof Error ? err.message : String(err);
     return {
       detected: false,
       bestScore: 0,
       bestZoneWeeks: 0,
-      reason: `error: ${e?.message || err}`,
-      status: `Error: ${e?.message || err}`,
+      reason: `error: ${message}`,
+      status: `Error: ${message}`,
       zones: [],
       allZones: [],
       distribution: [],

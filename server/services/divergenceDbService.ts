@@ -62,8 +62,8 @@ export async function getPublishedTradeDateForSourceInterval(sourceInterval: str
       LIMIT 1
     `);
     return String(fallback.rows[0]?.scanned_trade_date || '').trim();
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`Failed to read divergence publication state: ${message}`);
     return '';
   }
@@ -155,7 +155,7 @@ export async function refreshDivergenceSymbolUniverse(options: { fullReset?: boo
         );
       }
       await client.query('COMMIT');
-    } catch (err: any) {
+    } catch (err: unknown) {
       await client.query('ROLLBACK');
       throw err;
     }
@@ -194,8 +194,8 @@ export async function getDivergenceUniverseTickers(options: { forceRefresh?: boo
     }
     if (storedTickers.length > 0) return storedTickers;
     return [];
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`DataAPI universe bootstrap failed, falling back to cached divergence symbols: ${message}`);
     return storedTickers;
   }
@@ -422,7 +422,7 @@ export function normalizeOneDaySignalTypeFromState(state: unknown) {
 
 
 export async function syncOneDaySignalsFromSummaryRows(
-  summaryRows: Array<Record<string, any>>,
+  summaryRows: Array<Record<string, unknown>>,
   sourceInterval: string,
   scanJobId: number | null = null,
 ) {
