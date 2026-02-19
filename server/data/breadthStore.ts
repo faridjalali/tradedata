@@ -5,6 +5,7 @@
 
 import type { Pool } from 'pg';
 import type { BreadthMASnapshot, BreadthMAHistory } from '../../shared/api-types.js';
+import { ALL_BREADTH_INDICES } from './etfConstituents.js';
 
 // ---------------------------------------------------------------------------
 // Schema initialisation
@@ -133,6 +134,8 @@ export async function upsertBreadthSnapshot(
 }
 
 export async function getLatestBreadthSnapshots(dbPool: Pool): Promise<BreadthMASnapshot[]> {
+  const indices = ALL_BREADTH_INDICES as string[];
+  const placeholders = indices.map((_, i) => `$${i + 1}`).join(', ');
   const { rows } = await dbPool.query(`
     SELECT DISTINCT ON (index_name)
       index_name, trade_date::text AS date,
@@ -140,8 +143,9 @@ export async function getLatestBreadthSnapshots(dbPool: Pool): Promise<BreadthMA
       pct_above_ma100::float AS ma100, pct_above_ma200::float AS ma200,
       total_constituents AS total
     FROM breadth_snapshots
+    WHERE index_name IN (${placeholders})
     ORDER BY index_name, trade_date DESC
-  `);
+  `, indices);
   return rows.map((r) => ({
     index: r.index_name,
     date: r.date,

@@ -750,6 +750,8 @@ library. `main.ts` owns the view-switching logic.
 - **ETF constituents** live in `server/data/etfConstituents.ts`. `BreadthIndex` is the union of
   all supported tickers. SLY was replaced by IWM (iShares Russell 2000). After adding a new ETF,
   run the bootstrap endpoint to populate history.
+- **Snapshot queries** (`getLatestBreadthSnapshots` in `server/data/breadthStore.ts`) filter by
+  `ALL_BREADTH_INDICES` so retired index names (e.g. SLY) in the DB are never returned to the frontend.
 - **Y-axis**: the MA history chart uses Chart.js auto-scaling (no fixed min/max) with `stepSize:10`
   to keep 10% grid intervals. The 50% annotation line remains.
 
