@@ -941,12 +941,16 @@ function renderBreadthCompareDual(): void {
   const snap2 = breadthMAData.snapshots.find(s => s.index === idx2);
   renderBreadthCompareDualSnapshot(snap1, snap2);
 
-  breadthCompareChart = new Chart(canvas, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Chart_: any = Chart; // loaded from CDN — need raw constructor for plugin array
+
+  breadthCompareChart = new Chart_(canvas, {
     type: 'line',
     data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { right: 40 } },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
@@ -1003,7 +1007,36 @@ function renderBreadthCompareDual(): void {
         },
       },
     },
-  });
+    plugins: [{
+      id: 'dualLineLabels',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      afterDatasetsDraw(chart: any) { // CDN chart instance with canvas ctx
+        const ctx = chart.ctx as CanvasRenderingContext2D;
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textBaseline = 'middle';
+        // Draw ticker label at the right end of each visible dataset's last point.
+        // Datasets come in pairs: [idx1 21d, idx2 21d, idx1 50d, idx2 50d, ...].
+        // Only label the first visible dataset per ticker to avoid clutter.
+        const labeled = new Set<string>();
+        for (let i = 0; i < chart.data.datasets.length; i++) {
+          const meta = chart.getDatasetMeta(i);
+          if (meta.hidden) continue;
+          const ds = chart.data.datasets[i];
+          const label = (ds.label as string) ?? '';
+          const ticker = label.split(' ')[0]; // "SPY 21d" → "SPY"
+          if (labeled.has(ticker)) continue;
+          const pts = meta.data;
+          if (pts.length === 0) continue;
+          const last = pts[pts.length - 1];
+          if (last.x == null || last.y == null) continue;
+          ctx.fillStyle = ds.borderColor as string;
+          ctx.textAlign = 'left';
+          ctx.fillText(ticker, (last.x as number) + 6, last.y as number);
+          labeled.add(ticker);
+        }
+      },
+    }],
+  }) as ChartInstance;
 
   applyHiddenMAs(breadthCompareChart);
 }

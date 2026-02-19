@@ -735,6 +735,8 @@ library. `main.ts` owns the view-switching logic.
   (`.pane-btn.locked` CSS ring, `pointer-events:none`) → click a different ticker from the
   same row as the 2nd leg → dual chart drawn (solid vs dashed lines). Click Compare again →
   exit compare mode, restore ticker A solo chart. No separate second-ETF button row.
+  Dual chart has inline ticker labels at the right end of lines via `dualLineLabels` plugin
+  (one label per ticker, drawn at the last visible data point of the first unhidden dataset).
 - **No subtitle text**: The breadth page charts have no top-right subtitle spans. All three
   were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
 - **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)
