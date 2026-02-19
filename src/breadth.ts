@@ -1141,8 +1141,20 @@ export function initBreadth(): void {
   loadBreadthMA();
 }
 
-/** Re-fetch all breadth data. Returns a promise that resolves when both loads complete. */
+/**
+ * Trigger server-side re-fetch from data API + recompute, then reload all charts.
+ * The POST /api/breadth/ma/recompute endpoint fetches fresh grouped bars,
+ * stores new closes, and recomputes all breadth snapshots for today.
+ */
 export async function refreshBreadth(): Promise<void> {
+  try {
+    const res = await fetch('/api/breadth/ma/recompute', { method: 'POST' });
+    if (!res.ok) {
+      console.error('[breadth] Recompute failed:', res.status);
+    }
+  } catch (err: unknown) {
+    console.error('[breadth] Recompute error:', err instanceof Error ? err.message : String(err));
+  }
   await Promise.all([loadBreadth(), loadBreadthMA()]);
 }
 

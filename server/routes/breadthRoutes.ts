@@ -83,6 +83,22 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
     return reply.send({ status: 'started', days: numDays });
   });
 
+  // Session-protected endpoint: re-fetch today's breadth data from the data API and recompute.
+  // Called by the frontend refresh button — no secret needed, session auth is sufficient.
+  app.post('/api/breadth/ma/recompute', async (request, reply) => {
+    if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
+    const today = new Date();
+    const tradeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    try {
+      await runBreadthComputation(divergencePool, tradeDate);
+      const data = await getLatestBreadthData(divergencePool);
+      return reply.send({ status: 'done', date: tradeDate, data });
+    } catch (err: unknown) {
+      console.error('Breadth recompute error:', err);
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   app.post('/api/breadth/ma/refresh', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
     const q = request.query as Record<string, string | undefined>;
