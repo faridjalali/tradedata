@@ -664,6 +664,19 @@ function bootstrapApplication(): void {
     });
   });
 
+  // Comparative Breadth: Compare mode toggle
+  document.getElementById('breadth-compare-toggle')?.addEventListener('click', () => {
+    loadBreadth().then((m) => m.toggleBreadthCompareMode()).catch(() => {});
+  });
+
+  // Comparative Breadth: Second ETF selector (compare mode)
+  document.querySelectorAll('#breadth-compare-index2-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const index = (btn as HTMLElement).dataset.index2 ?? '';
+      loadBreadth().then((m) => m.setBreadthCompareIndex2(index)).catch(() => {});
+    });
+  });
+
   // Header navigation dropdown & column timeframe dropdowns
   initHeaderNavDropdown();
   initColumnTimeframeButtons();

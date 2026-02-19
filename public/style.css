@@ -388,6 +388,60 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Compare toggle button — slight left gap to separate from the index row */
+.breadth-compare-toggle-btn {
+  margin-left: 8px;
+}
+
+/* "vs" label shown before the second ETF row */
+.breadth-compare-vs-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  align-self: center;
+  white-space: nowrap;
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+/* Snapshot comparison rows */
+.breadth-compare-snap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.breadth-compare-snap-etf {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.breadth-compare-snap-values {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.breadth-compare-snap-chip {
+  flex: 1;
+  text-align: center;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 3px 5px;
+}
+.breadth-compare-snap-chip-label {
+  display: block;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}
+.breadth-compare-snap-chip-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+}
+
 /* Tooltip Styles */
 .pane-btn[data-tooltip]:hover::after {
   content: attr(data-tooltip);

@@ -97,6 +97,7 @@ import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestr
 import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
 import { initBreadthTables, getLatestBreadthSnapshots, isBreadthMa200Valid } from './server/data/breadthStore.js';
 import { runBreadthComputation, bootstrapBreadthHistory, getLatestBreadthData, cleanupBreadthData } from './server/services/breadthService.js';
+import { ALL_BREADTH_INDICES } from './server/data/etfConstituents.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
 import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote, getDataApiCircuitBreakerInfo, resetDataApiCircuitBreaker } from './server/services/dataApi.js';
@@ -548,11 +549,16 @@ if (divergencePool) {
       try {
         const snapshots = await getLatestBreadthSnapshots(divergencePool!);
         const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid(divergencePool!) : false;
+        const indexedSet = new Set(snapshots.map((s) => s.index));
+        const missingIndices = ALL_BREADTH_INDICES.filter((idx) => !indexedSet.has(idx));
         if (snapshots.length === 0) {
           console.log('[breadth] No snapshots — auto-bootstrapping 300d in background...');
           await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
         } else if (!ma200Valid) {
           console.log('[breadth] 200d MA zeros detected — re-bootstrapping 300d to fix...');
+          await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
+        } else if (missingIndices.length > 0) {
+          console.log(`[breadth] New indices detected (${missingIndices.join(', ')}) — re-bootstrapping 300d to fill gaps...`);
           await Promise.race([bootstrapBreadthHistory(divergencePool!, 300), timeoutGuard]);
         }
       } catch (err: unknown) {

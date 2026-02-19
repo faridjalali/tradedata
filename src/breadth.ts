@@ -66,6 +66,8 @@ let breadthMAData: BreadthMAResponse | null = null;
 let breadthCompareChart: ChartInstance | null = null;
 let currentCompareIndex: string = 'SPY';
 let currentCompareTfDays: number = 20;
+let breadthCompareModeActive: boolean = false;
+let currentCompareIndex2: string = 'QQQ';
 
 export function getCurrentBreadthTimeframe(): number {
   return currentTimeframeDays;
@@ -711,7 +713,10 @@ function renderBreadthCompareChart(): void {
 
 function updateBreadthCompareSubtitle(): void {
   const subtitle = document.getElementById('breadth-compare-subtitle');
-  if (subtitle) {
+  if (!subtitle) return;
+  if (breadthCompareModeActive) {
+    subtitle.textContent = `${currentCompareIndex} vs ${currentCompareIndex2} — % Above Moving Averages (${currentCompareTfDays}d)`;
+  } else {
     subtitle.textContent = `${currentCompareIndex} price vs breadth, normalized to 100 (${currentCompareTfDays}d)`;
   }
 }
@@ -722,7 +727,8 @@ export function setBreadthCompareIndex(index: string): void {
     btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
   });
   updateBreadthCompareSubtitle();
-  renderBreadthCompareChart();
+  if (breadthCompareModeActive) renderBreadthCompareDual();
+  else renderBreadthCompareChart();
 }
 
 export function setBreadthCompareTf(days: number): void {
@@ -731,7 +737,202 @@ export function setBreadthCompareTf(days: number): void {
     btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
   });
   updateBreadthCompareSubtitle();
-  renderBreadthCompareChart();
+  if (breadthCompareModeActive) renderBreadthCompareDual();
+  else renderBreadthCompareChart();
+}
+
+export function toggleBreadthCompareMode(): void {
+  breadthCompareModeActive = !breadthCompareModeActive;
+
+  document.getElementById('breadth-compare-toggle')
+    ?.classList.toggle('active', breadthCompareModeActive);
+
+  const el2 = document.getElementById('breadth-compare-index2-btns');
+  const gaugesEl = document.getElementById('breadth-compare-gauges');
+  if (el2) el2.style.display = breadthCompareModeActive ? '' : 'none';
+  if (gaugesEl) gaugesEl.style.display = breadthCompareModeActive ? '' : 'none';
+
+  updateBreadthCompareSubtitle();
+  if (breadthCompareModeActive) renderBreadthCompareDual();
+  else renderBreadthCompareChart();
+}
+
+export function setBreadthCompareIndex2(index: string): void {
+  currentCompareIndex2 = index;
+  document.querySelectorAll('#breadth-compare-index2-btns .pane-btn').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.index2 === index);
+  });
+  updateBreadthCompareSubtitle();
+  if (breadthCompareModeActive) renderBreadthCompareDual();
+}
+
+function renderBreadthCompareDualSnapshot(
+  snap1: BreadthMASnapshot | undefined,
+  snap2: BreadthMASnapshot | undefined,
+): void {
+  const container = document.getElementById('breadth-compare-gauges');
+  if (!container) return;
+  container.textContent = '';
+
+  const maFields: Array<{ key: keyof BreadthMASnapshot; label: string }> = [
+    { key: 'ma21', label: '21d' },
+    { key: 'ma50', label: '50d' },
+    { key: 'ma100', label: '100d' },
+    { key: 'ma200', label: '200d' },
+  ];
+
+  for (const [snap, label] of [
+    [snap1, currentCompareIndex],
+    [snap2, currentCompareIndex2],
+  ] as const) {
+    const row = document.createElement('div');
+    row.className = 'breadth-compare-snap-row';
+
+    const etfLabel = document.createElement('span');
+    etfLabel.className = 'breadth-compare-snap-etf';
+    etfLabel.textContent = label as string;
+    row.appendChild(etfLabel);
+
+    const valuesWrap = document.createElement('div');
+    valuesWrap.className = 'breadth-compare-snap-values';
+
+    for (const { key, label: maLabel } of maFields) {
+      const val = snap ? Number((snap as BreadthMASnapshot)[key]) : null;
+      const chip = document.createElement('div');
+      chip.className = 'breadth-compare-snap-chip';
+
+      const chipLabel = document.createElement('span');
+      chipLabel.className = 'breadth-compare-snap-chip-label';
+      chipLabel.textContent = maLabel;
+
+      const chipVal = document.createElement('span');
+      chipVal.className = 'breadth-compare-snap-chip-value';
+      chipVal.style.color = val != null ? gaugeColor(val) : 'var(--text-secondary)';
+      chipVal.textContent = val != null ? `${val.toFixed(1)}%` : '—';
+
+      chip.appendChild(chipLabel);
+      chip.appendChild(chipVal);
+      valuesWrap.appendChild(chip);
+    }
+
+    row.appendChild(valuesWrap);
+    container.appendChild(row);
+  }
+}
+
+function renderBreadthCompareDual(): void {
+  const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
+  if (!canvas || !breadthMAData) return;
+  const c = getThemeColors();
+
+  if (breadthCompareChart) { breadthCompareChart.destroy(); breadthCompareChart = null; }
+
+  const h1 = (breadthMAData.history[currentCompareIndex] || []).slice(-currentCompareTfDays);
+  const h2 = (breadthMAData.history[currentCompareIndex2] || []).slice(-currentCompareTfDays);
+  if (h1.length === 0 && h2.length === 0) return;
+
+  const labels = h1.map(h =>
+    new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  );
+  const ptRadius = h1.length > 20 ? 0 : 3;
+
+  const MA_COLORS = ['#00d4ff', '#58a6ff', '#bc8cff', '#f0883e'];
+  const MA_KEYS: Array<keyof BreadthMAHistory> = ['ma21', 'ma50', 'ma100', 'ma200'];
+  const MA_LABELS = ['21d', '50d', '100d', '200d'];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const datasets: any[] = []; // loaded from CDN Chart.js — no full type import
+  MA_KEYS.forEach((key, i) => {
+    datasets.push({
+      label: `${currentCompareIndex} ${MA_LABELS[i]}`,
+      data: h1.map(h => h[key]),
+      borderColor: MA_COLORS[i],
+      borderWidth: 2,
+      borderDash: [],
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    });
+    datasets.push({
+      label: `${currentCompareIndex2} ${MA_LABELS[i]}`,
+      data: h2.map(h => h[key]),
+      borderColor: MA_COLORS[i],
+      borderWidth: 2,
+      borderDash: [5, 4],
+      pointRadius: ptRadius,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    });
+  });
+
+  const snap1 = breadthMAData.snapshots.find(s => s.index === currentCompareIndex);
+  const snap2 = breadthMAData.snapshots.find(s => s.index === currentCompareIndex2);
+  renderBreadthCompareDualSnapshot(snap1, snap2);
+
+  breadthCompareChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
+            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
+            meta.hidden = !meta.hidden;
+            legend.chart.update();
+          },
+          labels: {
+            color: c.textPrimary,
+            font: { size: 11 },
+            usePointStyle: true,
+            pointStyle: 'line',
+          },
+        },
+        tooltip: {
+          backgroundColor: c.cardBgOverlay95,
+          borderColor: c.borderColor,
+          borderWidth: 1,
+          titleColor: c.textPrimary,
+          bodyColor: c.textSecondary,
+          padding: 10,
+          callbacks: {
+            label: (ctx: ChartTooltipContext) => {
+              const v = ctx.parsed.y;
+              return `${ctx.dataset.label ?? ''}: ${v != null ? v.toFixed(1) + '%' : '—'}`;
+            },
+          },
+        },
+        annotation: {
+          annotations: {
+            line50: {
+              type: 'line', yMin: 50, yMax: 50,
+              borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
+              borderWidth: 1, borderDash: [4, 4],
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: c.textSecondary, maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 11 } },
+          grid: { color: c.borderOverlay30 },
+        },
+        y: {
+          ticks: {
+            color: c.textSecondary,
+            font: { size: 11 },
+            callback: (value: number | string) => `${value}%`,
+            stepSize: 10,
+          },
+          grid: { color: c.borderOverlay30 },
+        },
+      },
+    },
+  });
 }
 
 export function initBreadth(): void {
@@ -753,7 +954,8 @@ export function initBreadthThemeListener(): void {
       renderBreadthMAForIndex(currentMAIndex);
     }
     if (breadthCompareChart) {
-      renderBreadthCompareChart();
+      if (breadthCompareModeActive) renderBreadthCompareDual();
+      else renderBreadthCompareChart();
     }
   });
 }
