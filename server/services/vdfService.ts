@@ -13,7 +13,7 @@ import { CHART_DATA_CACHE, sweepExpiredTimedCache } from './chartEngine.js';
 import { getStoredDivergenceSymbolTickers } from './divergenceDbService.js';
 import { createRunMetricsTracker, runMetricsByType } from './metricsService.js';
 
-export let vdfRunningTickers = new Set<string>();
+const vdfRunningTickers = new Set<string>();
 export const vdfScan = new ScanState('vdfScan', { metricsKey: 'vdfScan' });
 
 

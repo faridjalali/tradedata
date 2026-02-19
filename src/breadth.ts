@@ -15,6 +15,39 @@ interface ChartInstance {
 /** Chart.js constructor as available on the global `window.Chart` CDN export. */
 declare const Chart: new (canvas: HTMLCanvasElement, config: unknown) => ChartInstance;
 
+/** Tooltip callback context passed by Chart.js for each dataset at a hovered data point. */
+interface ChartTooltipContext {
+  dataset: { label?: string; [key: string]: unknown };
+  parsed: { y: number | null };
+  dataIndex: number;
+}
+
+/**
+ * Extended dataset shape for the comparative chart.
+ * Chart.js datasets are plain objects; custom properties are added alongside
+ * the standard label/data fields.
+ */
+interface CompareChartDataset {
+  label?: string;
+  rawValues?: number[];
+  rawDecimals?: number;
+  rawSuffix?: string;
+  [key: string]: unknown;
+}
+
+/** Legend item passed to the legend onClick callback. */
+interface ChartLegendItem {
+  datasetIndex: number;
+}
+
+/** Legend handle passed to the legend onClick callback. */
+interface ChartLegendHandle {
+  chart: {
+    getDatasetMeta: (idx: number) => { hidden: boolean };
+    update: () => void;
+  };
+}
+
 import type { BreadthDataPoint, BreadthResponse, BreadthMASnapshot, BreadthMAHistory, BreadthMAResponse } from '../shared/api-types';
 
 /** Number of calendar days of MA history to request from the server. */
@@ -171,9 +204,9 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
           bodyColor: c.textSecondary,
           padding: 12,
           callbacks: {
-            label: function (context: any) {
-              const val = context.parsed.y.toFixed(2);
-              return `${context.dataset.label}: ${val}`;
+            label: function (context: ChartTooltipContext) {
+              const val = (context.parsed.y ?? 0).toFixed(2);
+              return `${context.dataset.label ?? ''}: ${val}`;
             },
           },
         },
@@ -412,7 +445,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
           bodyColor: c.textSecondary,
           padding: 12,
           callbacks: {
-            label: (ctx: any) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
+            label: (ctx: ChartTooltipContext) => `${ctx.dataset.label ?? ''}: ${(ctx.parsed.y ?? 0).toFixed(1)}%`,
           },
         },
         annotation: {
@@ -617,7 +650,7 @@ function renderBreadthCompareChart(): void {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
-          onClick: (_e: any, legendItem: any, legend: any) => {
+          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
             const idx = legendItem.datasetIndex;
             const meta = legend.chart.getDatasetMeta(idx);
             meta.hidden = !meta.hidden;
@@ -638,10 +671,10 @@ function renderBreadthCompareChart(): void {
           bodyColor: c.textSecondary,
           padding: 12,
           callbacks: {
-            label: (ctx: any) => {
-              const ds = ctx.dataset as any;
-              const norm = ctx.parsed.y as number | null;
-              if (norm == null) return null;
+            label: (ctx: ChartTooltipContext & { dataset: CompareChartDataset }) => {
+              const ds = ctx.dataset;
+              const norm = ctx.parsed.y;
+              if (norm == null) return;
               const pct = norm - 100;
               const sign = pct >= 0 ? '+' : '';
               const raw = ds.rawValues?.[ctx.dataIndex];

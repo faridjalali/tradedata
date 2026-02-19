@@ -406,6 +406,7 @@ test/divergenceService.test.ts # Service logic unit tests
 test/healthRoutes.test.ts      # Health endpoint tests
 test/healthService.test.ts     # Health payload building
 test/scanState.test.ts         # ScanState lifecycle, runRetryPasses logic
+test/mapWithConcurrency.test.ts # Concurrency pool: ordering, limits, stop, errors
 ```
 
 ### Test Patterns
@@ -610,5 +611,7 @@ myScan.setCanResumeValidator((rs) => {
 - **Polling without rate-limit consideration.** If an endpoint will be polled frequently, exempt it from rate limiting.
 - **Inline SVG in HTML for dynamic elements.** Populate from JS using shared helpers.
 - **Blocking the event loop with synchronous operations.** Use async/await, background jobs, and connection pooling.
-- **Adding `any` without justification.** Use `unknown` and narrow, or define proper interfaces.
+- **Adding `any` without justification.** Use `unknown` and narrow, or define proper interfaces. Acceptable uses: `catch (err: any)`, CDN globals where the type isn't importable, and opaque resume-state bags.
+- **Exporting mutable module-level state.** Keep mutable Sets, Maps, and counters unexported; expose read-only accessors if callers need them.
+- **Magic numbers in infrastructure.** Concurrency divisors, multipliers, and per-ticker API call estimates must be named constants with comments explaining the rationale.
 - **Skipping the verification checklist.** Every change must pass typecheck + tests + build.

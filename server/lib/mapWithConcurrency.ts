@@ -81,11 +81,25 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** Estimated number of upstream API calls made per ticker, keyed by run type. */
+const ESTIMATED_API_CALLS_PER_TICKER: Record<string, number> = {
+  'fetch-weekly': 10,
+  'fetch-daily': 8,
+  'vdf-scan': 8,
+};
+const ESTIMATED_API_CALLS_DEFAULT = 8;
+
+/** Multiplier applied to target-tickers-per-second to get the adaptive concurrency ceiling. */
+const ADAPTIVE_CONCURRENCY_MULTIPLIER = 4;
+
+/** Minimum value the adaptive calculation will return before clamping to the configured max. */
+const ADAPTIVE_CONCURRENCY_MIN = 4;
+
 export function resolveAdaptiveFetchConcurrency(runType = 'fetch-daily') {
   const configured = Math.max(1, Number(DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 1);
   const maxRps = Math.max(1, Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99);
-  const estimatedApiCallsPerTicker = runType === 'fetch-weekly' ? 10 : 8;
+  const estimatedApiCallsPerTicker = ESTIMATED_API_CALLS_PER_TICKER[runType] ?? ESTIMATED_API_CALLS_DEFAULT;
   const targetTickersPerSecond = Math.max(1, Math.floor(maxRps / estimatedApiCallsPerTicker));
-  const adaptive = Math.max(4, targetTickersPerSecond * 4);
+  const adaptive = Math.max(ADAPTIVE_CONCURRENCY_MIN, targetTickersPerSecond * ADAPTIVE_CONCURRENCY_MULTIPLIER);
   return Math.max(1, Math.min(configured, adaptive));
 }

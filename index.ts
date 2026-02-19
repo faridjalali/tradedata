@@ -88,7 +88,7 @@ import {
   setDivergenceLastFetchedTradeDateEt,
   setDivergenceSchedulerTimer,
 } from './server/services/scanControlService.js';
-import { vdfRunningTickers, vdfScan, getVDFStatus, runVDFScan } from './server/services/vdfService.js';
+import { vdfScan, getVDFStatus, runVDFScan } from './server/services/vdfService.js';
 import { getDivergenceSummaryForTickers } from './server/services/tickerHistoryService.js';
 import { runDivergenceTableBuild } from './server/orchestrators/tableBuildOrchestrator.js';
 import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOrchestrator.js';
