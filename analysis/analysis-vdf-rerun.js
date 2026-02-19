@@ -12,7 +12,7 @@ const {
   findDistributionClusters,
   evaluateProximitySignals,
   buildWeeks,
-} = require('./server/services/vdfDetector');
+} = require('../server/services/vdfDetector');
 
 const fs = require('fs');
 

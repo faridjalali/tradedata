@@ -1,14 +1,107 @@
 # Engineering Instructions
 
-Guidelines for AI coding agents and contributors working on this codebase. Follow these practices to maintain consistency, correctness, and quality.
+Guidelines for AI coding agents and contributors working on this codebase.
+Every line of code must meet the standard described in the **Code Quality Mandate** section.
 
 ---
 
-## Project Overview
+## Code Quality Mandate
 
-Real-time market data visualization platform. Fastify API server + vanilla TypeScript frontend with Lightweight Charts. PostgreSQL for persistence, LRU caches for performance, background orchestrators for data pipeline jobs.
+All code in this repository must meet the level expected of a principal-engineer code review
+at Google or Apple. Any addition or modification that would not pass such a review must be
+fixed before committing. This is not aspirational — it is the minimum bar.
 
-**Stack:** Fastify 5 / TypeScript 5.9 / PostgreSQL (pg) / Vite / Pino / Zod / LRU-cache / Lightweight Charts
+### The Non-Negotiable Rules
+
+1. **`catch (err: unknown)`, always.**
+   TypeScript 4+ defaults catch bindings to `unknown`. Using `catch (err: any)` defeats
+   type safety. Narrow the error explicitly:
+   ```typescript
+   } catch (err: unknown) {
+     const message = err instanceof Error ? err.message : String(err);
+   }
+   ```
+
+2. **No `any` except bounded, documented escape hatches.**
+   Acceptable uses (comment required explaining why):
+   - CDN globals that cannot be imported (e.g., `declare const Chart: ChartInstance`)
+   - `() => null as any` when satisfying a complex return type in tests
+   Unacceptable uses: `Record<string, any>` for known shapes, `(x: any)` parameters,
+   `const x: any = ...`. Use `unknown` + narrowing, generics, or proper interfaces.
+
+3. **No dead code.** Unused functions, variables, imports, and type aliases must be deleted.
+   This applies to test helpers too — if a helper is not called in a test, remove it.
+
+4. **Tests must be deterministic.** Never use `setTimeout(r, 0)` to yield and hope state
+   has changed. Use explicit synchronization (Promise gates, counters, event flags):
+   ```typescript
+   // BAD — race condition
+   await new Promise((r) => setTimeout(r, 0));
+   assert.ok(vdfScan.isRunning); // might be false
+
+   // GOOD — deterministic
+   const running = new Promise<void>((r) => (signalRunning = r));
+   getTickers: async () => { signalRunning(); await block; return []; }
+   await running; // guaranteed: isRunning is true
+   ```
+
+5. **Tests must be silent.** Tests that produce unexpected DB errors, stack traces, or
+   console noise indicate incomplete dependency injection. Inject no-op stubs for all
+   I/O that tests don't care about (DB writes, network, metrics persistence).
+
+6. **Named constants for every magic number.** Concurrency limits, multipliers, thresholds,
+   timeouts, retry divisors — every bare number in infrastructure code needs a named constant
+   with a comment explaining the rationale.
+
+7. **JSDoc on every exported function and class.** One sentence minimum. Public lifecycle
+   methods get full param/return documentation.
+
+8. **Dependency direction is a hard constraint.** `lib/` must never import from `services/`.
+   `services/` must never import from `routes/`. `config.ts` is the bottom of the stack.
+   New violations are immediate reverts.
+
+9. **All env vars go through `config.ts`.** Never call `process.env.ANYTHING` outside
+   `server/config.ts`. Add a named, clamped, documented constant there first.
+
+10. **Verification checklist is mandatory before every commit:**
+    ```bash
+    npx tsc --noEmit
+    npx tsx --test test/*.test.ts
+    npx vite build
+    ```
+    All three must exit 0. No exceptions.
+
+---
+
+## Application Overview
+
+**Tradedata** is a real-time market data visualization and divergence-detection platform.
+
+### What It Does
+
+- **Chart view**: Fetch and render OHLCV data for any ticker across multiple timeframes
+  (1min, 4hour, 1day, 1week). Overlays: RSI, EMA, volume, VDF zone highlights.
+- **Breadth view**: Market breadth analysis — percentage of S&P 500 stocks above key
+  moving averages (21/50/100/200-day). Trend gauges + history chart. Normalized
+  comparison chart overlaying SPY/QQQ/SMH breadth performance.
+- **Divergence feed**: Live feed of VDF (Volume Distribution Formation) divergence alerts
+  detected across the universe of tracked symbols.
+- **Scan control panel**: Start/stop/resume background scans (fetch-daily, fetch-weekly,
+  VDF scan, table build). Real-time progress, error counts, retry status.
+
+### Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 20+ / TypeScript 5.9 ESM |
+| HTTP server | Fastify 5 |
+| Database | PostgreSQL via `pg` (two optional pools) |
+| Frontend build | Vite 7 |
+| Frontend charts | Lightweight Charts (CDN) + Chart.js (CDN, breadth only) |
+| Logging | Pino (structured JSON) |
+| Validation | Zod |
+| Caching | lru-cache |
+| Testing | Node.js built-in `test` + `tsx` for TypeScript |
 
 ---
 
@@ -17,81 +110,250 @@ Real-time market data visualization platform. Fastify API server + vanilla TypeS
 ### Directory Structure
 
 ```
-index.ts                          # Server entry: plugin registration, hooks, routes, startup/shutdown
+index.ts                            # Entry point: plugin registration, startup, shutdown
 server/
-  config.ts                       # All env-var constants, startup validation
-  db.ts                           # PostgreSQL connection pools (primary + divergence)
-  middleware.ts                    # Auth, validation wrappers, request metadata
-  schemas.ts                      # Zod schemas for all input validation
-  logger.ts                       # Pino structured logging, console redirect
-  chartMath.ts                    # Pure math functions (RSI, RMA, OHLCV aggregation)
-  routes/                         # HTTP route handlers (chart, divergence, health)
-  services/                       # Business logic, external API calls, caching
-  orchestrators/                  # Multi-step background job coordination
-  lib/                            # Shared utilities (dateUtils, dbMonitor, errors, mapWithConcurrency, ScanState)
-src/                              # Frontend TypeScript modules
+  config.ts                         # All env-var constants; never read process.env elsewhere
+  db.ts                             # PostgreSQL pools: primary (required) + divergence (optional)
+  middleware.ts                     # Auth wrappers, request metadata extraction
+  schemas.ts                        # Zod schemas for all HTTP input validation
+  logger.ts                         # Pino setup; redirects console.* to Pino
+  chartMath.ts                      # Pure math: RSI, RMA, OHLCV aggregation, normalization
+  routes/                           # HTTP route handlers — thin layer, no business logic
+    chartRoutes.ts                  # Chart data endpoints
+    divergenceRoutes.ts             # Scan control + alert feed endpoints
+    healthRoutes.ts                 # /healthz, /readyz, /api/debug/metrics
+  services/                         # Domain logic, caching, external API calls
+    dataApi.ts                      # HTTP client: market data, rate limiting, circuit breaker
+    chartEngine.ts                  # Chart data orchestration: fetch → calculate → cache
+    vdfService.ts                   # VDF detection: run scan, store results, get status
+    vdfDetector.ts                  # Pure VDF algorithm (no I/O)
+    divergenceDbService.ts          # Divergence DB queries (symbols, results)
+    scanControlService.ts           # ScanState instances + normalizers for all scan jobs
+    metricsService.ts               # Run metrics tracking + DB persistence
+    chartPrewarm.ts                 # Background pre-warming of adjacent intervals
+    sessionAuth.ts                  # Cookie-based session management (in-memory)
+  orchestrators/                    # Multi-step background jobs
+    fetchDailyOrchestrator.ts       # Fetch daily OHLCV for all symbols, build divergence table
+    fetchWeeklyOrchestrator.ts      # Fetch weekly OHLCV, same pipeline as daily
+    tableBuildOrchestrator.ts       # Build/rebuild divergence summary table
+    dailyScanOrchestrator.ts        # Daily divergence detection scan
+  lib/                              # Pure utilities — no side effects, no service imports
+    ScanState.ts                    # ScanState class + runRetryPasses
+    mapWithConcurrency.ts           # Configurable parallel worker pool
+    errors.ts                       # isAbortError — pure predicate, lib-safe
+    dateUtils.ts                    # ET timezone helpers, date arithmetic
+    dbMonitor.ts                    # Query timing wrapper, slow-query logging
+    circuitBreaker.ts               # HTTP circuit breaker
+    apiSchemas.ts                   # Zod schemas for external API response validation
+src/                                # Frontend TypeScript (compiled by Vite)
+  main.ts                           # View router, global event handlers, scan control wiring
+  chart.ts                          # Lightweight Charts integration, indicator rendering
+  breadth.ts                        # Breadth analysis charts (Chart.js), comparison view
+  divergenceFeed.ts                 # Alert feed polling, VDF status display
+  utils.ts                          # DOM helpers, fetch wrappers
+  theme.ts                          # Dark/light theme switching
+  components.ts                     # Shared UI elements (refresh buttons, gauges)
 shared/
-  api-types.ts                    # Single source of truth for frontend <-> backend type contract
-public/                           # Static assets (CSS, icons)
-test/                             # Node.js built-in test runner tests
+  api-types.ts                      # Single source of truth for frontend ↔ backend types
+public/
+  style.css                         # All CSS; theming via CSS custom properties
+index.html                          # Single-page app shell; all views are in-DOM, toggled by CSS
+test/                               # Node.js built-in test runner
 ```
 
 ### Dependency Direction
 
-Strict unidirectional flow. Never create circular imports.
+Strict unidirectional. Circular imports are forbidden.
 
 ```
-Routes -> Services -> Lib/Utils -> Config
-                  \-> DB
-Orchestrators -> Services -> Lib/Utils
+Routes → Services → Lib/Utils → Config
+                 ↘ DB
+Orchestrators → Services → Lib/Utils
+Frontend → shared/api-types
 ```
 
-- Routes call services. Routes never contain business logic.
-- Services handle domain logic, caching, external API calls.
-- Orchestrators coordinate multi-step background workflows (fetch, build, scan).
-- Lib contains pure utilities with no side effects. `lib/errors.ts` exports `isAbortError` — keep it here so `lib/` never imports from `services/`.
-- Config is read-only after startup.
+- **Routes**: HTTP boundary only. No business logic. Call services; return results.
+- **Services**: Domain logic, caching, external API calls. Allowed to import from `lib/` and `db.ts`.
+- **Orchestrators**: Multi-step workflows. Coordinate services. Hold no persistent state of their own.
+- **Lib**: Pure utilities. Zero side effects. Never imports from `services/`. `lib/errors.ts` keeps
+  `isAbortError` here precisely to enforce this constraint.
+- **Config**: Bottom of the stack. Only source of `process.env` access.
 
 ### Module Registration Pattern
 
-Routes and services receive dependencies via options objects, not global imports:
+Entry-point wiring passes dependencies as options objects — not direct imports — so modules
+remain independently testable:
 
 ```typescript
+// index.ts
 registerChartRoutes({ app, parseChartRequestParams, getOrBuildChartResult, ... });
 registerDivergenceRoutes({ app, isDivergenceConfigured, divergencePool, ... });
 ```
 
-This keeps modules testable and decoupled from the wiring in `index.ts`.
+---
+
+## Data Flow
+
+### Chart Request (Happy Path)
+
+```
+Browser GET /api/chart?ticker=SPY&interval=4hour
+  → chartRoutes.ts: validate params via Zod
+  → chartEngine.getOrBuildChartResult(ticker, interval, options)
+      → check CHART_DATA_CACHE (LRU, timed entry)
+        hit: return cached (fresh) or serve stale + trigger background refresh
+        miss: fetch from dataApi → calculate indicators → cache → return
+  → HTTP 200 with chart data + Cache-Control headers
+```
+
+### Background Orchestrator (Fetch-Daily)
+
+```
+POST /api/divergence/fetch-daily/start
+  → divergenceRoutes: validate, call fetchDailyOrchestrator.runFetchDailyData()
+  → Orchestrator:
+      1. Fetch universe: getStoredDivergenceSymbolTickers()
+      2. mapWithConcurrency(tickers, concurrency, worker, onSettled, shouldStop)
+         worker: fetchDailyBarsForTicker() → upsert to divergence DB
+      3. Retry failed tickers (runRetryPasses, 2 passes at ½ and ¼ concurrency)
+      4. Build divergence summary table
+      5. markCompleted / markStopped / markFailed on ScanState
+  → GET /api/divergence/fetch-daily/status polls progress
+```
+
+### VDF Scan
+
+```
+POST /api/divergence/vdf-scan/start
+  → vdfService.runVDFScan({ resume? })
+  → For each ticker:
+      getVDFStatus(ticker, { force, noCache, signal })
+        → dataApiIntradayChartHistory: fetch 220 days of 1-min bars
+        → detectVDF(bars): pure algorithm, returns { is_detected, zones, scores }
+        → upsert result to vdf_results table
+  → Cap concurrency at 3 (memory pressure: each ticker ~9GB cache buildup at higher)
+  → Retry 2 passes for failed tickers
+  → Save resume state on stop so scan can continue from where it left off
+```
 
 ---
 
-## TypeScript
+## Key Services
+
+### `server/services/dataApi.ts`
+
+The sole gateway to the upstream market-data provider.
+
+- **Token-bucket rate limiter**: configurable via `DATA_API_MAX_REQUESTS_PER_SECOND`.
+  Callers await a token before issuing HTTP requests.
+- **Circuit breaker** (`lib/circuitBreaker.ts`): opens after repeated failures, prevents
+  thundering herd on a degraded upstream. Auto-resets after a cooldown window.
+- **Pause mode**: `DATA_API_REQUESTS_PAUSED=true` blocks all outbound calls (useful for
+  development/testing without burning API quota).
+- **Error classification**: `isAbortError`, `isDataApiRateLimitedError`,
+  `isDataApiPausedError`, `isDataApiSubscriptionRestrictedError` — all exported for use
+  in services that need to branch on error type.
+- **`isAbortError`** is defined in `lib/errors.ts` (not here) so that `mapWithConcurrency`
+  can use it without creating a `lib → services` import cycle.
+
+### `server/services/chartEngine.ts`
+
+Orchestrates chart data: fetch raw bars, calculate indicators, cache, serve.
+
+- Multi-tier LRU cache with timed entries (fresh/stale/expired pattern).
+- Request deduplication: in-flight map prevents duplicate concurrent fetches.
+- `getOrBuildChartResult(ticker, interval, options)` is the main entry point.
+- `sweepExpiredTimedCache(cache)` should be called periodically to evict dead entries
+  (called by VDF scan worker after every 100 tickers).
+
+### `server/services/vdfService.ts`
+
+Owns VDF scan lifecycle. Exports:
+
+- `vdfScan`: the singleton `ScanState` instance for the VDF scan job.
+- `runVDFScan(options)`: orchestrates the scan. Accepts `_deps` for testing (see below).
+- `getVDFStatus(ticker, options)`: fetches intraday data and runs `detectVDF`.
+- `getStoredVDFResult(ticker, tradeDate)`: reads stored result from DB.
+- `VdfScanDeps` interface: injectable I/O for `runVDFScan`. Tests inject stubs to avoid
+  all DB and network calls.
+
+### `server/lib/ScanState.ts`
+
+Reusable lifecycle manager for background scan jobs. See the **ScanState API Reference**
+section under "New Background Job" for the complete method list.
+
+Also exports:
+- `runRetryPasses<TSettled extends TickerWorkerSettled>`: runs up to 2 retry passes over
+  failed tickers with halving concurrency. Fully generic, callable from any orchestrator.
+- `TickerWorkerSettled` interface: all scan workers must return this shape.
+
+### `server/lib/mapWithConcurrency.ts`
+
+Configurable parallel worker pool. Key properties:
+
+- Guarantees result ordering (index-stable output regardless of completion order).
+- Respects `shouldStop()` predicate: checks before starting each item and after `AbortError`.
+- `onSettled` callback for per-item progress (errors in callback are swallowed — best-effort).
+- Worker exceptions are captured as `{ error: unknown }` entries — never thrown.
+- `resolveAdaptiveFetchConcurrency(runType)`: computes concurrency ceiling from RPS limits.
+
+---
+
+## Database
+
+### Primary Pool (`DATABASE_URL`)
+
+Required. Stores:
+
+| Table | Purpose |
+|---|---|
+| `sessions` | Auth session tokens (in-memory backed but also persisted) |
+| `run_metrics_history` | Historical run snapshots (fetch times, error rates, concurrency) |
+| `alerts` | Divergence alert records with TTL |
+
+### Divergence Pool (`DIVERGENCE_DATABASE_URL`)
+
+Optional. Large-scale scan data. If not configured, all divergence features are disabled
+gracefully (`isDivergenceConfigured()` returns false).
+
+| Table | Purpose |
+|---|---|
+| `divergence_symbols` | Universe of tracked symbols (ticker, exchange) |
+| `daily_bars` | Fetched OHLCV bars for divergence detection |
+| `weekly_bars` | Weekly OHLCV bars |
+| `vdf_results` | Per-ticker VDF detection output (is_detected, scores, zones) |
+| `divergence_summary` | Precomputed divergence table (joined/aggregated view) |
+
+### Query Patterns
+
+- Always parameterized: `query('SELECT ... WHERE ticker = $1', [ticker])`.
+- Batch upserts: `INSERT ... ON CONFLICT (ticker, trade_date) DO UPDATE SET ...`.
+- Transactional access: `withDivergenceClient(async (client) => { ... })`.
+- Schema init: `CREATE TABLE IF NOT EXISTS` at startup; `ADD COLUMN IF NOT EXISTS` for migrations.
+
+---
+
+## TypeScript Standards
 
 ### Strictness
 
-Both `tsconfig.json` (frontend) and `tsconfig.server.json` (backend) use `"strict": true`. The frontend additionally enforces `"noUnusedLocals"` and `"noUnusedParameters"`.
+`tsconfig.json` (frontend) and `tsconfig.server.json` (backend) both use `"strict": true`.
+Frontend additionally enforces `"noUnusedLocals"` and `"noUnusedParameters"`.
 
-Always run both checks:
+Always run both:
 ```bash
-npx tsc --noEmit                              # frontend
+npx tsc --noEmit                                 # frontend
 npx tsc --noEmit --project tsconfig.server.json  # backend
 ```
 
 ### Shared Types
 
-`shared/api-types.ts` is the single source of truth for the frontend-backend contract. Frontend imports directly; backend references via JSDoc or imports.
-
-When adding a new API endpoint or modifying response shapes, update `shared/api-types.ts` first.
+`shared/api-types.ts` is the single source of truth for the frontend ↔ backend contract.
+Update it first when adding or changing endpoint response shapes.
 
 ### Zod Schemas
 
-All user input (query params, request bodies, path params) is validated through Zod schemas in `server/schemas.ts`. Schemas provide:
-- Type coercion (`z.coerce.number()`)
-- Defaults (`z.default('SPY')`)
-- Constraints (`z.min(1).max(200)`)
-- Custom refinements for date validation
-
-Parse with `safeParse()` and return the first validation issue to the client:
+All HTTP input (query params, bodies, path params) goes through Zod schemas in `server/schemas.ts`:
 
 ```typescript
 const result = schema.safeParse(input);
@@ -101,13 +363,32 @@ if (!result.success) {
 }
 ```
 
-### Avoiding `any`
+### No `any` — Specific Guidance
 
-Minimize `any`. Acceptable uses:
-- `catch (err: any)` blocks where error shape is unknown
-- Deliberate pragmatic cases documented with a comment
+| Situation | Correct Pattern |
+|---|---|
+| Error in `catch` | `catch (err: unknown)` + `err instanceof Error ? err.message : String(err)` |
+| Dynamic DB row | Define an explicit interface matching the SELECT columns |
+| Unknown JSON shape | `Record<string, unknown>` + explicit narrowing at each property access |
+| CDN global (Chart.js) | Define a minimal interface: `interface ChartInstance { ... }` |
+| Resume state bag | `Record<string, unknown>` — wrap all property accesses in `Number()` / `Array.isArray()` |
+| Test I/O stubs | `() => null as any` is acceptable with a comment when the return type is complex |
 
-For everything else, use specific types, `unknown`, or generics. When working with database rows, define explicit interfaces rather than using `Record<string, any>`.
+### Error Type Narrowing Pattern
+
+```typescript
+// Services
+} catch (err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  logger.error({ err }, message);
+}
+
+// Routes (with type guard)
+} catch (err: unknown) {
+  if (isDataApiRateLimitedError(err)) return reply.code(429).send({ error: 'Rate limited' });
+  return reply.code(500).send({ error: 'Internal error' });
+}
+```
 
 ---
 
@@ -115,118 +396,65 @@ For everything else, use specific types, `unknown`, or generics. When working wi
 
 ### Authentication
 
-- **Session auth** (`server/services/sessionAuth.ts`): Cookie-based sessions with 24-hour TTL, `HttpOnly; SameSite=Lax` cookies. In-memory `Map` with auto-cleanup every 15 minutes.
-- **Basic auth** (`server/middleware.ts`): Optional HTTP Basic auth with timing-safe string comparison via `crypto.timingSafeEqual()`.
-- **Site lock**: Optional passcode gate controlled by `SITE_LOCK_PASSCODE` env var.
+- **Session auth** (`sessionAuth.ts`): cookie-based, 24h TTL, HttpOnly + SameSite=Lax.
+  In-memory `Map` with auto-cleanup every 15 minutes.
+- **Basic auth** (`middleware.ts`): timing-safe comparison via `crypto.timingSafeEqual()`.
+- **Site lock**: passcode gate, enabled when `SITE_LOCK_PASSCODE` is set.
 
-Never bypass timing-safe comparison for credential checks. Never log credentials or session tokens.
-
-### Secret Management
-
-- All secrets come from environment variables, loaded once at startup via `server/config.ts`.
-- `validateStartupEnvironment()` runs at boot to catch missing required vars and warn about invalid optional ones.
-- API keys are redacted before they appear in any log output.
-- Never hardcode secrets. Never commit `.env` files.
-
-### Security Headers
-
-Fastify Helmet provides:
-- Content Security Policy (strict `self` + explicit CDN allowlist)
-- HSTS (1-year max-age, includeSubDomains)
-- Referrer-Policy: `strict-origin-when-cross-origin`
-- X-Frame-Options: `SAMEORIGIN`
-
-### Rate Limiting
-
-`@fastify/rate-limit` with configurable max requests per window (default 300/15min via `API_RATE_LIMIT_MAX`).
-
-Critical paths are exempt to prevent self-denial during heavy operations:
-- `/api/auth/*` (session verification polling)
-- `/api/health`, `/api/ready` (health checks)
-- `/api/divergence/scan/status` (scan progress polling)
-
-When adding endpoints that will be polled frequently, consider whether they need rate-limit exemption.
+Never bypass timing-safe comparison. Never log credentials or session tokens.
 
 ### Input Validation
 
-- Always use parameterized queries (`$1, $2, ...`) for SQL. Never interpolate user input into query strings.
-- Validate all inputs at the boundary via Zod schemas.
-- Sanitize query strings before logging (extract safe metadata only via `extractSafeRequestMeta()`).
+- Parameterized SQL only. No string interpolation.
+- All query params validated via Zod before use.
+- Request metadata stripped to safe fields before logging (`extractSafeRequestMeta()`).
 
-### CORS
+### Security Headers
 
-Configurable via `CORS_ORIGIN` env var. Credentials enabled when origin is specified. Default allows all origins for development.
+Fastify Helmet provides: CSP (strict self + CDN allowlist), HSTS (1-year), Referrer-Policy,
+X-Frame-Options. Do not relax CSP without a documented reason.
 
----
+### Rate Limiting
 
-## Database
-
-### Connection Pools
-
-Defined in `server/db.ts`. Two optional pools:
-- **Primary pool**: Required. Main application data (alerts, chart cache).
-- **Divergence pool**: Optional. Large-scale scan data (configured via `DIVERGENCE_DATABASE_URL`).
-
-Pool settings: max 20 connections, 2s connection timeout, 30s idle timeout, 30s statement timeout. These prevent runaway queries and connection leaks.
-
-### Query Patterns
-
-- Always use parameterized queries.
-- Batch inserts with `ON CONFLICT DO UPDATE` for upserts.
-- Use `withDivergenceClient()` for transactional access to the divergence pool.
-- Connection pool instrumented via `server/lib/dbMonitor.ts` for slow query detection (default 500ms threshold).
-
-### Schema Management
-
-Tables created with `CREATE TABLE IF NOT EXISTS` at startup. Column migrations applied conditionally. Indexes created with `IF NOT EXISTS`.
-
-When adding new tables or columns:
-1. Add `CREATE TABLE IF NOT EXISTS` in the init function.
-2. Add `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for migrations.
-3. Add indexes after table creation.
+`@fastify/rate-limit`, 300 requests / 15 min by default (`API_RATE_LIMIT_MAX`).
+Exempt paths: `/api/auth/*`, `/api/health`, `/api/ready`, `/api/divergence/scan/status`.
+Add new polling endpoints to the exempt list.
 
 ---
 
 ## Caching
 
-### Multi-Tier LRU Strategy
-
-The project uses `lru-cache` extensively with a timed-entry pattern:
+### Timed-Entry LRU Pattern
 
 ```typescript
 interface TimedCacheEntry {
   value: unknown;
-  freshUntil: number;   // Serve directly (Cache-Control max-age equivalent)
-  staleUntil: number;   // Serve stale while revalidating in background
+  freshUntil: number;   // Serve directly; no revalidation needed
+  staleUntil: number;   // Serve stale; trigger background refresh
 }
 ```
 
-This implements Stale-While-Revalidate (SWR): fresh data is served instantly, stale data triggers a background refresh, and expired data forces a synchronous fetch.
+Flow: fresh → serve instantly. Stale → serve + async refresh. Expired → synchronous fetch.
 
 ### Request Deduplication
 
-In-flight request maps prevent duplicate concurrent fetches. If two requests arrive for the same chart data, the second waits for the first:
+In-flight map prevents duplicate concurrent fetches for identical cache keys:
 
 ```typescript
-const inFlight = CHART_IN_FLIGHT_REQUESTS.get(requestKey);
+const inFlight = CHART_IN_FLIGHT_REQUESTS.get(key);
 if (inFlight) { await inFlight; return; }
 ```
 
 ### Pre-Warming
 
-`server/services/chartPrewarm.ts` pre-builds related intervals after a chart loads (e.g., loading 4hour triggers background builds of 1day and 1week). Each target is awaited sequentially to avoid resource spikes.
-
-### Frontend Cache
-
-`chartDataCache` in `src/chart.ts` caches fetched chart data in a `Map` keyed by `ticker:interval`. Persisted to `sessionStorage` for cross-navigation reuse. The refresh button explicitly evicts the cache entry before re-fetching.
+`chartPrewarm.ts` queues adjacent intervals for background build after a chart loads
+(e.g., loading 4hour triggers 1day + 1week). Awaited sequentially to avoid resource spikes.
 
 ---
 
 ## Error Handling
 
-### Structured Error Types
-
-Custom error interfaces carry HTTP status and classification flags:
+### Structured Error Interfaces
 
 ```typescript
 interface DataApiError extends Error {
@@ -237,211 +465,174 @@ interface DataApiError extends Error {
 }
 ```
 
-### Route Error Pattern
+Type guards (`isDataApiRateLimitedError`, `isAbortError`, etc.) are used in catch blocks
+instead of `instanceof` checks.
 
-Routes catch errors and map them to appropriate HTTP responses:
+### Route Error Pattern
 
 ```typescript
 try {
-  const result = await service.doWork(...);
-  return reply.send(result);
-} catch (err) {
+  return reply.send(await service.doWork(params));
+} catch (err: unknown) {
   if (isRateLimitedError(err)) return reply.code(429).send({ error: 'Rate limited' });
-  if (isPausedError(err)) return reply.code(503).send({ error: 'Service paused' });
+  if (isPausedError(err)) return reply.code(503).send({ error: 'Paused' });
   return reply.code(500).send({ error: 'Internal error' });
 }
 ```
 
-### Result Pattern
-
-Functions that can fail return discriminated unions:
-
-```typescript
-{ ok: true as const, data: T }
-{ ok: false as const, error: string }
-```
-
 ### Graceful Degradation
 
-- Cache miss falls back to API fetch; API failure falls back to stale cache.
-- Background jobs are best-effort; failures are logged but never crash the server.
-- Pre-warm errors are swallowed with optional logging.
+Cache miss → API fetch → serve. API failure → stale cache if available. Background job
+failure → logged, never crashes server. Pre-warm errors → swallowed.
 
 ---
 
 ## Performance
 
-### Concurrency Control
+### Adaptive Concurrency
 
-`server/lib/mapWithConcurrency.ts` provides a configurable worker pool for batch operations:
+`resolveAdaptiveFetchConcurrency(runType)` computes concurrency from:
+- `DIVERGENCE_TABLE_BUILD_CONCURRENCY` (configured ceiling)
+- `DATA_API_MAX_REQUESTS_PER_SECOND` (rate limit budget)
+- `ESTIMATED_API_CALLS_PER_TICKER` (per run type)
+
+VDF scan hard-caps at 3 regardless (memory constraint; each ticker loads 220 days of
+1-min data, causing massive cache buildup at higher concurrency).
+
+### mapWithConcurrency
 
 ```typescript
-await mapWithConcurrency(tickers, concurrency, worker, onSettled, shouldStop);
+await mapWithConcurrency(
+  items,            // T[]
+  concurrency,      // number — clamped to list length
+  worker,           // (item: T, index: number) => Promise<R>
+  onSettled?,       // (result | { error }, index, item) => void — errors swallowed
+  shouldStop?,      // () => boolean — checked before each item
+);
+// Returns Array<R | { error: unknown }> — index-stable, never throws
 ```
-
-Features:
-- Configurable parallelism
-- Per-item callback for progress reporting
-- Graceful stop via `shouldStop()` predicate
-- Adaptive concurrency based on API rate limits (`resolveAdaptiveFetchConcurrency()`)
-
-### Background Jobs
-
-Long-running operations (divergence scans, data fetches, table builds) run as background orchestrators. Each uses `ScanState` for lifecycle management:
-- Start/stop/pause/resume semantics
-- Progress tracking (total, processed, errors)
-- Resume state persistence for interrupted jobs
-- Retry passes with decreasing concurrency (full -> half -> quarter)
 
 ### Response Compression
 
-`@fastify/compress` compresses responses above a configurable minimum size. Chart data responses set explicit `Cache-Control` headers with `max-age` and `stale-while-revalidate`.
+`@fastify/compress` above configurable minimum byte size. Chart responses include
+`Cache-Control: max-age=N, stale-while-revalidate=M`.
 
 ### Graceful Shutdown
 
 ```
-SIGTERM/SIGINT -> set isShuttingDown flag -> reject new requests with 503
-  -> clear scheduled timers -> drain in-flight requests
-  -> close DB pools -> exit
-  -> 15-second force-exit safety net
+SIGTERM/SIGINT → set isShuttingDown flag → 503 new requests
+  → clear timers → drain in-flight → close DB pools → exit
+  → 15-second force-exit safety net
 ```
 
-When adding new interval timers or background processes, ensure they are cleaned up in the shutdown handler.
+Register new timers/intervals in the shutdown handler.
 
 ---
 
-## Observability
+## Background Jobs & ScanState
 
-### Structured Logging
+### ScanState Lifecycle
 
-All logging goes through Pino (`server/logger.ts`). Console methods are redirected to Pino so every `console.log/warn/error` produces structured JSON:
-
-```json
-{"level":"info","time":"2025-01-15T10:30:00.000Z","msg":"[chart] SPY 4hour cache hit"}
-```
-
-Use `logStructured(level, event, fields)` for structured events with metadata. Use standard console methods for simple messages.
-
-### Database Monitoring
-
-`server/lib/dbMonitor.ts` wraps pool queries with timing. Slow queries (>500ms by default) are logged with duration and sanitized SQL excerpt (first 200 chars).
-
-### Health Endpoints
-
-- `GET /healthz` - Liveness: always 200 if process is running.
-- `GET /readyz` - Readiness: checks DB connectivity and divergence pool status.
-- `GET /api/debug/metrics` - Debug metrics (protected by `DEBUG_METRICS_SECRET`).
-
-### Request Tracking
-
-Each request gets a unique ID via `createRequestId()`. Request metadata (method, path, query keys, ticker, interval) is extracted safely for logging without exposing sensitive data.
-
----
-
-## Frontend
-
-### Architecture
-
-Vanilla TypeScript with direct DOM manipulation. No framework. Modules are organized by feature:
-
-- `chart.ts` - Lightweight Charts integration, multi-pane rendering
-- `main.ts` - View switching, global navigation
-- `divergenceFeed.ts` - Real-time alert feed
-- `utils.ts` - Shared DOM helpers
-- `theme.ts` - Dark/light theme via CSS custom properties
-- `components.ts` - Reusable UI elements
-
-### CSS Conventions
-
-- CSS custom properties for theming (30+ variables in `:root`).
-- Dark mode by default with semantic color names.
-- Component-scoped class names (e.g., `.pane-btn`, `.refresh-btn`, `.vd-zone-overlay`).
-- Shared utility classes for common patterns:
-  - `.pane-btn` - Standard toolbar button
-  - `.pane-btn.refresh-btn` - Refresh button with loading animation
-  - `.pane-btn.refresh-btn.loading svg` - Triggers `@keyframes refresh-spin`
-
-### Shared UI Patterns
-
-When creating buttons or UI elements that appear in multiple places, extract shared helpers:
+All orchestrators use a `ScanState` instance (from `lib/ScanState.ts`) for lifecycle:
 
 ```typescript
-// Shared refresh button helpers (used by divergence, VDF, and chart refresh buttons)
-function createRefreshSvgIcon(): SVGSVGElement { ... }
-function setRefreshButtonLoading(btn: HTMLElement, loading: boolean): void { ... }
+// Starting a run
+const abort = myScan.beginRun(resumeRequested);
+// ... run work ...
+myScan.markCompleted(fields);   // or markStopped / markFailed
+myScan.cleanup(abort);          // always in finally block
 ```
 
-All three refresh buttons use the same SVG icon, CSS class, and loading animation. When adding new instances of existing patterns, always use the shared helper.
-
-### State Management
-
-- Global mutable state is kept in module-level variables (e.g., `currentChartTicker`, `currentChartInterval`).
-- Session-level cache persisted to `sessionStorage`.
-- View switching via CSS class toggling (`.hidden`).
-
----
-
-## Testing
-
-### Framework
-
-Node.js built-in `test` module. No external test framework.
-
-```bash
-npm test                    # Runs: node --test test/*.test.ts
-```
-
-### Test Organization
-
-Tests live in `/test/` and mirror the server module structure:
-
-```
-test/chartEngine.test.ts      # RSI/RMA calculations, interval parsing
-test/dataApi.test.ts           # URL building, error classification
-test/dateUtils.test.ts         # Timezone conversions, date math
-test/chartMath.test.ts         # OHLCV aggregation, normalization
-test/dbMonitor.test.ts         # Query timing instrumentation
-test/divergenceRoutes.test.ts  # Route handler integration tests
-test/divergenceService.test.ts # Service logic unit tests
-test/healthRoutes.test.ts      # Health endpoint tests
-test/healthService.test.ts     # Health payload building
-test/scanState.test.ts         # ScanState lifecycle, runRetryPasses logic
-test/mapWithConcurrency.test.ts # Concurrency pool: ordering, limits, stop, errors
-test/vdfScanOrchestrator.test.ts # runVDFScan orchestration via injected _deps
-```
-
-### Test Patterns
-
-- **Pure function tests**: Direct input/output assertions. No mocks needed.
-- **Route tests**: Create Fastify instance, register routes with mock dependencies, test HTTP responses.
-- **No external mock libraries**: Tests use simple function stubs and direct assertions.
+### Full ScanState API Reference
 
 ```typescript
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
+// Read-only accessors
+myScan.isRunning           // true while job owns this state
+myScan.isStopping          // true after requestStop() called
+myScan.shouldStop          // isStopping || signal.aborted  (use in worker loops)
+myScan.signal              // AbortSignal | null
+myScan.currentResumeState  // Record<string, unknown> | null — wrap all accesses in Number/Array.isArray
 
-test('calculateRSI returns values between 0 and 100', () => {
-  const rsi = calculateRSI(closes, 14);
-  for (const val of rsi) {
-    assert.ok(val >= 0 && val <= 100);
-  }
+// Status
+myScan.readStatus()                    // Readonly<ScanStatusFields> snapshot
+myScan.setStatus({ ... })              // Merge partial update
+myScan.replaceStatus({ ... })          // Full replace — terminal transitions only
+myScan.setExtraStatus({ ... })         // Extra domain fields (e.g. detected_tickers)
+myScan.updateProgress(processed, errors)
+
+// Terminal transitions
+myScan.markStopped(fields)             // status → 'stopped'
+myScan.markCompleted(fields)           // status → 'completed' or 'completed-with-errors'
+myScan.markFailed(fields)              // status → 'failed'
+
+// Resume
+myScan.saveResumeState(data, concurrency)   // Computes safe nextIndex; persists
+myScan.setResumeState(data | null)          // Direct set (mid-run)
+myScan.canResume()                          // boolean — check before offering resume to UI
+
+// Lifecycle
+myScan.beginRun(resumeRequested)       // Returns AbortController; resets transient state
+myScan.requestStop()                   // Returns false if not running; aborts signal
+myScan.cleanup(abortRef?)              // Clears isRunning + AbortController — always in finally
+
+// Late-binding (avoids circular imports; call from scanControlService.ts)
+myScan.setNormalizeResume(fn)
+myScan.setCanResumeValidator(fn)
+
+// Route integration
+myScan.buildRouteOptions(runFn)        // Returns { getStatus, requestStop, canResume, run, getIsRunning }
+```
+
+### Resume State Pattern
+
+Resume state bags are `Record<string, unknown>`. Wrap every property access in a type-safe coercion:
+
+```typescript
+const rs = myScan.currentResumeState;
+// ✓ correct
+const total = Number(rs?.totalTickers) || 0;
+const tickers: string[] = (rs && Array.isArray(rs.tickers)) ? (rs.tickers as string[]) : [];
+const nextIndex = Math.max(0, Number(rs?.nextIndex || 0));
+// ✗ wrong
+const tickers = rs?.tickers || [];   // unknown, causes type error
+const idx = rs.nextIndex < total;    // unknown < number, type error
+```
+
+### runRetryPasses
+
+```typescript
+const stillFailed = await runRetryPasses<VdfSettled>({
+  failedTickers,
+  baseConcurrency,           // halved on pass 1, quartered on pass 2
+  worker,                    // (ticker: string) => Promise<TSettled>
+  onRecovered?,              // called for each ticker that succeeds on retry
+  onStillFailed?,            // called for each ticker that still fails
+  shouldStop?,               // () => boolean — honors scan abort
+  metricsTracker?,           // optional — set phase, record recovered
+  mapWithConcurrency,        // pass the imported function (enables test injection)
 });
 ```
 
-### What to Test
+Workers passed to `runRetryPasses` must **not throw** — catch internally and return
+`{ ticker, error }`. The `mapWithConcurrency`-level guard handles unexpected throws.
 
-- Core math and calculation logic (RSI, RMA, aggregation).
-- Input validation and schema parsing.
-- Route handlers with various input combinations.
-- Error classification and response mapping.
-- Health check payload construction.
-- Orchestrator behavior via injected `_deps` (see `VdfScanDeps` in `vdfService.ts`).
+### Orchestrator Testability (VdfScanDeps Pattern)
 
-### Orchestrator Testability Pattern
+Complex orchestrators accept an optional `_deps` parameter to inject I/O stubs:
 
-Complex orchestrators accept an optional `_deps` parameter with injectable I/O functions.
-All fields default to real implementations; tests inject stubs via `_deps`:
+```typescript
+export interface VdfScanDeps {
+  isConfigured?: () => boolean;
+  getTickers?: () => Promise<string[]>;
+  detectTicker?: (ticker: string, signal: AbortSignal) => Promise<unknown>;
+  sweepCache?: () => void;
+  createMetricsTracker?: typeof createRunMetricsTracker;  // pass () => null to suppress DB writes
+}
 
+export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDeps } = {}) { ... }
+```
+
+Test usage:
 ```typescript
 await runVDFScan({
   _deps: {
@@ -449,96 +640,245 @@ await runVDFScan({
     getTickers: async () => ['AAPL', 'MSFT'],
     detectTicker: async (ticker) => ({ is_detected: ticker === 'AAPL' }),
     sweepCache: () => {},
+    createMetricsTracker: () => null as any,  // suppresses DB writes
   },
 });
 ```
 
-The `_deps` prefix signals test-only usage. Real callers never pass it.
+The `_deps` prefix signals test-only usage. Production callers never pass it.
 
 ---
 
-## CI/CD
+## Observability
 
-### GitHub Actions Pipeline
+### Structured Logging
 
-Runs on push to `main` and pull requests:
+All logging via Pino. `console.*` methods are redirected to Pino in `server/logger.ts`.
 
-```
-1. npm ci
-2. npx eslint .
-3. npx tsc --noEmit                              (frontend typecheck)
-4. npx tsc --noEmit --project tsconfig.server.json  (server typecheck)
-5. node --test test/*.test.ts
-6. npm run build                                  (vite build)
+```typescript
+// Simple message
+console.log('VDF scan started');
+// Structured
+logStructured('info', 'chart.cache.miss', { ticker, interval, latencyMs });
 ```
 
-All steps must pass. Never merge with typecheck errors or failing tests.
+Format: `{"level":"info","time":"...","msg":"...","ticker":"SPY","interval":"4hour"}`
 
-### Verification Checklist
+### Database Monitoring
 
-Before committing any change, run:
+`lib/dbMonitor.ts` wraps pool queries. Slow queries (>500ms) are logged with duration
+and first 200 chars of SQL (sanitized).
+
+### Health Endpoints
+
+- `GET /healthz` — liveness (200 if process alive)
+- `GET /readyz` — readiness (checks DB connectivity)
+- `GET /api/debug/metrics` — protected by `DEBUG_METRICS_SECRET`
+
+---
+
+## Frontend Architecture
+
+### Pages / Views
+
+All views are in `index.html` — shown/hidden by CSS class toggling (`.hidden`). No routing
+library. `main.ts` owns the view-switching logic.
+
+| View | Key Module | Description |
+|---|---|---|
+| Chart | `chart.ts` | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
+| Breadth | `breadth.ts` | MA breadth gauges + history + normalized compare (Chart.js) |
+| Divergence Feed | `divergenceFeed.ts` | Auto-polling alert list, VDF status panel |
+| Scan Control | `main.ts` | Start/stop/status for all background jobs |
+
+### Chart View (`src/chart.ts`)
+
+- `Lightweight Charts` loaded from CDN (`declare const LightweightCharts: ...`).
+- Multi-pane: main OHLCV pane, optional RSI sub-pane, optional Volume sub-pane.
+- VDF zone overlays rendered as custom primitives.
+- `chartDataCache` (Map in module scope) caches fetched data; persisted to `sessionStorage`.
+- Refresh button: clears cache entry → re-fetches → re-renders.
+- Pre-warm triggered after render: loads adjacent intervals in background.
+
+### Breadth View (`src/breadth.ts`)
+
+- `Chart.js` loaded from CDN + annotation plugin. Typed via minimal `ChartInstance` interface
+  (not `typeof ChartClass` — that conflicts with CDN annotation plugin).
+- `ChartTooltipContext`, `ChartLegendItem`, `ChartLegendHandle`: local interfaces for callbacks.
+  No `any` in chart callbacks.
+- `BREADTH_MA_HISTORY_DAYS = 60`: named constant for history lookback.
+- `initBreadthThemeListener()`: call from `main.ts` — do not register at module scope.
+- Normalized compare chart: each series divided by its own first value × 100 (starts at 100).
+  Supports MA window selection (21/50/100/200) and timeframe (5d/10d/20d/30d).
+
+### CSS Conventions
+
+- CSS custom properties for all colors (`--color-accent`, `--bg-primary`, etc.).
+- Dark mode by default; light mode via `[data-theme="light"]` attribute on `<html>`.
+- Component-scoped class names: `.pane-btn`, `.breadth-gauge`, `.vd-zone-overlay`.
+- Shared refresh button: `createRefreshSvgIcon()`, `setRefreshButtonLoading(btn, loading)`.
+
+### DOM Safety Rules
+
+```typescript
+// ✓ Safe
+el.textContent = userValue;
+el.setAttribute('data-value', sanitized);
+const span = document.createElement('span');
+span.textContent = label;
+
+// ✗ XSS risk
+el.innerHTML = `<b>${userValue}</b>`;   // never with any user-controlled data
+
+// ✓ innerHTML only with static string literals
+el.innerHTML = '<svg viewBox="0 0 24 24"><path d="..."/></svg>';
+```
+
+---
+
+## Testing
+
+### Framework
+
+Node.js built-in `test` module + `tsx` for TypeScript transpilation. No Jest, Mocha, etc.
 
 ```bash
-npx tsc --noEmit                              # Frontend types
-npx tsc --noEmit --project tsconfig.server.json  # Server types
-npm test                                       # All tests pass
-npm run build                                  # Vite build succeeds
+npx tsx --test test/*.test.ts
+```
+
+### Test Quality Requirements
+
+Tests in this codebase must meet the same standard as production code:
+
+1. **No dead helpers.** Every function defined in a test file must be called.
+2. **No timing-based synchronization.** No `setTimeout(r, 0)` as a yield point.
+3. **Silent by default.** Inject no-op stubs for all I/O (DB, network, metrics).
+   `console.log` from the module under test is acceptable (structured log output);
+   `[query-error]` or stack traces from unexpected DB calls are not.
+4. **Deterministic.** Tests must pass consistently in any execution order.
+5. **Descriptive names.** Test name = behavior + condition + expected outcome.
+
+### Test File Map
+
+```
+test/chartEngine.test.ts          # RSI/RMA, interval parsing, aggregation
+test/dataApi.test.ts              # URL building, error classification, rate limiting
+test/dateUtils.test.ts            # ET timezone conversions, date math
+test/chartMath.test.ts            # OHLCV aggregation, normalization
+test/dbMonitor.test.ts            # Query timing instrumentation
+test/divergenceRoutes.test.ts     # Route handler integration tests
+test/divergenceService.test.ts    # Service logic unit tests
+test/healthRoutes.test.ts         # Health endpoint tests
+test/healthService.test.ts        # Health payload building
+test/scanState.test.ts            # ScanState lifecycle (46 tests), runRetryPasses
+test/mapWithConcurrency.test.ts   # Concurrency pool: order, limits, stop, errors, callbacks
+test/vdfScanOrchestrator.test.ts  # runVDFScan orchestration via VdfScanDeps injection
+```
+
+### Test Patterns
+
+```typescript
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+// Pure function test
+test('calculateRSI returns values between 0 and 100', () => {
+  const rsi = calculateRSI(closes, 14);
+  for (const val of rsi) assert.ok(val >= 0 && val <= 100);
+});
+
+// Orchestrator test (inject deps, suppress all I/O)
+function baseDeps(overrides = {}) {
+  return {
+    isConfigured: () => true,
+    getTickers: async () => [] as string[],
+    detectTicker: async () => ({ is_detected: false }),
+    sweepCache: () => {},
+    createMetricsTracker: () => null as any,
+    ...overrides,
+  };
+}
+
+// Deterministic "already running" synchronization
+test('runVDFScan returns running when already in progress', async () => {
+  let releaseGetTickers!: () => void;
+  const getTickersCalled = new Promise<void>((r) => (releaseGetTickers = r));
+  let releaseWorker!: () => void;
+  const workerBlocked = new Promise<void>((r) => (releaseWorker = r));
+
+  const firstRun = runVDFScan({
+    _deps: baseDeps({
+      getTickers: async () => {
+        releaseGetTickers();  // beginRun() already called → isRunning is true
+        await workerBlocked;
+        return ['AAA'];
+      },
+    }),
+  });
+
+  await getTickersCalled;  // deterministic — no setTimeout
+  const concurrent = await runVDFScan({ _deps: baseDeps() });
+  assert.equal(concurrent.status, 'running');
+
+  releaseWorker();
+  await firstRun;
+});
 ```
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### Adding New Config
 
-All config is centralized in `server/config.ts`. Every env var has:
-- A sensible default (or is required with startup validation).
-- Range clamping for numeric values (`Math.max(min, Number(val) || default)`).
-- Type coercion and normalization.
-
-When adding new configuration:
-1. Add the constant to `server/config.ts` with default and range clamping.
-2. Add validation in `validateStartupEnvironment()` if the value is required or has constraints.
-3. Export and import from `config.ts` - never read `process.env` directly in other modules.
+1. Add named constant to `server/config.ts` with clamping and default:
+   ```typescript
+   export const MY_CONSTANT = Math.max(1, Number(process.env.MY_CONSTANT) || 100);
+   ```
+2. Add validation in `validateStartupEnvironment()` if required or constrained.
+3. Import from `config.ts` — **never** read `process.env` directly elsewhere.
 
 ### Key Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | Yes | - | PostgreSQL connection string |
-| `DATA_API_KEY` | Warn | - | Market data API key |
-| `PORT` | No | 3000 | Server listen port |
-| `SITE_LOCK_PASSCODE` | No | - | Enables site-wide passcode gate |
+| `DATABASE_URL` | **Yes** | — | PostgreSQL primary connection string |
+| `DATA_API_KEY` | Warn | — | Market data provider API key |
+| `PORT` | No | 3000 | HTTP listen port |
+| `SITE_LOCK_PASSCODE` | No | — | Enables site-wide passcode gate |
+| `SESSION_SECRET` | Warn | passcode | Secret for signing session tokens |
 | `CORS_ORIGIN` | No | `*` | Allowed CORS origins |
-| `LOG_LEVEL` | No | info | Pino log level |
 | `API_RATE_LIMIT_MAX` | No | 300 | Max requests per 15-minute window |
-| `DIVERGENCE_DATABASE_URL` | No | - | Separate DB for scan data |
-| `DEBUG_METRICS_SECRET` | No | - | Secret for debug metrics endpoint |
+| `DATA_API_MAX_REQUESTS_PER_SECOND` | No | 99 | Upstream API RPS budget (adaptive concurrency) |
+| `DIVERGENCE_DATABASE_URL` | No | — | PostgreSQL for scan/divergence data |
+| `DIVERGENCE_TABLE_BUILD_CONCURRENCY` | No | 24 | Max parallel tickers during fetch runs |
+| `DIVERGENCE_SCAN_CONCURRENCY` | No | 128 | Max parallel tickers during divergence scan |
+| `DEBUG_METRICS_SECRET` | No | — | Secret for debug metrics endpoint |
+| `DATA_API_REQUESTS_PAUSED` | No | false | Block all outbound market data calls |
 
 ---
 
 ## Code Style
 
-### General Principles
-
-- **Small, composable modules.** Each file has a clear single responsibility.
-- **Prefer boring, proven patterns.** No clever abstractions for one-time operations.
-- **Minimal changes.** Only modify what the task requires. Don't refactor surrounding code, add unsolicited comments, or "improve" working code.
-- **No over-engineering.** Three similar lines are better than a premature abstraction. Don't design for hypothetical future requirements.
-- **Delete unused code.** No backwards-compatibility shims, no `_unused` variables, no `// removed` comments.
-
 ### Naming
 
-- Files: `camelCase.ts` for modules, `PascalCase.ts` for classes (e.g., `ScanState.ts`).
-- Functions: `camelCase`. Descriptive verbs (`buildChartRequestKey`, `validateSession`, `extractSafeRequestMeta`).
-- Constants: `UPPER_SNAKE_CASE` for true constants (`SESSION_TTL_MS`, `CHART_TIMING_SAMPLE_MAX`).
-- Interfaces: `PascalCase` (`TimedCacheEntry`, `PrewarmDeps`, `ScanStatusFields`).
+- Files: `camelCase.ts` for modules; `PascalCase.ts` for class files (`ScanState.ts`).
+- Functions: descriptive camelCase verbs (`buildChartRequestKey`, `resolveAdaptiveFetchConcurrency`).
+- Constants: `UPPER_SNAKE_CASE` for module-level constants (`SESSION_TTL_MS`, `RETRY_PASS_DIVISORS`).
+- Interfaces: `PascalCase` (`TickerWorkerSettled`, `VdfScanDeps`, `ScanStatusFields`).
+- Private class fields: `_prefixed` (`_running`, `_resumeState`).
 
 ### Imports
 
-- Use `.js` extensions in server imports (Node.js ESM resolution).
-- Group imports: external packages first, then local modules.
-- Use `import type` for type-only imports.
+- `.js` extensions required in server imports (Node.js ESM).
+- Order: external packages → local modules. Group with blank lines.
+- `import type` for type-only imports.
+
+### Comments
+
+- JSDoc on every exported function, class, interface.
+- Inline comments only where logic is non-obvious. No narration of what code does.
+- Named constants always have a comment explaining the magic number's rationale.
 
 ---
 
@@ -546,92 +886,50 @@ When adding new configuration:
 
 ### New API Endpoint
 
-1. Define types in `shared/api-types.ts`.
-2. Add Zod schema in `server/schemas.ts` for input validation.
-3. Add service function in appropriate `server/services/*.ts` file.
-4. Add route handler in appropriate `server/routes/*.ts` file.
+1. Define response type in `shared/api-types.ts`.
+2. Add Zod validation schema in `server/schemas.ts`.
+3. Add service function in `server/services/*.ts`.
+4. Add route handler in `server/routes/*.ts` — thin, no business logic.
 5. Register route in `index.ts`.
 6. Add tests in `test/`.
-7. Run full verification checklist.
+7. Run verification checklist.
 
 ### New Background Job
 
 1. Create orchestrator in `server/orchestrators/`.
-2. Use `ScanState` for lifecycle management.
-3. Use `mapWithConcurrency` for parallel work.
-4. Implement retry passes with `runRetryPasses`.
-5. Wire up start/stop/status in route handler.
-6. Add cleanup in the shutdown handler.
+2. Create `ScanState` instance in `server/services/scanControlService.ts`.
+3. Register normalizer and canResume validator via `setNormalizeResume` / `setCanResumeValidator`.
+4. Expose via `buildRouteOptions` in the route handler.
+5. Add `_deps` interface for I/O injection (see `VdfScanDeps` pattern).
+6. Use `mapWithConcurrency` for parallel work; `runRetryPasses` for retries.
+7. Register cleanup in the shutdown handler in `index.ts`.
+8. Write orchestrator tests using injected deps.
 
-#### ScanState API Reference
+### New Frontend View
 
-All orchestrators manage lifecycle through the `ScanState` public API. Never access private underscore fields directly.
-
-```typescript
-// Starting a run
-const abortController = myScan.beginRun(resumeRequested);
-
-// Checking state
-myScan.isRunning          // true while job is active
-myScan.isStopping         // true after requestStop() called
-myScan.shouldStop         // isStopping || signal.aborted (use in worker loops)
-myScan.signal             // AbortSignal | null for the current run
-myScan.currentResumeState // previously saved resume data, or null
-
-// Reading/writing status
-myScan.readStatus()       // Readonly<ScanStatusFields> snapshot (shallow copy)
-myScan.setStatus({...})   // Merge partial updates (non-destructive)
-myScan.replaceStatus({...})  // Full replacement — use for terminal transitions only
-myScan.setExtraStatus({...}) // Domain-specific extra fields shown in getStatus()
-myScan.updateProgress(processed, errors)  // Update counters mid-run
-
-// Terminal transitions
-myScan.markStopped(fields)    // status → 'stopped'
-myScan.markCompleted(fields)  // status → 'completed' or 'completed-with-errors'
-myScan.markFailed(fields)     // status → 'failed'
-
-// Resume state
-myScan.saveResumeState(data, concurrency)  // Computes safe nextIndex, persists to _resumeState
-myScan.setResumeState(data | null)         // Direct set (mid-run persistence)
-
-// Cleanup (always in finally block)
-myScan.cleanup(abortController)  // Clears isRunning and AbortController ref
-```
-
-Late-binding normalizers/validators (call after both the ScanState instance and the
-normalizer function are defined, to avoid circular imports):
-
-```typescript
-myScan.setNormalizeResume(normalizeMyResumeState);
-myScan.setCanResumeValidator((rs) => {
-  const n = normalizeMyResumeState(rs);
-  return n.totalTickers > 0 && n.nextIndex < n.totalTickers;
-});
-```
-
-### New Frontend Component
-
-1. Check if a shared helper already exists (e.g., `createRefreshSvgIcon`, `setRefreshButtonLoading`).
-2. Add HTML element in `index.html` (prefer empty containers populated by JS).
-3. Add event handlers and rendering in the appropriate `src/*.ts` module.
-4. Use CSS custom properties for colors. Add component styles in `public/style.css`.
-5. Follow existing patterns for loading states (`.loading` class toggle, CSS animations).
-6. **DOM manipulation**: use `textContent`, `createElement`, and `style.*` rather than `innerHTML` to avoid XSS. Only use `innerHTML` with static string literals that contain no user-controlled data.
-7. **Theme change listeners**: do not register `window.addEventListener('themechange', …)` at module scope (side effect on import). Export a dedicated `initXxxThemeListener()` function and call it from `main.ts` when the view is activated.
+1. Add the view's HTML container to `index.html` (hidden by default).
+2. Add a module `src/myView.ts` with all rendering and event logic.
+3. Wire view switching in `main.ts`.
+4. Export `initMyViewThemeListener()` — do **not** register at module scope.
+5. Use DOM APIs (`createElement`, `textContent`) not `innerHTML` for user-controlled data.
+6. Use CSS custom properties for all colors.
 
 ---
 
-## Anti-Patterns to Avoid
+## Anti-Patterns
 
-- **Reading `process.env` outside `config.ts`.** All env vars go through config.
-- **SQL string interpolation.** Always use parameterized queries.
-- **Logging secrets or tokens.** Redact before logging.
-- **Circular imports.** Maintain strict dependency direction.
-- **Framework-less error handling in routes.** Fastify catches thrown errors; use it.
-- **Polling without rate-limit consideration.** If an endpoint will be polled frequently, exempt it from rate limiting.
-- **Inline SVG in HTML for dynamic elements.** Populate from JS using shared helpers.
-- **Blocking the event loop with synchronous operations.** Use async/await, background jobs, and connection pooling.
-- **Adding `any` without justification.** Use `unknown` and narrow, or define proper interfaces. Acceptable uses: `catch (err: any)`, CDN globals where the type isn't importable, and opaque resume-state bags.
-- **Exporting mutable module-level state.** Keep mutable Sets, Maps, and counters unexported; expose read-only accessors if callers need them.
-- **Magic numbers in infrastructure.** Concurrency divisors, multipliers, and per-ticker API call estimates must be named constants with comments explaining the rationale.
-- **Skipping the verification checklist.** Every change must pass typecheck + tests + build.
+| Pattern | Why it's wrong | Correct alternative |
+|---|---|---|
+| `catch (err: any)` | Defeats type safety | `catch (err: unknown)` + `instanceof Error` check |
+| `Record<string, any>` for known shapes | Loses all type safety | Define an explicit interface |
+| `process.env.X` outside config.ts | Config is scattered, untestable | Add constant to config.ts |
+| `setTimeout(r, 0)` for test sync | Race condition, flaky | Promise gate resolved by the code under test |
+| Unused test helpers | Dead code | Delete them |
+| DB errors in test output | Missing dep injection | Inject `createMetricsTracker: () => null as any` |
+| Module-level `window.addEventListener` | Side effect on import | Export `initXxxListener()`, call from main.ts |
+| `innerHTML` with non-literal strings | XSS risk | `textContent` or `createElement` |
+| `export let mutableSet` | Leaks mutable state | Unexport; provide read-only accessor if needed |
+| Reading `process.env` in lib/ | lib/ must have no external deps | Import constant from config.ts |
+| Magic number in concurrency/retry | Unreadable, untunable | Named constant + comment explaining the value |
+| `lib/` importing from `services/` | Circular dep risk | Move the pure predicate to `lib/` |
+| `err.message` without narrowing | Throws on non-Error | `err instanceof Error ? err.message : String(err)` |

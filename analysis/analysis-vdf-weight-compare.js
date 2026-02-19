@@ -14,7 +14,7 @@ const {
   findDistributionClusters,
   evaluateProximitySignals,
   scoreSubwindow,
-} = require('./server/services/vdfDetector');
+} = require('../server/services/vdfDetector');
 
 const fs = require('fs');
 

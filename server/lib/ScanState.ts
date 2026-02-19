@@ -8,8 +8,8 @@
 /** Options for constructing a ScanState instance. */
 interface ScanStateOptions {
   metricsKey?: string;
-  normalizeResume?: (data: Record<string, any>) => Record<string, any>;
-  canResumeValidator?: (resumeState: Record<string, any>) => boolean;
+  normalizeResume?: (data: Record<string, unknown>) => Record<string, unknown>;
+  canResumeValidator?: (resumeState: Record<string, unknown>) => boolean;
 }
 
 /** Status fields maintained by a ScanState instance. */
@@ -51,9 +51,9 @@ class ScanState {
   private _running: boolean;
   private _stopRequested: boolean;
   private _abortController: AbortController | null;
-  private _resumeState: Record<string, any> | null;
-  private _normalizeResume: ((data: Record<string, any>) => Record<string, any>) | null;
-  private _canResumeValidator: ((resumeState: Record<string, any>) => boolean) | null;
+  private _resumeState: Record<string, unknown> | null;
+  private _normalizeResume: ((data: Record<string, unknown>) => Record<string, unknown>) | null;
+  private _canResumeValidator: ((resumeState: Record<string, unknown>) => boolean) | null;
   private _status: ScanStatusFields;
   private _extraStatus: Record<string, unknown>;
 
@@ -103,7 +103,7 @@ class ScanState {
   }
 
   /** The resume state persisted between runs, or null. */
-  get currentResumeState(): Record<string, any> | null {
+  get currentResumeState(): Record<string, unknown> | null {
     return this._resumeState;
   }
 
@@ -144,7 +144,7 @@ class ScanState {
     if (!this._resumeState) return false;
     if (this._canResumeValidator) return this._canResumeValidator(this._resumeState);
     const rs = this._normalizeResume ? this._normalizeResume(this._resumeState) : this._resumeState;
-    return Array.isArray(rs.tickers) && rs.tickers.length > 0 && rs.nextIndex < rs.tickers.length;
+    return Array.isArray(rs.tickers) && rs.tickers.length > 0 && Number(rs.nextIndex) < rs.tickers.length;
   }
 
   /** Returns the combined status object used by route handlers for polling. */
@@ -220,26 +220,26 @@ class ScanState {
    * Compute a safe resume nextIndex (adjusted for in-flight workers) and persist
    * the resume state. Returns the safe nextIndex value.
    */
-  saveResumeState(data: Record<string, any>, concurrency: number): number {
-    const total = data.totalTickers || (Array.isArray(data.tickers) ? data.tickers.length : 0);
-    const safeNext = Math.max(0, Math.min(total, (data.processedTickers || 0) - (concurrency || 0)));
-    const normalized = { ...data, nextIndex: safeNext, processedTickers: safeNext };
+  saveResumeState(data: Record<string, unknown>, concurrency: number): number {
+    const total = Number(data.totalTickers) || (Array.isArray(data.tickers) ? data.tickers.length : 0);
+    const safeNext = Math.max(0, Math.min(total, Number(data.processedTickers || 0) - concurrency));
+    const normalized: Record<string, unknown> = { ...data, nextIndex: safeNext, processedTickers: safeNext };
     this._resumeState = this._normalizeResume ? this._normalizeResume(normalized) : normalized;
     return safeNext;
   }
 
   /** Directly set (or clear) the resume state for mid-run persistence. */
-  setResumeState(data: Record<string, any> | null): void {
+  setResumeState(data: Record<string, unknown> | null): void {
     this._resumeState = data;
   }
 
   /** Late-bind the resume-state normalizer (call during app startup after imports settle). */
-  setNormalizeResume(fn: (data: Record<string, any>) => Record<string, any>): void {
+  setNormalizeResume(fn: (data: Record<string, unknown>) => Record<string, unknown>): void {
     this._normalizeResume = fn;
   }
 
   /** Late-bind the resume-state validator (call during app startup after imports settle). */
-  setCanResumeValidator(fn: (resumeState: Record<string, any>) => boolean): void {
+  setCanResumeValidator(fn: (resumeState: Record<string, unknown>) => boolean): void {
     this._canResumeValidator = fn;
   }
 

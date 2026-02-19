@@ -200,6 +200,11 @@ export interface VdfScanDeps {
   detectTicker?: (ticker: string, signal: AbortSignal) => Promise<unknown>;
   /** Sweep the in-memory cache. Defaults to sweepExpiredTimedCache(CHART_DATA_CACHE). */
   sweepCache?: () => void;
+  /**
+   * Factory for the run-metrics tracker. Pass `() => null` in tests to suppress DB writes.
+   * Defaults to createRunMetricsTracker.
+   */
+  createMetricsTracker?: typeof createRunMetricsTracker;
 }
 
 export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDeps } = {}) {
@@ -209,6 +214,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
   const resolveDetectTicker = _deps.detectTicker ?? ((ticker: string, signal: AbortSignal) =>
     getVDFStatus(ticker, { force: true, noCache: true, signal }));
   const resolveSweepCache = _deps.sweepCache ?? (() => sweepExpiredTimedCache(CHART_DATA_CACHE));
+  const resolveCreateMetricsTracker = _deps.createMetricsTracker ?? createRunMetricsTracker;
 
   if (!resolveIsConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
@@ -221,7 +227,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
   const rs = resumeRequested ? vdfScan.currentResumeState : null;
   if (
     resumeRequested &&
-    (!rs || !Array.isArray(rs.tickers) || rs.tickers.length === 0 || rs.nextIndex >= rs.tickers.length)
+    (!rs || !Array.isArray(rs.tickers) || rs.tickers.length === 0 || Number(rs.nextIndex) >= rs.tickers.length)
   ) {
     return { status: 'no-resume' };
   }
@@ -235,7 +241,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
   let totalTickers = Math.max(0, Number(rs?.totalTickers || 0));
   const startedAtIso = new Date().toISOString();
   const failedTickers: string[] = [];
-  let tickers = rs?.tickers || [];
+  let tickers: string[] = (rs && Array.isArray(rs.tickers)) ? (rs.tickers as string[]) : [];
   let startIndex = Math.max(0, Number(rs?.nextIndex || 0));
 
   vdfScan.setStatus({
@@ -272,7 +278,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
       const latencyMs = Date.now() - apiStart;
       if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
       return { ticker, result, error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const latencyMs = Date.now() - apiStart;
       if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: false });
       return { ticker, result: null, error: err };
@@ -298,16 +304,16 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
       `VDF scan${resumeRequested ? ' (resumed)' : ''}: ${totalTickers} tickers (starting at ${startIndex}), concurrency=${runConcurrency}, noCache=true`,
     );
 
-    runMetricsTracker = createRunMetricsTracker('vdfScan', { totalTickers, concurrency: runConcurrency });
-    runMetricsTracker.setTotals(totalTickers);
-    runMetricsTracker.setPhase('core');
+    runMetricsTracker = resolveCreateMetricsTracker('vdfScan', { totalTickers, concurrency: runConcurrency });
+    runMetricsTracker?.setTotals(totalTickers);
+    runMetricsTracker?.setPhase('core');
 
     await mapWithConcurrency(
       tickerSlice,
       runConcurrency,
       vdfWorker,
       (settled) => {
-        const s = settled as Record<string, any>;
+        const s = settled as { ticker: string; skipped?: boolean; error?: unknown; result?: unknown };
         if (s.skipped) return;
         settledCount++;
         processedTickers = startIndex + settledCount;
@@ -315,9 +321,10 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
           errorTickers++;
           failedTickers.push(s.ticker);
           if (!(vdfScan.isStopping && isAbortError(s.error))) {
-            console.error(`VDF scan error for ${s.ticker}:`, s.error?.message || s.error);
+            const msg = s.error instanceof Error ? s.error.message : String(s.error);
+            console.error(`VDF scan error for ${s.ticker}:`, msg);
           }
-        } else if (s.result && s.result.is_detected) {
+        } else if (s.result && (s.result as Record<string, unknown>).is_detected) {
           detectedTickers++;
         }
         vdfScan.updateProgress(processedTickers, errorTickers);
@@ -348,7 +355,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
         worker: vdfWorker,
         onRecovered: (settled) => {
           errorTickers--;
-          if (settled.result && settled.result.is_detected) detectedTickers++;
+          if (settled.result && (settled.result as Record<string, unknown>).is_detected) detectedTickers++;
           vdfScan.updateProgress(processedTickers, errorTickers);
           syncExtra();
         },
@@ -363,8 +370,8 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
     const finalStatus = vdfScan.getStatus().status;
     runMetricsTracker?.finish(finalStatus, { totalTickers, processedTickers, errorTickers, meta: { failedTickers } });
     return { status: finalStatus, processedTickers, errorTickers, detectedTickers };
-  } catch (err: any) {
-    const message = err && err.message ? err.message : String(err);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`VDF scan failed: ${message}`);
 
     if (vdfScan.isStopping || isAbortError(err)) {

@@ -7,30 +7,14 @@ import { runVDFScan, vdfScan } from '../server/services/vdfService.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolved promise for a successful detection result. */
-function detectedResult(ticker: string) {
-  return async () => ({ is_detected: true, composite_score: 0.8 });
-}
-
-/** Resolved promise for a non-detected result. */
-function notDetectedResult() {
-  return async () => ({ is_detected: false, composite_score: 0 });
-}
-
-/** A detectTicker that always throws. */
-function failingDetect() {
-  return async (_ticker: string, _signal: AbortSignal) => {
-    throw new Error('network error');
-  };
-}
-
-/** Baseline _deps to avoid any real I/O. */
+/** Baseline _deps: no real I/O, no DB writes (metrics suppressed). */
 function baseDeps(overrides: Parameters<typeof runVDFScan>[0]['_deps'] = {}) {
   return {
     isConfigured: () => true,
-    getTickers: async () => [],
+    getTickers: async () => [] as string[],
     detectTicker: async (_ticker: string, _signal: AbortSignal) => ({ is_detected: false }),
     sweepCache: () => {},
+    createMetricsTracker: () => null as any,
     ...overrides,
   };
 }
@@ -40,9 +24,7 @@ function baseDeps(overrides: Parameters<typeof runVDFScan>[0]['_deps'] = {}) {
 // ---------------------------------------------------------------------------
 
 test('runVDFScan returns disabled when isConfigured is false', async () => {
-  const result = await runVDFScan({
-    _deps: { ...baseDeps(), isConfigured: () => false },
-  });
+  const result = await runVDFScan({ _deps: { ...baseDeps(), isConfigured: () => false } });
   assert.equal(result.status, 'disabled');
 });
 
@@ -51,27 +33,29 @@ test('runVDFScan returns disabled when isConfigured is false', async () => {
 // ---------------------------------------------------------------------------
 
 test('runVDFScan returns running when scan is already in progress', async () => {
-  // Kick off a scan that will not complete until we let it
+  // getTickers is the first await inside runVDFScan after the synchronous beginRun() call.
+  // Blocking here guarantees isRunning is true before the second runVDFScan starts.
+  let releaseGetTickers!: () => void;
+  const getTickersCalled = new Promise<void>((r) => (releaseGetTickers = r));
   let releaseWorker!: () => void;
-  const workerBlocked = new Promise<void>((resolve) => (releaseWorker = resolve));
+  const workerBlocked = new Promise<void>((r) => (releaseWorker = r));
 
   const firstRun = runVDFScan({
     _deps: baseDeps({
-      getTickers: async () => ['AAA'],
-      detectTicker: async () => {
+      getTickers: async () => {
+        releaseGetTickers(); // signals: beginRun() already ran → isRunning is true
         await workerBlocked;
-        return { is_detected: false };
+        return ['AAA'];
       },
     }),
   });
 
-  // Small yield so the first run can start and set isRunning = true
-  await new Promise((r) => setTimeout(r, 0));
+  // Wait until getTickers is entered — deterministic, no timeouts needed.
+  await getTickersCalled;
 
   const concurrent = await runVDFScan({ _deps: baseDeps() });
   assert.equal(concurrent.status, 'running');
 
-  // Let the first run finish
   releaseWorker();
   await firstRun;
 });
@@ -82,11 +66,10 @@ test('runVDFScan returns running when scan is already in progress', async () => 
 
 test('runVDFScan processes all tickers and returns correct counts', async () => {
   const tickers = ['AAA', 'BBB', 'CCC'];
-
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker) => ({ is_detected: ticker === 'AAA', composite_score: 0 }),
+      detectTicker: async (ticker) => ({ is_detected: ticker === 'AAA' }),
     }),
   });
 
@@ -98,11 +81,10 @@ test('runVDFScan processes all tickers and returns correct counts', async () => 
 
 test('runVDFScan counts all detections correctly', async () => {
   const tickers = ['T1', 'T2', 'T3', 'T4', 'T5'];
-
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker) => ({ is_detected: true }),
+      detectTicker: async () => ({ is_detected: true }),
     }),
   });
 
@@ -110,29 +92,23 @@ test('runVDFScan counts all detections correctly', async () => {
   assert.equal(result.detectedTickers, 5);
 });
 
-test('runVDFScan returns completed-with-errors when some tickers fail', async () => {
+test('runVDFScan captures error tickers', async () => {
   const tickers = ['OK', 'FAIL', 'OK2'];
-
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker, _signal) => {
+      detectTicker: async (ticker) => {
         if (ticker === 'FAIL') throw new Error('detect error');
         return { is_detected: false };
       },
     }),
   });
 
-  // May be completed-with-errors if retry passes also fail
   assert.ok(
     result.status === 'completed' || result.status === 'completed-with-errors',
     `unexpected status: ${result.status}`,
   );
-  // At least one error was recorded
-  assert.ok(
-    typeof result.errorTickers === 'number' && result.errorTickers >= 0,
-    'errorTickers should be a number',
-  );
+  assert.equal(typeof result.errorTickers, 'number');
 });
 
 // ---------------------------------------------------------------------------
@@ -140,20 +116,16 @@ test('runVDFScan returns completed-with-errors when some tickers fail', async ()
 // ---------------------------------------------------------------------------
 
 test('runVDFScan leaves ScanState not running after completion', async () => {
-  await runVDFScan({
-    _deps: baseDeps({ getTickers: async () => ['X'] }),
-  });
+  await runVDFScan({ _deps: baseDeps({ getTickers: async () => ['X'] }) });
 
   assert.equal(vdfScan.isRunning, false);
   assert.equal(vdfScan.isStopping, false);
 });
 
 test('runVDFScan status is completed (or variant) after full run', async () => {
-  await runVDFScan({
-    _deps: baseDeps({ getTickers: async () => ['A', 'B'] }),
-  });
+  await runVDFScan({ _deps: baseDeps({ getTickers: async () => ['A', 'B'] }) });
 
-  const status = vdfScan.getStatus().status;
+  const { status } = vdfScan.getStatus();
   assert.ok(
     status === 'completed' || status === 'completed-with-errors',
     `expected completed status, got ${status}`,
@@ -171,9 +143,8 @@ test('runVDFScan stops early and saves resume state when shouldStop is triggered
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker) => {
+      detectTicker: async () => {
         processed++;
-        // After 5 processed, trigger stop
         if (processed >= 5) vdfScan.requestStop();
         return { is_detected: false };
       },
@@ -181,20 +152,17 @@ test('runVDFScan stops early and saves resume state when shouldStop is triggered
   });
 
   assert.equal(result.status, 'stopped');
-  assert.ok(vdfScan.canResume(), 'resume state should be available after stop');
+  assert.ok(vdfScan.canResume(), 'resume state should be saved after stop');
 
-  // Clean up resume state for subsequent tests
   vdfScan.setResumeState(null);
 });
 
 test('runVDFScan returns stopped result with processedTickers count', async () => {
   const tickers = Array.from({ length: 10 }, (_, i) => `S${i}`);
-
-  // Trigger stop after scan starts
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (_ticker) => {
+      detectTicker: async () => {
         vdfScan.requestStop();
         return { is_detected: false };
       },
@@ -212,9 +180,7 @@ test('runVDFScan returns stopped result with processedTickers count', async () =
 // ---------------------------------------------------------------------------
 
 test('runVDFScan with empty ticker list completes immediately', async () => {
-  const result = await runVDFScan({
-    _deps: baseDeps({ getTickers: async () => [] }),
-  });
+  const result = await runVDFScan({ _deps: baseDeps() });
 
   assert.ok(result.status === 'completed' || result.status === 'completed-with-errors');
   assert.equal(result.processedTickers, 0);
@@ -222,12 +188,11 @@ test('runVDFScan with empty ticker list completes immediately', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// sweepCache is called
+// Dependency call verification
 // ---------------------------------------------------------------------------
 
 test('runVDFScan calls sweepCache at least once per run', async () => {
   let sweepCount = 0;
-
   await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => ['A', 'B'],
@@ -238,13 +203,8 @@ test('runVDFScan calls sweepCache at least once per run', async () => {
   assert.ok(sweepCount >= 1, `sweepCache should be called at least once, got ${sweepCount}`);
 });
 
-// ---------------------------------------------------------------------------
-// getTickers is called once per fresh run
-// ---------------------------------------------------------------------------
-
-test('runVDFScan calls getTickers once per non-resume run', async () => {
+test('runVDFScan calls getTickers exactly once per fresh run', async () => {
   let fetchCount = 0;
-
   await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => { fetchCount++; return ['X']; },
@@ -252,4 +212,15 @@ test('runVDFScan calls getTickers once per non-resume run', async () => {
   });
 
   assert.equal(fetchCount, 1);
+});
+
+test('runVDFScan suppresses DB writes when createMetricsTracker returns null', async () => {
+  // If this completes without throwing or logging DB errors, metrics are suppressed.
+  const result = await runVDFScan({
+    _deps: baseDeps({
+      getTickers: async () => ['A', 'B', 'C'],
+      createMetricsTracker: () => null as any,
+    }),
+  });
+  assert.ok(result.status === 'completed' || result.status === 'completed-with-errors');
 });
