@@ -382,11 +382,11 @@ function refreshDivergenceCardsWhileRunning(force = false, timeframe?: '1d' | '1
   if (timeframe) {
     void callbacks.fetchDivergenceSignalsByTimeframe(timeframe)
       .then(() => callbacks!.renderDivergenceContainer(timeframe))
-      .catch(() => {});
+      .catch((err: unknown) => { console.warn(`[scan] Card refresh failed (${timeframe}):`, err); });
   } else {
     void callbacks.fetchDivergenceSignals()
       .then(callbacks.renderDivergenceOverview)
-      .catch(() => {});
+      .catch((err: unknown) => { console.warn('[scan] Overview refresh failed:', err); });
   }
 }
 

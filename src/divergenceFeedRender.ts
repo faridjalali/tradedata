@@ -240,12 +240,20 @@ export function renderDivergenceOverview(): void {
   const dailySlice = daily.slice(0, dailyVisibleCount);
   const weeklySlice = weekly.slice(0, weeklyVisibleCount);
 
+  // Detach existing inline minichart wrappers before innerHTML replacement to
+  // preserve chart instances — same pattern as renderDivergenceContainer.
+  const savedDailyMinicharts = detachInlineMinichartWrappers(dailyContainer);
+  const savedWeeklyMinicharts = detachInlineMinichartWrappers(weeklyContainer);
+
   dailyContainer.innerHTML =
     dailySlice.map(createAlertCard).join('') + showMoreButtonHtml(dailySlice.length, daily.length, '1d');
   weeklyContainer.innerHTML =
     weeklySlice.map(createAlertCard).join('') + showMoreButtonHtml(weeklySlice.length, weekly.length, '1w');
   renderAlertCardDivergenceTablesFromCache(dailyContainer);
   renderAlertCardDivergenceTablesFromCache(weeklyContainer);
+
+  reattachInlineMinichartWrappers(dailyContainer, savedDailyMinicharts);
+  reattachInlineMinichartWrappers(weeklyContainer, savedWeeklyMinicharts);
 
   // Prefetch mini-chart bars for visible cards (best-effort, non-blocking)
   const prefetchTickers = [...dailySlice.map((a) => a.ticker), ...weeklySlice.map((a) => a.ticker)];

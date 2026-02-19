@@ -1034,9 +1034,18 @@ async function getOrBuildChartResult(
   })();
 
   CHART_IN_FLIGHT_REQUESTS.set(requestKey, buildPromise);
-  buildPromise.finally(() => {
-    CHART_IN_FLIGHT_REQUESTS.delete(requestKey);
-  });
+  buildPromise
+    .catch((err: any) => {
+      // Suppress unhandled rejections for the stale SWR background refresh path.
+      // When returning stale data, no caller awaits buildPromise, so failures must
+      // be caught here. Non-stale callers receive the rejection via their own await.
+      if (cachedFinalResult.status === 'stale') {
+        console.error(`[SWR] Background chart refresh failed for ${requestKey}:`, err?.message ?? err);
+      }
+    })
+    .finally(() => {
+      CHART_IN_FLIGHT_REQUESTS.delete(requestKey);
+    });
 
   if (cachedFinalResult.status === 'stale') {
     return cachedFinalResult.value;
