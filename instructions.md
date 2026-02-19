@@ -742,6 +742,9 @@ library. `main.ts` owns the view-switching logic.
   to `/api/breadth/ma/recompute` (triggers server-side re-fetch from data API + recompute
   for today's date), then reloads all charts. The recompute endpoint is session-protected
   (no secret needed). Spinner via `setRefreshButtonLoading()`.
+- **Settings panel "Breadth" button** (`#breadth-recompute-btn`): Below Analyze in the
+  global settings panel. Same `divergence-run-btn` pattern as Fetch Daily/Weekly/Analyze.
+  Triggers `/api/breadth/ma/recompute`, shows status text ("Running…" / "Done HH:MM:SS" / error).
 - **No subtitle text**: The breadth page charts have no top-right subtitle spans. All three
   were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
 - **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)

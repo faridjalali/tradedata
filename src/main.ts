@@ -612,6 +612,31 @@ function bootstrapApplication(): void {
     stopManualVDFScan();
   });
 
+  // Breadth recompute button (settings panel)
+  document.getElementById('breadth-recompute-btn')?.addEventListener('click', () => {
+    const btn = document.getElementById('breadth-recompute-btn');
+    const status = document.getElementById('breadth-recompute-status');
+    if (btn) btn.setAttribute('disabled', 'true');
+    if (status) status.textContent = 'Running...';
+    fetch('/api/breadth/ma/recompute', { method: 'POST' })
+      .then(async (res) => {
+        if (res.ok) {
+          if (status) status.textContent = `Done ${new Date().toLocaleTimeString()}`;
+          // Reload breadth charts if we're on the breadth view
+          loadBreadth().then((m) => m.initBreadth()).catch(() => {});
+        } else {
+          const body = await res.json().catch(() => ({ error: 'Unknown error' }));
+          if (status) status.textContent = `Error: ${(body as Record<string, unknown>).error ?? res.status}`;
+        }
+      })
+      .catch((err: unknown) => {
+        if (status) status.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
+      })
+      .finally(() => {
+        if (btn) btn.removeAttribute('disabled');
+      });
+  });
+
   // Ticker View Daily Sort Buttons
   document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
