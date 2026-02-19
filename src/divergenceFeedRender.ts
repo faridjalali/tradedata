@@ -37,52 +37,55 @@ export type ColumnFeedMode = '1' | '2' | '5' | 'custom';
 const ALERTS_PAGE_SIZE = 100;
 
 // ---------------------------------------------------------------------------
-// Module-level state
+// Module-level state — keyed by column ('daily' | 'weekly')
 // ---------------------------------------------------------------------------
 
-let dailyFeedMode: ColumnFeedMode = '1';
-let weeklyFeedMode: ColumnFeedMode = '1';
-let dailyCustomFrom = '';
-let dailyCustomTo = '';
-let weeklyCustomFrom = '';
-let weeklyCustomTo = '';
-let dailySortMode: SortMode = 'score';
-let weeklySortMode: SortMode = 'score';
-let dailySortDirection: 'asc' | 'desc' = 'desc';
-let weeklySortDirection: 'asc' | 'desc' = 'desc';
-export let dailyVisibleCount = ALERTS_PAGE_SIZE;
-export let weeklyVisibleCount = ALERTS_PAGE_SIZE;
+type ColumnKey = 'daily' | 'weekly';
 
-// Exported mutators for event delegation module
-export function incrementDailyVisibleCount(): void {
-  dailyVisibleCount += ALERTS_PAGE_SIZE;
+interface ColumnState {
+  feedMode: ColumnFeedMode;
+  customFrom: string;
+  customTo: string;
+  sortMode: SortMode;
+  sortDirection: 'asc' | 'desc';
+  visibleCount: number;
 }
-export function incrementWeeklyVisibleCount(): void {
-  weeklyVisibleCount += ALERTS_PAGE_SIZE;
-}
+
+const COLUMN_DEFAULTS: ColumnState = {
+  feedMode: '1',
+  customFrom: '',
+  customTo: '',
+  sortMode: 'score',
+  sortDirection: 'desc',
+  visibleCount: ALERTS_PAGE_SIZE,
+};
+
+const col: Record<ColumnKey, ColumnState> = {
+  daily: { ...COLUMN_DEFAULTS },
+  weekly: { ...COLUMN_DEFAULTS },
+};
+
+// Backward-compatible exports for event delegation module
+export function getDailyVisibleCount(): number { return col.daily.visibleCount; }
+export function getWeeklyVisibleCount(): number { return col.weekly.visibleCount; }
+export function incrementDailyVisibleCount(): void { col.daily.visibleCount += ALERTS_PAGE_SIZE; }
+export function incrementWeeklyVisibleCount(): void { col.weekly.visibleCount += ALERTS_PAGE_SIZE; }
 
 // ---------------------------------------------------------------------------
 // Column feed configuration
 // ---------------------------------------------------------------------------
 
-export function getColumnFeedMode(column: 'daily' | 'weekly'): ColumnFeedMode {
-  return column === 'daily' ? dailyFeedMode : weeklyFeedMode;
+export function getColumnFeedMode(column: ColumnKey): ColumnFeedMode {
+  return col[column].feedMode;
 }
 
-export function setColumnCustomDates(column: 'daily' | 'weekly', from: string, to: string): void {
-  if (column === 'daily') {
-    dailyCustomFrom = from;
-    dailyCustomTo = to;
-  } else {
-    weeklyCustomFrom = from;
-    weeklyCustomTo = to;
-  }
+export function setColumnCustomDates(column: ColumnKey, from: string, to: string): void {
+  col[column].customFrom = from;
+  col[column].customTo = to;
 }
 
-export function getColumnCustomDates(column: 'daily' | 'weekly'): { from: string; to: string } {
-  return column === 'daily'
-    ? { from: dailyCustomFrom, to: dailyCustomTo }
-    : { from: weeklyCustomFrom, to: weeklyCustomTo };
+export function getColumnCustomDates(column: ColumnKey): { from: string; to: string } {
+  return { from: col[column].customFrom, to: col[column].customTo };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,43 +120,32 @@ function applyColumnDateFilter(alerts: Alert[], mode: ColumnFeedMode): Alert[] {
 // ---------------------------------------------------------------------------
 
 export function initializeDivergenceSortDefaults(): void {
-  dailySortMode = 'score';
-  dailySortDirection = 'desc';
-  weeklySortMode = 'score';
-  weeklySortDirection = 'desc';
-  dailyFeedMode = '1';
-  weeklyFeedMode = '1';
-  updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
-  updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
+  col.daily = { ...COLUMN_DEFAULTS };
+  col.weekly = { ...COLUMN_DEFAULTS };
+  updateSortButtonUi('#view-divergence .divergence-daily-sort', col.daily.sortMode, col.daily.sortDirection);
+  updateSortButtonUi('#view-divergence .divergence-weekly-sort', col.weekly.sortMode, col.weekly.sortDirection);
 }
 
 // ---------------------------------------------------------------------------
 // Sorting
 // ---------------------------------------------------------------------------
 
-export function setDivergenceDailySort(mode: SortMode): void {
-  if (mode === dailySortMode && mode !== 'favorite') {
-    dailySortDirection = dailySortDirection === 'desc' ? 'asc' : 'desc';
+function setDivergenceSort(column: ColumnKey, mode: SortMode): void {
+  const s = col[column];
+  if (mode === s.sortMode && mode !== 'favorite') {
+    s.sortDirection = s.sortDirection === 'desc' ? 'asc' : 'desc';
   } else {
-    dailySortMode = mode;
-    dailySortDirection = 'desc';
+    s.sortMode = mode;
+    s.sortDirection = 'desc';
   }
-  dailyVisibleCount = ALERTS_PAGE_SIZE;
-  updateSortButtonUi('#view-divergence .divergence-daily-sort', dailySortMode, dailySortDirection);
-  renderDivergenceContainer('1d');
+  s.visibleCount = ALERTS_PAGE_SIZE;
+  const uiSelector = column === 'daily' ? '.divergence-daily-sort' : '.divergence-weekly-sort';
+  updateSortButtonUi(`#view-divergence ${uiSelector}`, s.sortMode, s.sortDirection);
+  renderDivergenceContainer(column === 'daily' ? '1d' : '1w');
 }
 
-export function setDivergenceWeeklySort(mode: SortMode): void {
-  if (mode === weeklySortMode && mode !== 'favorite') {
-    weeklySortDirection = weeklySortDirection === 'desc' ? 'asc' : 'desc';
-  } else {
-    weeklySortMode = mode;
-    weeklySortDirection = 'desc';
-  }
-  weeklyVisibleCount = ALERTS_PAGE_SIZE;
-  updateSortButtonUi('#view-divergence .divergence-weekly-sort', weeklySortMode, weeklySortDirection);
-  renderDivergenceContainer('1w');
-}
+export function setDivergenceDailySort(mode: SortMode): void { setDivergenceSort('daily', mode); }
+export function setDivergenceWeeklySort(mode: SortMode): void { setDivergenceSort('weekly', mode); }
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -214,8 +206,8 @@ function showMoreButtonHtml(shown: number, total: number, timeframe: '1d' | '1w'
 export function renderDivergenceOverview(): void {
   const allSignals = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allSignals);
-  dailyVisibleCount = ALERTS_PAGE_SIZE;
-  weeklyVisibleCount = ALERTS_PAGE_SIZE;
+  col.daily.visibleCount = ALERTS_PAGE_SIZE;
+  col.weekly.visibleCount = ALERTS_PAGE_SIZE;
   const dailyContainer = document.getElementById('divergence-daily-container');
   const weeklyContainer = document.getElementById('divergence-weekly-container');
   if (!dailyContainer || !weeklyContainer) return;
@@ -224,21 +216,21 @@ export function renderDivergenceOverview(): void {
   let weekly = allSignals.filter((a) => (a.timeframe || '').trim() === '1w');
 
   // Apply per-column date filter (last N fetch days)
-  daily = applyColumnDateFilter(daily, dailyFeedMode);
-  weekly = applyColumnDateFilter(weekly, weeklyFeedMode);
+  daily = applyColumnDateFilter(daily, col.daily.feedMode);
+  weekly = applyColumnDateFilter(weekly, col.weekly.feedMode);
 
-  if (dailySortMode === 'favorite') {
+  if (col.daily.sortMode === 'favorite') {
     daily = daily.filter((a) => a.is_favorite);
   }
-  if (weeklySortMode === 'favorite') {
+  if (col.weekly.sortMode === 'favorite') {
     weekly = weekly.filter((a) => a.is_favorite);
   }
 
-  daily.sort(createAlertSortFn(dailySortMode === 'favorite' ? 'time' : dailySortMode, dailySortDirection));
-  weekly.sort(createAlertSortFn(weeklySortMode === 'favorite' ? 'time' : weeklySortMode, weeklySortDirection));
+  daily.sort(createAlertSortFn(col.daily.sortMode === 'favorite' ? 'time' : col.daily.sortMode, col.daily.sortDirection));
+  weekly.sort(createAlertSortFn(col.weekly.sortMode === 'favorite' ? 'time' : col.weekly.sortMode, col.weekly.sortDirection));
 
-  const dailySlice = daily.slice(0, dailyVisibleCount);
-  const weeklySlice = weekly.slice(0, weeklyVisibleCount);
+  const dailySlice = daily.slice(0, col.daily.visibleCount);
+  const weeklySlice = weekly.slice(0, col.weekly.visibleCount);
 
   // Detach existing inline minichart wrappers before innerHTML replacement to
   // preserve chart instances — same pattern as renderDivergenceContainer.
@@ -275,22 +267,20 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  const column: 'daily' | 'weekly' = timeframe === '1d' ? 'daily' : 'weekly';
-  const mode = getColumnFeedMode(column);
-  const sortMode = timeframe === '1d' ? dailySortMode : weeklySortMode;
-  const sortDirection = timeframe === '1d' ? dailySortDirection : weeklySortDirection;
+  const column: ColumnKey = timeframe === '1d' ? 'daily' : 'weekly';
+  const s = col[column];
   let signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
 
   // Apply per-column date filter (last N fetch days)
-  signals = applyColumnDateFilter(signals, mode);
+  signals = applyColumnDateFilter(signals, s.feedMode);
 
-  if (sortMode === 'favorite') {
+  if (s.sortMode === 'favorite') {
     signals = signals.filter((a) => a.is_favorite);
   }
 
-  signals.sort(createAlertSortFn(sortMode === 'favorite' ? 'time' : sortMode, sortDirection));
+  signals.sort(createAlertSortFn(s.sortMode === 'favorite' ? 'time' : s.sortMode, s.sortDirection));
 
-  const visibleCount = timeframe === '1d' ? dailyVisibleCount : weeklyVisibleCount;
+  const visibleCount = s.visibleCount;
   const slice = signals.slice(0, visibleCount);
 
   // Detach existing inline minichart wrappers before the innerHTML replacement.
@@ -321,12 +311,8 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
  * Set the feed mode for a specific column (daily or weekly) independently.
  * Updates the dropdown UI and optionally re-fetches + re-renders that column.
  */
-export function setColumnFeedMode(column: 'daily' | 'weekly', mode: ColumnFeedMode, fetchData = true): void {
-  if (column === 'daily') {
-    dailyFeedMode = mode;
-  } else {
-    weeklyFeedMode = mode;
-  }
+export function setColumnFeedMode(column: ColumnKey, mode: ColumnFeedMode, fetchData = true): void {
+  col[column].feedMode = mode;
 
   // Update button active state for all instances of this column
   document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach((controls) => {

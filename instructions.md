@@ -187,6 +187,8 @@ Frontend → shared/api-types
 ```
 
 - **Routes**: HTTP boundary only. No business logic. Call services; return results.
+  `divergenceRoutes.ts` uses shared guard helpers (`rejectIfNotConfigured`, `rejectIfUnauthorized`,
+  `isAnyJobRunning`) to eliminate duplicated auth/configuration checks across 15 endpoints.
 - **Services**: Domain logic, caching, external API calls. Allowed to import from `lib/` and `db.ts`.
 - **Orchestrators**: Multi-step workflows. Coordinate services. Hold no persistent state of their own.
 - **Lib**: Pure utilities. Zero side effects. Never imports from `services/`. `lib/errors.ts` keeps
@@ -770,6 +772,17 @@ library. `main.ts` owns the view-switching logic.
 - **Index selector** uses `feed-controls-group feed-controls-group--wrap` (wrapping flex) for the
   21-ETF button row. `currentMAIndex` and `currentCompareIndex` are typed as `string` (not a narrow
   union) so new ETFs can be added without touching `breadth.ts`.
+- **BREADTH_INDEXES** constant in `breadth.ts` is the single source of truth for the ETF selector
+  list. `populateBreadthIndexButtons()` generates buttons into `#breadth-ma-index-btns` and
+  `#breadth-compare-index-btns` containers (index.html has empty placeholder divs). Called from
+  `initBreadth()` before wiring click handlers. To add a new ETF: append to `BREADTH_INDEXES`,
+  add constituent list in `server/data/etfConstituents.ts`, run bootstrap.
+- **setActiveInGroup(containerSelector, dataAttr, value)**: DOM helper that toggles `.active`
+  class on buttons within a container by matching a data attribute. Replaces scattered
+  `querySelectorAll...forEach...classList.toggle` patterns throughout breadth.ts.
+- **makeBreadthChartOptions(colors, overrides)**: Chart.js config factory producing shared options
+  (scales, legend, tooltip, annotation plugin). Per-chart customization via `BreadthChartOverrides`
+  (`yTickCallback`, `tooltipCallback`, `legendOnClick`, `annotation50`, `extraPlugins`, etc.).
 - **ETF constituents** live in `server/data/etfConstituents.ts`. `BreadthIndex` is the union of
   all supported tickers. SLY was replaced by IWM (iShares Russell 2000). After adding a new ETF,
   run the bootstrap endpoint to populate history.
@@ -784,9 +797,28 @@ library. `main.ts` owns the view-switching logic.
 ### CSS Conventions
 
 - CSS custom properties for all colors (`--color-accent`, `--bg-primary`, etc.).
+- `--font-mono` custom property: all monospace `font-family` declarations use `var(--font-mono)`.
+  Defined in `:root` as `'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace`.
 - Dark mode by default; light mode via `[data-theme="light"]` attribute on `<html>`.
 - Component-scoped class names: `.pane-btn`, `.breadth-gauge`, `.vd-zone-overlay`.
 - Shared refresh button: `createRefreshSvgIcon()`, `setRefreshButtonLoading(btn, loading)`.
+
+### Frontend Modularity Patterns
+
+- **Tuple normalization** (`src/chartApi.ts`): `barFromTuple`, `rsiFromTuple`, `vdFromTuple` are
+  module-level helpers shared by `normalizeTupleData` and `normalizeLatestTupleData`. No `as any`.
+- **postDivergenceAction** (`src/divergenceApi.ts`): shared POST helper for all scan control
+  endpoints. Discriminated `on409` option (`'return-status'` vs `'return-running'`). Each action
+  is a one-liner arrow function.
+- **Keyed column state** (`src/divergenceFeedRender.ts`): `col['daily']` / `col['weekly']` record
+  replaces 12 parallel module-level variables. `setDivergenceSort(column, mode)` replaces duplicate
+  daily/weekly sort functions. Visible counts exported as getter functions.
+- **Status summarizers** (`src/divergenceScanStatusFormat.ts`): `summarizeFetchDataStatus()` is a
+  shared private function parameterized on `fetchDailyData` vs `fetchWeeklyData`. Eliminates
+  duplicate formatting logic.
+- **ScanSubStatus** (`shared/api-types.ts`): shared interface for `fetchDailyData`, `fetchWeeklyData`,
+  `vdfScan`, and `tableBuild` sub-objects within `DivergenceScanStatus`. Each extends via `&`
+  intersection with its own specific fields.
 
 ### DOM Safety Rules
 

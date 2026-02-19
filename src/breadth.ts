@@ -51,6 +51,40 @@ interface ChartLegendHandle {
 
 import type { BreadthDataPoint, BreadthResponse, BreadthMASnapshot, BreadthMAHistory, BreadthMAResponse } from '../shared/api-types';
 
+/** Set the active button in a group by matching a data attribute. */
+function setActiveInGroup(containerSelector: string, dataAttr: string, value: string): void {
+  document.querySelectorAll(`${containerSelector} .pane-btn`).forEach((btn) => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset[dataAttr] === value);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Single source of truth for breadth ETF indexes
+// ---------------------------------------------------------------------------
+
+const BREADTH_INDEXES = [
+  'SPY', 'QQQ', 'DIA', 'MDY', 'IWM',
+  'XLK', 'XLF', 'XLV', 'XLY', 'XLC', 'XLI', 'XLP', 'XLE', 'XLU', 'XLB',
+  'SMH', 'XBI', 'XHB', 'XRT', 'XAR', 'KRE', 'XLRE',
+];
+
+/** Populate both MA and Compare index button containers from the shared list. */
+export function populateBreadthIndexButtons(): void {
+  for (const id of ['breadth-ma-index-btns', 'breadth-compare-index-btns']) {
+    const container = document.getElementById(id);
+    if (!container) continue;
+    container.innerHTML = '';
+    for (const idx of BREADTH_INDEXES) {
+      const btn = document.createElement('button');
+      btn.className = 'pane-btn';
+      if (idx === 'SPY') btn.classList.add('active');
+      btn.dataset.index = idx;
+      btn.textContent = idx;
+      container.appendChild(btn);
+    }
+  }
+}
+
 /** Number of calendar days of MA history to request from the server. */
 const BREADTH_MA_HISTORY_DAYS = 60;
 
@@ -69,6 +103,80 @@ function getHiddenMAs(): Set<string> {
 
 function saveHiddenMAs(hidden: Set<string>): void {
   localStorage.setItem(BREADTH_MA_HIDDEN_KEY, JSON.stringify([...hidden]));
+}
+
+// ---------------------------------------------------------------------------
+// Chart.js shared config factory — avoids repeating identical options blocks
+// ---------------------------------------------------------------------------
+
+interface BreadthChartOverrides {
+  yTickCallback?: (value: number | string) => string;
+  yStepSize?: number;
+  tooltipCallback?: (ctx: ChartTooltipContext) => string | undefined;
+  legendOnClick?: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => void;
+  annotation50?: boolean;
+  legendFontSize?: number;
+  tooltipPadding?: number;
+  extraPlugins?: Record<string, unknown>;
+  layoutPadding?: Record<string, number>;
+}
+
+function makeBreadthChartOptions(c: ReturnType<typeof getThemeColors>, ov: BreadthChartOverrides = {}): Record<string, unknown> {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    ...(ov.layoutPadding ? { layout: { padding: ov.layoutPadding } } : {}),
+    plugins: {
+      legend: {
+        ...(ov.legendOnClick ? { onClick: ov.legendOnClick } : {}),
+        labels: {
+          color: c.textPrimary,
+          font: { size: ov.legendFontSize ?? 12 },
+          usePointStyle: true,
+          pointStyle: 'line',
+        },
+      },
+      tooltip: {
+        backgroundColor: c.cardBgOverlay95,
+        borderColor: c.borderColor,
+        borderWidth: 1,
+        titleColor: c.textPrimary,
+        bodyColor: c.textSecondary,
+        padding: ov.tooltipPadding ?? 12,
+        ...(ov.tooltipCallback ? { callbacks: { label: ov.tooltipCallback } } : {}),
+      },
+      ...(ov.annotation50
+        ? {
+            annotation: {
+              annotations: {
+                line50: {
+                  type: 'line', yMin: 50, yMax: 50,
+                  borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
+                  borderWidth: 1, borderDash: [4, 4],
+                },
+              },
+            },
+          }
+        : {}),
+      ...(ov.extraPlugins ?? {}),
+    },
+    scales: {
+      x: {
+        ticks: { color: c.textSecondary, maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 11 } },
+        grid: { color: c.borderOverlay30 },
+      },
+      y: {
+        ticks: {
+          color: c.textSecondary,
+          font: { size: 11 },
+          ...(ov.yTickCallback ? { callback: ov.yTickCallback } : {}),
+          ...(ov.yStepSize ? { stepSize: ov.yStepSize } : {}),
+        },
+        grid: { color: c.borderOverlay30 },
+      },
+    },
+  };
 }
 
 /** Extract the MA number (21/50/100/200) from a dataset label like "21 MA", "% > 50d", "SPY 100d". */
@@ -236,67 +344,14 @@ function renderBreadthChart(data: BreadthDataPoint[], compLabel: string, intrada
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: 'index',
-        intersect: false,
+    options: makeBreadthChartOptions(c, {
+      yTickCallback: (value) => (value as number).toFixed(1),
+      tooltipCallback: (context) => {
+        const val = (context.parsed.y ?? 0).toFixed(2);
+        return `${context.dataset.label ?? ''}: ${val}`;
       },
-      plugins: {
-        legend: {
-          labels: {
-            color: c.textPrimary,
-            font: { size: 12 },
-            usePointStyle: true,
-            pointStyle: 'line',
-          },
-        },
-        tooltip: {
-          backgroundColor: c.cardBgOverlay95,
-          borderColor: c.borderColor,
-          borderWidth: 1,
-          titleColor: c.textPrimary,
-          bodyColor: c.textSecondary,
-          padding: 12,
-          callbacks: {
-            label: function (context: ChartTooltipContext) {
-              const val = (context.parsed.y ?? 0).toFixed(2);
-              return `${context.dataset.label ?? ''}: ${val}`;
-            },
-          },
-        },
-        filler: {
-          propagate: true,
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: c.textSecondary,
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 10,
-            font: { size: 11 },
-          },
-          grid: {
-            color: c.borderOverlay30,
-          },
-        },
-        y: {
-          ticks: {
-            color: c.textSecondary,
-            font: { size: 11 },
-            callback: function (value: number | string) {
-              return (value as number).toFixed(1);
-            },
-          },
-          grid: {
-            color: c.borderOverlay30,
-          },
-        },
-      },
-    },
+      extraPlugins: { filler: { propagate: true } },
+    }),
   });
 }
 
@@ -330,10 +385,7 @@ async function loadBreadth(): Promise<void> {
 export function setBreadthTimeframe(days: number): void {
   currentTimeframeDays = days;
 
-  // Update active button
-  document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach((btn) => {
-    btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
-  });
+  setActiveInGroup('#breadth-tf-btns', 'days', String(days));
 
   loadBreadth();
 }
@@ -341,10 +393,7 @@ export function setBreadthTimeframe(days: number): void {
 export function setBreadthMetric(metric: 'SVIX' | 'RSP' | 'MAGS'): void {
   currentMetric = metric;
 
-  // Update active button
-  document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.metric === metric);
-  });
+  setActiveInGroup('#breadth-metric-btns', 'metric', metric);
 
   loadBreadth();
 }
@@ -480,71 +529,18 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: {
-          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
-            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
-            meta.hidden = !meta.hidden;
-            legend.chart.update();
-            if (breadthMAChart) syncHiddenMAs(breadthMAChart);
-          },
-          labels: {
-            color: c.textPrimary,
-            font: { size: 12 },
-            usePointStyle: true,
-            pointStyle: 'line',
-          },
-        },
-        tooltip: {
-          backgroundColor: c.cardBgOverlay95,
-          borderColor: c.borderColor,
-          borderWidth: 1,
-          titleColor: c.textPrimary,
-          bodyColor: c.textSecondary,
-          padding: 12,
-          callbacks: {
-            label: (ctx: ChartTooltipContext) => `${ctx.dataset.label ?? ''}: ${(ctx.parsed.y ?? 0).toFixed(1)}%`,
-          },
-        },
-        annotation: {
-          annotations: {
-            line50: {
-              type: 'line',
-              yMin: 50,
-              yMax: 50,
-              borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
-              borderWidth: 1,
-              borderDash: [4, 4],
-            },
-          },
-        },
+    options: makeBreadthChartOptions(c, {
+      legendOnClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
+        const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
+        meta.hidden = !meta.hidden;
+        legend.chart.update();
+        if (breadthMAChart) syncHiddenMAs(breadthMAChart);
       },
-      scales: {
-        x: {
-          ticks: {
-            color: c.textSecondary,
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 10,
-            font: { size: 11 },
-          },
-          grid: { color: c.borderOverlay30 },
-        },
-        y: {
-          ticks: {
-            color: c.textSecondary,
-            font: { size: 11 },
-            callback: (value: number | string) => `${value}%`,
-            stepSize: 10,
-          },
-          grid: { color: c.borderOverlay30 },
-        },
-      },
-    },
+      tooltipCallback: (ctx) => `${ctx.dataset.label ?? ''}: ${(ctx.parsed.y ?? 0).toFixed(1)}%`,
+      annotation50: true,
+      yTickCallback: (value) => `${value}%`,
+      yStepSize: 10,
+    }),
   });
 
   applyHiddenMAs(breadthMAChart);
@@ -559,9 +555,7 @@ function renderBreadthMAForIndex(index: string): void {
 
 export function setBreadthMAIndex(index: string): void {
   currentMAIndex = index;
-  document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach(btn => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
-  });
+  setActiveInGroup('#breadth-ma-index-btns', 'index', index);
   renderBreadthMAForIndex(index);
 }
 
@@ -705,69 +699,27 @@ function renderBreadthCompareChart(): void {
   breadthCompareChart = new Chart(canvas, {
     type: 'line',
     data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: {
-          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
-            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
-            meta.hidden = !meta.hidden;
-            legend.chart.update();
-            if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
-          },
-          labels: {
-            color: c.textPrimary,
-            font: { size: 12 },
-            usePointStyle: true,
-            pointStyle: 'line',
-          },
-        },
-        tooltip: {
-          backgroundColor: c.cardBgOverlay95,
-          borderColor: c.borderColor,
-          borderWidth: 1,
-          titleColor: c.textPrimary,
-          bodyColor: c.textSecondary,
-          padding: 12,
-          callbacks: {
-            label: (ctx: ChartTooltipContext & { dataset: CompareChartDataset }) => {
-              const ds = ctx.dataset;
-              const norm = ctx.parsed.y;
-              if (norm == null) return;
-              const pct = norm - 100;
-              const sign = pct >= 0 ? '+' : '';
-              const raw = ds.rawValues?.[ctx.dataIndex];
-              const rawStr = raw != null
-                ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})`
-                : '';
-              return `${ds.label}: ${sign}${pct.toFixed(1)}%${rawStr}`;
-            },
-          },
-        },
+    options: makeBreadthChartOptions(c, {
+      legendOnClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
+        const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
+        meta.hidden = !meta.hidden;
+        legend.chart.update();
+        if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
       },
-      scales: {
-        x: {
-          ticks: {
-            color: c.textSecondary,
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 10,
-            font: { size: 11 },
-          },
-          grid: { color: c.borderOverlay30 },
-        },
-        y: {
-          ticks: {
-            color: c.textSecondary,
-            font: { size: 11 },
-            callback: (value: number | string) => `${Number(value).toFixed(0)}`,
-          },
-          grid: { color: c.borderOverlay30 },
-        },
+      tooltipCallback: (ctx: ChartTooltipContext & { dataset: CompareChartDataset }) => {
+        const ds = ctx.dataset;
+        const norm = ctx.parsed.y;
+        if (norm == null) return;
+        const pct = norm - 100;
+        const sign = pct >= 0 ? '+' : '';
+        const raw = ds.rawValues?.[ctx.dataIndex];
+        const rawStr = raw != null
+          ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})`
+          : '';
+        return `${ds.label}: ${sign}${pct.toFixed(1)}%${rawStr}`;
       },
-    },
+      yTickCallback: (value) => `${Number(value).toFixed(0)}`,
+    }),
   });
 
   applyHiddenMAs(breadthCompareChart);
@@ -790,17 +742,13 @@ export function setBreadthCompareIndex(index: string): void {
   }
   // Normal mode — just switch the single ticker
   currentCompareIndex = index;
-  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
-  });
+  setActiveInGroup('#breadth-compare-index-btns', 'index', index);
   renderBreadthCompareChart();
 }
 
 export function setBreadthCompareTf(days: number): void {
   currentCompareTfDays = days;
-  document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach(btn => {
-    btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
-  });
+  setActiveInGroup('#breadth-compare-tf-btns', 'days', String(days));
   if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
   else renderBreadthCompareChart();
 }
@@ -826,10 +774,8 @@ export function toggleBreadthCompareMode(): void {
     currentCompareIndex2 = null;
     const gaugesEl = document.getElementById('breadth-compare-gauges');
     if (gaugesEl) gaugesEl.style.display = 'none';
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
-      btn.classList.remove('locked');
-      btn.classList.toggle('active', (btn as HTMLElement).dataset.index === currentCompareIndex);
-    });
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => btn.classList.remove('locked'));
+    setActiveInGroup('#breadth-compare-index-btns', 'index', currentCompareIndex);
     renderBreadthCompareChart();
   }
 }
@@ -947,66 +893,24 @@ function renderBreadthCompareDual(): void {
   breadthCompareChart = new Chart_(canvas, {
     type: 'line',
     data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { right: 40 } },
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: {
-          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
-            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
-            meta.hidden = !meta.hidden;
-            legend.chart.update();
-            if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
-          },
-          labels: {
-            color: c.textPrimary,
-            font: { size: 11 },
-            usePointStyle: true,
-            pointStyle: 'line',
-          },
-        },
-        tooltip: {
-          backgroundColor: c.cardBgOverlay95,
-          borderColor: c.borderColor,
-          borderWidth: 1,
-          titleColor: c.textPrimary,
-          bodyColor: c.textSecondary,
-          padding: 10,
-          callbacks: {
-            label: (ctx: ChartTooltipContext) => {
-              const v = ctx.parsed.y;
-              return `${ctx.dataset.label ?? ''}: ${v != null ? v.toFixed(1) + '%' : '—'}`;
-            },
-          },
-        },
-        annotation: {
-          annotations: {
-            line50: {
-              type: 'line', yMin: 50, yMax: 50,
-              borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
-              borderWidth: 1, borderDash: [4, 4],
-            },
-          },
-        },
+    options: makeBreadthChartOptions(c, {
+      layoutPadding: { right: 40 },
+      legendOnClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
+        const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
+        meta.hidden = !meta.hidden;
+        legend.chart.update();
+        if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
       },
-      scales: {
-        x: {
-          ticks: { color: c.textSecondary, maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 11 } },
-          grid: { color: c.borderOverlay30 },
-        },
-        y: {
-          ticks: {
-            color: c.textSecondary,
-            font: { size: 11 },
-            callback: (value: number | string) => `${value}%`,
-            stepSize: 10,
-          },
-          grid: { color: c.borderOverlay30 },
-        },
+      legendFontSize: 11,
+      tooltipPadding: 10,
+      tooltipCallback: (ctx) => {
+        const v = ctx.parsed.y;
+        return `${ctx.dataset.label ?? ''}: ${v != null ? v.toFixed(1) + '%' : '—'}`;
       },
-    },
+      annotation50: true,
+      yTickCallback: (value) => `${value}%`,
+      yStepSize: 10,
+    }),
     plugins: [{
       id: 'dualLineLabels',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1135,8 +1039,24 @@ function renderBreadthBarsChart(): void {
   }) as ChartInstance;
 }
 
-/** Initialize breadth data loading. */
+/** Initialize breadth data loading and wire ETF index button handlers. */
 export function initBreadth(): void {
+  populateBreadthIndexButtons();
+
+  // Wire MA index buttons (module is already loaded, call directly)
+  document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setBreadthMAIndex((btn as HTMLElement).dataset.index ?? '');
+    });
+  });
+
+  // Wire Compare index buttons
+  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setBreadthCompareIndex((btn as HTMLElement).dataset.index ?? '');
+    });
+  });
+
   loadBreadth();
   loadBreadthMA();
 }

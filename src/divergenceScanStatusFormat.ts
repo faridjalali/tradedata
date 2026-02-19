@@ -139,74 +139,49 @@ export function summarizeTableStatus(status: DivergenceScanStatus): string {
   return 'Table idle';
 }
 
-export function summarizeFetchDailyStatus(status: DivergenceScanStatus): string {
-  const fetchDaily = status.fetchDailyData;
+function summarizeFetchDataStatus(
+  fetchData: DivergenceScanStatus['fetchDailyData'],
+  status: DivergenceScanStatus,
+): string {
   const latest = status.latestJob as
     | (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string })
     | null;
   const lastRunDateKey =
-    toDateKey(fetchDaily?.last_published_trade_date || null) ||
+    toDateKey(fetchData?.last_published_trade_date || null) ||
     toDateKey(status.lastScanDateEt) ||
     toDateKey(latest?.scanned_trade_date) ||
     toDateKey(latest?.run_for_date) ||
     toDateKey(latest?.finished_at) ||
     toDateKey(latest?.started_at);
   const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-  if (!fetchDaily) return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
-  const fetchDailyState = String(fetchDaily.status || '').toLowerCase();
-  if (fetchDailyState === 'stopping') return 'Stopping';
-  if (fetchDailyState === 'stopped') {
-    if (fetchDaily.can_resume) return 'Resumable Stop';
+  if (!fetchData) return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
+  const state = String(fetchData.status || '').toLowerCase();
+  if (state === 'stopping') return 'Stopping';
+  if (state === 'stopped') {
+    if (fetchData.can_resume) return 'Resumable Stop';
     return 'Stopped';
   }
-  if (fetchDaily.running) {
-    const processed = Number(fetchDaily.processed_tickers || 0);
-    const total = Number(fetchDaily.total_tickers || 0);
-    if (fetchDaily.stop_requested) return 'Stopping';
-    if (fetchDailyState === 'running-retry') return 'Retrying';
-    if (fetchDailyState === 'running-ma') return `MA ${processed} / ${total}`;
-    if (fetchDailyState === 'running-ma-retry') return 'MA - Retrying';
+  if (fetchData.running) {
+    const processed = Number(fetchData.processed_tickers || 0);
+    const total = Number(fetchData.total_tickers || 0);
+    if (fetchData.stop_requested) return 'Stopping';
+    if (state === 'running-retry') return 'Retrying';
+    if (state === 'running-ma') return `MA ${processed} / ${total}`;
+    if (state === 'running-ma-retry') return 'MA - Retrying';
     return `${processed} / ${total}`;
   }
-  if (fetchDailyState === 'completed') return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
-  if (fetchDailyState === 'completed-with-errors') return lastRunMmDd ? `Fetched (E) ${lastRunMmDd}` : 'Due for Fetch';
-  if (fetchDailyState === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
+  if (state === 'completed') return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
+  if (state === 'completed-with-errors') return lastRunMmDd ? `Fetched (E) ${lastRunMmDd}` : 'Due for Fetch';
+  if (state === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
   return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
 }
 
+export function summarizeFetchDailyStatus(status: DivergenceScanStatus): string {
+  return summarizeFetchDataStatus(status.fetchDailyData, status);
+}
+
 export function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string {
-  const fetchWeekly = status.fetchWeeklyData;
-  const latest = status.latestJob as
-    | (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string })
-    | null;
-  const lastRunDateKey =
-    toDateKey(fetchWeekly?.last_published_trade_date || null) ||
-    toDateKey(status.lastScanDateEt) ||
-    toDateKey(latest?.scanned_trade_date) ||
-    toDateKey(latest?.run_for_date) ||
-    toDateKey(latest?.finished_at) ||
-    toDateKey(latest?.started_at);
-  const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-  if (!fetchWeekly) return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
-  const fetchWeeklyState = String(fetchWeekly.status || '').toLowerCase();
-  if (fetchWeeklyState === 'stopping') return 'Stopping';
-  if (fetchWeeklyState === 'stopped') {
-    if (fetchWeekly.can_resume) return 'Resumable Stop';
-    return 'Stopped';
-  }
-  if (fetchWeekly.running) {
-    const processed = Number(fetchWeekly.processed_tickers || 0);
-    const total = Number(fetchWeekly.total_tickers || 0);
-    if (fetchWeekly.stop_requested) return 'Stopping';
-    if (fetchWeeklyState === 'running-retry') return 'Retrying';
-    if (fetchWeeklyState === 'running-ma') return `MA ${processed} / ${total}`;
-    if (fetchWeeklyState === 'running-ma-retry') return 'MA - Retrying';
-    return `${processed} / ${total}`;
-  }
-  if (fetchWeeklyState === 'completed') return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
-  if (fetchWeeklyState === 'completed-with-errors') return lastRunMmDd ? `Fetched (E) ${lastRunMmDd}` : 'Due for Fetch';
-  if (fetchWeeklyState === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
-  return lastRunMmDd ? `Fetched ${lastRunMmDd}` : 'Due for Fetch';
+  return summarizeFetchDataStatus(status.fetchWeeklyData, status);
 }
 
 export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {

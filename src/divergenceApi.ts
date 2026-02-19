@@ -84,281 +84,97 @@ export async function startDivergenceScan(options?: {
   return { status: String(payload?.status || 'started') };
 }
 
-export async function pauseDivergenceScan(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/scan/pause', {
+// ---------------------------------------------------------------------------
+// Shared POST helper — all divergence action endpoints follow the same pattern
+// ---------------------------------------------------------------------------
+
+async function postDivergenceAction(
+  url: string,
+  opts: {
+    body?: Record<string, unknown>;
+    label: string;
+    defaultStatus: string;
+    on409?: 'return-status' | 'return-running';
+  },
+): Promise<{ status: string }> {
+  const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
+    ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
   });
   const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
   if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
+    if (response.status === 409) {
+      if (opts.on409 === 'return-running' && String(payload?.status || '') === 'running') {
+        return { status: 'running' };
+      }
+      if (opts.on409 === 'return-status' && typeof payload?.status === 'string') {
+        return { status: payload.status };
+      }
     }
     const reason =
       typeof payload?.error === 'string' && payload.error.trim()
         ? payload.error.trim()
-        : `Failed to pause divergence scan (HTTP ${response.status})`;
+        : `Failed to ${opts.label} (HTTP ${response.status})`;
     throw new Error(reason);
   }
-  return { status: String(payload?.status || 'pause-requested') };
+  return { status: String(payload?.status || opts.defaultStatus) };
 }
 
-export async function resumeDivergenceScan(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/scan/resume', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to resume divergence scan (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+// ---------------------------------------------------------------------------
+// Scan control actions
+// ---------------------------------------------------------------------------
 
-export async function stopDivergenceScan(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/scan/stop', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to stop divergence scan (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'stop-requested') };
-}
+export const pauseDivergenceScan = () =>
+  postDivergenceAction('/api/divergence/scan/pause', { label: 'pause divergence scan', defaultStatus: 'pause-requested', on409: 'return-status' });
 
-export async function startDivergenceTableBuild(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/table/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      force: true,
-    }),
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && String(payload?.status || '') === 'running') {
-      return { status: 'running' };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to start table build (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+export const resumeDivergenceScan = () =>
+  postDivergenceAction('/api/divergence/scan/resume', { label: 'resume divergence scan', defaultStatus: 'started', on409: 'return-status' });
 
-export async function pauseDivergenceTableBuild(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/table/pause', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to pause table build (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'pause-requested') };
-}
+export const stopDivergenceScan = () =>
+  postDivergenceAction('/api/divergence/scan/stop', { label: 'stop divergence scan', defaultStatus: 'stop-requested', on409: 'return-status' });
 
-export async function resumeDivergenceTableBuild(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/table/resume', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to resume table build (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+// ---------------------------------------------------------------------------
+// Table build actions
+// ---------------------------------------------------------------------------
 
-export async function stopDivergenceTableBuild(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/table/stop', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to stop table build (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'stop-requested') };
-}
+export const startDivergenceTableBuild = () =>
+  postDivergenceAction('/api/divergence/table/run', { body: { force: true }, label: 'start table build', defaultStatus: 'started', on409: 'return-running' });
 
-export async function startDivergenceFetchDailyData(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/fetch-daily/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && String(payload?.status || '') === 'running') {
-      return { status: 'running' };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to start fetch-daily run (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+export const pauseDivergenceTableBuild = () =>
+  postDivergenceAction('/api/divergence/table/pause', { label: 'pause table build', defaultStatus: 'pause-requested', on409: 'return-status' });
 
-export async function stopDivergenceFetchDailyData(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/fetch-daily/stop', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to stop fetch-daily run (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'stop-requested') };
-}
+export const resumeDivergenceTableBuild = () =>
+  postDivergenceAction('/api/divergence/table/resume', { label: 'resume table build', defaultStatus: 'started', on409: 'return-status' });
 
-export async function startDivergenceFetchWeeklyData(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/fetch-weekly/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && String(payload?.status || '') === 'running') {
-      return { status: 'running' };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to start fetch-weekly run (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+export const stopDivergenceTableBuild = () =>
+  postDivergenceAction('/api/divergence/table/stop', { label: 'stop table build', defaultStatus: 'stop-requested', on409: 'return-status' });
 
-export async function stopDivergenceFetchWeeklyData(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/fetch-weekly/stop', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to stop fetch-weekly run (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'stop-requested') };
-}
+// ---------------------------------------------------------------------------
+// Fetch daily / weekly data actions
+// ---------------------------------------------------------------------------
 
-export async function startVDFScan(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/vdf-scan/run', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && String(payload?.status || '') === 'running') {
-      return { status: 'running' };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to start VDF scan (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'started') };
-}
+export const startDivergenceFetchDailyData = () =>
+  postDivergenceAction('/api/divergence/fetch-daily/run', { label: 'start fetch-daily run', defaultStatus: 'started', on409: 'return-running' });
 
-export async function stopVDFScan(): Promise<{ status: string }> {
-  const response = await fetch('/api/divergence/vdf-scan/stop', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
-  if (!response.ok) {
-    if (response.status === 409 && typeof payload?.status === 'string') {
-      return { status: payload.status };
-    }
-    const reason =
-      typeof payload?.error === 'string' && payload.error.trim()
-        ? payload.error.trim()
-        : `Failed to stop VDF scan (HTTP ${response.status})`;
-    throw new Error(reason);
-  }
-  return { status: String(payload?.status || 'stop-requested') };
-}
+export const stopDivergenceFetchDailyData = () =>
+  postDivergenceAction('/api/divergence/fetch-daily/stop', { label: 'stop fetch-daily run', defaultStatus: 'stop-requested', on409: 'return-status' });
+
+export const startDivergenceFetchWeeklyData = () =>
+  postDivergenceAction('/api/divergence/fetch-weekly/run', { label: 'start fetch-weekly run', defaultStatus: 'started', on409: 'return-running' });
+
+export const stopDivergenceFetchWeeklyData = () =>
+  postDivergenceAction('/api/divergence/fetch-weekly/stop', { label: 'stop fetch-weekly run', defaultStatus: 'stop-requested', on409: 'return-status' });
+
+// ---------------------------------------------------------------------------
+// VDF scan actions
+// ---------------------------------------------------------------------------
+
+export const startVDFScan = () =>
+  postDivergenceAction('/api/divergence/vdf-scan/run', { label: 'start VDF scan', defaultStatus: 'started', on409: 'return-running' });
+
+export const stopVDFScan = () =>
+  postDivergenceAction('/api/divergence/vdf-scan/stop', { label: 'stop VDF scan', defaultStatus: 'stop-requested', on409: 'return-status' });
 
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
   const response = await fetch('/api/divergence/scan/status');

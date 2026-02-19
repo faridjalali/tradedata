@@ -88,6 +88,44 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     throw new Error('registerDivergenceRoutes requires app');
   }
 
+  // ---------------------------------------------------------------------------
+  // Shared guard helpers — eliminate 15 repeated isDivergenceConfigured checks
+  // and 14 repeated secret-verification blocks.
+  // ---------------------------------------------------------------------------
+
+  /** Send 503 if divergence DB is not configured. Returns true if rejected. */
+  function rejectIfNotConfigured(res: FastifyReply): boolean {
+    if (!isDivergenceConfigured()) {
+      res.code(503).send({ error: 'Divergence database is not configured' });
+      return true;
+    }
+    return false;
+  }
+
+  /** Send 503 or 401 if not configured or secret mismatch. Returns true if rejected. */
+  function rejectIfUnauthorized(req: FastifyRequest, res: FastifyReply): boolean {
+    if (rejectIfNotConfigured(res)) return true;
+    const configuredSecret = String(divergenceScanSecret || '').trim();
+    const providedSecret = String(
+      (req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '',
+    ).trim();
+    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
+      res.code(401).send({ error: 'Unauthorized' });
+      return true;
+    }
+    return false;
+  }
+
+  /** Returns true if any job (scan, table, fetch-daily, fetch-weekly) is currently running. */
+  function isAnyJobRunning(): boolean {
+    return (
+      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
+      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
+      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
+      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
+    );
+  }
+
   /** Start an async job and surface immediate startup errors before returning 202. */
   async function startJob(jobFn: () => Promise<unknown>, label: string, res: FastifyReply, successStatus = 'started'): Promise<unknown> {
     const earlyErr = await Promise.race<string | null>([
@@ -101,28 +139,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   }
 
   app.post('/api/divergence/scan', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
-
-    if (getIsScanRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     const scanRequest = buildManualScanRequest({
       req: { query: (req.query || {}) as Record<string, unknown>, body: (req.body || {}) as Record<string, unknown> },
@@ -142,14 +160,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/pause', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof requestPauseScan !== 'function') {
       return res.code(501).send({ error: 'Scan pause endpoint is not enabled' });
     }
@@ -160,29 +171,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/resume', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof runDailyDivergenceScan !== 'function') {
       return res.code(501).send({ error: 'Scan resume endpoint is not enabled' });
     }
-    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
     if (typeof canResumeScan === 'function' && !canResumeScan()) {
       return res.code(409).send({ status: 'no-resume' });
     }
@@ -195,14 +188,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopScan !== 'function') {
       return res.code(501).send({ error: 'Scan stop endpoint is not enabled' });
     }
@@ -212,24 +198,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
-
-    if (
-      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
-      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
-      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
-      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
-    ) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceTableBuild !== 'function') {
       return res.code(501).send({ error: 'Table run endpoint is not enabled' });
@@ -245,15 +215,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/pause', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
 
     if (typeof requestPauseTableBuild !== 'function') {
       return res.code(501).send({ error: 'Pause endpoint is not enabled' });
@@ -270,32 +232,11 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/resume', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
-
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof runDivergenceTableBuild !== 'function') {
       return res.code(501).send({ error: 'Table resume endpoint is not enabled' });
     }
-
-    if (typeof getIsScanRunning === 'function' && getIsScanRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
-    if (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning()) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
     if (typeof canResumeTableBuild === 'function' && !canResumeTableBuild()) {
       return res.code(409).send({ status: 'no-resume' });
     }
@@ -308,15 +249,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
 
     if (typeof requestStopTableBuild !== 'function') {
       return res.code(501).send({ error: 'Table stop endpoint is not enabled' });
@@ -329,24 +262,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-daily/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
-
-    if (
-      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
-      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
-      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
-      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
-    ) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceFetchDailyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-all endpoint is not enabled' });
@@ -363,14 +280,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-daily/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopFetchDailyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-all stop endpoint is not enabled' });
     }
@@ -380,24 +290,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-weekly/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
-
-    if (
-      (typeof getIsScanRunning === 'function' && getIsScanRunning()) ||
-      (typeof getIsTableBuildRunning === 'function' && getIsTableBuildRunning()) ||
-      (typeof getIsFetchDailyDataRunning === 'function' && getIsFetchDailyDataRunning()) ||
-      (typeof getIsFetchWeeklyDataRunning === 'function' && getIsFetchWeeklyDataRunning())
-    ) {
-      return res.code(409).send({ status: 'running' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
+    if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceFetchWeeklyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-weekly endpoint is not enabled' });
@@ -414,14 +308,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-weekly/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopFetchWeeklyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-weekly stop endpoint is not enabled' });
     }
@@ -430,10 +317,8 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     return res.code(409).send({ status: 'idle' });
   });
 
-  app.get('/api/divergence/scan/status', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
+  app.get('/api/divergence/scan/status', async (_req: FastifyRequest, res: FastifyReply) => {
+    if (rejectIfNotConfigured(res)) return;
 
     // In-memory statuses are always available and never fail.
     const tableBuild = typeof getTableBuildStatus === 'function' ? getTableBuildStatus() : null;
@@ -474,15 +359,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/vdf-scan/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
 
     if (typeof getIsVDFScanRunning === 'function' && getIsVDFScanRunning()) {
       return res.code(409).send({ status: 'running' });
@@ -503,14 +380,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/vdf-scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (!isDivergenceConfigured()) {
-      return res.code(503).send({ error: 'Divergence database is not configured' });
-    }
-    const configuredSecret = String(divergenceScanSecret || '').trim();
-    const providedSecret = String((req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopVDFScan !== 'function') {
       return res.code(501).send({ error: 'VDF scan stop endpoint is not enabled' });
     }

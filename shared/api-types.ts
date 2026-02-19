@@ -98,6 +98,19 @@ export interface DivergenceSummaryApiPayload {
 
 // --- Divergence scan status ---
 
+/** Shared shape for fetch/scan sub-statuses (fetchDailyData, fetchWeeklyData, vdfScan). */
+export interface ScanSubStatus {
+  running?: boolean;
+  stop_requested?: boolean;
+  can_resume?: boolean;
+  status?: string;
+  total_tickers?: number;
+  processed_tickers?: number;
+  error_tickers?: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
 export interface DivergenceScanStatus {
   running: boolean;
   lastScanDateEt: string | null;
@@ -107,55 +120,19 @@ export interface DivergenceScanStatus {
     stop_requested?: boolean;
     can_resume?: boolean;
   } | null;
-  tableBuild?: {
-    running?: boolean;
+  tableBuild?: (ScanSubStatus & {
     pause_requested?: boolean;
-    stop_requested?: boolean;
-    can_resume?: boolean;
-    status?: string;
-    total_tickers?: number;
-    processed_tickers?: number;
-    error_tickers?: number;
-    started_at?: string | null;
-    finished_at?: string | null;
     last_published_trade_date?: string | null;
-  } | null;
-  fetchDailyData?: {
-    running?: boolean;
-    stop_requested?: boolean;
-    can_resume?: boolean;
-    status?: string;
-    total_tickers?: number;
-    processed_tickers?: number;
-    error_tickers?: number;
-    started_at?: string | null;
-    finished_at?: string | null;
+  }) | null;
+  fetchDailyData?: (ScanSubStatus & {
     last_published_trade_date?: string | null;
-  } | null;
-  fetchWeeklyData?: {
-    running?: boolean;
-    stop_requested?: boolean;
-    can_resume?: boolean;
-    status?: string;
-    total_tickers?: number;
-    processed_tickers?: number;
-    error_tickers?: number;
-    started_at?: string | null;
-    finished_at?: string | null;
+  }) | null;
+  fetchWeeklyData?: (ScanSubStatus & {
     last_published_trade_date?: string | null;
-  } | null;
-  vdfScan?: {
-    running?: boolean;
-    stop_requested?: boolean;
-    can_resume?: boolean;
-    status?: string;
-    total_tickers?: number;
-    processed_tickers?: number;
-    error_tickers?: number;
+  }) | null;
+  vdfScan?: (ScanSubStatus & {
     detected_tickers?: number;
-    started_at?: string | null;
-    finished_at?: string | null;
-  } | null;
+  }) | null;
   latestJob: {
     run_for_date?: string;
     scanned_trade_date?: string;

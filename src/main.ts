@@ -621,21 +621,8 @@ function bootstrapApplication(): void {
     });
   });
 
-  // Breadth MA index buttons
-  document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const index = (btn as HTMLElement).dataset.index ?? '';
-      loadBreadth().then((m) => m.setBreadthMAIndex(index)).catch(() => {});
-    });
-  });
-
-  // Comparative Breadth: Index buttons
-  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const index = (btn as HTMLElement).dataset.index ?? '';
-      loadBreadth().then((m) => m.setBreadthCompareIndex(index)).catch(() => {});
-    });
-  });
+  // Breadth MA + Compare index buttons: wired inside initBreadth()
+  // (buttons are now generated from BREADTH_INDEXES, not static HTML)
 
   // Comparative Breadth: Timeframe buttons
   document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach((btn) => {

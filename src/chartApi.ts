@@ -49,22 +49,28 @@ export interface ChartFetchOptions {
   onResponseMeta?: (meta: { status: number; chartCacheHeader: string | null }) => void;
 }
 
+// ---------------------------------------------------------------------------
+// Tuple → object converters (shared by both normalize functions)
+// ---------------------------------------------------------------------------
+
+function barFromTuple(t: CandleBarTuple): CandleBar {
+  return { time: t[0], open: t[1], high: t[2], low: t[3], close: t[4], volume: t[5] };
+}
+
+function rsiFromTuple(t: RSIPointTuple): RSIPoint {
+  return { time: t[0], value: t[1] };
+}
+
+function vdFromTuple(t: RSIPointTuple): { time: number; delta: number } {
+  return { time: t[0], delta: t[1] };
+}
+
+// ---------------------------------------------------------------------------
+// Tuple normalization
+// ---------------------------------------------------------------------------
+
 function normalizeTupleData(data: ChartDataRaw): ChartData {
-  if (!data) return data as any;
-
-  const barFromTuple = (t: CandleBarTuple): CandleBar => ({
-    time: t[0],
-    open: t[1],
-    high: t[2],
-    low: t[3],
-    close: t[4],
-    volume: t[5],
-  });
-
-  const pointFromTuple = (t: RSIPointTuple, valueKey = 'value'): RSIPoint | any => ({
-    time: t[0],
-    [valueKey]: t[1],
-  });
+  if (!data) return data as unknown as ChartData;
 
   const bars =
     Array.isArray(data.bars) && data.bars.length > 0 && Array.isArray(data.bars[0])
@@ -73,7 +79,7 @@ function normalizeTupleData(data: ChartDataRaw): ChartData {
 
   const rsi =
     Array.isArray(data.rsi) && data.rsi.length > 0 && Array.isArray(data.rsi[0])
-      ? (data.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
+      ? (data.rsi as RSIPointTuple[]).map(rsiFromTuple)
       : (data.rsi as RSIPoint[]);
 
   const vdRsiPoints =
@@ -81,12 +87,12 @@ function normalizeTupleData(data: ChartDataRaw): ChartData {
     Array.isArray(data.volumeDeltaRsi.rsi) &&
     data.volumeDeltaRsi.rsi.length > 0 &&
     Array.isArray(data.volumeDeltaRsi.rsi[0])
-      ? (data.volumeDeltaRsi.rsi as RSIPointTuple[]).map((p) => pointFromTuple(p))
+      ? (data.volumeDeltaRsi.rsi as RSIPointTuple[]).map(rsiFromTuple)
       : (data.volumeDeltaRsi?.rsi as RSIPoint[]) || [];
 
   const volumeDelta =
     Array.isArray(data.volumeDelta) && data.volumeDelta.length > 0 && Array.isArray(data.volumeDelta[0])
-      ? (data.volumeDelta as RSIPointTuple[]).map((p) => pointFromTuple(p, 'delta'))
+      ? (data.volumeDelta as RSIPointTuple[]).map(vdFromTuple)
       : (data.volumeDelta as Array<{ time: string | number; delta: number }>);
 
   return {
@@ -99,34 +105,20 @@ function normalizeTupleData(data: ChartDataRaw): ChartData {
 }
 
 function normalizeLatestTupleData(data: ChartLatestDataRaw): ChartLatestData {
-  if (!data) return data as any;
-
-  const barFromTuple = (t: CandleBarTuple): CandleBar => ({
-    time: t[0],
-    open: t[1],
-    high: t[2],
-    low: t[3],
-    close: t[4],
-    volume: t[5],
-  });
-
-  const pointFromTuple = (t: RSIPointTuple, valueKey = 'value'): RSIPoint | any => ({
-    time: t[0],
-    [valueKey]: t[1],
-  });
+  if (!data) return data as unknown as ChartLatestData;
 
   const latestBar = Array.isArray(data.latestBar)
     ? barFromTuple(data.latestBar as CandleBarTuple)
     : (data.latestBar as CandleBar);
   const latestRsi = Array.isArray(data.latestRsi)
-    ? pointFromTuple(data.latestRsi as RSIPointTuple)
+    ? rsiFromTuple(data.latestRsi as RSIPointTuple)
     : (data.latestRsi as RSIPoint);
   const latestVolumeDeltaRsi = Array.isArray(data.latestVolumeDeltaRsi)
-    ? pointFromTuple(data.latestVolumeDeltaRsi as RSIPointTuple)
+    ? rsiFromTuple(data.latestVolumeDeltaRsi as RSIPointTuple)
     : (data.latestVolumeDeltaRsi as RSIPoint);
   const latestVolumeDelta = Array.isArray(data.latestVolumeDelta)
-    ? pointFromTuple(data.latestVolumeDelta as RSIPointTuple, 'delta')
-    : (data.latestVolumeDelta as any);
+    ? vdFromTuple(data.latestVolumeDelta as RSIPointTuple)
+    : data.latestVolumeDelta;
 
   return {
     ...data,
