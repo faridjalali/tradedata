@@ -154,6 +154,7 @@ export async function runBreadthComputation(
 export async function bootstrapBreadthHistory(
   dbPool: Pool,
   numDays: number = 220,
+  onProgress?: (msg: string) => void,
 ): Promise<{ fetchedDays: number; computedDays: number }> {
   // Fetch extra history so the 200-day SMA is valid even for the earliest snapshot dates.
   // Without this buffer, early dates would have <200 closes and 200 MA would be 0.
@@ -188,7 +189,9 @@ export async function bootstrapBreadthHistory(
         fetchedDays++;
       }
       if (fetchedDays % 20 === 0) {
-        console.log(`[breadth] Fetched ${fetchedDays}/${tradingDates.length} days...`);
+        const msg = `Fetching closes: ${fetchedDays}/${totalFetchDays}`;
+        console.log(`[breadth] ${msg}`);
+        onProgress?.(msg);
       }
     } catch (err: unknown) {
       console.error(`[breadth] Failed to fetch grouped bars for ${date}: ${err instanceof Error ? err.message : String(err)}`);
@@ -237,6 +240,11 @@ export async function bootstrapBreadthHistory(
         );
       }
       computedDays++;
+      if (computedDays % 10 === 0) {
+        const msg = `Computing snapshots: ${computedDays}/${snapshotDates.length - skippedDays}`;
+        console.log(`[breadth] ${msg}`);
+        onProgress?.(msg);
+      }
     } catch (err: unknown) {
       console.error(`[breadth] Failed to compute breadth for ${date}: ${err instanceof Error ? err.message : String(err)}`);
     }

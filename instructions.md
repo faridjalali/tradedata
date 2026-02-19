@@ -744,7 +744,12 @@ library. `main.ts` owns the view-switching logic.
   (no secret needed). Spinner via `setRefreshButtonLoading()`.
 - **Settings panel "Breadth" button** (`#breadth-recompute-btn`): Below Analyze in the
   global settings panel. Same `divergence-run-btn` pattern as Fetch Daily/Weekly/Analyze.
-  Triggers `/api/breadth/ma/recompute`, shows status text ("Running…" / "Done HH:MM:SS" / error).
+  Triggers `POST /api/breadth/ma/recompute` which fires off a full `bootstrapBreadthHistory`
+  (long-running: 5-10 min, re-fetches ALL history from data API). The button handler polls
+  `GET /api/breadth/ma/recompute/status` every 3s for live progress. Server-side state uses
+  module-level `breadthBootstrapRunning` / `breadthBootstrapStatus` flags in `breadthRoutes.ts`.
+  The `onProgress` callback in `bootstrapBreadthHistory` updates the status string during both
+  fetch and compute phases. When done, button re-enables and breadth charts reload automatically.
 - **No subtitle text**: The breadth page charts have no top-right subtitle spans. All three
   were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
 - **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)

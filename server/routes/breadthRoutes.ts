@@ -16,6 +16,12 @@ import {
 } from '../services/chartEngine.js';
 import { dataApiDaily } from '../services/dataApi.js';
 
+// ---------------------------------------------------------------------------
+// Breadth bootstrap run state (simple flag — no ScanState needed)
+// ---------------------------------------------------------------------------
+let breadthBootstrapRunning = false;
+let breadthBootstrapStatus = '';
+
 export function registerBreadthRoutes(app: FastifyInstance): void {
   app.get('/api/breadth', async (request, reply) => {
     const q = request.query as Record<string, string | undefined>;
@@ -83,20 +89,32 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
     return reply.send({ status: 'started', days: numDays });
   });
 
-  // Session-protected endpoint: re-fetch today's breadth data from the data API and recompute.
-  // Called by the frontend refresh button — no secret needed, session auth is sufficient.
-  app.post('/api/breadth/ma/recompute', async (request, reply) => {
+  // Session-protected: full breadth bootstrap — re-fetches ALL history from the data API.
+  // Long-running (5-10 min). Fire-and-forget; poll GET /api/breadth/ma/recompute/status.
+  app.post('/api/breadth/ma/recompute', async (_request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
-    const today = new Date();
-    const tradeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    try {
-      await runBreadthComputation(divergencePool, tradeDate);
-      const data = await getLatestBreadthData(divergencePool);
-      return reply.send({ status: 'done', date: tradeDate, data });
-    } catch (err: unknown) {
-      console.error('Breadth recompute error:', err);
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    if (breadthBootstrapRunning) {
+      return reply.send({ status: 'already_running', message: breadthBootstrapStatus });
     }
+    breadthBootstrapRunning = true;
+    breadthBootstrapStatus = 'Starting...';
+    const numDays = 220;
+    bootstrapBreadthHistory(divergencePool, numDays, (msg) => { breadthBootstrapStatus = msg; })
+      .then((r) => {
+        breadthBootstrapStatus = `Done — fetched ${r.fetchedDays} days, computed ${r.computedDays} snapshots`;
+        console.log(`[breadth] Recompute complete: fetched=${r.fetchedDays}, computed=${r.computedDays}`);
+      })
+      .catch((err: unknown) => {
+        breadthBootstrapStatus = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        console.error('[breadth] Recompute failed:', err);
+      })
+      .finally(() => { breadthBootstrapRunning = false; });
+    return reply.send({ status: 'started', days: numDays });
+  });
+
+  // Poll bootstrap progress.
+  app.get('/api/breadth/ma/recompute/status', async (_request, reply) => {
+    return reply.send({ running: breadthBootstrapRunning, status: breadthBootstrapStatus });
   });
 
   app.post('/api/breadth/ma/refresh', async (request, reply) => {

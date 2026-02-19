@@ -244,6 +244,10 @@ Market breadth analysis across 21 ETFs (SPY, QQQ, DIA, MDY, IWM, 11 sector ETFs,
 
 **Section 4 — ETF Bar Rankings:** Horizontal bar chart showing all 21 ETFs ranked by % of stocks above the selected MA (21/50/100/200), sorted descending. Bars are color-coded (green ≥60%, yellow 30–60%, red <30%) with percentage labels at bar ends.
 
+**Refresh button** (top-right): POSTs to `/api/breadth/ma/recompute` to trigger a full server-side bootstrap, then reloads all charts.
+
+**Settings panel "Breadth" button:** Triggers the same full bootstrap. Polls progress every 3s and shows live status text (e.g., "Fetching closes: 120/420", "Computing snapshots: 50/220"). Long-running operation (5-10 min).
+
 **Persistence:** MA line toggle choices (which of the 21/50/100/200 lines are hidden) persist in localStorage across ticker switches and page reloads.
 
 #### 4. Logs View
@@ -261,7 +265,7 @@ System execution metrics dashboard.
 ### Global Features
 
 - **Search bar:** Type-to-search ticker lookup
-- **Settings panel:** Theme, timezone, minichart toggle, background job controls (Fetch Daily/Weekly, VDF Analyze buttons)
+- **Settings panel:** Theme, timezone, minichart toggle, background job controls (Fetch Daily/Weekly, VDF Analyze, Breadth buttons)
 - **Site lock:** Optional 8-digit passcode gate
 - **4 themes:** Dark (default), Light, Beige, Claude
 - **5 timezones:** Pacific, Mountain, Central, Eastern, UTC
@@ -416,11 +420,21 @@ All scan control endpoints require secret-based auth.
 
 **Common responses:** 202 (started), 401 (unauthorized), 409 (conflict/already running), 503 (DB not configured)
 
+### Breadth Endpoints
+
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/api/breadth` | GET | Session | SPY vs comparison ticker (intraday or daily) |
+| `/api/breadth/ma` | GET | Session | MA % history + snapshots for all indices |
+| `/api/breadth/ma/bootstrap` | POST | Secret | Start breadth bootstrap (fire-and-forget) |
+| `/api/breadth/ma/recompute` | POST | Session | Full breadth bootstrap — re-fetches ALL history from data API (5-10 min). Returns `{ status: 'started' }` or `{ status: 'already_running' }`. |
+| `/api/breadth/ma/recompute/status` | GET | Session | Poll bootstrap progress: `{ running: boolean, status: string }` |
+| `/api/breadth/ma/refresh` | POST | Secret | Recompute today's breadth snapshot only |
+
 ### Utility Endpoints
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/breadth` | GET | Market breadth data (SPY vs comparison ticker) |
 | `/api/logs/run-metrics` | GET | Run metrics history |
 | `/api/trading-calendar/context` | GET | Current trading calendar context |
 
@@ -962,6 +976,13 @@ curl -X POST "https://your-server/api/divergence/fetch-daily/run?secret=YOUR_SEC
 **Run VDF scan:**
 ```bash
 curl -X POST "https://your-server/api/divergence/vdf-scan/run?secret=YOUR_SECRET"
+```
+
+**Run full breadth bootstrap (re-fetch all history):**
+```bash
+curl -X POST "https://your-server/api/breadth/ma/recompute"
+# Poll progress:
+curl "https://your-server/api/breadth/ma/recompute/status"
 ```
 
 ### Troubleshooting
