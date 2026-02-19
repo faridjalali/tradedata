@@ -942,15 +942,24 @@ Create in one Railway project/environment:
 { "status": "ok", "timestamp": "...", "uptimeSeconds": 12345, "shuttingDown": false }
 ```
 
-`GET /readyz` (readiness — 503 if primaryDb is false or shuttingDown is true):
+`GET /readyz` (readiness — 503 if `primaryDb` is not `true` or `shuttingDown` is `true`):
 ```json
 {
-  "ready": true, "shuttingDown": false,
-  "primaryDb": true, "divergenceDb": true,
-  "divergenceConfigured": true, "divergenceScanRunning": false,
-  "lastScanDateEt": "2026-02-12", "errors": { "primaryDb": null, "divergenceDb": null }
+  "ready": true,
+  "degraded": false,
+  "shuttingDown": false,
+  "primaryDb": true,
+  "divergenceDb": true,
+  "divergenceConfigured": true,
+  "divergenceScanRunning": false,
+  "lastScanDateEt": "2026-02-12",
+  "circuitBreaker": "CLOSED",
+  "dbPool": { "total": 2, "idle": 2, "waiting": 0, "max": 10 },
+  "warnings": ["..."],
+  "errors": { "primaryDb": null, "divergenceDb": null }
 }
 ```
+Notes: `dbPool` is omitted when pool stats are unavailable; `warnings` is omitted when `degraded` is false.
 
 Quick verification:
 ```bash
