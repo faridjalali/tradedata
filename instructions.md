@@ -750,6 +750,11 @@ library. `main.ts` owns the view-switching logic.
   module-level `breadthBootstrapRunning` / `breadthBootstrapStatus` flags in `breadthRoutes.ts`.
   The `onProgress` callback in `bootstrapBreadthHistory` updates the status string during both
   fetch and compute phases. When done, button re-enables and breadth charts reload automatically.
+- **VDF scan date seeding on startup**: `initDB()` in `server/db/initDb.ts` queries
+  `run_metrics_history` for the latest completed VDF scan's `finished_at` and calls
+  `vdfScan.setStatus()` to seed the in-memory state. Without this, the Analyze button shows
+  "Due for Fetch" after every server restart (Fetch Daily/Weekly don't have this issue because
+  they seed their dates from `divergence_publication_state` and `divergence_signals` tables).
 - **No subtitle text**: The breadth page charts have no top-right subtitle spans. All three
   were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
 - **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)

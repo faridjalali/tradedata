@@ -7,6 +7,7 @@ import {
   setDivergenceLastFetchedTradeDateEt,
   divergenceLastFetchedTradeDateEt,
 } from '../services/scanControlService.js';
+import { vdfScan } from '../services/vdfService.js';
 import { maxEtDateString } from '../lib/dateUtils.js';
 
 export async function initDB(): Promise<void> {
@@ -64,6 +65,26 @@ export async function initDB(): Promise<void> {
     if (persisted.length > 0) {
       runMetricsHistory.push(...persisted);
       console.log(`Loaded ${persisted.length} persisted run history entries`);
+    }
+
+    // Seed VDF scan state from the latest completed run in DB so the status
+    // survives server restarts (parity with fetchDaily/fetchWeekly date seeding).
+    try {
+      const vdfRow = await pool.query(
+        `SELECT finished_at, status FROM run_metrics_history
+         WHERE run_type = 'vdfScan' AND finished_at IS NOT NULL
+         ORDER BY finished_at DESC LIMIT 1`,
+      );
+      const row = vdfRow.rows[0] as { finished_at: string; status: string } | undefined;
+      if (row?.finished_at) {
+        vdfScan.setStatus({
+          status: String(row.status || 'completed'),
+          finishedAt: String(row.finished_at),
+        });
+        console.log(`Restored VDF scan last-run date from DB: ${row.finished_at}`);
+      }
+    } catch (vdfErr: unknown) {
+      console.error('Failed to restore VDF scan date from DB:', vdfErr instanceof Error ? vdfErr.message : String(vdfErr));
     }
 
     console.log('Database initialized successfully');
