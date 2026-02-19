@@ -324,3 +324,22 @@ export interface VDFCacheEntry {
     reason?: string;
   };
 }
+
+// --- Admin types ---
+
+export interface AdminStatusPayload {
+  status: string;
+  uptimeSeconds: number;
+  timestamp: string;
+  shuttingDown: boolean;
+  ready: boolean;
+  degraded: boolean;
+  primaryDb: boolean | null;
+  divergenceDb: boolean | null;
+  divergenceConfigured: boolean;
+  divergenceScanRunning: boolean;
+  lastScanDateEt: string | null;
+  circuitBreaker: string;
+  dbPool?: { total: number; idle: number; waiting: number; max: number } | null;
+  warnings?: string[];
+}

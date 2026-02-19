@@ -105,77 +105,6 @@
                   <button class="theme-swatch-btn" data-theme="claude" title="Brown"></button>
                 </div>
               </div>
-              <div class="global-settings-row space-between">
-                <label class="global-settings-label">Minichart on Mobile</label>
-                <div id="global-minichart-mobile-btns" class="btn-group-inline">
-                  <button class="pane-btn active" data-minichart-mobile="off">Off</button>
-                  <button class="pane-btn" data-minichart-mobile="on">On</button>
-                </div>
-              </div>
-              <div class="global-settings-row global-settings-timezone-row">
-                <label for="global-timezone-select" class="global-settings-label">Timezone</label>
-                <select
-                  id="global-timezone-select"
-                  class="glass-input global-settings-select"
-                  aria-label="Timezone"
-                ></select>
-              </div>
-              <div class="global-settings-row global-settings-table-controls-row">
-                <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
-                <button
-                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-fetch-daily-stop-btn"
-                  aria-label="Stop Fetch Daily"
-                  disabled
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                    <rect width="10" height="10" rx="1" />
-                  </svg>
-                </button>
-                <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
-              </div>
-              <div class="global-settings-row global-settings-table-controls-row">
-                <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
-                <button
-                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-fetch-weekly-stop-btn"
-                  aria-label="Stop Fetch Weekly"
-                  disabled
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                    <rect width="10" height="10" rx="1" />
-                  </svg>
-                </button>
-                <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
-              </div>
-              <div class="global-settings-row global-settings-table-controls-row">
-                <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
-                <button
-                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
-                  id="divergence-vdf-scan-stop-btn"
-                  aria-label="Stop VDF Scan"
-                  disabled
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                    <rect width="10" height="10" rx="1" />
-                  </svg>
-                </button>
-                <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
-              </div>
-              <div class="global-settings-row global-settings-table-controls-row">
-                <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
-                <button
-                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
-                  id="breadth-recompute-stop-btn"
-                  aria-label="Stop Breadth Bootstrap"
-                  disabled
-                >
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                    <rect width="10" height="10" rx="1" />
-                  </svg>
-                </button>
-                <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
-              </div>
             </div>
           </div>
           <div id="search-container">
@@ -209,50 +138,104 @@
             </button>
             <div id="header-nav-dropdown" class="header-dropdown-panel hidden">
               <button class="header-nav-item active" data-view="divergence">Alerts</button>
-              <button class="header-nav-item" data-view="logs">Logs</button>
               <button class="header-nav-item" data-view="breadth">Breadth</button>
+              <button class="header-nav-item" data-view="admin">Admin<span id="admin-activity-dot" class="admin-activity-dot hidden"></span></button>
             </div>
           </div>
         </div>
       </header>
 
-      <!-- LOGS VIEW -->
-      <main id="view-logs" class="hidden">
-        <div class="logs-page">
-          <div class="column logs-column">
-            <div class="column-header">
-              <h2>Run Metrics</h2>
-              <div class="header-sort-controls">
-                <button id="logs-refresh-btn" class="pane-btn refresh-btn">
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M21.5 2v6h-6" />
-                    <path d="M21.5 8A10 10 0 0 0 3.2 7.2" />
-                    <path d="M2.5 22v-6h6" />
-                    <path d="M2.5 16A10 10 0 0 0 20.8 16.8" />
-                  </svg>
-                </button>
-              </div>
+      <!-- ADMIN VIEW -->
+      <main id="view-admin" class="hidden">
+        <div class="single-page-container admin-page">
+          <!-- Section 1: System Health -->
+          <div class="admin-section">
+            <div class="admin-section-header">
+              <h2>System</h2>
+              <button id="admin-health-refresh-btn" class="pane-btn refresh-btn"></button>
             </div>
-            <div id="logs-run-cards" class="logs-grid">
+            <div id="admin-health-cards" class="admin-health-grid">
               <div class="loading">Loading...</div>
             </div>
           </div>
-          <div class="column logs-column">
-            <div class="column-header">
-              <h2>Recent Runs</h2>
-              <div id="logs-history-pagination" class="log-history-pagination"></div>
+          <!-- Section 2: Operations -->
+          <div class="admin-section">
+            <div class="admin-section-header"><h2>Operations</h2></div>
+            <div class="admin-operations-grid">
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
+                <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-fetch-daily-stop-btn" aria-label="Stop Fetch Daily" disabled>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                </button>
+                <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
+                <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-fetch-weekly-stop-btn" aria-label="Stop Fetch Weekly" disabled>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                </button>
+                <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
+                <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-vdf-scan-stop-btn" aria-label="Stop VDF Scan" disabled>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                </button>
+                <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
+                <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="breadth-recompute-stop-btn" aria-label="Stop Breadth Bootstrap" disabled>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+                </button>
+                <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
+              </div>
             </div>
-            <div id="logs-history-container" class="alerts-list">
+          </div>
+          <!-- Section 3: Run Metrics -->
+          <div class="admin-section">
+            <div class="admin-section-header">
+              <h2>Run Metrics</h2>
+              <button id="admin-metrics-refresh-btn" class="pane-btn refresh-btn"></button>
+            </div>
+            <div id="admin-run-cards" class="logs-grid">
               <div class="loading">Loading...</div>
+            </div>
+          </div>
+          <!-- Section 4: Recent Runs -->
+          <div class="admin-section">
+            <div class="admin-section-header">
+              <h2>Recent Runs</h2>
+              <div id="admin-history-pagination" class="log-history-pagination"></div>
+            </div>
+            <div id="admin-history-container" class="alerts-list">
+              <div class="loading">Loading...</div>
+            </div>
+          </div>
+          <!-- Section 5: Preferences -->
+          <div class="admin-section">
+            <div class="admin-section-header"><h2>Preferences</h2></div>
+            <div class="admin-preferences-grid">
+              <div class="admin-pref-row">
+                <span class="admin-pref-label">Theme</span>
+                <div id="admin-theme-btns" class="btn-group-inline">
+                  <button class="theme-swatch-btn active" data-theme="dark" title="Dark"></button>
+                  <button class="theme-swatch-btn" data-theme="light" title="Light"></button>
+                  <button class="theme-swatch-btn" data-theme="beige" title="Beige"></button>
+                  <button class="theme-swatch-btn" data-theme="claude" title="Brown"></button>
+                </div>
+              </div>
+              <div class="admin-pref-row">
+                <span class="admin-pref-label">Timezone</span>
+                <select id="admin-timezone-select" class="glass-input global-settings-select" aria-label="Timezone"></select>
+              </div>
+              <div class="admin-pref-row">
+                <span class="admin-pref-label">Minichart on Mobile</span>
+                <div id="admin-minichart-btns" class="btn-group-inline">
+                  <button class="pane-btn active" data-minichart-mobile="off">Off</button>
+                  <button class="pane-btn" data-minichart-mobile="on">On</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

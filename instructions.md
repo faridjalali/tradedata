@@ -99,8 +99,9 @@ fixed before committing. This is not aspirational — it is the minimum bar.
   comparison chart overlaying SPY/QQQ/SMH breadth performance.
 - **Divergence feed**: Live feed of VDF (Volume Distribution Formation) divergence alerts
   detected across the universe of tracked symbols.
-- **Scan control panel**: Start/stop/resume background scans (fetch-daily, fetch-weekly,
-  VDF scan, table build). Real-time progress, error counts, retry status.
+- **Admin page**: Unified administrative view consolidating system health, operations
+  (fetch buttons), run metrics, history, and preferences (theme, timezone, minichart).
+  Replaces the separate Logs view and gear panel settings.
 
 ### Tech Stack
 
@@ -135,7 +136,7 @@ server/
   routes/                           # HTTP route handlers — thin layer, no business logic
     chartRoutes.ts                  # Chart data endpoints
     divergenceRoutes.ts             # Scan control + alert feed endpoints
-    healthRoutes.ts                 # /healthz, /readyz, /api/debug/metrics
+    healthRoutes.ts                 # /healthz, /readyz, /api/admin/status, /api/debug/metrics
   services/                         # Domain logic, caching, external API calls
     dataApi.ts                      # HTTP client: market data, rate limiting, circuit breaker
     chartEngine.ts                  # Chart data orchestration: fetch → calculate → cache
@@ -162,10 +163,12 @@ server/
     apiSchemas.ts                   # Zod schemas for external API response validation
 src/                                # Frontend TypeScript (compiled by Vite)
   main.ts                           # View router, global event handlers, scan control wiring
-  fetchButton.ts                    # FetchButton class + registry (shared settings panel buttons)
+  admin.ts                          # Admin page: health cards, operations, metrics, history, preferences
+  fetchButton.ts                    # FetchButton class + registry (operation buttons)
   chart.ts                          # Lightweight Charts integration, indicator rendering
   breadth.ts                        # Breadth analysis charts (Chart.js), comparison view
   divergenceFeed.ts                 # Alert feed polling, VDF status display
+  logs.ts                           # Run metrics/history builders (reused by admin.ts)
   utils.ts                          # DOM helpers, fetch wrappers
   theme.ts                          # Dark/light theme switching
   components.ts                     # Shared UI elements (refresh buttons, gauges)
@@ -727,6 +730,7 @@ and first 200 chars of SQL (sanitized).
 
 - `GET /healthz` — liveness (200 if process alive)
 - `GET /readyz` — readiness (checks DB connectivity)
+- `GET /api/admin/status` — composed health + readiness payload for the admin page UI
 - `GET /api/debug/metrics` — protected by `DEBUG_METRICS_SECRET`
 
 ---
@@ -738,12 +742,30 @@ and first 200 chars of SQL (sanitized).
 All views are in `index.html` — shown/hidden by CSS class toggling (`.hidden`). No routing
 library. `main.ts` owns the view-switching logic.
 
-| View | Key Module | Description |
-|---|---|---|
-| Chart | `chart.ts` | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
-| Breadth | `breadth.ts` | MA breadth gauges + history + normalized compare (Chart.js) |
-| Divergence Feed | `divergenceFeed.ts` | Auto-polling alert list, VDF status panel |
-| Scan Control | `main.ts` | Start/stop/status for all background jobs |
+| View | Key Module | Hash Route | Description |
+|---|---|---|---|
+| Alerts (default) | `divergenceFeed.ts` | `#/divergence` | Auto-polling alert list, VDF status panel |
+| Breadth | `breadth.ts` | `#/breadth` | MA breadth gauges + history + normalized compare (Chart.js) |
+| Admin | `admin.ts` | `#/admin` | System health, operations, run metrics, history, preferences |
+| Chart (sub-view) | `chart.ts` | — | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
+
+### Admin View (`src/admin.ts`)
+
+Lazy-loaded module for the unified admin page (`#/admin`). Five sections:
+
+1. **System Health**: 2×2 card grid showing Server, Database, Circuit Breaker, Scan Data status.
+   Data from `GET /api/admin/status`. Auto-refreshes on 10s polling interval.
+2. **Operations**: The 4 FetchButton rows (Fetch Daily, Fetch Weekly, Analyze, Breadth).
+   Same DOM element IDs as before — `FetchButton` class finds elements by `getElementById()`.
+3. **Run Metrics**: Reuses `buildRunCardHtml()` and `buildConfigCardHtml()` from `logs.ts`.
+4. **Recent Runs**: Reuses `buildHistoryEntryHtml()` from `logs.ts` with own pagination state.
+5. **Preferences**: Theme buttons (cross-synced with gear panel), timezone select, minichart toggle.
+
+Activity dot (`#admin-activity-dot`) on the Admin nav item pulses when any scan is running.
+Toggled by `divergenceScanControl.ts` polling loop.
+
+The gear icon in the header retains a theme-only dropdown for quick access from any page.
+`#/logs` hash routes redirect to `#/admin` for backward compatibility.
 
 ### Chart View (`src/chart.ts`)
 
@@ -779,8 +801,8 @@ library. `main.ts` owns the view-switching logic.
   to `/api/breadth/ma/recompute` (triggers server-side re-fetch from data API + recompute
   for today's date), then reloads all charts. The recompute endpoint is session-protected
   (no secret needed). Spinner via `setRefreshButtonLoading()`.
-- **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for all settings panel
-  fetch buttons (Fetch Daily, Fetch Weekly, Analyze, Breadth). Each button is registered via
+- **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for all admin page
+  operation buttons (Fetch Daily, Fetch Weekly, Analyze, Breadth). Each button is registered via
   `registerFetchButton({ key, dom, label, start, stop, statusSource, autoRefresh? })` in
   `divergenceScanControl.ts`. The class manages DOM state, click handlers, status polling
   integration, and auto-refresh tracking. Two status patterns: `kind: 'unified'` (extract from

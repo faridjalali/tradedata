@@ -21,6 +21,18 @@ function registerHealthRoutes(options: HealthRoutesOptions): void {
     return res.code(200).send(getDebugMetricsPayload());
   });
 
+  app.get('/api/admin/status', async (_req: FastifyRequest, res: FastifyReply) => {
+    try {
+      const health = getHealthPayload();
+      const ready = await getReadyPayload();
+      return res.code(200).send({ ...health, ...ready.body });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Admin status check failed: ${message}`);
+      return res.code(500).send({ error: 'Admin status check failed' });
+    }
+  });
+
   app.get('/healthz', (_req: FastifyRequest, res: FastifyReply) => {
     return res.code(200).send(getHealthPayload());
   });

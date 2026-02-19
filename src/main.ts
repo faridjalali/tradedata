@@ -5,10 +5,10 @@ import { createRefreshSvgIcon, setRefreshButtonLoading } from './chartVDF';
 
 // --- Lazy-loaded view modules (code splitting) ---
 
-let _logsModule: typeof import('./logs') | null = null;
-async function loadLogs() {
-  if (!_logsModule) _logsModule = await import('./logs');
-  return _logsModule;
+let _adminModule: typeof import('./admin') | null = null;
+async function loadAdmin() {
+  if (!_adminModule) _adminModule = await import('./admin');
+  return _adminModule;
 }
 
 let _breadthModule: typeof import('./breadth') | null = null;
@@ -28,11 +28,11 @@ import {
   ColumnFeedMode,
 } from './divergenceFeed';
 import { SortMode, TickerListContext } from './types';
-import { getAppTimeZone, getAppTimeZoneOptions, onAppTimeZoneChange, setAppTimeZone } from './timezone';
+import { onAppTimeZoneChange } from './timezone';
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
 
-let currentView: 'logs' | 'divergence' | 'breadth' = 'divergence';
+let currentView: 'admin' | 'divergence' | 'breadth' = 'divergence';
 let divergenceDashboardScrollY = 0;
 let tickerOriginView = 'divergence' as const;
 let tickerListContext: TickerListContext = null;
@@ -44,7 +44,7 @@ let appInitialized = false;
 // deep-linking is possible (e.g. #/ticker/AAPL, #/logs).
 // ---------------------------------------------------------------------------
 
-type ViewName = 'logs' | 'divergence' | 'breadth';
+type ViewName = 'admin' | 'divergence' | 'breadth';
 
 /** Suppress pushHash when we're already responding to a hashchange. */
 let hashNavInProgress = false;
@@ -63,9 +63,10 @@ function parseHash(hash: string): { view: ViewName } | { ticker: string } | null
   // #/ticker/AAPL  or  #/ticker/AAPL/
   const tickerMatch = raw.match(/^ticker\/([A-Za-z0-9._-]+)\/?$/);
   if (tickerMatch) return { ticker: tickerMatch[1].toUpperCase() };
-  // #/divergence, #/logs, #/breadth
+  // #/divergence, #/admin, #/breadth (#/logs → admin for backward compat)
   const viewName = raw.replace(/\/$/, '').toLowerCase();
-  if (viewName === 'divergence' || viewName === 'logs' || viewName === 'breadth') {
+  if (viewName === 'logs') return { view: 'admin' as ViewName };
+  if (viewName === 'divergence' || viewName === 'admin' || viewName === 'breadth') {
     return { view: viewName };
   }
   return null;
@@ -146,13 +147,13 @@ window.showOverview = function () {
   window.scrollTo(0, divergenceDashboardScrollY);
 };
 
-function switchView(view: 'logs' | 'divergence' | 'breadth') {
+function switchView(view: 'admin' | 'divergence' | 'breadth') {
   currentView = view;
   pushHash(`/${view}`);
   setActiveNavTab(view);
 
   // Hide all views
-  document.getElementById('view-logs')?.classList.add('hidden');
+  document.getElementById('view-admin')?.classList.add('hidden');
   document.getElementById('view-divergence')?.classList.add('hidden');
   document.getElementById('view-breadth')?.classList.add('hidden');
 
@@ -160,15 +161,16 @@ function switchView(view: 'logs' | 'divergence' | 'breadth') {
   document.getElementById('ticker-view')?.classList.add('hidden');
   cancelChartLoading();
 
-  loadLogs().then((m) => m.stopLogsPolling()).catch(() => {});
+  // Stop admin polling when leaving admin view
+  loadAdmin().then((m) => m.stopAdminPolling()).catch(() => {});
 
   // Close any open dropdowns
   closeAllHeaderDropdowns();
 
   // Show the selected view and controls
-  if (view === 'logs') {
-    document.getElementById('view-logs')?.classList.remove('hidden');
-    loadLogs().then((m) => { m.refreshLogsView().catch(() => {}); m.startLogsPolling(); }).catch(() => {});
+  if (view === 'admin') {
+    document.getElementById('view-admin')?.classList.remove('hidden');
+    loadAdmin().then((m) => { m.initAdminView(); m.startAdminPolling(); }).catch(() => {});
   } else if (view === 'divergence') {
     document.getElementById('view-divergence')?.classList.remove('hidden');
     fetchDivergenceSignals(true).then(renderDivergenceOverview);
@@ -188,7 +190,7 @@ function closeAllHeaderDropdowns(): void {
   document.getElementById('header-nav-dropdown')?.classList.remove('open');
 }
 
-function setActiveNavTab(view: 'logs' | 'live' | 'divergence' | 'breadth'): void {
+function setActiveNavTab(view: 'admin' | 'live' | 'divergence' | 'breadth'): void {
   document.querySelectorAll('.header-nav-item').forEach((b) => b.classList.remove('active'));
   document.querySelector(`.header-nav-item[data-view="${view}"]`)?.classList.add('active');
 }
@@ -279,9 +281,9 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
     return;
   }
 
-  if (currentView === 'logs') {
-    const logs = await loadLogs();
-    await logs.refreshLogsView();
+  if (currentView === 'admin') {
+    const admin = await loadAdmin();
+    await admin.refreshAdminView();
   }
 }
 
@@ -289,47 +291,8 @@ function initGlobalSettingsPanel() {
   const container = document.getElementById('global-settings-container');
   const toggleBtn = document.getElementById('global-settings-toggle') as HTMLButtonElement | null;
   const panel = document.getElementById('global-settings-panel');
-  let timezoneSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
 
   if (!container || !toggleBtn || !panel) return;
-
-  const removeLegacyV3Row = () => {
-    panel.querySelectorAll<HTMLElement>('.global-settings-toggle-row').forEach((node) => node.remove());
-    const legacyById = panel.querySelector('#global-enable-v3-fetch, #enable-v3-fetch');
-    if (legacyById) {
-      (legacyById.closest('.global-settings-row') || legacyById).remove();
-    }
-    const allTextNodes = panel.querySelectorAll<HTMLElement>('label, span, div');
-    allTextNodes.forEach((node) => {
-      const text = String(node.textContent || '')
-        .trim()
-        .toLowerCase();
-      if (text !== 'enable v3 fetch') return;
-      (node.closest('.global-settings-row') || node).remove();
-    });
-  };
-
-  const ensureTimezoneSelect = (): HTMLSelectElement => {
-    if (timezoneSelect) return timezoneSelect;
-    const row = document.createElement('div');
-    row.className = 'global-settings-row global-settings-timezone-row';
-    const label = document.createElement('label');
-    label.className = 'global-settings-label';
-    label.htmlFor = 'global-timezone-select';
-    label.textContent = 'Timezone';
-    const select = document.createElement('select');
-    select.id = 'global-timezone-select';
-    select.className = 'glass-input global-settings-select';
-    select.setAttribute('aria-label', 'Timezone');
-    row.append(label, select);
-    panel.append(row);
-    timezoneSelect = select;
-    return select;
-  };
-
-  removeLegacyV3Row();
-  timezoneSelect = ensureTimezoneSelect();
-  const timezoneSelectEl = timezoneSelect;
 
   const closePanel = () => {
     panel.classList.add('hidden');
@@ -339,30 +302,12 @@ function initGlobalSettingsPanel() {
   const openPanel = () => {
     panel.classList.remove('hidden');
     toggleBtn.classList.add('active');
-    timezoneSelectEl.value = getAppTimeZone();
   };
-
-  const options = getAppTimeZoneOptions();
-  timezoneSelectEl.innerHTML = options
-    .map((option) => `<option value="${option.value}">${option.label}</option>`)
-    .join('');
-  timezoneSelectEl.value = getAppTimeZone();
-  timezoneSelectEl.addEventListener('change', () => {
-    setAppTimeZone(timezoneSelectEl.value);
-  });
-
-  onAppTimeZoneChange((nextTimeZone) => {
-    timezoneSelectEl.value = nextTimeZone;
-    refreshViewAfterTimeZoneChange().catch((error) => {
-      console.error('Failed to refresh UI after timezone change:', error);
-    });
-  });
 
   toggleBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     if (panel.classList.contains('hidden')) {
       openPanel();
-      syncDivergenceScanUiState().catch(() => {});
     } else {
       closePanel();
     }
@@ -379,7 +324,7 @@ function initGlobalSettingsPanel() {
     closePanel();
   });
 
-  // Theme buttons
+  // Theme buttons (quick access — also available in Admin > Preferences)
   const themeBtns = panel.querySelectorAll<HTMLElement>('.theme-swatch-btn');
   const currentThemeName = getTheme();
   themeBtns.forEach((btn) => {
@@ -388,23 +333,10 @@ function initGlobalSettingsPanel() {
       const name = btn.dataset.theme as ThemeName;
       setTheme(name);
       themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
-    });
-  });
-
-  // Minichart on Mobile toggle
-  const mcBtns = panel.querySelectorAll<HTMLElement>('[data-minichart-mobile]');
-  const storedMc = localStorage.getItem('minichart_mobile') || 'off';
-  mcBtns.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.minichartMobile === storedMc);
-    btn.addEventListener('click', () => {
-      const val = btn.dataset.minichartMobile || 'off';
-      mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichartMobile === val));
-      try {
-        localStorage.setItem('minichart_mobile', val);
-      } catch {
-        /* ignore */
-      }
-      window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
+      // Sync admin page theme buttons if they exist
+      document.querySelectorAll('#admin-theme-btns .theme-swatch-btn').forEach((b) => {
+        (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.theme === name);
+      });
     });
   });
 }
@@ -432,7 +364,7 @@ function initHeaderNavDropdown(): void {
   dropdown.addEventListener('click', (e) => {
     const item = (e.target as HTMLElement).closest('.header-nav-item') as HTMLElement | null;
     if (!item) return;
-    const view = item.dataset.view as 'logs' | 'divergence' | 'breadth';
+    const view = item.dataset.view as 'admin' | 'divergence' | 'breadth';
     if (view) {
       switchView(view);
       dropdown.classList.remove('open');
@@ -687,10 +619,16 @@ function bootstrapApplication(): void {
   // Listen for browser back/forward
   window.addEventListener('hashchange', () => handleHashRoute());
 
-  // Setup Search
+  // Global timezone change handler (must be registered at bootstrap, not lazily)
+  onAppTimeZoneChange(() => {
+    refreshViewAfterTimeZoneChange().catch((error) => {
+      console.error('Failed to refresh UI after timezone change:', error);
+    });
+  });
+
+  // Setup Search & Settings
   initGlobalSettingsPanel();
   initSearch();
-  loadLogs().then((m) => m.initLogsView()).catch(() => {});
 
   // Setup Event Delegation
   setupDivergenceFeedDelegation();

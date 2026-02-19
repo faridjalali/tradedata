@@ -4,23 +4,23 @@ import { escapeHtml } from './utils';
 let logsPollTimer: number | null = null;
 let logsRefreshInFlight = false;
 
-const HISTORY_PAGE_SIZE = 8;
+export const HISTORY_PAGE_SIZE = 8;
 let historyPage = 0;
 let historyEntries: RunMetricsSnapshot[] = [];
 
-function fmtNumber(value: unknown, digits = 0): string {
+export function fmtNumber(value: unknown, digits = 0): string {
   const num = Number(value);
   if (!Number.isFinite(num)) return '--';
   return num.toFixed(Math.max(0, digits));
 }
 
-function fmtStatus(value: unknown): string {
+export function fmtStatus(value: unknown): string {
   const raw = String(value || '').trim();
   if (!raw) return 'idle';
   return raw;
 }
 
-function fmtIsoToLocal(value: unknown): string {
+export function fmtIsoToLocal(value: unknown): string {
   const raw = String(value || '').trim();
   if (!raw) return '--';
   const parsed = new Date(raw);
@@ -28,7 +28,7 @@ function fmtIsoToLocal(value: unknown): string {
   return parsed.toLocaleString();
 }
 
-function buildRunCardHtml(
+export function buildRunCardHtml(
   title: string,
   run: RunMetricsSnapshot | null | undefined,
   statusFallback:
@@ -100,7 +100,7 @@ function buildRunCardHtml(
     `;
 }
 
-function buildConfigCardHtml(payload: RunMetricsPayload): string {
+export function buildConfigCardHtml(payload: RunMetricsPayload): string {
   const config = payload.config || {};
   const source = escapeHtml(config.divergenceSourceInterval || '--');
   const lookback = fmtNumber(config.divergenceLookbackDays, 0);
@@ -142,7 +142,7 @@ function renderRunCards(payload: RunMetricsPayload): void {
   host.innerHTML = cards.join('');
 }
 
-function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
+export function buildHistoryEntryHtml(run: RunMetricsSnapshot): string {
   const processed = Number(run?.tickers?.processed || 0);
   const total = Number(run?.tickers?.total || 0);
   const errors = Number(run?.tickers?.errors || 0);
@@ -227,7 +227,7 @@ function renderHistory(payload: RunMetricsPayload): void {
   renderHistoryPage();
 }
 
-async function fetchRunMetricsPayload(): Promise<RunMetricsPayload> {
+export async function fetchRunMetricsPayload(): Promise<RunMetricsPayload> {
   const response = await fetch('/api/logs/run-metrics', { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(`Failed to fetch run metrics (HTTP ${response.status})`);

@@ -98,7 +98,7 @@ server/
     divergenceRoutes.ts               Scan control, signal queries, table build triggers
     alertRoutes.ts                    Alert listing, favorite toggle
     breadthRoutes.ts                  Market breadth data endpoint
-    healthRoutes.ts                   /healthz, /readyz, /api/debug/metrics
+    healthRoutes.ts                   /healthz, /readyz, /api/admin/status, /api/debug/metrics
   services/
     chartEngine.ts                    Multi-tier chart cache, SWR, data assembly
     chartIndicators.ts                Pure indicator math: RSI, RMA, volume delta, VD RSI
@@ -136,6 +136,7 @@ server/
 
 src/                                  Frontend modules
   main.ts                             View switching, navigation, global state
+  admin.ts                            Admin page: health, operations, metrics, history, prefs
   chart.ts                            Multi-pane chart rendering, tools, overlays
   divergenceFeed.ts                   Alert feed with filtering, sorting, pagination
   divergenceTable.ts                  Divergence summary badges
@@ -143,7 +144,7 @@ src/                                  Frontend modules
   divergenceScanStatusFormat.ts       Pure status text formatters (no DOM deps)
   vdfAnalysisPanel.ts                 VDF analysis panel with zone details
   breadth.ts                          Market breadth comparison chart
-  logs.ts                             Run metrics dashboard
+  logs.ts                             Run metrics/history builders (reused by admin.ts)
   ticker.ts                           Ticker detail view
   theme.ts                            4 themes (dark, light, beige, claude)
   timezone.ts                         5 timezone options
@@ -246,26 +247,30 @@ Market breadth analysis across 21 ETFs (SPY, QQQ, DIA, MDY, IWM, 11 sector ETFs,
 
 **Refresh button** (top-right): POSTs to `/api/breadth/ma/recompute` to trigger a full server-side bootstrap, then reloads all charts.
 
-**Settings panel "Breadth" button:** Full parity with Fetch Daily/Weekly/Analyze — run button, stop button, and `Ran MM/DD` status text. Triggers a full bootstrap via `POST /api/breadth/ma/recompute`. Status polled automatically by the scan control polling loop. Stop button sends `POST /api/breadth/ma/recompute/stop` to cancel mid-run. Long-running operation (5-10 min).
+**Admin "Breadth" button:** Full parity with Fetch Daily/Weekly/Analyze — run button, stop button, and `Ran MM/DD` status text in the Operations section. Triggers a full bootstrap via `POST /api/breadth/ma/recompute`. Status polled automatically by the scan control polling loop. Stop button sends `POST /api/breadth/ma/recompute/stop` to cancel mid-run. Long-running operation (5-10 min).
 
 **Persistence:** MA line toggle choices (which of the 21/50/100/200 lines are hidden) persist in localStorage across ticker switches and page reloads.
 
-#### 4. Logs View
+#### 4. Admin View
 
-System execution metrics dashboard.
+Unified administrative page consolidating system health, operations, metrics, history, and preferences. Accessed via `#/admin` hash route (`#/logs` redirects here for backward compatibility).
 
-**Run cards:** Latest Fetch Daily, Fetch Weekly, VDF Scan, and Runtime Config metrics.
+**Section 1 — System Health:** 2×2 card grid showing Server (uptime, status), Database (primary/divergence, pool stats), Circuit Breaker (state), and Scan Data (configured, last scan, warnings). Auto-refreshes on 10-second polling.
 
-**Per-run metrics:** Tickers processed/total, errors, API calls, failures, rate limits, P95 latency, DB flushes, duration.
+**Section 2 — Operations:** Four FetchButton rows (Fetch Daily, Fetch Weekly, Analyze, Breadth) with run/stop buttons and status text. Same `FetchButton` abstraction as before.
 
-**History:** Paginated list of recent runs with expandable failed/recovered ticker details.
+**Section 3 — Run Metrics:** Latest Fetch Daily, Fetch Weekly, VDF Scan, and Runtime Config cards. Same data as the previous Logs view.
 
-**Auto-refresh:** Polls every 5 seconds when visible.
+**Section 4 — Recent Runs:** Paginated history of completed runs with expandable failed/recovered ticker details.
+
+**Section 5 — Preferences:** Theme selector (4 themes), timezone dropdown (5 options), minichart-on-mobile toggle.
+
+**Activity dot:** Pulsing indicator on the Admin nav item when any background operation is running.
 
 ### Global Features
 
 - **Search bar:** Type-to-search ticker lookup
-- **Settings panel:** Theme, timezone, minichart toggle, background job controls via `FetchButton` abstraction (Fetch Daily/Weekly, VDF Analyze, Breadth — each with run/stop/status)
+- **Settings gear:** Quick theme switching from any page (theme-only dropdown)
 - **Site lock:** Optional 8-digit passcode gate
 - **4 themes:** Dark (default), Light, Beige, Claude
 - **5 timezones:** Pacific, Mountain, Central, Eastern, UTC
@@ -444,6 +449,7 @@ All scan control endpoints require secret-based auth.
 |---|---|---|
 | `GET /healthz` | None | Liveness probe (always 200) |
 | `GET /readyz` | None | Readiness probe (checks DB) |
+| `GET /api/admin/status` | Session | Composed health + readiness for admin UI |
 | `GET /api/debug/metrics` | Debug secret | Server metrics, cache sizes, memory |
 
 ---
@@ -706,7 +712,7 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 
 **What they do:** Fetch and update divergence signals with full MA state computation for all tickers.
 
-**Trigger:** Manual via settings panel buttons or API.
+**Trigger:** Manual via admin page operation buttons or API.
 
 **Weekly constraint:** Only processes after Friday market close (4:16 PM ET).
 

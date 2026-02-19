@@ -385,6 +385,11 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
     // --- FetchButton registry: update all 4 buttons ---
     const anyFetchRunning = await updateAllFetchButtons(status);
 
+    // --- Activity dot on Admin nav item ---
+    const anyRunning = status.running || tableRunning || anyFetchRunning;
+    const activityDot = document.getElementById('admin-activity-dot');
+    if (activityDot) activityDot.classList.toggle('hidden', !anyRunning);
+
     // --- Auto-refresh: iterate registered buttons ---
     const buttons = getFetchButtons();
     for (const btn of buttons) {
@@ -438,6 +443,8 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
       setTableRunButtonState(false, false);
       setTableControlButtonState(null);
       resetAllFetchButtonsOnError();
+      const activityDot = document.getElementById('admin-activity-dot');
+      if (activityDot) activityDot.classList.add('hidden');
     }
   } finally {
     divergenceScanPollInFlight = false;
@@ -489,6 +496,11 @@ export async function syncDivergenceScanUiState(): Promise<void> {
     // --- FetchButton registry ---
     const anyFetchRunning = await updateAllFetchButtons(status);
 
+    // --- Activity dot on Admin nav item ---
+    const anyRunning = status.running || tableRunning || anyFetchRunning;
+    const activityDot = document.getElementById('admin-activity-dot');
+    if (activityDot) activityDot.classList.toggle('hidden', !anyRunning);
+
     // --- Auto-refresh for running buttons ---
     const buttons = getFetchButtons();
     for (const btn of buttons) {
@@ -523,6 +535,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
     setTableRunStatusText(errorText);
     setTableControlButtonState(null);
     resetAllFetchButtonsOnError();
+    const activityDot = document.getElementById('admin-activity-dot');
+    if (activityDot) activityDot.classList.add('hidden');
   }
 }
 
