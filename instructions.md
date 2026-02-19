@@ -5,6 +5,14 @@ Every line of code must meet the standard described in the **Code Quality Mandat
 
 ---
 
+## Standing Instructions
+
+1. **After every prompt: update `instructions.md`** to document any new patterns, decisions, or conventions.
+2. **After every prompt: update `README.md`** to keep it current with all changes made.
+3. Commit both updates as part of the same task.
+
+---
+
 ## Code Quality Mandate
 
 All code in this repository must meet the level expected of a principal-engineer code review
@@ -731,6 +739,11 @@ library. `main.ts` owns the view-switching logic.
   were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
 - **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)
   instead of hardcoded `#ffffff`.
+- **ETF bar rankings** (4th chart section): Horizontal bar chart (`indexAxis: 'y'`) showing all
+  21 ETFs ranked by `% > MA` for the selected MA window (21/50/100/200), sorted descending.
+  Per-bar colors via `gaugeColor()`. Value labels drawn by an inline Chart.js plugin
+  (`afterDatasetsDraw`) — no external datalabels dependency. Reuses `breadthMAData.snapshots`
+  (no additional API call). CSS: `.breadth-bars-section`, `.breadth-bars-chart-wrapper` (600px).
 - **Index selector** uses `feed-controls-group feed-controls-group--wrap` (wrapping flex) for the
   21-ETF button row. `currentMAIndex` and `currentCompareIndex` are typed as `string` (not a narrow
   union) so new ETFs can be added without touching `breadth.ts`.

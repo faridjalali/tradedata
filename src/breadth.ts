@@ -119,6 +119,10 @@ let breadthCompareModeActive: boolean = false;
 let lockedCompareIndex: string | null = null;
 let currentCompareIndex2: string | null = null;
 
+// ETF Bar Rankings state
+let breadthBarsChart: ChartInstance | null = null;
+let currentBarsMA: string = '21';
+
 export function getCurrentBreadthTimeframe(): number {
   return currentTimeframeDays;
 }
@@ -569,6 +573,7 @@ async function loadBreadthMA(): Promise<void> {
     breadthMAData = await fetchBreadthMA(BREADTH_MA_HISTORY_DAYS);
     renderBreadthMAForIndex(currentMAIndex);
     renderBreadthCompareChart();
+    renderBreadthBarsChart();
   } catch (err) {
     console.error('Breadth MA load error:', err);
     if (errorEl) {
@@ -1003,6 +1008,100 @@ function renderBreadthCompareDual(): void {
   applyHiddenMAs(breadthCompareChart);
 }
 
+// ---------------------------------------------------------------------------
+// ETF Bar Rankings: horizontal bar chart of all ETFs' % > MA, sorted descending
+// ---------------------------------------------------------------------------
+
+/** Switch which MA window the bar chart ranks by. */
+export function setBreadthBarsMA(ma: string): void {
+  currentBarsMA = ma;
+  renderBreadthBarsChart();
+}
+
+/** Render horizontal bar chart showing all ETFs ranked by % above selected MA. */
+function renderBreadthBarsChart(): void {
+  const canvas = document.getElementById('breadth-bars-chart') as HTMLCanvasElement;
+  if (!canvas || !breadthMAData) return;
+  const c = getThemeColors();
+
+  if (breadthBarsChart) {
+    breadthBarsChart.destroy();
+    breadthBarsChart = null;
+  }
+
+  const maKey = `ma${currentBarsMA}` as keyof BreadthMASnapshot;
+  const sorted = [...breadthMAData.snapshots]
+    .filter((s) => typeof s[maKey] === 'number')
+    .sort((a, b) => (b[maKey] as number) - (a[maKey] as number));
+
+  if (sorted.length === 0) return;
+
+  const labels = sorted.map((s) => s.index);
+  const values = sorted.map((s) => s[maKey] as number);
+  const colors = values.map((v) => gaugeColor(v));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Chart_: any = Chart; // loaded from CDN — need raw constructor for plugin array
+
+  breadthBarsChart = new Chart_(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4,
+        barPercentage: 0.75,
+        categoryPercentage: 0.85,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 50 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            label: (ctx: any) => `${(ctx.parsed.x as number).toFixed(1)}%`, // CDN callback
+          },
+        },
+      },
+      scales: {
+        x: {
+          min: 0,
+          max: 100,
+          ticks: { color: c.textSecondary, font: { size: 11 }, callback: (v: number | string) => `${v}%` },
+          grid: { color: c.borderOverlay30 },
+        },
+        y: {
+          ticks: { color: c.textPrimary, font: { size: 12, weight: 'bold' } },
+          grid: { display: false },
+        },
+      },
+    },
+    plugins: [{
+      id: 'barValueLabels',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      afterDatasetsDraw(chart: any) { // CDN chart instance with canvas ctx
+        const ctx = chart.ctx as CanvasRenderingContext2D;
+        const meta = chart.getDatasetMeta(0);
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = c.textSecondary;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        meta.data.forEach((bar: any, i: number) => {
+          const val = chart.data.datasets[0].data[i] as number;
+          ctx.fillText(`${val.toFixed(1)}%`, (bar.x as number) + 6, bar.y as number);
+        });
+      },
+    }],
+  }) as ChartInstance;
+}
+
 /** Initialize breadth data loading. */
 export function initBreadth(): void {
   loadBreadth();
@@ -1025,6 +1124,9 @@ export function initBreadthThemeListener(): void {
     if (breadthCompareChart) {
       if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
       else renderBreadthCompareChart();
+    }
+    if (breadthBarsChart) {
+      renderBreadthBarsChart();
     }
   });
 }

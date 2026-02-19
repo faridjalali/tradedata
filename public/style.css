@@ -1450,6 +1450,16 @@ button:hover {
   border-top: 1px solid var(--border-color);
 }
 
+.breadth-bars-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.breadth-bars-chart-wrapper {
+  height: 600px;
+}
+
 /* ===== Custom Chart Section ===== */
 .custom-chart-section {
   background: var(--card-bg);

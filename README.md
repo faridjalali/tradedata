@@ -234,13 +234,17 @@ Opens when clicking an alert card. Shows:
 
 #### 3. Breadth View
 
-Market breadth comparison between SPY and a comparison ticker.
+Market breadth analysis across 21 ETFs (SPY, QQQ, DIA, MDY, IWM, 11 sector ETFs, SMH, XBI, XHB, XRT, XAR, KRE). Four chart sections:
 
-**Timeframe controls:** Today, 5, 10, 20, 30 days
+**Section 1 — SPY vs Metric:** Normalized line chart comparing SPY breadth against SVIX, RSP, or MAGS. Timeframe selector: Today, 5, 10, 20, 30 days. Green fill = healthy, red fill = weak.
 
-**Comparison tickers:** SVIX, RSP, MAGS
+**Section 2 — MA % History + Gauges:** Select any ETF from the 21-button row. Four gauge cards show current % of stocks above 21/50/100/200 MA (color-coded green/yellow/red). Line chart shows 60-day history of all four MA percentages with a 50% annotation line.
 
-**Chart:** Normalized line chart with fill between lines (green = healthy breadth, red = weak breadth).
+**Section 3 — Comparative Breadth:** Lock-then-pick compare mode. Click a ticker, click Compare to lock it, then click a second ticker to overlay both as solid vs dashed lines. Timeframe selector: 5d, 10d, 20d, 30d. Shows indexed price + MA breadth lines normalized to 100.
+
+**Section 4 — ETF Bar Rankings:** Horizontal bar chart showing all 21 ETFs ranked by % of stocks above the selected MA (21/50/100/200), sorted descending. Bars are color-coded (green ≥60%, yellow 30–60%, red <30%) with percentage labels at bar ends.
+
+**Persistence:** MA line toggle choices (which of the 21/50/100/200 lines are hidden) persist in localStorage across ticker switches and page reloads.
 
 #### 4. Logs View
 

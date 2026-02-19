@@ -667,6 +667,17 @@ function bootstrapApplication(): void {
     loadBreadth().then((m) => m.toggleBreadthCompareMode()).catch(() => {});
   });
 
+  // ETF Bar Rankings: MA window selector
+  document.querySelectorAll('#breadth-bars-ma-btns .pane-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ma = (btn as HTMLElement).dataset.ma;
+      if (!ma) return;
+      document.querySelectorAll('#breadth-bars-ma-btns .pane-btn').forEach((b) =>
+        b.classList.toggle('active', b === btn));
+      loadBreadth().then((m) => m.setBreadthBarsMA(ma)).catch(() => {});
+    });
+  });
+
   // Header navigation dropdown & column timeframe dropdowns
   initHeaderNavDropdown();
   initColumnTimeframeButtons();
