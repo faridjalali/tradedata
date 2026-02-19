@@ -719,11 +719,24 @@ library. `main.ts` owns the view-switching logic.
 - `initBreadthThemeListener()`: call from `main.ts` — do not register at module scope.
 - Normalized compare chart: each series divided by its own first value × 100 (starts at 100).
   Supports MA window selection (21/50/100/200) and timeframe (5d/10d/20d/30d).
+- **MA line persistence**: Hidden MA lines (toggled via chart legend) are stored in
+  `localStorage` key `'breadth-ma-hidden'` as a JSON array of MA numbers (`['100','200']`).
+  Applied on chart render via `applyHiddenMAs()`; updated on legend click via `syncHiddenMAs()`.
+  Persists across ticker changes and page reloads. Shared across all three breadth charts.
+- **Compare mode** (lock-then-pick): Click a ticker → click Compare → ticker A "locks"
+  (`.pane-btn.locked` CSS ring, `pointer-events:none`) → click a different ticker from the
+  same row as the 2nd leg → dual chart drawn (solid vs dashed lines). Click Compare again →
+  exit compare mode, restore ticker A solo chart. No separate second-ETF button row.
+- **No subtitle text**: The breadth page charts have no top-right subtitle spans. All three
+  were removed (`breadth-subtitle`, `breadth-ma-subtitle`, `breadth-compare-subtitle`).
+- **Price line color**: The comparative chart's price line uses `c.textPrimary` (theme-aware)
+  instead of hardcoded `#ffffff`.
 - **Index selector** uses `feed-controls-group feed-controls-group--wrap` (wrapping flex) for the
   21-ETF button row. `currentMAIndex` and `currentCompareIndex` are typed as `string` (not a narrow
   union) so new ETFs can be added without touching `breadth.ts`.
 - **ETF constituents** live in `server/data/etfConstituents.ts`. `BreadthIndex` is the union of
-  all supported tickers. After adding a new ETF, run the bootstrap endpoint to populate history.
+  all supported tickers. SLY was replaced by IWM (iShares Russell 2000). After adding a new ETF,
+  run the bootstrap endpoint to populate history.
 - **Y-axis**: the MA history chart uses Chart.js auto-scaling (no fixed min/max) with `stepSize:10`
   to keep 10% grid intervals. The 50% annotation line remains.
 

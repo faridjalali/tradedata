@@ -9,8 +9,9 @@ import { getThemeColors } from './theme';
  */
 interface ChartInstance {
   destroy(): void;
-  update(): void;
-  data: { datasets: Array<{ data: unknown[] }> };
+  update(mode?: string): void;
+  data: { datasets: Array<{ label?: string; data: unknown[] }> };
+  getDatasetMeta(index: number): { hidden: boolean };
 }
 /** Chart.js constructor as available on the global `window.Chart` CDN export. */
 declare const Chart: new (canvas: HTMLCanvasElement, config: unknown) => ChartInstance;
@@ -53,6 +54,54 @@ import type { BreadthDataPoint, BreadthResponse, BreadthMASnapshot, BreadthMAHis
 /** Number of calendar days of MA history to request from the server. */
 const BREADTH_MA_HISTORY_DAYS = 60;
 
+// ---------------------------------------------------------------------------
+// MA line visibility persistence via localStorage
+// Stores which MA windows (by number: '21','50','100','200') are hidden.
+// ---------------------------------------------------------------------------
+const BREADTH_MA_HIDDEN_KEY = 'breadth-ma-hidden';
+
+function getHiddenMAs(): Set<string> {
+  try {
+    const raw = localStorage.getItem(BREADTH_MA_HIDDEN_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveHiddenMAs(hidden: Set<string>): void {
+  localStorage.setItem(BREADTH_MA_HIDDEN_KEY, JSON.stringify([...hidden]));
+}
+
+/** Extract the MA number (21/50/100/200) from a dataset label like "21 MA", "% > 50d", "SPY 100d". */
+function maNumberFromLabel(label: string | undefined): string | null {
+  const m = label?.match(/(21|50|100|200)/);
+  return m ? m[1] : null;
+}
+
+/** After rendering a chart, apply persisted hidden state to MA datasets. */
+function applyHiddenMAs(chart: ChartInstance): void {
+  const hidden = getHiddenMAs();
+  if (hidden.size === 0) return;
+  chart.data.datasets.forEach((_ds, i) => {
+    const num = maNumberFromLabel(chart.data.datasets[i].label);
+    if (num && hidden.has(num)) {
+      chart.getDatasetMeta(i).hidden = true;
+    }
+  });
+  chart.update('none');
+}
+
+/** Read current visibility from a chart and persist to localStorage. */
+function syncHiddenMAs(chart: ChartInstance): void {
+  const hidden = new Set<string>();
+  chart.data.datasets.forEach((_ds, i) => {
+    if (chart.getDatasetMeta(i).hidden) {
+      const num = maNumberFromLabel(chart.data.datasets[i].label);
+      if (num) hidden.add(num);
+    }
+  });
+  saveHiddenMAs(hidden);
+}
+
 let breadthChart: ChartInstance | null = null;
 let currentTimeframeDays = 5;
 let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
@@ -67,7 +116,8 @@ let breadthCompareChart: ChartInstance | null = null;
 let currentCompareIndex: string = 'SPY';
 let currentCompareTfDays: number = 20;
 let breadthCompareModeActive: boolean = false;
-let currentCompareIndex2: string = 'QQQ';
+let lockedCompareIndex: string | null = null;
+let currentCompareIndex2: string | null = null;
 
 export function getCurrentBreadthTimeframe(): number {
   return currentTimeframeDays;
@@ -432,6 +482,12 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
+          onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
+            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
+            meta.hidden = !meta.hidden;
+            legend.chart.update();
+            if (breadthMAChart) syncHiddenMAs(breadthMAChart);
+          },
           labels: {
             color: c.textPrimary,
             font: { size: 12 },
@@ -486,6 +542,8 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
       },
     },
   });
+
+  applyHiddenMAs(breadthMAChart);
 }
 
 function renderBreadthMAForIndex(index: string): void {
@@ -493,9 +551,6 @@ function renderBreadthMAForIndex(index: string): void {
   const snapshot = breadthMAData.snapshots.find(s => s.index === index);
   renderBreadthGauges(snapshot);
   renderBreadthMAChart(breadthMAData.history[index] || []);
-
-  const subtitle = document.getElementById('breadth-ma-subtitle');
-  if (subtitle) subtitle.textContent = `${index} — % Above Moving Averages`;
 }
 
 export function setBreadthMAIndex(index: string): void {
@@ -575,7 +630,7 @@ function renderBreadthCompareChart(): void {
       rawValues: rawClose,
       rawSuffix: '',
       rawDecimals: 2,
-      borderColor: '#ffffff',
+      borderColor: c.textPrimary,
       backgroundColor: 'transparent',
       borderWidth: 2.5,
       pointRadius: ptRadius,
@@ -652,10 +707,10 @@ function renderBreadthCompareChart(): void {
       plugins: {
         legend: {
           onClick: (_e: unknown, legendItem: ChartLegendItem, legend: ChartLegendHandle) => {
-            const idx = legendItem.datasetIndex;
-            const meta = legend.chart.getDatasetMeta(idx);
+            const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
             meta.hidden = !meta.hidden;
             legend.chart.update();
+            if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
           },
           labels: {
             color: c.textPrimary,
@@ -709,26 +764,31 @@ function renderBreadthCompareChart(): void {
       },
     },
   });
-}
 
-function updateBreadthCompareSubtitle(): void {
-  const subtitle = document.getElementById('breadth-compare-subtitle');
-  if (!subtitle) return;
-  if (breadthCompareModeActive) {
-    subtitle.textContent = `${currentCompareIndex} vs ${currentCompareIndex2} — % Above Moving Averages (${currentCompareTfDays}d)`;
-  } else {
-    subtitle.textContent = `${currentCompareIndex} price vs breadth, normalized to 100 (${currentCompareTfDays}d)`;
-  }
+  applyHiddenMAs(breadthCompareChart);
 }
 
 export function setBreadthCompareIndex(index: string): void {
+  if (breadthCompareModeActive && lockedCompareIndex) {
+    // In compare mode — this click picks the 2nd ticker
+    if (index === lockedCompareIndex) return; // can't compare to self
+    currentCompareIndex2 = index;
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
+      const btnIndex = (btn as HTMLElement).dataset.index;
+      btn.classList.toggle('active', btnIndex === index || btnIndex === lockedCompareIndex);
+      btn.classList.toggle('locked', btnIndex === lockedCompareIndex);
+    });
+    const gaugesEl = document.getElementById('breadth-compare-gauges');
+    if (gaugesEl) gaugesEl.style.display = '';
+    renderBreadthCompareDual();
+    return;
+  }
+  // Normal mode — just switch the single ticker
   currentCompareIndex = index;
   document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
   });
-  updateBreadthCompareSubtitle();
-  if (breadthCompareModeActive) renderBreadthCompareDual();
-  else renderBreadthCompareChart();
+  renderBreadthCompareChart();
 }
 
 export function setBreadthCompareTf(days: number): void {
@@ -736,8 +796,7 @@ export function setBreadthCompareTf(days: number): void {
   document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach(btn => {
     btn.classList.toggle('active', Number((btn as HTMLElement).dataset.days) === days);
   });
-  updateBreadthCompareSubtitle();
-  if (breadthCompareModeActive) renderBreadthCompareDual();
+  if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
   else renderBreadthCompareChart();
 }
 
@@ -747,23 +806,27 @@ export function toggleBreadthCompareMode(): void {
   document.getElementById('breadth-compare-toggle')
     ?.classList.toggle('active', breadthCompareModeActive);
 
-  const el2 = document.getElementById('breadth-compare-index2-btns');
-  const gaugesEl = document.getElementById('breadth-compare-gauges');
-  if (el2) el2.style.display = breadthCompareModeActive ? '' : 'none';
-  if (gaugesEl) gaugesEl.style.display = breadthCompareModeActive ? '' : 'none';
-
-  updateBreadthCompareSubtitle();
-  if (breadthCompareModeActive) renderBreadthCompareDual();
-  else renderBreadthCompareChart();
-}
-
-export function setBreadthCompareIndex2(index: string): void {
-  currentCompareIndex2 = index;
-  document.querySelectorAll('#breadth-compare-index2-btns .pane-btn').forEach(btn => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.index2 === index);
-  });
-  updateBreadthCompareSubtitle();
-  if (breadthCompareModeActive) renderBreadthCompareDual();
+  if (breadthCompareModeActive) {
+    // Lock the current ticker — user must now pick a 2nd
+    lockedCompareIndex = currentCompareIndex;
+    currentCompareIndex2 = null;
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
+      btn.classList.toggle('locked', (btn as HTMLElement).dataset.index === lockedCompareIndex);
+    });
+    // Don't render dual chart yet — wait for 2nd pick
+  } else {
+    // Exit compare mode — restore single chart for the locked ticker
+    currentCompareIndex = lockedCompareIndex ?? currentCompareIndex;
+    lockedCompareIndex = null;
+    currentCompareIndex2 = null;
+    const gaugesEl = document.getElementById('breadth-compare-gauges');
+    if (gaugesEl) gaugesEl.style.display = 'none';
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
+      btn.classList.remove('locked');
+      btn.classList.toggle('active', (btn as HTMLElement).dataset.index === currentCompareIndex);
+    });
+    renderBreadthCompareChart();
+  }
 }
 
 function renderBreadthCompareDualSnapshot(
@@ -782,8 +845,8 @@ function renderBreadthCompareDualSnapshot(
   ];
 
   for (const [snap, label] of [
-    [snap1, currentCompareIndex],
-    [snap2, currentCompareIndex2],
+    [snap1, lockedCompareIndex ?? currentCompareIndex],
+    [snap2, currentCompareIndex2 ?? ''],
   ] as const) {
     const row = document.createElement('div');
     row.className = 'breadth-compare-snap-row';
@@ -822,13 +885,15 @@ function renderBreadthCompareDualSnapshot(
 
 function renderBreadthCompareDual(): void {
   const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
-  if (!canvas || !breadthMAData) return;
+  if (!canvas || !breadthMAData || !currentCompareIndex2) return;
   const c = getThemeColors();
+  const idx1 = lockedCompareIndex ?? currentCompareIndex;
+  const idx2 = currentCompareIndex2;
 
   if (breadthCompareChart) { breadthCompareChart.destroy(); breadthCompareChart = null; }
 
-  const h1 = (breadthMAData.history[currentCompareIndex] || []).slice(-currentCompareTfDays);
-  const h2 = (breadthMAData.history[currentCompareIndex2] || []).slice(-currentCompareTfDays);
+  const h1 = (breadthMAData.history[idx1] || []).slice(-currentCompareTfDays);
+  const h2 = (breadthMAData.history[idx2] || []).slice(-currentCompareTfDays);
   if (h1.length === 0 && h2.length === 0) return;
 
   const labels = h1.map(h =>
@@ -844,7 +909,7 @@ function renderBreadthCompareDual(): void {
   const datasets: any[] = []; // loaded from CDN Chart.js — no full type import
   MA_KEYS.forEach((key, i) => {
     datasets.push({
-      label: `${currentCompareIndex} ${MA_LABELS[i]}`,
+      label: `${idx1} ${MA_LABELS[i]}`,
       data: h1.map(h => h[key]),
       borderColor: MA_COLORS[i],
       borderWidth: 2,
@@ -855,7 +920,7 @@ function renderBreadthCompareDual(): void {
       fill: false,
     });
     datasets.push({
-      label: `${currentCompareIndex2} ${MA_LABELS[i]}`,
+      label: `${idx2} ${MA_LABELS[i]}`,
       data: h2.map(h => h[key]),
       borderColor: MA_COLORS[i],
       borderWidth: 2,
@@ -867,8 +932,8 @@ function renderBreadthCompareDual(): void {
     });
   });
 
-  const snap1 = breadthMAData.snapshots.find(s => s.index === currentCompareIndex);
-  const snap2 = breadthMAData.snapshots.find(s => s.index === currentCompareIndex2);
+  const snap1 = breadthMAData.snapshots.find(s => s.index === idx1);
+  const snap2 = breadthMAData.snapshots.find(s => s.index === idx2);
   renderBreadthCompareDualSnapshot(snap1, snap2);
 
   breadthCompareChart = new Chart(canvas, {
@@ -884,6 +949,7 @@ function renderBreadthCompareDual(): void {
             const meta = legend.chart.getDatasetMeta(legendItem.datasetIndex);
             meta.hidden = !meta.hidden;
             legend.chart.update();
+            if (breadthCompareChart) syncHiddenMAs(breadthCompareChart);
           },
           labels: {
             color: c.textPrimary,
@@ -933,8 +999,11 @@ function renderBreadthCompareDual(): void {
       },
     },
   });
+
+  applyHiddenMAs(breadthCompareChart);
 }
 
+/** Initialize breadth data loading. */
 export function initBreadth(): void {
   loadBreadth();
   loadBreadthMA();
@@ -954,7 +1023,7 @@ export function initBreadthThemeListener(): void {
       renderBreadthMAForIndex(currentMAIndex);
     }
     if (breadthCompareChart) {
-      if (breadthCompareModeActive) renderBreadthCompareDual();
+      if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
       else renderBreadthCompareChart();
     }
   });

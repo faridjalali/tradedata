@@ -339,50 +339,84 @@ export const MDY_CONSTITUENTS: string[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// SLY — SPDR S&P 600 Small Cap ETF (~600 tickers)
-// Representative subset; download full list from SPDR for exact composition.
+// IWM — iShares Russell 2000 ETF (~2000 tickers)
+// Representative top 400+ holdings; download full list from iShares for exact composition.
 // ---------------------------------------------------------------------------
-export const SLY_CONSTITUENTS: string[] = [
-  'AAOI','AAON','ABCB','ABMD','ABR','ACLS','ACNB','ACT','ACVA','ADUS',
-  'AEIS','AEO','AGM','AGYS','AHCO','AHH','AIOT','AIV','AIXI','AJRD',
-  'AKAM','AKTS','ALCO','ALGM','ALGT','ALKT','ALUR','AMBC','AMCX','AMED',
-  'AMEH','AMGN','AMID','AMK','AMPH','AMRX','AMSC','AMWD','ANGI','ANIP',
-  'ANNA','APAT','APEI','APLT','APOG','APPN','APRE','APTI','APW','ARLO',
-  'ARVL','ASIX','ASLE','ASPN','ASTE','ASYS','ATEC','ATEX','ATNI','ATNX',
-  'ATRC','ATSG','ATUS','ATXS','AUMN','AVID','AVNS','AXNX','AXON','AYRO',
-  'AZIPM','BAND','BANF','BANR','BCAN','BCRX','BCSA','BFST','BGCP','BGS',
-  'BHLB','BIGY','BKD','BKNG','BKU','BLDE','BLU','BMBL','BMO','BNFT',
-  'BOCH','BRKR','BRP','BRSP','BSIG','BSM','BSVN','BTB','BTBT','BUSE',
-  'BYFC','BZH','CACC','CADE','CAKE','CALB','CALM','CAMP','CARG','CASH',
-  'CATO','CBFV','CBNK','CBRL','CBSH','CCO','CCRN','CCSI','CDMO','CDRE',
-  'CFBK','CFFI','CFFN','CFLT','CGEN','CGNT','CHCO','CHRS','CHUY','CIR',
-  'CIVB','CIVG','CKX','CLDT','CLFD','CLF','CLNE','CLNC','CLPR','CMCO',
-  'CMGE','CMLS','CMLF','CMRE','CNDT','CNET','CNS','CNSL','CNVY','COD',
-  'CODX','CODI','COIN','COKE','COMT','CONN','COOK','COOP','CORE','CORR',
-  'COWN','CPF','CPIX','CPLG','CPLP','CREX','CRK','CRNC','CRNT','CROX',
-  'CRRX','CRTO','CRT','CRY','CSGS','CSTE','CTBI','CTLP','CTMX','CTRI',
-  'CTS','CUBA','CULP','CUZ','CVBF','CVE','CVET','CVGW','CVLY','CWBC',
-  'CWD','CWST','CYCN','CYBE','CYCC','CYCL','CZWI','DAR','DBD','DBRG',
-  'DBVT','DCOM','DFIN','DFH','DGICA','DGX','DHT','DIBS','DIOD','DKNG',
-  'DLHC','DMRC','DNJR','DNOW','DOMA','DPSI','DQS','DSGX','DSSI','DTST',
-  'DUTY','DVAX','DXC','DXNG','DXPE','DXYN','DYAI','DYNS','EAST','EBC',
-  'EBIX','EBSB','EFSC','EGHT','EGL','EGBN','EGRX','EMCF','EMXC','ENOB',
-  'ENSG','ENVA','EPAX','EPIQ','EPRT','ESES','ESSA','ESXB','ETC','ETH',
-  'ETWO','EURN','EVBN','EVER','EVLO','EVOP','EVTC','EXAM','EXLA','EXPC',
-  'EXPI','EXPO','EXPR','FARO','FBIZ','FBMS','FBP','FBSS','FCCO','FCNB',
-  'FCRX','FCUV','FDEF','FDMT','FEND','FFBH','FFBW','FGBI','FHCO','FISI',
-  'FLIC','FLMN','FLXS','FMAO','FMBH','FMNB','FNLC','FNWB','FOLT','FONR',
-  'FOR','FORR','FOUR','FRBA','FRBK','FSBW','FSCO','FSEA','FSI','FUNC',
-  'FXNC','GCBC','GDEN','GFED','GGAL','GHL','GHLD','GHVI','GLDD','GNBC',
-  'GNTY','GPMT','GRWG','GSBC','GSIT','HAFC','HBT','HCAT','HEES','HHR',
-  'HIBB','HIHO','HJLI','HOFT','HQY','HRMY','HTBK','HTBI','HTLF','HVBC',
-  'HWKN','HYDW','HYLN','IAA','IART','IBCP','IBIO','IBOC','IBTX','ICG',
-  'ICLR','ICUI','IDEV','IDEX','IDGT','IDSA','IFBD','IIIN','IIIV','IIVI',
-  'IMMR','INDB','INFU','INGR','INSG','INTL','IOSP','IPAR','IPGP','IROQ',
-  'ISBC','ISDR','ISEE','ISNS','ISRP','ISS','IVAC','IVCB','IVPT','JMSB',
-  'JNST','JOUT','JRSH','JVSA','KBAL','KELYA','KFRC','KGRN','KHAV','KNSA',
-  'KRNY','KRON','LAKE','LBAI','LBCP','LCII','LCNB','LCUT','LEGH','LGND',
-  'LILA','LIQT','LKFN','LMNL','LMST','LNDC','LNTH','LOCO','LPRO','LQDT',
+export const IWM_CONSTITUENTS: string[] = [
+  'AAOI','AAON','AAWW','ABCB','ABG','ABM','ABR','ACAD','ACEL','ACHC',
+  'ACLS','ACNB','ACRE','ADUS','AEIS','AEL','AEO','AFCG','AFG','AGCO',
+  'AGIO','AGYS','AHCO','AHH','AHR','AI','AIMC','AIN','AIR','AIT',
+  'AJRD','AKR','ALGT','ALKS','ALKT','ALMA','ALRM','ALTG','ALVR','AM',
+  'AMBA','AMBC','AMEH','AMED','AMKR','AMNB','AMPH','AMRC','AMRX','AMSC',
+  'AMWD','ANDE','ANF','ANGI','ANIP','APAM','APLE','APLS','APOG','APPF',
+  'APPN','ARCB','ARCO','ARDX','ARES','ARGE','ARLO','AROC','ARQT','ARRY',
+  'ASAN','ASGN','ASIX','ASPN','ASTE','ATEN','ATGE','ATNI','ATOK','ATRC',
+  'ATSG','AVAV','AVNS','AVNT','AXNX','AXON','AXSM','AY','AYI','AZPN',
+  'BAND','BANF','BANR','BBIO','BBSI','BBWI','BCAL','BCO','BCPC','BCRX',
+  'BDC','BE','BEAM','BECN','BFH','BGS','BHE','BHVN','BIG','BKE',
+  'BKH','BKU','BLKB','BLMN','BLTE','BMI','BNL','BOOT','BOX','BPMC',
+  'BRC','BRKR','BRP','BRSP','BSIG','BTU','BUSE','BWA','BWFG','BZH',
+  'CABO','CACC','CADE','CAKE','CALM','CALX','CAMP','CARG','CARS','CASA',
+  'CASH','CASS','CATO','CATY','CBRL','CBSH','CCOI','CCO','CCRN','CDMO',
+  'CDRE','CDE','CENX','CERS','CEVA','CFLT','CHCO','CHDN','CHRD','CHRS',
+  'CHUY','CIR','CIVI','CLAR','CLBK','CLF','CLH','CLNE','CLSK','CLVR',
+  'CMCO','CMPX','CMRE','CNMD','CNO','CNOB','CNS','CNSL','CNXC','CNXN',
+  'CODI','COKE','COLB','COLL','COLM','COMP','CONN','COOP','CORT','COTY',
+  'COUR','CPIX','CPK','CPRX','CRGY','CRK','CRMD','CRNX','CROX','CRTO',
+  'CRUS','CRVL','CRWD','CSL','CSTE','CSWI','CTBI','CTS','CUBI','CULP',
+  'CUZ','CVBF','CVCO','CVGW','CVLT','CWK','CWT','CWST','CYTK','DBRG',
+  'DDS','DFIN','DFH','DGII','DIOD','DKNG','DLB','DLHC','DMRC','DNLI',
+  'DNOW','DOCS','DORM','DRH','DRS','DSGX','DSSI','DTST','DV','DVAX',
+  'DXC','DXPE','DY','EAT','EBTC','EBC','ECVT','EFC','EFSC','EGHT',
+  'EGO','EIG','ELME','ENOV','ENSG','ENVA','EPC','EPRT','ESAB','ESTE',
+  'ETD','EVOP','EVRI','EVTC','EXLS','EXPO','EXTR','EYE','EZPW','FARO',
+  'FBIZ','FBMS','FBP','FCFS','FCN','FCPT','FCRX','FDP','FFBC','FFIN',
+  'FHB','FHI','FIVN','FIZZ','FL','FLGT','FLO','FLS','FLWS','FMBH',
+  'FMBI','FN','FNB','FNLC','FOLD','FOR','FORR','FOUR','FRBA','FROG',
+  'FRPT','FRSH','FSBC','FSTR','FUL','FULT','GATX','GBCI','GDEN','GEF',
+  'GFF','GH','GHC','GHL','GIC','GIL','GKOS','GLDD','GLNG','GLPI',
+  'GMS','GNRC','GNTX','GOGL','GOGO','GOLF','GPOR','GRBK','GVA','GWRE',
+  'HBI','HBT','HCSG','HEES','HFWA','HGV','HIBB','HIMS','HLF','HLIT',
+  'HLX','HMST','HNI','HOMB','HOME','HOPE','HP','HPK','HQY','HRMY',
+  'HTBI','HTLF','HUBG','HWKN','HWC','HXL','IART','IBKR','IBOC','ICAD',
+  'ICHR','ICUI','IDA','IDCC','IDT','IESC','IGMS','IIVI','IIPR','IMMR',
+  'INDB','INFN','INGN','INMD','INSM','INST','INVA','IOSP','IPAR','IPGP',
+  'IRDM','IRWD','ISBC','ITCI','ITT','ITGR','JACK','JBGS','JBLU','JELD',
+  'JHG','JLL','JOE','JOUT','KBAL','KBH','KBR','KELYA','KFRC','KFY',
+  'KNSA','KNSL','KNX','KRC','KRG','KTOS','KVHI','KWR','LBRT','LCII',
+  'LECO','LGIH','LGND','LILA','LIVN','LKFN','LMAT','LNN','LNTH','LOCO',
+  'LOPE','LPG','LPRO','LPX','LQDT','LTC','LUMN','LXP','MANT','MARA',
+  'MATV','MATX','MAX','MBUU','MCRI','MCW','MCY','MDGL','MDU','MEC',
+  'MEDP','MEG','MGEE','MGNI','MGRC','MHO','MIDD','MKSI','MLAB','MLKN',
+  'MMI','MMSI','MMS','MNKD','MNRO','MNSB','MOD','MOGA','MOV','MRC',
+  'MRCY','MRKR','MRTX','MSA','MTRN','MTRX','MTW','MTX','MUR','MYGN',
+  'NARI','NAVI','NBHC','NBR','NBTB','NEA','NEOS','NEU','NEXT','NHC',
+  'NHI','NIC','NMIH','NNBR','NOG','NOVT','NR','NSA','NSP','NSSC',
+  'NTCT','NTB','NTST','NTUS','NUS','NVAX','NVT','NWBI','NWLI','NWN',
+  'NX','NXRT','NYT','OAS','OBNK','ODP','OFG','OFIX','OGN','OGS',
+  'OII','OLED','OMCL','OMF','OMP','ONB','ONTO','OPB','OPCH','ORA',
+  'ORIC','ORN','OTTR','OUT','OXM','PACK','PAGP','PAHC','PARR','PATK',
+  'PAYO','PBF','PBH','PCH','PCTY','PCVX','PDCE','PDM','PEB','PENN',
+  'PFBC','PFSI','PGC','PHIN','PIPR','PLAY','PLMR','PLUS','PLXS','PNM',
+  'PNNT','POWL','PPBI','PPC','PRAA','PRDO','PRFT','PRGS','PRK','PRLB',
+  'PRMW','PROS','PROV','PRSP','PSB','PSMT','PSTG','PTEN','PUMP','PYCR',
+  'QCRH','QTWO','RDNT','RDUS','REGI','REX','REZI','RGA','RGLD','RGP',
+  'RHP','RIOT','RITM','RLJ','RMBS','RMR','RNST','ROAD','ROCK','ROIV',
+  'RPM','RPAY','RRBI','RRR','RSVR','RUBY','RUSHA','RUSHB','RXO','RYTM',
+  'SAFE','SAMG','SAND','SANM','SASR','SATS','SBCF','SBH','SBLK','SBRA',
+  'SCSC','SFBS','SFNC','SHC','SHAK','SHOO','SIG','SIGI','SITM','SKT',
+  'SKWD','SKYW','SLCA','SLM','SMBC','SMBK','SMG','SMPL','SMTC','SNEX',
+  'SNV','SONO','SPHR','SPNT','SPOK','SPSC','SPTN','SRC','SRI','SRPT',
+  'SSD','SSYS','STAA','STEP','STNG','STRL','STR','SUM','SUPN','SWI',
+  'SWX','SXI','SYBT','TACO','TBBK','TCBK','TCBI','TCMD','TDC','TDS',
+  'TENB','TGI','TGTX','THG','THRM','THS','TIGO','TILE','TIPT','TMDX',
+  'TMHC','TNET','TNK','TPVG','TREX','TRMK','TRNO','TRUP','TTGT','TWNK',
+  'TWO','TXRH','UCBI','UFPI','UGI','UMBF','UMPQ','UNF','UNIT','UNVR',
+  'UPBD','URBN','USAC','USNA','UTHR','UTMD','UVV','VBTX','VCEL','VCNX',
+  'VEL','VERI','VG','VIAV','VIRT','VLCN','VMI','VNO','VNT','VRTS',
+  'VSCO','VSTO','WAL','WBS','WDFC','WERN','WETF','WFRD','WHD','WIRE',
+  'WK','WOLF','WOR','WRLD','WSBC','WSFS','WSR','WTFC','WULF','XNCR',
+  'XPO','XPRO','XRAY','YETI','ZION','ZLAB','ZMPS','ZNTL','ZUMZ','ZURN',
 ];
 
 // ---------------------------------------------------------------------------
@@ -394,7 +428,7 @@ export type BreadthIndex =
   | 'XLK' | 'XLF' | 'XLV' | 'XLY' | 'XLC' | 'XLI'
   | 'XLP' | 'XLE' | 'XLU' | 'XLRE' | 'XLB'
   | 'XBI' | 'XHB' | 'XRT' | 'XAR' | 'KRE'
-  | 'DIA' | 'MDY' | 'SLY';
+  | 'DIA' | 'MDY' | 'IWM';
 
 const INDEX_MAP: Record<BreadthIndex, string[]> = {
   SPY:  SP500_CONSTITUENTS,
@@ -418,7 +452,7 @@ const INDEX_MAP: Record<BreadthIndex, string[]> = {
   KRE:  KRE_CONSTITUENTS,
   DIA:  DIA_CONSTITUENTS,
   MDY:  MDY_CONSTITUENTS,
-  SLY:  SLY_CONSTITUENTS,
+  IWM:  IWM_CONSTITUENTS,
 };
 
 export function getConstituentsForIndex(index: BreadthIndex): string[] {
@@ -430,7 +464,7 @@ export const ALL_BREADTH_INDICES: BreadthIndex[] = [
   'XLK', 'XLF', 'XLV', 'XLY', 'XLC', 'XLI',
   'XLP', 'XLE', 'XLU', 'XLRE', 'XLB',
   'XBI', 'XHB', 'XRT', 'XAR', 'KRE',
-  'DIA', 'MDY', 'SLY',
+  'DIA', 'MDY', 'IWM',
 ];
 
 /** Union of all constituent tickers across all ETFs (for filtering grouped bars). */
@@ -445,5 +479,5 @@ export const ALL_BREADTH_TICKERS: Set<string> = new Set([
   ...XAR_CONSTITUENTS,
   ...KRE_CONSTITUENTS,
   ...MDY_CONSTITUENTS,
-  ...SLY_CONSTITUENTS,
+  ...IWM_CONSTITUENTS,
 ]);

@@ -393,14 +393,10 @@ h2 {
   margin-left: 8px;
 }
 
-/* "vs" label shown before the second ETF row */
-.breadth-compare-vs-label {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  align-self: center;
-  white-space: nowrap;
-  margin-right: 2px;
-  flex-shrink: 0;
+/* Locked ticker in compare mode — visual ring */
+.pane-btn.locked {
+  box-shadow: 0 0 0 2px var(--highlight);
+  pointer-events: none;
 }
 
 /* Snapshot comparison rows */
