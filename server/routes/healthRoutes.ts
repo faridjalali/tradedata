@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { timingSafeStringEqual } from '../middleware.js';
+import { rejectUnauthorized } from '../routeGuards.js';
 
 interface HealthRoutesOptions {
   app: FastifyInstance;
@@ -17,11 +17,7 @@ function registerHealthRoutes(options: HealthRoutesOptions): void {
   }
 
   app.get('/api/debug/metrics', (req: FastifyRequest, res: FastifyReply) => {
-    const providedSecret = String((req.query as Record<string, string | undefined>).secret || req.headers['x-debug-secret'] || '').trim();
-    const configuredSecret = String(debugMetricsSecret || '').trim();
-    if (configuredSecret && !timingSafeStringEqual(providedSecret, configuredSecret)) {
-      return res.code(401).send({ error: 'Unauthorized' });
-    }
+    if (rejectUnauthorized(req, res, debugMetricsSecret)) return;
     return res.code(200).send(getDebugMetricsPayload());
   });
 

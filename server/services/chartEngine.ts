@@ -115,9 +115,11 @@ const CHART_IN_FLIGHT_MAX = 500;
 // Chart interval constants
 // ---------------------------------------------------------------------------
 
-const VALID_CHART_INTERVALS = ['5min', '15min', '30min', '1hour', '4hour', '1day', '1week'];
-const VOLUME_DELTA_SOURCE_INTERVALS = ['1min', '5min', '15min', '30min', '1hour', '4hour'];
-const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28];
+import {
+  VALID_CHART_INTERVALS,
+  VOLUME_DELTA_SOURCE_INTERVALS,
+  DIVERGENCE_LOOKBACK_DAYS,
+} from '../../shared/constants.js';
 const DIVERGENCE_SUMMARY_BUILD_CONCURRENCY = Math.max(
   1,
   Number(process.env.DIVERGENCE_SUMMARY_BUILD_CONCURRENCY) || 64,
@@ -646,7 +648,7 @@ function patchLatestBarCloseWithQuote(result: { bars?: OHLCVBar[]; rsi?: Array<{
 
 function toVolumeDeltaSourceInterval(value: unknown, fallback: string = '1min'): string {
   const normalized = String(value || '').trim();
-  return VOLUME_DELTA_SOURCE_INTERVALS.includes(normalized) ? normalized : fallback;
+  return (VOLUME_DELTA_SOURCE_INTERVALS as readonly string[]).includes(normalized) ? normalized : fallback;
 }
 
 function buildChartRequestKey(params: Omit<ChartRequestParams, 'requestKey' | 'skipFollowUpPrewarm'>): string {

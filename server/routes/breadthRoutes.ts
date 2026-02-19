@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { divergencePool } from '../db.js';
 import { DEBUG_METRICS_SECRET } from '../config.js';
-import { timingSafeStringEqual } from '../middleware.js';
+import { rejectUnauthorized } from '../routeGuards.js';
 import {
   bootstrapBreadthHistory,
   runBreadthComputation,
@@ -79,11 +79,8 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
 
   app.post('/api/breadth/ma/bootstrap', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
+    if (rejectUnauthorized(request, reply, DEBUG_METRICS_SECRET, { statusCode: 403 })) return;
     const q = request.query as Record<string, string | undefined>;
-    const secret = String(q.secret || '');
-    if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
     const numDays = Math.min(Math.max(parseInt(String(q.days)) || 300, 10), 500);
     bootstrapBreadthHistory(divergencePool, numDays)
       .then((r) => console.log(`[breadth] Bootstrap complete: fetched=${r.fetchedDays}, computed=${r.computedDays}`))
@@ -143,11 +140,7 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
 
   app.post('/api/breadth/ma/refresh', async (request, reply) => {
     if (!divergencePool) return reply.code(503).send({ error: 'Breadth not configured' });
-    const q = request.query as Record<string, string | undefined>;
-    const secret = String(q.secret || '');
-    if (!DEBUG_METRICS_SECRET || !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+    if (rejectUnauthorized(request, reply, DEBUG_METRICS_SECRET, { statusCode: 403 })) return;
     const today = new Date();
     const tradeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     try {

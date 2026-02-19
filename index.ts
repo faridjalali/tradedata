@@ -49,6 +49,7 @@ import {
   timingSafeStringEqual,
   basicAuthMiddleware,
 } from './server/middleware.js';
+import { rejectUnauthorized } from './server/routeGuards.js';
 import {
   chartDebugMetrics,
   httpDebugMetrics,
@@ -477,10 +478,7 @@ registerHealthRoutes({ app, debugMetricsSecret: DEBUG_METRICS_SECRET, getDebugMe
 
 // Circuit breaker manual reset (admin only — requires debug secret)
 app.post('/api/admin/circuit-breaker/reset', (request, reply) => {
-  const secret = String((request.query as Record<string, string | undefined>).secret || request.headers['x-debug-secret'] || '').trim();
-  if (DEBUG_METRICS_SECRET && !timingSafeStringEqual(secret, DEBUG_METRICS_SECRET)) {
-    return reply.code(401).send({ error: 'Unauthorized' });
-  }
+  if (rejectUnauthorized(request, reply, DEBUG_METRICS_SECRET)) return;
   resetDataApiCircuitBreaker();
   return reply.code(200).send({ ok: true, circuitBreaker: getDataApiCircuitBreakerInfo() });
 });

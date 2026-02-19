@@ -1,9 +1,11 @@
 // Shared API types — single source of truth for frontend ↔ backend contract.
 // Frontend imports these directly; backend references them via JSDoc.
 
+import type { VALID_CHART_INTERVALS } from './constants';
+
 // --- Chart types ---
 
-export type ChartInterval = '5min' | '15min' | '30min' | '1hour' | '4hour' | '1day' | '1week';
+export type ChartInterval = (typeof VALID_CHART_INTERVALS)[number];
 
 export interface CandleBar {
   time: string | number;

@@ -127,6 +127,7 @@ index.ts                            # Entry point: plugin registration, startup,
 server/
   config.ts                         # All env-var constants; never read process.env elsewhere
   db.ts                             # PostgreSQL pools: primary (required) + divergence (optional)
+  routeGuards.ts                    # Shared auth guards: checkDebugSecret, rejectUnauthorized
   middleware.ts                     # Auth wrappers, request metadata extraction
   schemas.ts                        # Zod schemas for all HTTP input validation
   logger.ts                         # Pino setup; redirects console.* to Pino
@@ -144,6 +145,7 @@ server/
     scanControlService.ts           # ScanState instances + normalizers for all scan jobs
     metricsService.ts               # Run metrics tracking + DB persistence
     chartPrewarm.ts                 # Background pre-warming of adjacent intervals
+    alertEnrichment.ts              # Shared VDF + divergence enrichment for alert/signal rows
     sessionAuth.ts                  # Cookie-based session management (in-memory)
   orchestrators/                    # Multi-step background jobs
     fetchDailyOrchestrator.ts       # Fetch daily OHLCV for all symbols, build divergence table
@@ -168,6 +170,7 @@ src/                                # Frontend TypeScript (compiled by Vite)
   theme.ts                          # Dark/light theme switching
   components.ts                     # Shared UI elements (refresh buttons, gauges)
 shared/
+  constants.ts                      # Shared constants (intervals, lookback days, neutral states)
   api-types.ts                      # Single source of truth for frontend ↔ backend types
 public/
   style.css                         # All CSS; theming via CSS custom properties
@@ -186,9 +189,14 @@ Orchestrators → Services → Lib/Utils
 Frontend → shared/api-types
 ```
 
+- **Route Guards** (`routeGuards.ts`): Shared auth helpers extracted from routes. `checkDebugSecret(req, secret)`
+  returns boolean; `rejectUnauthorized(req, res, secret, { statusCode?, headerName? })` sends 401/403 and returns
+  true if unauthorized. Used by `healthRoutes.ts`, `breadthRoutes.ts`, `index.ts`.
 - **Routes**: HTTP boundary only. No business logic. Call services; return results.
   `divergenceRoutes.ts` uses shared guard helpers (`rejectIfNotConfigured`, `rejectIfUnauthorized`,
   `isAnyJobRunning`) to eliminate duplicated auth/configuration checks across 15 endpoints.
+  `alertRoutes.ts` uses `enrichRowsWithDivergenceData()` from `alertEnrichment.ts` to eliminate ~80 lines
+  of duplicated VDF + divergence summary enrichment between `/api/alerts` and `/api/divergence/signals`.
 - **Services**: Domain logic, caching, external API calls. Allowed to import from `lib/` and `db.ts`.
 - **Orchestrators**: Multi-step workflows. Coordinate services. Hold no persistent state of their own.
 - **Lib**: Pure utilities. Zero side effects. Never imports from `services/`. `lib/errors.ts` keeps
@@ -204,6 +212,21 @@ remain independently testable:
 // index.ts
 registerChartRoutes({ app, parseChartRequestParams, getOrBuildChartResult, ... });
 registerDivergenceRoutes({ app, isDivergenceConfigured, divergencePool, ... });
+```
+
+### DI Boundary Typing
+
+Function parameter types are contravariant — `(x: NarrowType) => Y` is NOT assignable to
+`(x: WideType) => Y`. At DI boundaries (options interfaces), match the interface to the
+provider's actual signature, then cast in consumers:
+
+```typescript
+// Interface matches the provider (index.ts)
+interface ChartRoutesOptions {
+  parseChartRequestParams: (req: { query: Record<string, unknown> }) => ChartRequestParams;
+}
+// Consumer (chartRoutes.ts) casts at the boundary
+const params = opts.parseChartRequestParams(req as unknown as { query: Record<string, unknown> });
 ```
 
 ---
@@ -489,6 +512,17 @@ Type guards (`isDataApiRateLimitedError`, `isAbortError`, etc.) are used in catc
 instead of `instanceof` checks.
 
 ### Route Error Pattern
+
+All error responses must be JSON objects with an `error` field — never bare strings:
+
+```typescript
+// ✓ Correct
+return reply.code(500).send({ error: 'Server Error' });
+return reply.code(404).send({ error: 'Alert not found' });
+
+// ✗ Wrong — bare string breaks clients expecting JSON
+return reply.code(500).send('Server Error');
+```
 
 ```typescript
 try {
@@ -797,9 +831,20 @@ library. `main.ts` owns the view-switching logic.
 ### CSS Conventions
 
 - CSS custom properties for all colors (`--color-accent`, `--bg-primary`, etc.).
+- **Semantic color variables**: `--color-bullish`, `--color-bearish`, `--color-bull-flag`,
+  `--color-vdf-high`, `--color-vdf-imminent`, `--color-log-error`, `--color-log-success`.
+  Never hardcode `#26a69a` / `#ef5350` etc. — use the variable.
+- **Spacing scale**: `--sp-xs` (4px) through `--sp-2xl` (20px). Use for gaps, padding, margins.
+- **Font scale**: `--fs-xs` (0.68rem) through `--fs-3xl` (1.5rem). Use for font-size declarations.
 - `--font-mono` custom property: all monospace `font-family` declarations use `var(--font-mono)`.
   Defined in `:root` as `'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace`.
 - Dark mode by default; light mode via `[data-theme="light"]` attribute on `<html>`.
+- **`.chart-container`**: Shared class for all chart wrapper divs (width: 100%, per-ID heights).
+- **`.hidden-init`**: Use instead of inline `style="display:none"` for initially-hidden elements.
+  Exception: elements where JS directly sets `style.display` (e.g. `chart-error`, `breadth-compare-gauges`)
+  must keep inline styles since the `.hidden-init` class won't be removed by JS display toggles.
+- **Single media query block**: All `@media (max-width: 768px)` rules live in one consolidated block
+  at the bottom of `style.css`. Do not add new `@media` blocks — add rules to the existing one.
 - Component-scoped class names: `.pane-btn`, `.breadth-gauge`, `.vd-zone-overlay`.
 - Shared refresh button: `createRefreshSvgIcon()`, `setRefreshButtonLoading(btn, loading)`.
 
@@ -819,6 +864,11 @@ library. `main.ts` owns the view-switching logic.
 - **ScanSubStatus** (`shared/api-types.ts`): shared interface for `fetchDailyData`, `fetchWeeklyData`,
   `vdfScan`, and `tableBuild` sub-objects within `DivergenceScanStatus`. Each extends via `&`
   intersection with its own specific fields.
+- **Shared constants** (`shared/constants.ts`): `VALID_CHART_INTERVALS`, `DIVERGENCE_LOOKBACK_DAYS`,
+  `VOLUME_DELTA_SOURCE_INTERVALS` are the single source of truth for both frontend and backend.
+  `buildNeutralDivergenceStates()` creates default neutral state maps for divergence lookback days.
+- **Shared utilities** (`src/utils.ts`): `escapeHtml(s: unknown)` accepts `unknown` (coerces via
+  `String(s ?? '')`). `STOP_ICON_SVG` is the shared stop-button SVG string.
 
 ### DOM Safety Rules
 

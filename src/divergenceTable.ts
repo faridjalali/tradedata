@@ -1,7 +1,7 @@
 export type { DivergenceState, DivergenceSummaryEntry } from '../shared/api-types';
 import type { DivergenceState, DivergenceSummaryEntry, DivergenceSummaryApiPayload } from '../shared/api-types';
-
-export const DIVERGENCE_LOOKBACK_DAYS = [1, 3, 7, 14, 28] as const;
+import { DIVERGENCE_LOOKBACK_DAYS, VOLUME_DELTA_SOURCE_INTERVALS, buildNeutralDivergenceStates } from '../shared/constants';
+export { DIVERGENCE_LOOKBACK_DAYS };
 
 type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summaries']>[number];
 
@@ -9,7 +9,7 @@ const divergenceSummaryCache = new Map<string, DivergenceSummaryEntry>();
 const divergenceSummaryBatchInFlight = new Map<string, Promise<Map<string, DivergenceSummaryEntry>>>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
-const VALID_DIVERGENCE_SOURCE_INTERVALS = new Set(['1min', '5min', '15min', '30min', '1hour', '4hour']);
+const VALID_DIVERGENCE_SOURCE_INTERVALS = new Set<string>(VOLUME_DELTA_SOURCE_INTERVALS);
 
 interface PersistedDivergenceSourceSettings {
   volumeDelta?: {
@@ -69,11 +69,7 @@ function setCachedSummary(sourceInterval: string, entry: DivergenceSummaryEntry)
 }
 
 function buildNeutralStates(): Record<string, DivergenceState> {
-  const out: Record<string, DivergenceState> = {};
-  for (const days of DIVERGENCE_LOOKBACK_DAYS) {
-    out[String(days)] = 'neutral';
-  }
-  return out;
+  return buildNeutralDivergenceStates() as Record<string, DivergenceState>;
 }
 
 function normalizeApiSummary(item: DivergenceSummaryApiItem): DivergenceSummaryEntry | null {

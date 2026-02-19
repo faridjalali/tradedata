@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VALID_CHART_INTERVALS } from '../shared/constants.js';
 
 // --- Primitive schemas ---
 
@@ -25,7 +26,7 @@ const booleanInput = z.union([z.boolean(), z.number(), z.string()]).transform((v
   return false;
 });
 
-const chartInterval = z.enum(['5min', '15min', '30min', '1hour', '4hour', '1day', '1week']);
+const chartInterval = z.enum([...VALID_CHART_INTERVALS]);
 
 // --- Scale time (unix seconds number OR date string) ---
 

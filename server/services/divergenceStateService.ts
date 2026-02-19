@@ -1,18 +1,10 @@
 import { divergencePool } from '../db.js';
 import { classifyDivergenceSignal } from '../chartMath.js';
-import { DIVERGENCE_LOOKBACK_DAYS } from './chartEngine.js';
+import { DIVERGENCE_LOOKBACK_DAYS, buildNeutralDivergenceStates } from '../../shared/constants.js';
+export { buildNeutralDivergenceStates };
 import { pacificDateStringFromUnixSeconds } from '../lib/dateUtils.js';
 import { isValidTickerSymbol } from '../middleware.js';
 import { nextPacificDivergenceRefreshUtcMs } from './chartEngine.js';
-
-
-export function buildNeutralDivergenceStates(): Record<string, string> {
-  const states: Record<string, string> = {};
-  for (const days of DIVERGENCE_LOOKBACK_DAYS) {
-    states[String(days)] = 'neutral';
-  }
-  return states;
-}
 
 
 export function computeDivergenceSummaryStatesFromDailyResult(
@@ -215,13 +207,8 @@ export async function getStoredDivergenceSummariesForTickers(tickers: string[], 
 }
 
 
-export function buildNeutralDivergenceStateMap(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const days of DIVERGENCE_LOOKBACK_DAYS) {
-    out[String(days)] = 'neutral';
-  }
-  return out;
-}
+/** @deprecated Use buildNeutralDivergenceStates() — kept as alias for existing callers. */
+export const buildNeutralDivergenceStateMap = buildNeutralDivergenceStates;
 
 
 export function classifyDivergenceStateMapFromDailyRows(rows: Array<{ close: number; volume_delta: number }>) {

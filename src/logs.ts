@@ -1,4 +1,5 @@
 import type { RunMetricsSnapshot, RunMetricsPayload } from '../shared/api-types';
+import { escapeHtml } from './utils';
 
 let logsPollTimer: number | null = null;
 let logsRefreshInFlight = false;
@@ -6,15 +7,6 @@ let logsRefreshInFlight = false;
 const HISTORY_PAGE_SIZE = 8;
 let historyPage = 0;
 let historyEntries: RunMetricsSnapshot[] = [];
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function fmtNumber(value: unknown, digits = 0): string {
   const num = Number(value);

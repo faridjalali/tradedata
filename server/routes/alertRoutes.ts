@@ -3,9 +3,9 @@ import { pool, divergencePool, isDivergenceConfigured } from '../db.js';
 import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
 import { divergenceScanRunning } from '../services/scanControlService.js';
 import { toVolumeDeltaSourceInterval } from '../services/chartEngine.js';
-import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from '../services/divergenceStateService.js';
 import { getPublishedTradeDateForSourceInterval } from '../services/divergenceDbService.js';
 import { currentEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
+import { enrichRowsWithDivergenceData } from '../services/alertEnrichment.js';
 
 const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime());
 
@@ -42,52 +42,17 @@ export function registerAlertRoutes(app: FastifyInstance): void {
       const tickers = Array.from(
         new Set(result.rows.map((row) => String(row?.ticker || '').trim().toUpperCase()).filter(Boolean)),
       );
-      let summariesByTicker = new Map();
-      try {
-        summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
-          includeLatestFallbackForMissing: true,
-        });
-      } catch (summaryErr: unknown) {
-        const message = summaryErr instanceof Error ? summaryErr.message : String(summaryErr);
-        console.error(`Failed to enrich TV alerts with divergence summaries: ${message}`);
-      }
-      const neutralStates = buildNeutralDivergenceStateMap();
-      let vdfDataMapTv = new Map();
-      try {
-        if (tickers.length > 0 && isDivergenceConfigured()) {
-          const vdfTradeDate = currentEtDateString();
-          const vdfRes = await divergencePool!.query(
-            `SELECT ticker, best_zone_score, proximity_level, num_zones, bull_flag_confidence FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
-            [vdfTradeDate, tickers],
-          );
-          for (const row of vdfRes.rows) {
-            vdfDataMapTv.set(String(row.ticker).toUpperCase(), {
-              score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
-              proximityLevel: row.proximity_level || 'none',
-              numZones: Number(row.num_zones) || 0,
-              bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
-            });
-          }
-        }
-      } catch { /* Non-critical */ }
-      const enrichedRows = result.rows.map((row) => {
-        const ticker = String(row?.ticker || '').trim().toUpperCase();
-        const summary = summariesByTicker.get(ticker) || null;
-        const states = summary?.states || neutralStates;
-        const vdfData = vdfDataMapTv.get(ticker);
-        return {
-          ...row,
-          divergence_trade_date: summary?.tradeDate || null,
-          ma_states: { ema8: Boolean(summary?.maStates?.ema8), ema21: Boolean(summary?.maStates?.ema21), sma50: Boolean(summary?.maStates?.sma50), sma200: Boolean(summary?.maStates?.sma200) },
-          divergence_states: { 1: String(states['1'] || 'neutral'), 3: String(states['3'] || 'neutral'), 7: String(states['7'] || 'neutral'), 14: String(states['14'] || 'neutral'), 28: String(states['28'] || 'neutral') },
-          vdf_detected: !!vdfData, vdf_score: vdfData?.score || 0, vdf_proximity: vdfData?.proximityLevel || 'none',
-          bull_flag_confidence: vdfData?.bullFlagConfidence ?? null,
-        };
+      const enrichedRows = await enrichRowsWithDivergenceData({
+        rows: result.rows,
+        tickers,
+        sourceInterval,
+        pool: isDivergenceConfigured() ? divergencePool : null,
+        contextLabel: 'TV alerts',
       });
       return reply.send(enrichedRows);
     } catch (err: unknown) {
       console.error(err);
-      return reply.code(500).send('Server Error');
+      return reply.code(500).send({ error: 'Server Error' });
     }
   });
 
@@ -108,11 +73,11 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         values = [id];
       }
       const result = await pool.query(query, values);
-      if (result.rows.length === 0) return reply.code(404).send('Alert not found');
+      if (result.rows.length === 0) return reply.code(404).send({ error: 'Alert not found' });
       return reply.send(result.rows[0]);
     } catch (err: unknown) {
       console.error('Error toggling favorite:', err);
-      return reply.code(500).send('Server Error');
+      return reply.code(500).send({ error: 'Server Error' });
     }
   });
 
@@ -185,46 +150,12 @@ export function registerAlertRoutes(app: FastifyInstance): void {
       const tickers = Array.from(
         new Set(result.rows.map((row) => String(row?.ticker || '').trim().toUpperCase()).filter(Boolean)),
       );
-      let summariesByTicker = new Map();
-      try {
-        summariesByTicker = await getStoredDivergenceSummariesForTickers(tickers, sourceInterval, {
-          includeLatestFallbackForMissing: true,
-        });
-      } catch (summaryErr: unknown) {
-        console.error(`Failed to enrich divergence signals with divergence summaries: ${summaryErr instanceof Error ? summaryErr.message : String(summaryErr)}`);
-      }
-      const neutralStates = buildNeutralDivergenceStateMap();
-      let vdfDataMap = new Map();
-      try {
-        if (tickers.length > 0) {
-          const vdfTradeDate = currentEtDateString();
-          const vdfRes = await divergencePool!.query(
-            `SELECT ticker, best_zone_score, proximity_level, num_zones, bull_flag_confidence FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
-            [vdfTradeDate, tickers],
-          );
-          for (const row of vdfRes.rows) {
-            vdfDataMap.set(String(row.ticker).toUpperCase(), {
-              score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
-              proximityLevel: row.proximity_level || 'none',
-              numZones: Number(row.num_zones) || 0,
-              bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
-            });
-          }
-        }
-      } catch { /* Non-critical */ }
-      const enrichedRows = result.rows.map((row) => {
-        const ticker = String(row?.ticker || '').trim().toUpperCase();
-        const summary = summariesByTicker.get(ticker) || null;
-        const states = summary?.states || neutralStates;
-        const vdfData = vdfDataMap.get(ticker);
-        return {
-          ...row,
-          divergence_trade_date: summary?.tradeDate || null,
-          ma_states: { ema8: Boolean(summary?.maStates?.ema8), ema21: Boolean(summary?.maStates?.ema21), sma50: Boolean(summary?.maStates?.sma50), sma200: Boolean(summary?.maStates?.sma200) },
-          divergence_states: { 1: String(states['1'] || 'neutral'), 3: String(states['3'] || 'neutral'), 7: String(states['7'] || 'neutral'), 14: String(states['14'] || 'neutral'), 28: String(states['28'] || 'neutral') },
-          vdf_detected: !!vdfData, vdf_score: vdfData?.score || 0, vdf_proximity: vdfData?.proximityLevel || 'none',
-          bull_flag_confidence: vdfData?.bullFlagConfidence ?? null,
-        };
+      const enrichedRows = await enrichRowsWithDivergenceData({
+        rows: result.rows,
+        tickers,
+        sourceInterval,
+        pool: divergencePool,
+        contextLabel: 'divergence signals',
       });
       return reply.send(enrichedRows);
     } catch (err: unknown) {

@@ -120,14 +120,17 @@ export function getDateRangeForMode(
   return { startDate: '', endDate: '' };
 }
 
-export function escapeHtml(s: string): string {
-  return s
+export function escapeHtml(s: unknown): string {
+  return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+export const STOP_ICON_SVG =
+  '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>';
 
 export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'desc'): (a: Alert, b: Alert) => number {
   return (a: Alert, b: Alert): number => {

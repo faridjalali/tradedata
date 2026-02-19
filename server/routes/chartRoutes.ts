@@ -45,29 +45,51 @@ function parseBooleanQueryFlag(value: string | undefined): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
+// ---------------------------------------------------------------------------
+// Types for dependency-injected chart helpers
+// ---------------------------------------------------------------------------
+
+interface ChartRequestParams {
+  ticker: string;
+  interval: string;
+  [key: string]: unknown;
+}
+
+interface PayloadValidation {
+  ok: boolean;
+  error?: string;
+}
+
+// DI boundary: function signatures use wide parameter types so that concrete
+// implementations in index.ts are assignable without casts.  Route handlers
+// narrow with targeted casts where needed.
+interface ChartRoutesOptions {
+  app: FastifyInstance;
+  parseChartRequestParams: (req: { query: Record<string, unknown> }) => ChartRequestParams;
+  validChartIntervals: readonly string[];
+  getOrBuildChartResult: (params: Record<string, unknown>) => Promise<{ result: unknown; serverTiming: string | null; cacheHit: boolean }>;
+  extractLatestChartPayload: (result: Record<string, unknown>) => Record<string, unknown>;
+  sendChartJsonResponse: (req: { headers: Record<string, string | undefined> }, res: FastifyReply, payload: unknown, serverTiming: string | null) => Promise<unknown>;
+  validateChartPayload?: (payload: unknown) => PayloadValidation;
+  validateChartLatestPayload?: (payload: unknown) => PayloadValidation;
+  onChartRequestMeasured?: (info: { route: string; interval: string; cacheHit: boolean; durationMs: number }) => void;
+  isValidTickerSymbol?: (value: unknown) => boolean;
+  getDivergenceSummaryForTickers?: (options: Record<string, unknown>) => Promise<unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI boundary: callers pass heterogeneous arrays
+  barsToTuples?: (bars: any[]) => unknown[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI boundary: callers pass heterogeneous arrays
+  pointsToTuples?: (points: any[], valueKey?: string) => unknown[];
+  getMiniBarsCacheByTicker?: () => unknown;
+  loadMiniChartBarsFromDb?: (ticker: string) => Promise<unknown[]>;
+  loadMiniChartBarsFromDbBatch?: (tickers: string[]) => Promise<Record<string, unknown[]>>;
+  fetchMiniChartBarsFromApi?: (ticker: string) => Promise<unknown[]>;
+  getVDFStatus?: (ticker: string, options: { force: boolean; mode: string }) => Promise<unknown>;
+}
+
 /**
  * Register all chart-related HTTP routes on the Fastify app.
  */
-function registerChartRoutes(options: {
-  app: FastifyInstance;
-  parseChartRequestParams: Function;
-  validChartIntervals: string[];
-  getOrBuildChartResult: Function;
-  extractLatestChartPayload: Function;
-  sendChartJsonResponse: Function;
-  validateChartPayload?: Function;
-  validateChartLatestPayload?: Function;
-  onChartRequestMeasured?: Function;
-  isValidTickerSymbol?: Function;
-  getDivergenceSummaryForTickers?: Function;
-  barsToTuples?: Function;
-  pointsToTuples?: Function;
-  getMiniBarsCacheByTicker?: Function;
-  loadMiniChartBarsFromDb?: Function;
-  loadMiniChartBarsFromDbBatch?: Function;
-  fetchMiniChartBarsFromApi?: Function;
-  getVDFStatus?: Function;
-}): void {
+function registerChartRoutes(options: ChartRoutesOptions): void {
   const {
     app,
     parseChartRequestParams,
@@ -95,29 +117,29 @@ function registerChartRoutes(options: {
   app.get('/api/chart', async (req: FastifyRequest, res: FastifyReply) => {
     const startedAtMs = Date.now();
     try {
-      const params = parseChartRequestParams(req);
+      const params = parseChartRequestParams(req as unknown as { query: Record<string, unknown> });
       const { interval } = params;
       if (!validChartIntervals.includes(interval)) {
         return res.code(400).send({ error: invalidIntervalErrorMessage() });
       }
 
-      const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
+      const { result: rawResult, serverTiming, cacheHit } = await getOrBuildChartResult(params);
+      const result = rawResult as Record<string, unknown>;
 
       // Validation skipped for tuple format as shape differs
       const useTupleFormat = (req.query as Record<string, unknown>).format === 'tuple';
-      let payload = result;
+      let payload: unknown = result;
 
-      // console.log(`[ChartAPI] Request for ${params.ticker} ${interval} (tuple=${useTupleFormat})`);
-
-      if (useTupleFormat && typeof barsToTuples === 'function') {
+      if (useTupleFormat && typeof barsToTuples === 'function' && typeof pointsToTuples === 'function') {
+        const vdRsi = result.volumeDeltaRsi as Record<string, unknown> | undefined;
         payload = {
           ...result,
-          bars: barsToTuples(result.bars),
-          rsi: (pointsToTuples as Function)(result.rsi),
-          volumeDelta: (pointsToTuples as Function)(result.volumeDelta, 'delta'),
+          bars: barsToTuples(result.bars as unknown[]),
+          rsi: pointsToTuples(result.rsi as unknown[]),
+          volumeDelta: pointsToTuples(result.volumeDelta as unknown[], 'delta'),
           volumeDeltaRsi: {
-            ...result.volumeDeltaRsi,
-            rsi: (pointsToTuples as Function)(result.volumeDeltaRsi?.rsi),
+            ...vdRsi,
+            rsi: pointsToTuples((vdRsi?.rsi ?? []) as unknown[]),
           },
         };
       } else if (useTupleFormat) {
@@ -139,10 +161,11 @@ function registerChartRoutes(options: {
           durationMs: Date.now() - startedAtMs,
         });
       }
-      await sendChartJsonResponse(req, res, payload, serverTiming);
+      await sendChartJsonResponse(req as unknown as { headers: Record<string, string | undefined> }, res, payload, serverTiming);
     } catch (err: unknown) {
       console.error('Chart API Error:', err instanceof Error ? err.message : String(err));
-      const statusCode = Number(err && err.httpStatus);
+      const errObj = err as Record<string, unknown>;
+      const statusCode = Number(errObj?.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
         .send({ error: 'Failed to fetch chart data', code: classifyChartError(err) });
@@ -152,28 +175,28 @@ function registerChartRoutes(options: {
   app.get('/api/chart/latest', async (req: FastifyRequest, res: FastifyReply) => {
     const startedAtMs = Date.now();
     try {
-      const params = parseChartRequestParams(req);
+      const params = parseChartRequestParams(req as unknown as { query: Record<string, unknown> });
       const { interval } = params;
       if (!validChartIntervals.includes(interval)) {
         return res.code(400).send({ error: invalidIntervalErrorMessage() });
       }
 
-      const { result, serverTiming, cacheHit } = await getOrBuildChartResult(params);
-      const latestPayload = extractLatestChartPayload(result);
+      const { result: rawResult2, serverTiming, cacheHit } = await getOrBuildChartResult(params);
+      const latestPayload = extractLatestChartPayload(rawResult2 as Record<string, unknown>);
 
       const useTupleFormat = (req.query as Record<string, unknown>).format === 'tuple';
-      let payload = latestPayload;
+      let payload: unknown = latestPayload;
 
-      if (useTupleFormat && typeof barsToTuples === 'function') {
+      if (useTupleFormat && typeof barsToTuples === 'function' && typeof pointsToTuples === 'function') {
         // For latest, we convert single objects to single tuples (1-element arrays or just the tuple)
         // Since barsToTuples expects array, we wrap and unwrap
         const barTuple = latestPayload.latestBar ? barsToTuples([latestPayload.latestBar])[0] : null;
-        const rsiTuple = latestPayload.latestRsi ? (pointsToTuples as Function)([latestPayload.latestRsi])[0] : null;
+        const rsiTuple = latestPayload.latestRsi ? pointsToTuples([latestPayload.latestRsi])[0] : null;
         const vdTuple = latestPayload.latestVolumeDelta
-          ? (pointsToTuples as Function)([latestPayload.latestVolumeDelta], 'delta')[0]
+          ? pointsToTuples([latestPayload.latestVolumeDelta], 'delta')[0]
           : null;
         const vdRsiTuple = latestPayload.latestVolumeDeltaRsi
-          ? (pointsToTuples as Function)([latestPayload.latestVolumeDeltaRsi])[0]
+          ? pointsToTuples([latestPayload.latestVolumeDeltaRsi])[0]
           : null;
 
         payload = {
@@ -200,10 +223,11 @@ function registerChartRoutes(options: {
           durationMs: Date.now() - startedAtMs,
         });
       }
-      await sendChartJsonResponse(req, res, payload, serverTiming);
+      await sendChartJsonResponse(req as unknown as { headers: Record<string, string | undefined> }, res, payload, serverTiming);
     } catch (err: unknown) {
       console.error('Chart Latest API Error:', err instanceof Error ? err.message : String(err));
-      const statusCode = Number(err && err.httpStatus);
+      const errObj = err as Record<string, unknown>;
+      const statusCode = Number(errObj?.httpStatus);
       res
         .status(Number.isFinite(statusCode) && statusCode >= 400 ? statusCode : 502)
         .send({ error: 'Failed to fetch latest chart data', code: classifyChartError(err) });
@@ -222,7 +246,7 @@ function registerChartRoutes(options: {
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
         return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
       }
-      const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
+      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<string, unknown[]> | null;
       let bars: unknown[] = cache ? cache.get(ticker) || [] : [];
       // Fall back to DB if in-memory cache is empty (e.g. after server restart).
       if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
@@ -272,7 +296,7 @@ function registerChartRoutes(options: {
       }
 
       const results: Record<string, unknown[]> = {};
-      const cache = typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null;
+      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<string, unknown[]> | null;
       const dbNeeded = [];
 
       // 1. Check in-memory cache first (trim to ~30 bars in case of stale data)

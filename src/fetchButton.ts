@@ -9,6 +9,7 @@
 
 import type { DivergenceScanStatus } from './divergenceApi';
 import { toStatusTextFromError } from './divergenceScanStatusFormat';
+import { STOP_ICON_SVG } from './utils';
 
 // ---------------------------------------------------------------------------
 // Configuration types
@@ -57,13 +58,6 @@ export interface FetchButtonConfig {
   statusSource: StatusSource;
   autoRefresh?: AutoRefreshConfig;
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const STOP_ICON_SVG =
-  '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>';
 
 // ---------------------------------------------------------------------------
 // FetchButton class

@@ -50,7 +50,7 @@ interface PrewarmDeps {
   CHART_FINAL_RESULT_CACHE: LRUCache<string, TimedCacheEntry>;
   CHART_IN_FLIGHT_REQUESTS: Map<string, Promise<unknown>>;
   getTimedCacheValue: (cache: LRUCache<string, TimedCacheEntry>, key: string) => { status: string; value: unknown };
-  VALID_CHART_INTERVALS: string[];
+  VALID_CHART_INTERVALS: readonly string[];
   CHART_TIMING_LOG_ENABLED: boolean;
 }
 

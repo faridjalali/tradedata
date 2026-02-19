@@ -47,6 +47,7 @@ import {
 import { hydrateAlertCardDivergenceTables } from './divergenceTable';
 import { refreshActiveTickerDivergenceSummary, isChartActivelyLoading } from './chart';
 import type { Alert } from './types';
+import { STOP_ICON_SVG } from './utils';
 
 // ---------------------------------------------------------------------------
 // Register the 4 settings-panel fetch buttons
@@ -174,8 +175,6 @@ export function initScanControl(cb: ScanControlCallbacks): void {
 // Constants
 // ---------------------------------------------------------------------------
 
-const STOP_ICON_SVG =
-  '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>';
 const DIVERGENCE_POLL_ERROR_THRESHOLD = 3;
 const DIVERGENCE_TABLE_UI_REFRESH_MIN_MS = 8000;
 
