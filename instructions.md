@@ -752,6 +752,9 @@ library. `main.ts` owns the view-switching logic.
   run the bootstrap endpoint to populate history.
 - **Snapshot queries** (`getLatestBreadthSnapshots` in `server/data/breadthStore.ts`) filter by
   `ALL_BREADTH_INDICES` so retired index names (e.g. SLY) in the DB are never returned to the frontend.
+- **Bootstrap 200 MA buffer**: `bootstrapBreadthHistory` fetches `numDays + 200` trading days of
+  close data so the 200-day SMA is valid even for the earliest snapshot date. Snapshots are only
+  computed for the last `numDays` dates — the first 200 days serve purely as SMA lookback buffer.
 - **Y-axis**: the MA history chart uses Chart.js auto-scaling (no fixed min/max) with `stepSize:10`
   to keep 10% grid intervals. The 50% annotation line remains.
 

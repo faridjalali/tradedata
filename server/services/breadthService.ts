@@ -155,14 +155,18 @@ export async function bootstrapBreadthHistory(
   dbPool: Pool,
   numDays: number = 220,
 ): Promise<{ fetchedDays: number; computedDays: number }> {
-  console.log(`[breadth] Bootstrapping ${numDays} days of history...`);
+  // Fetch extra history so the 200-day SMA is valid even for the earliest snapshot dates.
+  // Without this buffer, early dates would have <200 closes and 200 MA would be 0.
+  const MA200_BUFFER = 200;
+  const totalFetchDays = numDays + MA200_BUFFER;
+  console.log(`[breadth] Bootstrapping ${numDays} days of history (fetching ${totalFetchDays} days of closes for 200 MA buffer)...`);
   const t0 = Date.now();
 
   // Generate list of recent trading dates going backwards
   const tradingDates: string[] = [];
   const today = new Date();
   const cursor = new Date(today);
-  for (let attempts = 0; tradingDates.length < numDays && attempts < numDays * 2; attempts++) {
+  for (let attempts = 0; tradingDates.length < totalFetchDays && attempts < totalFetchDays * 2; attempts++) {
     cursor.setDate(cursor.getDate() - 1);
     const y = cursor.getFullYear();
     const m = String(cursor.getMonth() + 1).padStart(2, '0');
@@ -174,7 +178,7 @@ export async function bootstrapBreadthHistory(
   }
   tradingDates.reverse(); // chronological
 
-  // Fetch and store daily closes
+  // Fetch and store daily closes for the full range (buffer + snapshot dates)
   let fetchedDays = 0;
   for (const date of tradingDates) {
     try {
@@ -190,6 +194,9 @@ export async function bootstrapBreadthHistory(
       console.error(`[breadth] Failed to fetch grouped bars for ${date}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  // Only compute snapshots for the most recent numDays (the buffer is just for SMA lookback)
+  const snapshotDates = tradingDates.slice(MA200_BUFFER);
 
   // Load set of dates that already have complete, non-zero snapshots for all indices.
   let alreadyComputed = new Set<string>();
@@ -209,13 +216,12 @@ export async function bootstrapBreadthHistory(
     console.warn(`[breadth] Could not load existing snapshot dates — will recompute all: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // Compute snapshots for dates that have enough history (at least 21 days for shortest SMA)
+  // Compute snapshots — each date now has ≥200 prior closes in the DB for 200 MA
   let computedDays = 0;
   let skippedDays = 0;
   const allTickers = [...ALL_BREADTH_TICKERS];
 
-  const computeDates = tradingDates.slice(Math.max(0, 20));
-  for (const date of computeDates) {
+  for (const date of snapshotDates) {
     if (alreadyComputed.has(date)) {
       skippedDays++;
       continue;
