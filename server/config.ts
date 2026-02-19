@@ -18,6 +18,8 @@ export const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '
 
 // --- Rate limiting ---
 export const API_RATE_LIMIT_MAX = Math.max(1, Number(process.env.API_RATE_LIMIT_MAX) || 300);
+/** Maximum upstream API requests per second; used to compute adaptive fetch concurrency. */
+export const DATA_API_MAX_REQUESTS_PER_SECOND = Math.max(1, Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99);
 
 // --- Chart timing ---
 export const CHART_TIMING_SAMPLE_MAX = Math.max(50, Number(process.env.CHART_TIMING_SAMPLE_MAX) || 240);

@@ -11,6 +11,7 @@ import { formatDateUTC } from '../chartMath.js';
 import { addUtcDays, etDateStringFromUnixSeconds } from '../lib/dateUtils.js';
 import { CircuitBreaker, CircuitOpenError } from '../lib/circuitBreaker.js';
 import { AggregateResponseSchema, IndicatorResponseSchema, validateApiResponse } from '../lib/apiSchemas.js';
+import { isAbortError } from '../lib/errors.js';
 
 // ---------------------------------------------------------------------------
 // DataApiError interface
@@ -235,14 +236,6 @@ function buildDataApiPausedError(message?: string): DataApiError {
 function isDataApiPausedError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   return Boolean((err as Record<string, unknown>).isDataApiPaused);
-}
-
-function isAbortError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as Record<string, unknown>;
-  const name = String(e.name || '');
-  const message = String(e.message || err || '');
-  return name === 'AbortError' || Number(e.httpStatus) === 499 || /aborted|aborterror/i.test(message);
 }
 
 function buildRequestAbortError(message?: string): DataApiError {

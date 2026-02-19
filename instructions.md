@@ -28,7 +28,7 @@ server/
   routes/                         # HTTP route handlers (chart, divergence, health)
   services/                       # Business logic, external API calls, caching
   orchestrators/                  # Multi-step background job coordination
-  lib/                            # Shared utilities (dateUtils, dbMonitor, mapWithConcurrency, ScanState)
+  lib/                            # Shared utilities (dateUtils, dbMonitor, errors, mapWithConcurrency, ScanState)
 src/                              # Frontend TypeScript modules
 shared/
   api-types.ts                    # Single source of truth for frontend <-> backend type contract
@@ -49,7 +49,7 @@ Orchestrators -> Services -> Lib/Utils
 - Routes call services. Routes never contain business logic.
 - Services handle domain logic, caching, external API calls.
 - Orchestrators coordinate multi-step background workflows (fetch, build, scan).
-- Lib contains pure utilities with no side effects.
+- Lib contains pure utilities with no side effects. `lib/errors.ts` exports `isAbortError` — keep it here so `lib/` never imports from `services/`.
 - Config is read-only after startup.
 
 ### Module Registration Pattern
@@ -407,6 +407,7 @@ test/healthRoutes.test.ts      # Health endpoint tests
 test/healthService.test.ts     # Health payload building
 test/scanState.test.ts         # ScanState lifecycle, runRetryPasses logic
 test/mapWithConcurrency.test.ts # Concurrency pool: ordering, limits, stop, errors
+test/vdfScanOrchestrator.test.ts # runVDFScan orchestration via injected _deps
 ```
 
 ### Test Patterns
@@ -434,6 +435,25 @@ test('calculateRSI returns values between 0 and 100', () => {
 - Route handlers with various input combinations.
 - Error classification and response mapping.
 - Health check payload construction.
+- Orchestrator behavior via injected `_deps` (see `VdfScanDeps` in `vdfService.ts`).
+
+### Orchestrator Testability Pattern
+
+Complex orchestrators accept an optional `_deps` parameter with injectable I/O functions.
+All fields default to real implementations; tests inject stubs via `_deps`:
+
+```typescript
+await runVDFScan({
+  _deps: {
+    isConfigured: () => true,
+    getTickers: async () => ['AAPL', 'MSFT'],
+    detectTicker: async (ticker) => ({ is_detected: ticker === 'AAPL' }),
+    sweepCache: () => {},
+  },
+});
+```
+
+The `_deps` prefix signals test-only usage. Real callers never pass it.
 
 ---
 

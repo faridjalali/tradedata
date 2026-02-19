@@ -183,8 +183,34 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
 }
 
 
-export async function runVDFScan(options: { resume?: boolean } = {}) {
-  if (!isDivergenceConfigured()) {
+/**
+ * Injectable I/O dependencies for runVDFScan.
+ * All fields are optional; production code uses the real implementations.
+ * Tests inject stubs to avoid database and network calls.
+ */
+export interface VdfScanDeps {
+  /** Whether the divergence DB is reachable. Defaults to isDivergenceConfigured(). */
+  isConfigured?: () => boolean;
+  /** Fetch the full universe of tickers. Defaults to getStoredDivergenceSymbolTickers(). */
+  getTickers?: () => Promise<string[]>;
+  /**
+   * Run per-ticker VDF detection. May throw on error (worker catches and wraps).
+   * Defaults to getVDFStatus(ticker, { force, noCache, signal }).
+   */
+  detectTicker?: (ticker: string, signal: AbortSignal) => Promise<unknown>;
+  /** Sweep the in-memory cache. Defaults to sweepExpiredTimedCache(CHART_DATA_CACHE). */
+  sweepCache?: () => void;
+}
+
+export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDeps } = {}) {
+  const { _deps = {} } = options;
+  const resolveIsConfigured = _deps.isConfigured ?? isDivergenceConfigured;
+  const resolveGetTickers = _deps.getTickers ?? getStoredDivergenceSymbolTickers;
+  const resolveDetectTicker = _deps.detectTicker ?? ((ticker: string, signal: AbortSignal) =>
+    getVDFStatus(ticker, { force: true, noCache: true, signal }));
+  const resolveSweepCache = _deps.sweepCache ?? (() => sweepExpiredTimedCache(CHART_DATA_CACHE));
+
+  if (!resolveIsConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
   if (vdfScan.isRunning) {
@@ -242,7 +268,7 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
     if (vdfScan.shouldStop) return { ticker, skipped: true };
     const apiStart = Date.now();
     try {
-      const result = await getVDFStatus(ticker, { force: true, noCache: true, signal: scanAbort.signal });
+      const result = await resolveDetectTicker(ticker, scanAbort.signal);
       const latencyMs = Date.now() - apiStart;
       if (runMetricsTracker) runMetricsTracker.recordApiCall({ latencyMs, ok: true });
       return { ticker, result, error: null };
@@ -254,10 +280,10 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
   };
 
   try {
-    sweepExpiredTimedCache(CHART_DATA_CACHE);
+    resolveSweepCache();
 
     if (!resumeRequested) {
-      tickers = await getStoredDivergenceSymbolTickers();
+      tickers = await resolveGetTickers();
       startIndex = 0;
       processedTickers = 0;
       errorTickers = 0;
@@ -296,7 +322,7 @@ export async function runVDFScan(options: { resume?: boolean } = {}) {
         }
         vdfScan.updateProgress(processedTickers, errorTickers);
         syncExtra();
-        if (processedTickers % 100 === 0) sweepExpiredTimedCache(CHART_DATA_CACHE);
+        if (processedTickers % 100 === 0) resolveSweepCache();
         if (runMetricsTracker) runMetricsTracker.setProgress(processedTickers, errorTickers);
       },
       () => vdfScan.shouldStop,

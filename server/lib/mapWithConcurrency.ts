@@ -1,5 +1,5 @@
-import { isAbortError } from '../services/dataApi.js';
-import { DIVERGENCE_TABLE_BUILD_CONCURRENCY } from '../config.js';
+import { isAbortError } from './errors.js';
+import { DATA_API_MAX_REQUESTS_PER_SECOND, DIVERGENCE_TABLE_BUILD_CONCURRENCY } from '../config.js';
 
 export async function mapWithConcurrency<T, R>(
   items: T[],
@@ -97,7 +97,7 @@ const ADAPTIVE_CONCURRENCY_MIN = 4;
 
 export function resolveAdaptiveFetchConcurrency(runType = 'fetch-daily') {
   const configured = Math.max(1, Number(DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 1);
-  const maxRps = Math.max(1, Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99);
+  const maxRps = DATA_API_MAX_REQUESTS_PER_SECOND;
   const estimatedApiCallsPerTicker = ESTIMATED_API_CALLS_PER_TICKER[runType] ?? ESTIMATED_API_CALLS_DEFAULT;
   const targetTickersPerSecond = Math.max(1, Math.floor(maxRps / estimatedApiCallsPerTicker));
   const adaptive = Math.max(ADAPTIVE_CONCURRENCY_MIN, targetTickersPerSecond * ADAPTIVE_CONCURRENCY_MULTIPLIER);
