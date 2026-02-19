@@ -77,7 +77,7 @@ export async function getClosesForTickers(
 ): Promise<Map<string, number[]>> {
   if (tickers.length === 0) return new Map();
   let query: string;
-  let params: any[];
+  let params: unknown[];
   if (beforeDate) {
     query = `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
      FROM (

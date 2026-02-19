@@ -260,7 +260,7 @@ export async function getLatestBreadthData(
     priceByIndex[indexTickers[i]] = r.status === 'fulfilled' ? r.value : new Map();
   }
 
-  const history: Record<string, any[]> = {};
+  const history: Record<string, Array<{ date: string; ma21: number; ma50: number; ma100: number; ma200: number; close: number | undefined }>> = {};
   for (const index of ALL_BREADTH_INDICES) {
     const raw = await getBreadthHistory(dbPool, index, historyDays);
     const closeMap = priceByIndex[index];
