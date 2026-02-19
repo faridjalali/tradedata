@@ -20,14 +20,7 @@ import {
   fetchDivergenceSignals,
   renderDivergenceOverview,
   setupDivergenceFeedDelegation,
-  runManualDivergenceFetchDailyData,
-  stopManualDivergenceFetchDailyData,
-  runManualDivergenceFetchWeeklyData,
-  stopManualDivergenceFetchWeeklyData,
-  runManualVDFScan,
-  stopManualVDFScan,
-  runManualBreadthRecompute,
-  stopManualBreadthRecompute,
+  initFetchButtons,
   syncDivergenceScanUiState,
   initializeDivergenceSortDefaults,
   setColumnFeedMode,
@@ -594,34 +587,8 @@ function bootstrapApplication(): void {
   // Back button (in chart controls bar)
   document.getElementById('ticker-back-btn')?.addEventListener('click', window.showOverview);
 
-  // Global settings panel controls
-  document.getElementById('divergence-fetch-daily-btn')?.addEventListener('click', () => {
-    runManualDivergenceFetchDailyData();
-  });
-  document.getElementById('divergence-fetch-daily-stop-btn')?.addEventListener('click', () => {
-    stopManualDivergenceFetchDailyData();
-  });
-  document.getElementById('divergence-fetch-weekly-btn')?.addEventListener('click', () => {
-    runManualDivergenceFetchWeeklyData();
-  });
-  document.getElementById('divergence-fetch-weekly-stop-btn')?.addEventListener('click', () => {
-    stopManualDivergenceFetchWeeklyData();
-  });
-  document.getElementById('divergence-vdf-scan-btn')?.addEventListener('click', () => {
-    runManualVDFScan();
-  });
-  document.getElementById('divergence-vdf-scan-stop-btn')?.addEventListener('click', () => {
-    stopManualVDFScan();
-  });
-
-  // Breadth recompute button (settings panel) — triggers full bootstrap.
-  // Lifecycle managed by divergenceScanControl (parity with other buttons).
-  document.getElementById('breadth-recompute-btn')?.addEventListener('click', () => {
-    runManualBreadthRecompute();
-  });
-  document.getElementById('breadth-recompute-stop-btn')?.addEventListener('click', () => {
-    stopManualBreadthRecompute();
-  });
+  // Settings panel fetch buttons — auto-wired by FetchButton registry
+  initFetchButtons();
 
   // Ticker View Daily Sort Buttons
   document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach((btn) => {

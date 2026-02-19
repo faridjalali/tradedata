@@ -160,6 +160,7 @@ server/
     apiSchemas.ts                   # Zod schemas for external API response validation
 src/                                # Frontend TypeScript (compiled by Vite)
   main.ts                           # View router, global event handlers, scan control wiring
+  fetchButton.ts                    # FetchButton class + registry (shared settings panel buttons)
   chart.ts                          # Lightweight Charts integration, indicator rendering
   breadth.ts                        # Breadth analysis charts (Chart.js), comparison view
   divergenceFeed.ts                 # Alert feed polling, VDF status display
@@ -742,16 +743,14 @@ library. `main.ts` owns the view-switching logic.
   to `/api/breadth/ma/recompute` (triggers server-side re-fetch from data API + recompute
   for today's date), then reloads all charts. The recompute endpoint is session-protected
   (no secret needed). Spinner via `setRefreshButtonLoading()`.
-- **Settings panel "Breadth" button** (`#breadth-recompute-btn`): Below Analyze in the
-  global settings panel. Full parity with Fetch Daily/Weekly/Analyze — same
-  `divergence-run-btn` button class, stop button (`#breadth-recompute-stop-btn`), and
-  `Ran MM/DD` status text (`#breadth-recompute-status`, default `Ran --`).
-  Lifecycle managed by `divergenceScanControl.ts` via `runManualBreadthRecompute()` /
-  `stopManualBreadthRecompute()`. Status polling uses `updateBreadthStatusFromApi()` which
-  fetches the separate `GET /api/breadth/ma/recompute/status` endpoint (breadth state is
-  server-side module-level flags in `breadthRoutes.ts`, not ScanState).
-  `summarizeBreadthStatus()` formatter in `divergenceScanStatusFormat.ts` mirrors the
-  other formatters, converting `running`/`status`/`finished_at` to display text.
+- **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for all settings panel
+  fetch buttons (Fetch Daily, Fetch Weekly, Analyze, Breadth). Each button is registered via
+  `registerFetchButton({ key, dom, label, start, stop, statusSource, autoRefresh? })` in
+  `divergenceScanControl.ts`. The class manages DOM state, click handlers, status polling
+  integration, and auto-refresh tracking. Two status patterns: `kind: 'unified'` (extract from
+  shared `DivergenceScanStatus`) and `kind: 'standalone'` (fetch own endpoint). Adding a new
+  button requires only a `registerFetchButton()` call + matching HTML row. Click handlers are
+  auto-wired by `initFetchButtons()` called from `main.ts`.
   The `onProgress` callback in `bootstrapBreadthHistory` updates the status string during both
   fetch and compute phases. The `shouldStop` callback enables the stop button to cancel mid-run.
 - **VDF scan date seeding on startup**: `initDB()` in `server/db/initDb.ts` queries

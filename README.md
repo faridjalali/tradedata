@@ -265,7 +265,7 @@ System execution metrics dashboard.
 ### Global Features
 
 - **Search bar:** Type-to-search ticker lookup
-- **Settings panel:** Theme, timezone, minichart toggle, background job controls (Fetch Daily/Weekly, VDF Analyze, Breadth buttons)
+- **Settings panel:** Theme, timezone, minichart toggle, background job controls via `FetchButton` abstraction (Fetch Daily/Weekly, VDF Analyze, Breadth — each with run/stop/status)
 - **Site lock:** Optional 8-digit passcode gate
 - **4 themes:** Dark (default), Light, Beige, Claude
 - **5 timezones:** Pacific, Mountain, Central, Eastern, UTC

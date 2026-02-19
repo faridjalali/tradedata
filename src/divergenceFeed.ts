@@ -40,20 +40,13 @@ export {
 
 export {
   syncDivergenceScanUiState,
+  initFetchButtons,
   runManualDivergenceScan,
   togglePauseResumeManualDivergenceScan,
   stopManualDivergenceScan,
   runManualDivergenceTableBuild,
   togglePauseResumeManualDivergenceTableBuild,
   stopManualDivergenceTableBuild,
-  runManualDivergenceFetchDailyData,
-  stopManualDivergenceFetchDailyData,
-  runManualDivergenceFetchWeeklyData,
-  stopManualDivergenceFetchWeeklyData,
-  runManualVDFScan,
-  stopManualVDFScan,
-  runManualBreadthRecompute,
-  stopManualBreadthRecompute,
   hydrateDivergenceTablesNow,
   shouldAutoRefreshDivergenceFeed,
 } from './divergenceScanControl';
