@@ -1141,6 +1141,11 @@ export function initBreadth(): void {
   loadBreadthMA();
 }
 
+/** Re-fetch all breadth data. Returns a promise that resolves when both loads complete. */
+export async function refreshBreadth(): Promise<void> {
+  await Promise.all([loadBreadth(), loadBreadthMA()]);
+}
+
 /**
  * Register the theme-change listener for breadth charts.
  * Call this once from the app entry point after the page is ready.
