@@ -433,6 +433,59 @@ function sweepUnloadedVisible(): void {
   }
 }
 
+/**
+ * Detach all inline minichart wrappers from a container BEFORE an innerHTML
+ * replacement, preserving their chart instances and observer registrations.
+ * Unobserves each wrapper first so the IntersectionObserver does not fire
+ * teardown callbacks while the elements are temporarily out of the DOM.
+ * Returns a ticker→wrapper map for use with reattachInlineMinichartWrappers().
+ */
+export function detachInlineMinichartWrappers(container: HTMLElement): Map<string, HTMLElement> {
+  const saved = new Map<string, HTMLElement>();
+  const obs = inlineChartObserver;
+  for (const wrapper of container.querySelectorAll<HTMLElement>('.inline-minichart')) {
+    const t = wrapper.dataset.ticker;
+    if (t) saved.set(t, wrapper);
+    if (obs) obs.unobserve(wrapper);
+    wrapper.remove();
+  }
+  return saved;
+}
+
+/**
+ * Re-insert saved inline minichart wrappers into their cards after an innerHTML
+ * replacement. Wrappers for cards still present are re-inserted (chart intact,
+ * no flicker). Wrappers for cards no longer in the slice are properly cleaned up.
+ */
+export function reattachInlineMinichartWrappers(
+  container: HTMLElement,
+  saved: Map<string, HTMLElement>,
+): void {
+  if (saved.size === 0) return;
+  const obs = inlineChartObserver;
+  const remaining = new Map(saved);
+  for (const card of container.querySelectorAll<HTMLElement>('.alert-card')) {
+    const ticker = card.dataset.ticker;
+    if (!ticker) continue;
+    const wrapper = remaining.get(ticker);
+    if (wrapper) {
+      card.after(wrapper);
+      if (obs) obs.observe(wrapper);
+      remaining.delete(ticker);
+    }
+  }
+  // Clean up wrappers for tickers no longer in the rendered slice
+  for (const [, wrapper] of remaining) {
+    if (obs) obs.unobserve(wrapper);
+    inlineChartPending.delete(wrapper);
+    const chart = inlineChartInstances.get(wrapper);
+    if (chart) {
+      try { chart.remove(); } catch { /* ignore */ }
+      inlineChartInstances.delete(wrapper);
+    }
+  }
+}
+
 export function renderInlineMinicharts(container: HTMLElement): void {
   if (!isMobileMinichartEnabled()) {
     removeInlineMinicharts(container);

@@ -16,7 +16,12 @@ import {
   primeDivergenceSummaryCacheFromAlerts,
   renderAlertCardDivergenceTablesFromCache,
 } from './divergenceTable';
-import { prefetchMiniChartBars, renderInlineMinicharts } from './divergenceMinichart';
+import {
+  prefetchMiniChartBars,
+  renderInlineMinicharts,
+  detachInlineMinichartWrappers,
+  reattachInlineMinichartWrappers,
+} from './divergenceMinichart';
 import { SortMode, Alert } from './types';
 
 // ---------------------------------------------------------------------------
@@ -280,15 +285,25 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
   const visibleCount = timeframe === '1d' ? dailyVisibleCount : weeklyVisibleCount;
   const slice = signals.slice(0, visibleCount);
 
+  // Detach existing inline minichart wrappers before the innerHTML replacement.
+  // Unobserving first prevents the IntersectionObserver from tearing down charts
+  // during the detach — wrappers for cards still in the slice will be re-inserted
+  // with their chart instances intact, eliminating minichart flicker on mobile.
+  const savedMinicharts = detachInlineMinichartWrappers(container);
+
   container.innerHTML =
     slice.map(createAlertCard).join('') + showMoreButtonHtml(slice.length, signals.length, timeframe);
   renderAlertCardDivergenceTablesFromCache(container);
+
+  // Re-insert saved wrappers (no flicker for existing charts), clean up dropped ones
+  reattachInlineMinichartWrappers(container, savedMinicharts);
 
   // Prefetch mini-chart bars for visible cards (best-effort, non-blocking)
   const prefetchTickers = Array.from(new Set(slice.map((a) => a.ticker.toUpperCase())));
   prefetchMiniChartBars(prefetchTickers)
     .then(() => {
-      // After prefetch completes, render inline minicharts if enabled
+      // renderInlineMinicharts skips wrappers that already exist — only creates
+      // new ones for cards added in this render (e.g. new tickers or "show more")
       renderInlineMinicharts(container);
     })
     .catch(() => {});
