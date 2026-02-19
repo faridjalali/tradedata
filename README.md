@@ -91,12 +91,17 @@ server/
   schemas.ts                          Zod schemas for all input validation
   logger.ts                           Pino structured logging + console redirect
   chartMath.ts                        Pure math: RSI, RMA, OHLCV aggregation
+  db/
+    initDb.ts                         Table creation (CREATE TABLE IF NOT EXISTS) for both pools
   routes/
     chartRoutes.ts                    Chart data, mini-bars, VDF status, divergence summary
     divergenceRoutes.ts               Scan control, signal queries, table build triggers
+    alertRoutes.ts                    Alert listing, favorite toggle
+    breadthRoutes.ts                  Market breadth data endpoint
     healthRoutes.ts                   /healthz, /readyz, /api/debug/metrics
   services/
     chartEngine.ts                    Multi-tier chart cache, SWR, data assembly
+    chartIndicators.ts                Pure indicator math: RSI, RMA, volume delta, VD RSI
     chartPrewarm.ts                   Background interval pre-warming
     chartRequestService.ts            Chart request parsing + orchestration
     sessionAuth.ts                    Cookie-based session management
@@ -108,7 +113,13 @@ server/
     divergenceStateService.ts         Divergence state normalization
     tickerHistoryService.ts           Ticker-level history + summary building
     vdfService.ts                     VDF detection + scan orchestration
-    vdfDetector.ts                    VDF zone scoring + proximity analysis
+    vdfDetector.ts                    Orchestrator: imports sub-modules, exports detectVDF
+    vdfTypes.ts                       VDF shared type definitions (interfaces)
+    vdfMath.ts                        Pure math: mean, std, linear regression
+    vdfAggregation.ts                 1-min bar aggregation to daily/weekly buckets
+    vdfScoring.ts                     8-component zone scoring with concordance gates
+    vdfZoneDetection.ts               Accumulation zone clustering, distribution detection
+    vdfProximitySignals.ts            7 proximity signals → composite score + level
     scanControlService.ts             Scan lifecycle (pause/stop/resume) management
     schedulerService.ts               Daily scan scheduler (4:20 PM ET)
     tradingCalendar.ts                US market holiday/early-close calendar
@@ -128,6 +139,8 @@ src/                                  Frontend modules
   chart.ts                            Multi-pane chart rendering, tools, overlays
   divergenceFeed.ts                   Alert feed with filtering, sorting, pagination
   divergenceTable.ts                  Divergence summary badges
+  divergenceScanControl.ts            Scan lifecycle UI: buttons, polling, status updates
+  divergenceScanStatusFormat.ts       Pure status text formatters (no DOM deps)
   vdfAnalysisPanel.ts                 VDF analysis panel with zone details
   breadth.ts                          Market breadth comparison chart
   logs.ts                             Run metrics dashboard
@@ -681,7 +694,7 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 
 ### VDF Scan
 
-**File:** `server/services/vdfService.ts`
+**Files:** `server/services/vdfService.ts` (orchestration) → `vdfDetector.ts` → sub-modules
 
 **What it does:** Runs Volume Distribution Frequency analysis across the ticker universe.
 
@@ -691,6 +704,18 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 - Stores results in `vdf_results` table
 
 **Concurrency:** Hard-capped at 3 (vs 24-128 for other scans) due to large per-ticker memory footprint. Cache swept every 100 tickers.
+
+**VDF module layers:**
+
+| Module | Responsibility |
+|---|---|
+| `vdfTypes.ts` | Shared interfaces (Bar1m, DailyAggregate, ScoredZone, etc.) |
+| `vdfMath.ts` | Pure math: `mean()`, `std()`, `linReg()` |
+| `vdfAggregation.ts` | Aggregate 1-min bars into daily and ISO-week buckets |
+| `vdfScoring.ts` | 8-component zone scoring (delta trend, absorption, concordance) |
+| `vdfZoneDetection.ts` | Greedy zone clustering; distribution cluster detection |
+| `vdfProximitySignals.ts` | 7 signals → composite score → `none/elevated/high/imminent` |
+| `vdfDetector.ts` | Orchestrator: chains all sub-modules, returns `DetectVDFOptions` |
 
 ### Scan Lifecycle
 
