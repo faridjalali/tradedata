@@ -916,6 +916,72 @@ test('runVDFScan returns running when already in progress', async () => {
 
 ---
 
+## Deployment (Railway)
+
+### Required Services
+
+Create in one Railway project/environment:
+1. `tradedata` app service (this repo)
+2. Primary Postgres service (`DATABASE_URL`)
+3. Separate divergence Postgres service (`DIVERGENCE_DATABASE_URL`)
+
+### Service Settings
+
+| Setting | Value |
+|---|---|
+| Start command | `npm run start` |
+| Healthcheck path | `/readyz` |
+| Healthcheck timeout | `5s` |
+| Healthcheck interval | `15s` |
+| Restart policy | `ON_FAILURE` |
+
+### Health Response Shapes
+
+`GET /healthz` (liveness — always 200 while process is alive):
+```json
+{ "status": "ok", "timestamp": "...", "uptimeSeconds": 12345, "shuttingDown": false }
+```
+
+`GET /readyz` (readiness — 503 if primaryDb is false or shuttingDown is true):
+```json
+{
+  "ready": true, "shuttingDown": false,
+  "primaryDb": true, "divergenceDb": true,
+  "divergenceConfigured": true, "divergenceScanRunning": false,
+  "lastScanDateEt": "2026-02-12", "errors": { "primaryDb": null, "divergenceDb": null }
+}
+```
+
+Quick verification:
+```bash
+curl -sS http://localhost:3000/healthz | jq
+curl -sS http://localhost:3000/readyz | jq
+```
+
+### Required / Recommended Env Vars
+
+See the **Configuration** section for the full variable list. For a Railway deploy, the minimum viable set is:
+
+```
+DATABASE_URL=<primary postgres>
+DIVERGENCE_DATABASE_URL=<divergence postgres>
+DATA_API_KEY=<provider key>
+SITE_LOCK_PASSCODE=<passcode>          # enables auth gate
+DIVERGENCE_SCAN_SECRET=<secret>        # protects scan endpoints
+DATA_API_MAX_REQUESTS_PER_SECOND=95    # tune to your API plan
+```
+
+### Backup Workflow
+
+```bash
+# After validating locally (tsc + tests + build):
+git push origin main
+# Mirror to backup repo:
+git push --mirror https://github.com/faridjalali/tradedata-backup.git
+```
+
+---
+
 ## Anti-Patterns
 
 | Pattern | Why it's wrong | Correct alternative |
