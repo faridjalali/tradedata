@@ -20,6 +20,8 @@ export type OHLC = { time: string | number; open: number; high: number; low: num
 // ---------------------------------------------------------------------------
 
 const MINI_CHART_CACHE_MAX = 400;
+/** Mini-chart bars are daily OHLCV — 30 min TTL is generous but ensures freshness during active sessions. */
+const MINI_CHART_CACHE_TTL_MS = 30 * 60 * 1000;
 
 /** Green flag/pennant icon SVG (24x24). Shown when a bull flag/pennant is detected. */
 const BULL_FLAG_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="2" x2="4" y2="22"/><path d="M4 2 L20 7 L4 12 Z" fill="#26a69a" fill-opacity="0.35" stroke="#26a69a"/></svg>`;
@@ -39,7 +41,34 @@ let miniChartHoveredCard: HTMLElement | null = null;
 // Shared cache
 // ---------------------------------------------------------------------------
 
-export const miniChartDataCache = new Map<string, OHLC[]>();
+interface MiniChartCacheEntry { bars: OHLC[]; fetchedAt: number }
+const miniChartDataCacheInternal = new Map<string, MiniChartCacheEntry>();
+
+/** Read-only view for external consumers that need to check cache presence. */
+export const miniChartDataCache = {
+  has(ticker: string): boolean {
+    const entry = miniChartDataCacheInternal.get(ticker);
+    if (!entry) return false;
+    if (Date.now() - entry.fetchedAt > MINI_CHART_CACHE_TTL_MS) {
+      miniChartDataCacheInternal.delete(ticker);
+      return false;
+    }
+    return true;
+  },
+  get(ticker: string): OHLC[] | undefined {
+    const entry = miniChartDataCacheInternal.get(ticker);
+    if (!entry) return undefined;
+    if (Date.now() - entry.fetchedAt > MINI_CHART_CACHE_TTL_MS) {
+      miniChartDataCacheInternal.delete(ticker);
+      return undefined;
+    }
+    return entry.bars;
+  },
+  set(ticker: string, bars: OHLC[]): void {
+    miniChartDataCacheInternal.set(ticker, { bars, fetchedAt: Date.now() });
+  },
+  get size(): number { return miniChartDataCacheInternal.size; },
+};
 let miniChartPrefetchInFlight = false;
 
 // ---------------------------------------------------------------------------
@@ -58,12 +87,12 @@ let inlineChartSweepTimer: ReturnType<typeof setTimeout> | null = null;
 // ---------------------------------------------------------------------------
 
 function evictMiniChartCache(keepCount: number): void {
-  if (miniChartDataCache.size <= keepCount) return;
-  const excess = miniChartDataCache.size - keepCount;
-  const iter = miniChartDataCache.keys();
+  if (miniChartDataCacheInternal.size <= keepCount) return;
+  const excess = miniChartDataCacheInternal.size - keepCount;
+  const iter = miniChartDataCacheInternal.keys();
   for (let i = 0; i < excess; i++) {
     const key = iter.next().value;
-    if (key !== undefined) miniChartDataCache.delete(key);
+    if (key !== undefined) miniChartDataCacheInternal.delete(key);
   }
 }
 

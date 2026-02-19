@@ -6,6 +6,8 @@ export { DIVERGENCE_LOOKBACK_DAYS };
 type DivergenceSummaryApiItem = NonNullable<DivergenceSummaryApiPayload['summaries']>[number];
 
 const divergenceSummaryCache = new Map<string, DivergenceSummaryEntry>();
+/** Cap prevents unbounded growth when browsing many tickers across sessions. */
+const DIVERGENCE_SUMMARY_CACHE_MAX = 600;
 const divergenceSummaryBatchInFlight = new Map<string, Promise<Map<string, DivergenceSummaryEntry>>>();
 const CHART_SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 const DEFAULT_DIVERGENCE_SOURCE_INTERVAL = '1min';
@@ -66,6 +68,10 @@ function getCachedSummary(ticker: string, sourceInterval: string): DivergenceSum
 function setCachedSummary(sourceInterval: string, entry: DivergenceSummaryEntry): void {
   const key = cacheKeyFor(entry.ticker, sourceInterval);
   divergenceSummaryCache.set(key, entry);
+  if (divergenceSummaryCache.size > DIVERGENCE_SUMMARY_CACHE_MAX) {
+    const oldest = divergenceSummaryCache.keys().next().value;
+    if (oldest !== undefined) divergenceSummaryCache.delete(oldest);
+  }
 }
 
 function buildNeutralStates(): Record<string, DivergenceState> {

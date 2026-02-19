@@ -892,6 +892,27 @@ The gear icon in the header retains a theme-only dropdown for quick access from 
 - **Shared utilities** (`src/utils.ts`): `escapeHtml(s: unknown)` accepts `unknown` (coerces via
   `String(s ?? '')`). `STOP_ICON_SVG` is the shared stop-button SVG string.
 
+### Client-Side Caching Conventions
+
+All in-memory caches must have both a **max size cap** and a **TTL** (or per-entry expiration).
+FIFO eviction via `Map.keys().next()` when cap is exceeded.
+
+| Cache | File | Max | TTL | Storage |
+|---|---|---|---|---|
+| Chart OHLCV data | `chartDataCache.ts` | 16 / 6 session | 15 min | Map + sessionStorage |
+| VDF results | `chartVDF.ts` | 200 | None (session-scoped) | Map |
+| Mini-chart bars | `divergenceMinichart.ts` | 400 | 30 min | Map (TTL wrapper) |
+| Divergence summaries | `divergenceTable.ts` | 600 | Per-entry `expiresAtMs` | Map |
+| Chart prefetch dedup | `chart.ts` | Self-cleaning | Until settled | Map of Promises |
+
+**Chart pre-warming priority chain** (all share an AbortController — new navigation cancels in-flight):
+- **P0**: Active chart load (highest priority)
+- **P1**: Same ticker, related intervals (e.g. 4hour → 1day, 1week)
+- **P3**: Neighbor tickers (next + prev) at the current interval
+
+localStorage keys are for user preferences only (theme, timezone, trendlines, chart settings).
+No TTL needed — values are small and explicitly overwritten on change.
+
 ### DOM Safety Rules
 
 ```typescript
