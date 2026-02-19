@@ -59,12 +59,12 @@ let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
 
 // Breadth MA state
 let breadthMAChart: ChartInstance | null = null;
-let currentMAIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
+let currentMAIndex: string = 'SPY';
 let breadthMAData: BreadthMAResponse | null = null;
 
 // Comparative Breadth state
 let breadthCompareChart: ChartInstance | null = null;
-let currentCompareIndex: 'SPY' | 'QQQ' | 'SMH' = 'SPY';
+let currentCompareIndex: string = 'SPY';
 let currentCompareTfDays: number = 20;
 
 export function getCurrentBreadthTimeframe(): number {
@@ -473,12 +473,11 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
           grid: { color: c.borderOverlay30 },
         },
         y: {
-          min: 0,
-          max: 100,
           ticks: {
             color: c.textSecondary,
             font: { size: 11 },
             callback: (value: number | string) => `${value}%`,
+            stepSize: 10,
           },
           grid: { color: c.borderOverlay30 },
         },
@@ -487,7 +486,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
   });
 }
 
-function renderBreadthMAForIndex(index: 'SPY' | 'QQQ' | 'SMH'): void {
+function renderBreadthMAForIndex(index: string): void {
   if (!breadthMAData) return;
   const snapshot = breadthMAData.snapshots.find(s => s.index === index);
   renderBreadthGauges(snapshot);
@@ -497,7 +496,7 @@ function renderBreadthMAForIndex(index: 'SPY' | 'QQQ' | 'SMH'): void {
   if (subtitle) subtitle.textContent = `${index} — % Above Moving Averages`;
 }
 
-export function setBreadthMAIndex(index: 'SPY' | 'QQQ' | 'SMH'): void {
+export function setBreadthMAIndex(index: string): void {
   currentMAIndex = index;
   document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);
@@ -717,7 +716,7 @@ function updateBreadthCompareSubtitle(): void {
   }
 }
 
-export function setBreadthCompareIndex(index: 'SPY' | 'QQQ' | 'SMH'): void {
+export function setBreadthCompareIndex(index: string): void {
   currentCompareIndex = index;
   document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset.index === index);

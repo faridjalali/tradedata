@@ -643,7 +643,7 @@ function bootstrapApplication(): void {
   // Breadth MA index buttons
   document.querySelectorAll('#breadth-ma-index-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const index = (btn as HTMLElement).dataset.index as 'SPY' | 'QQQ' | 'SMH';
+      const index = (btn as HTMLElement).dataset.index ?? '';
       loadBreadth().then((m) => m.setBreadthMAIndex(index)).catch(() => {});
     });
   });
@@ -651,7 +651,7 @@ function bootstrapApplication(): void {
   // Comparative Breadth: Index buttons
   document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const index = (btn as HTMLElement).dataset.index as 'SPY' | 'QQQ' | 'SMH';
+      const index = (btn as HTMLElement).dataset.index ?? '';
       loadBreadth().then((m) => m.setBreadthCompareIndex(index)).catch(() => {});
     });
   });

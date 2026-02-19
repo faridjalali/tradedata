@@ -384,6 +384,9 @@ h2 {
   gap: 6px;
   align-items: center;
 }
+.feed-controls-group--wrap {
+  flex-wrap: wrap;
+}
 
 /* Tooltip Styles */
 .pane-btn[data-tooltip]:hover::after {
