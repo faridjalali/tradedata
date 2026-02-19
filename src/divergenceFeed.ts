@@ -52,6 +52,8 @@ export {
   stopManualDivergenceFetchWeeklyData,
   runManualVDFScan,
   stopManualVDFScan,
+  runManualBreadthRecompute,
+  stopManualBreadthRecompute,
   hydrateDivergenceTablesNow,
   shouldAutoRefreshDivergenceFeed,
 } from './divergenceScanControl';

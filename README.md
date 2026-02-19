@@ -246,7 +246,7 @@ Market breadth analysis across 21 ETFs (SPY, QQQ, DIA, MDY, IWM, 11 sector ETFs,
 
 **Refresh button** (top-right): POSTs to `/api/breadth/ma/recompute` to trigger a full server-side bootstrap, then reloads all charts.
 
-**Settings panel "Breadth" button:** Triggers the same full bootstrap. Polls progress every 3s and shows live status text (e.g., "Fetching closes: 120/420", "Computing snapshots: 50/220"). Long-running operation (5-10 min).
+**Settings panel "Breadth" button:** Full parity with Fetch Daily/Weekly/Analyze — run button, stop button, and `Ran MM/DD` status text. Triggers a full bootstrap via `POST /api/breadth/ma/recompute`. Status polled automatically by the scan control polling loop. Stop button sends `POST /api/breadth/ma/recompute/stop` to cancel mid-run. Long-running operation (5-10 min).
 
 **Persistence:** MA line toggle choices (which of the 21/50/100/200 lines are hidden) persist in localStorage across ticker switches and page reloads.
 

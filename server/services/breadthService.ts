@@ -155,6 +155,7 @@ export async function bootstrapBreadthHistory(
   dbPool: Pool,
   numDays: number = 220,
   onProgress?: (msg: string) => void,
+  shouldStop?: () => boolean,
 ): Promise<{ fetchedDays: number; computedDays: number }> {
   // Fetch extra history so the 200-day SMA is valid even for the earliest snapshot dates.
   // Without this buffer, early dates would have <200 closes and 200 MA would be 0.
@@ -182,6 +183,11 @@ export async function bootstrapBreadthHistory(
   // Fetch and store daily closes for the full range (buffer + snapshot dates)
   let fetchedDays = 0;
   for (const date of tradingDates) {
+    if (shouldStop?.()) {
+      console.log(`[breadth] Stop requested during fetch phase at ${fetchedDays}/${totalFetchDays}`);
+      onProgress?.(`Stopped at fetch ${fetchedDays}/${totalFetchDays}`);
+      break;
+    }
     try {
       const grouped = await fetchGroupedDailyBars(date, ALL_BREADTH_TICKERS);
       if (grouped.size > 0) {
@@ -225,6 +231,11 @@ export async function bootstrapBreadthHistory(
   const allTickers = [...ALL_BREADTH_TICKERS];
 
   for (const date of snapshotDates) {
+    if (shouldStop?.()) {
+      console.log(`[breadth] Stop requested during compute phase at ${computedDays} snapshots`);
+      onProgress?.(`Stopped at compute ${computedDays}`);
+      break;
+    }
     if (alreadyComputed.has(date)) {
       skippedDays++;
       continue;

@@ -164,7 +164,17 @@
               </div>
               <div class="global-settings-row global-settings-table-controls-row">
                 <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
-                <span id="breadth-recompute-status" class="divergence-run-status"></span>
+                <button
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                  id="breadth-recompute-stop-btn"
+                  aria-label="Stop Breadth Bootstrap"
+                  disabled
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+                <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
               </div>
             </div>
           </div>

@@ -743,13 +743,17 @@ library. `main.ts` owns the view-switching logic.
   for today's date), then reloads all charts. The recompute endpoint is session-protected
   (no secret needed). Spinner via `setRefreshButtonLoading()`.
 - **Settings panel "Breadth" button** (`#breadth-recompute-btn`): Below Analyze in the
-  global settings panel. Same `divergence-run-btn` pattern as Fetch Daily/Weekly/Analyze.
-  Triggers `POST /api/breadth/ma/recompute` which fires off a full `bootstrapBreadthHistory`
-  (long-running: 5-10 min, re-fetches ALL history from data API). The button handler polls
-  `GET /api/breadth/ma/recompute/status` every 3s for live progress. Server-side state uses
-  module-level `breadthBootstrapRunning` / `breadthBootstrapStatus` flags in `breadthRoutes.ts`.
+  global settings panel. Full parity with Fetch Daily/Weekly/Analyze — same
+  `divergence-run-btn` button class, stop button (`#breadth-recompute-stop-btn`), and
+  `Ran MM/DD` status text (`#breadth-recompute-status`, default `Ran --`).
+  Lifecycle managed by `divergenceScanControl.ts` via `runManualBreadthRecompute()` /
+  `stopManualBreadthRecompute()`. Status polling uses `updateBreadthStatusFromApi()` which
+  fetches the separate `GET /api/breadth/ma/recompute/status` endpoint (breadth state is
+  server-side module-level flags in `breadthRoutes.ts`, not ScanState).
+  `summarizeBreadthStatus()` formatter in `divergenceScanStatusFormat.ts` mirrors the
+  other formatters, converting `running`/`status`/`finished_at` to display text.
   The `onProgress` callback in `bootstrapBreadthHistory` updates the status string during both
-  fetch and compute phases. When done, button re-enables and breadth charts reload automatically.
+  fetch and compute phases. The `shouldStop` callback enables the stop button to cancel mid-run.
 - **VDF scan date seeding on startup**: `initDB()` in `server/db/initDb.ts` queries
   `run_metrics_history` for the latest completed VDF scan's `finished_at` and calls
   `vdfScan.setStatus()` to seed the in-memory state. Without this, the Analyze button shows

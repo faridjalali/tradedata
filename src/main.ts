@@ -26,6 +26,8 @@ import {
   stopManualDivergenceFetchWeeklyData,
   runManualVDFScan,
   stopManualVDFScan,
+  runManualBreadthRecompute,
+  stopManualBreadthRecompute,
   syncDivergenceScanUiState,
   initializeDivergenceSortDefaults,
   setColumnFeedMode,
@@ -612,47 +614,13 @@ function bootstrapApplication(): void {
     stopManualVDFScan();
   });
 
-  // Breadth recompute button (settings panel) — triggers full bootstrap (long-running).
-  // Fires POST to start, then polls GET /status every 3s for live progress.
+  // Breadth recompute button (settings panel) — triggers full bootstrap.
+  // Lifecycle managed by divergenceScanControl (parity with other buttons).
   document.getElementById('breadth-recompute-btn')?.addEventListener('click', () => {
-    const btn = document.getElementById('breadth-recompute-btn');
-    const status = document.getElementById('breadth-recompute-status');
-    if (btn) btn.setAttribute('disabled', 'true');
-    if (status) status.textContent = 'Starting...';
-
-    fetch('/api/breadth/ma/recompute', { method: 'POST' })
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-        if (!res.ok) {
-          if (status) status.textContent = `Error: ${body.error ?? res.status}`;
-          if (btn) btn.removeAttribute('disabled');
-          return;
-        }
-        if (body.status === 'already_running') {
-          if (status) status.textContent = String(body.message || 'Already running...');
-        }
-        // Poll for progress
-        const poll = setInterval(async () => {
-          try {
-            const sr = await fetch('/api/breadth/ma/recompute/status');
-            const sd = await sr.json() as { running: boolean; status: string };
-            if (status) status.textContent = sd.status || 'Running...';
-            if (!sd.running) {
-              clearInterval(poll);
-              if (btn) btn.removeAttribute('disabled');
-              // Reload breadth charts if done
-              loadBreadth().then((m) => m.initBreadth()).catch(() => {});
-            }
-          } catch {
-            clearInterval(poll);
-            if (btn) btn.removeAttribute('disabled');
-          }
-        }, 3000);
-      })
-      .catch((err: unknown) => {
-        if (status) status.textContent = `Error: ${err instanceof Error ? err.message : String(err)}`;
-        if (btn) btn.removeAttribute('disabled');
-      });
+    runManualBreadthRecompute();
+  });
+  document.getElementById('breadth-recompute-stop-btn')?.addEventListener('click', () => {
+    stopManualBreadthRecompute();
   });
 
   // Ticker View Daily Sort Buttons

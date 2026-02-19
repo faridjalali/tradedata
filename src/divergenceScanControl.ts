@@ -11,6 +11,7 @@ import {
   summarizeFetchDailyStatus,
   summarizeFetchWeeklyStatus,
   summarizeVDFScanStatus,
+  summarizeBreadthStatus,
 } from './divergenceScanStatusFormat';
 import {
   startDivergenceScan,
@@ -160,6 +161,19 @@ function getVDFScanControlButtons(): { stopButton: HTMLButtonElement | null } {
   };
 }
 
+function getBreadthButtonElements(): { button: HTMLButtonElement | null; status: HTMLElement | null } {
+  return {
+    button: document.getElementById('breadth-recompute-btn') as HTMLButtonElement | null,
+    status: document.getElementById('breadth-recompute-status'),
+  };
+}
+
+function getBreadthControlButtons(): { stopButton: HTMLButtonElement | null } {
+  return {
+    stopButton: document.getElementById('breadth-recompute-stop-btn') as HTMLButtonElement | null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Button state setters
 // ---------------------------------------------------------------------------
@@ -240,6 +254,30 @@ function setVDFScanStatusText(text: string): void {
   const { status } = getVDFScanButtonElements();
   if (!status) return;
   status.textContent = text;
+}
+
+function setBreadthButtonState(running: boolean): void {
+  const { button } = getBreadthButtonElements();
+  if (!button) return;
+  button.disabled = running;
+  button.classList.toggle('active', running);
+  button.textContent = 'Breadth';
+}
+
+function setBreadthStatusText(text: string): void {
+  const { status } = getBreadthButtonElements();
+  if (!status) return;
+  status.textContent = text;
+}
+
+function setBreadthControlButtonState(running: boolean): void {
+  const { stopButton } = getBreadthControlButtons();
+  if (stopButton) {
+    stopButton.innerHTML = STOP_ICON_SVG;
+    stopButton.disabled = !running;
+    stopButton.classList.toggle('active', running);
+    stopButton.setAttribute('aria-label', 'Stop Breadth Bootstrap');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +458,8 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
     setVDFScanButtonState(vdfRunning1);
     setVDFScanStatusText(summarizeVDFScanStatus(status));
     setVDFScanControlButtonState(status);
+    // Breadth status — fetched from its own endpoint (separate from divergence scan)
+    updateBreadthStatusFromApi();
     if (fetchDailyRunning) {
       allowAutoCardRefreshFromFetchDaily = true;
       allowAutoCardRefreshFromFetchWeekly = false;
@@ -502,6 +542,8 @@ async function pollDivergenceScanStatus(refreshOnComplete: boolean): Promise<voi
       setFetchWeeklyControlButtonState(null);
       setVDFScanButtonState(false);
       setVDFScanControlButtonState(null);
+      setBreadthButtonState(false);
+      setBreadthControlButtonState(false);
       allowAutoCardRefreshFromFetchDaily = false;
       allowAutoCardRefreshFromFetchWeekly = false;
     }
@@ -555,6 +597,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
     setVDFScanButtonState(vdfRunning2);
     setVDFScanStatusText(summarizeVDFScanStatus(status));
     setVDFScanControlButtonState(status);
+    // Breadth status — fetched from its own endpoint (separate from divergence scan)
+    updateBreadthStatusFromApi();
     if (fetchDailyRunning) {
       allowAutoCardRefreshFromFetchDaily = true;
       allowAutoCardRefreshFromFetchWeekly = false;
@@ -607,6 +651,8 @@ export async function syncDivergenceScanUiState(): Promise<void> {
     setFetchWeeklyControlButtonState(null);
     setVDFScanButtonState(false);
     setVDFScanControlButtonState(null);
+    setBreadthButtonState(false);
+    setBreadthControlButtonState(false);
     allowAutoCardRefreshFromFetchDaily = false;
     allowAutoCardRefreshFromFetchWeekly = false;
   }
@@ -835,6 +881,61 @@ export async function stopManualVDFScan(): Promise<void> {
   } catch (error) {
     console.error('Failed to stop VDF scan:', error);
     setVDFScanStatusText(toStatusTextFromError(error));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Breadth bootstrap — uses its own endpoint (separate from divergence scan)
+// ---------------------------------------------------------------------------
+
+async function updateBreadthStatusFromApi(): Promise<void> {
+  try {
+    const res = await fetch('/api/breadth/ma/recompute/status');
+    const data = (await res.json()) as { running: boolean; status: string; finished_at?: string | null };
+    setBreadthButtonState(data.running);
+    setBreadthStatusText(summarizeBreadthStatus(data));
+    setBreadthControlButtonState(data.running);
+  } catch {
+    /* silent — breadth status is non-critical */
+  }
+}
+
+export async function runManualBreadthRecompute(): Promise<void> {
+  setBreadthButtonState(true);
+  setBreadthStatusText('Starting...');
+  setBreadthControlButtonState(false);
+  try {
+    const res = await fetch('/api/breadth/ma/recompute', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      setBreadthButtonState(false);
+      setBreadthStatusText(`Error: ${body.error ?? res.status}`);
+      return;
+    }
+    if (body.status === 'already_running') {
+      setBreadthStatusText(String(body.message || 'Already running...'));
+    }
+    setBreadthControlButtonState(true);
+    ensureDivergenceScanPolling(true);
+    await pollDivergenceScanStatus(false);
+  } catch (error) {
+    console.error('Failed to start breadth recompute:', error);
+    setBreadthButtonState(false);
+    setBreadthStatusText(toStatusTextFromError(error));
+  }
+}
+
+export async function stopManualBreadthRecompute(): Promise<void> {
+  try {
+    const res = await fetch('/api/breadth/ma/recompute/stop', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (body.status === 'stop-requested') {
+      setBreadthStatusText('Stopping...');
+    }
+    await updateBreadthStatusFromApi();
+  } catch (error) {
+    console.error('Failed to stop breadth recompute:', error);
+    setBreadthStatusText(toStatusTextFromError(error));
   }
 }
 

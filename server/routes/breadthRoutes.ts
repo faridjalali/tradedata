@@ -17,10 +17,12 @@ import {
 import { dataApiDaily } from '../services/dataApi.js';
 
 // ---------------------------------------------------------------------------
-// Breadth bootstrap run state (simple flag — no ScanState needed)
+// Breadth bootstrap run state (simple flags — no ScanState needed)
 // ---------------------------------------------------------------------------
 let breadthBootstrapRunning = false;
+let breadthBootstrapStopRequested = false;
 let breadthBootstrapStatus = '';
+let breadthBootstrapFinishedAt: string | null = null;
 
 export function registerBreadthRoutes(app: FastifyInstance): void {
   app.get('/api/breadth', async (request, reply) => {
@@ -97,24 +99,46 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
       return reply.send({ status: 'already_running', message: breadthBootstrapStatus });
     }
     breadthBootstrapRunning = true;
+    breadthBootstrapStopRequested = false;
     breadthBootstrapStatus = 'Starting...';
     const numDays = 220;
-    bootstrapBreadthHistory(divergencePool, numDays, (msg) => { breadthBootstrapStatus = msg; })
+    bootstrapBreadthHistory(
+      divergencePool, numDays,
+      (msg) => { breadthBootstrapStatus = msg; },
+      () => breadthBootstrapStopRequested,
+    )
       .then((r) => {
-        breadthBootstrapStatus = `Done — fetched ${r.fetchedDays} days, computed ${r.computedDays} snapshots`;
-        console.log(`[breadth] Recompute complete: fetched=${r.fetchedDays}, computed=${r.computedDays}`);
+        const verb = breadthBootstrapStopRequested ? 'Stopped' : 'Done';
+        breadthBootstrapStatus = `${verb} — fetched ${r.fetchedDays} days, computed ${r.computedDays} snapshots`;
+        breadthBootstrapFinishedAt = new Date().toISOString();
+        console.log(`[breadth] Recompute ${verb.toLowerCase()}: fetched=${r.fetchedDays}, computed=${r.computedDays}`);
       })
       .catch((err: unknown) => {
         breadthBootstrapStatus = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        breadthBootstrapFinishedAt = new Date().toISOString();
         console.error('[breadth] Recompute failed:', err);
       })
-      .finally(() => { breadthBootstrapRunning = false; });
+      .finally(() => { breadthBootstrapRunning = false; breadthBootstrapStopRequested = false; });
     return reply.send({ status: 'started', days: numDays });
   });
 
   // Poll bootstrap progress.
   app.get('/api/breadth/ma/recompute/status', async (_request, reply) => {
-    return reply.send({ running: breadthBootstrapRunning, status: breadthBootstrapStatus });
+    return reply.send({
+      running: breadthBootstrapRunning,
+      status: breadthBootstrapStatus,
+      finished_at: breadthBootstrapFinishedAt,
+    });
+  });
+
+  // Stop a running bootstrap.
+  app.post('/api/breadth/ma/recompute/stop', async (_request, reply) => {
+    if (!breadthBootstrapRunning) {
+      return reply.send({ status: 'not_running' });
+    }
+    breadthBootstrapStopRequested = true;
+    breadthBootstrapStatus = 'Stopping...';
+    return reply.send({ status: 'stop-requested' });
   });
 
   app.post('/api/breadth/ma/refresh', async (request, reply) => {
