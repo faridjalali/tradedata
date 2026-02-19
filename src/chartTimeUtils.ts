@@ -4,6 +4,7 @@
  */
 
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
+import type { CandleBar } from '../shared/api-types';
 
 export function unixSecondsFromTimeValue(time: string | number | null | undefined): number | null {
   if (typeof time === 'number' && Number.isFinite(time)) return time;
@@ -14,6 +15,8 @@ export function unixSecondsFromTimeValue(time: string | number | null | undefine
   return null;
 }
 
+// LightweightCharts CDN — no bundled declarations; Time type varies by series config
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toDateFromScaleTime(time: any): Date | null {
   if (typeof time === 'number' && Number.isFinite(time)) {
     return new Date(time * 1000);
@@ -34,6 +37,7 @@ export function toDateFromScaleTime(time: any): Date | null {
   return null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function formatTimeScaleTickMark(time: any, tickMarkType: number): string {
   const date = toDateFromScaleTime(time);
   if (!date) return '';
@@ -67,7 +71,7 @@ export function monthKeyInAppTimeZone(unixSeconds: number): string {
   return `${year}-${month}`;
 }
 
-export function buildMonthBoundaryTimes(bars: any[]): number[] {
+export function buildMonthBoundaryTimes(bars: CandleBar[]): number[] {
   const result: number[] = [];
   let lastMonthKey = '';
   for (const bar of bars) {

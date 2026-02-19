@@ -4,6 +4,7 @@
  */
 
 import { unixSecondsFromTimeValue, dayKeyInAppTimeZone } from './chartTimeUtils';
+import type { CandleBar } from '../shared/api-types';
 import type { MAType } from './chartTypes';
 
 export function calculateRSIFromCloses(closePrices: number[], period: number): number[] {
@@ -57,7 +58,7 @@ export function calculateRSIFromCloses(closePrices: number[], period: number): n
   return rsiValues;
 }
 
-export function buildRSISeriesFromBars(bars: any[], period: number): Array<{ time: string | number; value: number }> {
+export function buildRSISeriesFromBars(bars: CandleBar[], period: number): Array<{ time: string | number; value: number }> {
   if (!bars || bars.length === 0) return [];
   const closes = bars.map((bar) => Number(bar.close));
   const rsiValues = calculateRSIFromCloses(closes, period);
@@ -70,7 +71,7 @@ export function buildRSISeriesFromBars(bars: any[], period: number): Array<{ tim
   return out;
 }
 
-export function normalizeValueSeries(points: any[]): Array<{ time: string | number; value: number }> {
+export function normalizeValueSeries(points: Array<{ time: string | number; value: number }>): Array<{ time: string | number; value: number }> {
   if (!Array.isArray(points)) return [];
   return points
     .filter(
@@ -149,7 +150,7 @@ export function computeEMA(values: number[], length: number): Array<number | nul
   return out;
 }
 
-export function buildDailyMAValuesForBars(bars: any[], type: MAType, length: number): Array<number | null> {
+export function buildDailyMAValuesForBars(bars: CandleBar[], type: MAType, length: number): Array<number | null> {
   const dayOrder: string[] = [];
   const dayCloseByKey = new Map<string, number>();
   const seen = new Set<string>();

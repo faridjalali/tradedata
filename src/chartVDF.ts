@@ -5,6 +5,7 @@
  */
 
 import { getThemeColors } from './theme';
+import type { CandleBar } from '../shared/api-types';
 import { unixSecondsFromTimeValue } from './chartTimeUtils';
 import {
   PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
@@ -19,13 +20,17 @@ import {
 // Shared state callbacks (set by chart.ts at init time)
 // ---------------------------------------------------------------------------
 
+// LightweightCharts CDN — no bundled declarations
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let getPriceChart: () => any = () => null;
-let getCurrentBars: () => any[] = () => [];
+let getCurrentBars: () => CandleBar[] = () => [];
 let getCurrentTicker: () => string | null = () => null;
 
 export function initVDF(callbacks: {
+  // LightweightCharts CDN — no bundled declarations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getPriceChart: () => any;
-  getCurrentBars: () => any[];
+  getCurrentBars: () => CandleBar[];
   getCurrentTicker: () => string | null;
 }): void {
   getPriceChart = callbacks.getPriceChart;

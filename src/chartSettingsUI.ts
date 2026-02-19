@@ -1,4 +1,6 @@
 import { getThemeColors } from './theme';
+import type { CandleBar } from '../shared/api-types';
+import type { ChartInterval } from './chartApi';
 import {
   type PersistedChartSettings,
   SETTINGS_STORAGE_KEY, PANE_HEIGHT_MIN, PANE_HEIGHT_MAX,
@@ -23,13 +25,15 @@ interface SettingsUICallbacks {
   applyPricePaneDivergentBarColors: () => void;
   clearMovingAverageSeries: () => void;
   applyPaneOrderAndRefreshLayout: (chartContent: HTMLElement) => void;
-  renderVolumeDeltaDivergenceSummary: (container: HTMLElement, bars: any[]) => void;
+  renderVolumeDeltaDivergenceSummary: (container: HTMLElement, bars: CandleBar[]) => void;
   scheduleChartLayoutRefresh: () => void;
-  renderCustomChart: (ticker: string, interval: any) => void;
+  renderCustomChart: (ticker: string, interval: ChartInterval) => void;
   getCurrentTicker: () => string | null;
-  getCurrentInterval: () => any;
-  getCurrentBars: () => any[];
+  getCurrentInterval: () => ChartInterval;
+  getCurrentBars: () => CandleBar[];
   getVolumeDeltaPaneContainer: () => HTMLElement | null;
+  // LightweightCharts CDN — no bundled declarations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getRsiChart: () => any;
 }
 

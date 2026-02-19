@@ -1,4 +1,4 @@
-async function checkDatabaseReady(poolInstance: { query: Function } | null): Promise<{ ok: boolean | null; error?: string }> {
+async function checkDatabaseReady(poolInstance: { query: (...args: unknown[]) => Promise<unknown> } | null): Promise<{ ok: boolean | null; error?: string }> {
   if (!poolInstance) return { ok: null };
   try {
     await poolInstance.query('SELECT 1');
@@ -65,8 +65,8 @@ function buildHealthPayload(options: HealthPayloadOptions) {
 }
 
 interface ReadyPayloadOptions {
-  pool: { query: Function };
-  divergencePool?: { query: Function };
+  pool: { query: (...args: unknown[]) => Promise<unknown> };
+  divergencePool?: { query: (...args: unknown[]) => Promise<unknown> };
   isDivergenceConfigured: () => boolean;
   isShuttingDown: boolean;
   divergenceScanRunning: boolean;

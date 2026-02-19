@@ -5,6 +5,7 @@ import {
   ChartData,
   ChartLatestData,
   ChartInterval,
+  CandleBar,
 } from './chartApi';
 import { RSIChart } from './rsi';
 import {
@@ -127,7 +128,7 @@ let rsiByTime = new Map<string, number>();
 let volumeDeltaRsiByTime = new Map<string, number>();
 let volumeDeltaByTime = new Map<string, number>();
 let barIndexByTime = new Map<string, number>();
-let currentBars: any[] = [];
+let currentBars: CandleBar[] = [];
 let monthBoundaryTimes: number[] = [];
 let priceMonthGridOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaRsiMonthGridOverlayEl: HTMLDivElement | null = null;
@@ -197,7 +198,7 @@ function ensureMonthGridOverlay(
   return overlay;
 }
 
-function buildFutureTimelinePointsFromBars(bars: any[]): Array<{ time: number }> {
+function buildFutureTimelinePointsFromBars(bars: CandleBar[]): Array<{ time: number }> {
   if (!Array.isArray(bars) || bars.length === 0) return [];
   const lastUnix = unixSecondsFromTimeValue(bars[bars.length - 1]?.time);
   if (!Number.isFinite(lastUnix)) return [];
@@ -214,7 +215,7 @@ function buildFutureTimelinePointsFromBars(bars: any[]): Array<{ time: number }>
   return points;
 }
 
-function applyFutureTimelineSeriesData(bars: any[]): void {
+function applyFutureTimelineSeriesData(bars: CandleBar[]): void {
   const timelinePoints = buildFutureTimelinePointsFromBars(bars);
   if (priceTimelineSeries) {
     priceTimelineSeries.setData(timelinePoints);
@@ -341,7 +342,7 @@ function formatVolumeDeltaScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function normalizeVolumeDeltaSeries(points: any[]): Array<{ time: string | number; delta: number }> {
+function normalizeVolumeDeltaSeries(points: Array<{ time: string | number; delta: number }>): Array<{ time: string | number; delta: number }> {
   if (!Array.isArray(points)) return [];
   return points
     .filter(
@@ -565,6 +566,8 @@ function clearMonthGridOverlay(overlayEl: HTMLDivElement | null): void {
   overlayEl.innerHTML = '';
 }
 
+// LightweightCharts CDN — IChartApi type has no bundled declarations
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): void {
   if (!chart || !overlayEl) return;
 
@@ -819,6 +822,7 @@ function shouldShowPaneScale(paneId: PaneId): boolean {
   return index === 1 || index === 3;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyChartScaleVisibility(chart: any, show: boolean): void {
   if (!chart) return;
   chart.applyOptions({
@@ -1343,7 +1347,7 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   return changeEl;
 }
 
-function rebuildPricePaneChangeMap(bars: any[]): void {
+function rebuildPricePaneChangeMap(bars: CandleBar[]): void {
   priceChangeByTime = new Map<string, number>();
   if (!Array.isArray(bars) || bars.length < 2) return;
   for (let i = 1; i < bars.length; i++) {
@@ -1439,6 +1443,8 @@ function formatPriceScaleLabel(value: number): string {
 
 
 
+// LightweightCharts CDN — LogicalRange type has no bundled declarations
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function sameLogicalRange(a: any, b: any): boolean {
   if (!a || !b) return false;
   return Math.abs(Number(a.from) - Number(b.from)) < 1e-6 && Math.abs(Number(a.to) - Number(b.to)) < 1e-6;
@@ -1612,6 +1618,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     title: 'Midline',
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   chart.subscribeClick((param: any) => {
     if (!param || !param.time) return;
     if (isVolumeDeltaRsiDivergencePlotToolActive()) {
@@ -1715,7 +1722,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
 }
 
 function setVolumeDeltaRsiData(
-  bars: any[],
+  bars: CandleBar[],
   volumeDeltaRsi: { rsi: Array<{ time: string | number; value: number }> },
 ): void {
   if (!volumeDeltaRsiSeries) return;
@@ -1758,7 +1765,7 @@ function setVolumeDeltaRsiData(
 
 
 function setVolumeDeltaHistogramData(
-  bars: any[],
+  bars: CandleBar[],
   volumeDeltaValues: Array<{ time: string | number; delta: number }>,
 ): void {
   if (!volumeDeltaHistogramSeries) return;
@@ -1781,7 +1788,7 @@ function setVolumeDeltaHistogramData(
   });
 
   volumeDeltaHistogramSeries.setData(histogramData);
-  volumeDeltaByTime = new Map(histogramData.map((point: any) => [timeKey(point.time), Number(point.value) || 0]));
+  volumeDeltaByTime = new Map(histogramData.map((point) => [timeKey(point.time), Number(point.value) || 0]));
   applyPricePaneDivergentBarColors();
 }
 
@@ -1837,7 +1844,7 @@ function applyPricePaneDivergentBarColors(): void {
   candleSeries.setData(barsWithBodyColor);
 }
 
-function normalizeCandleBars(bars: any[]): any[] {
+function normalizeCandleBars(bars: CandleBar[]): CandleBar[] {
   return bars.filter(
     (bar) =>
       bar &&
@@ -2631,9 +2638,11 @@ function setupChartSync() {
     });
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const syncRangeFromOwner = (owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta', timeRange: any) => {
     if (!timeRange) return;
-    const targets: Array<{ owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta'; chart: any }> = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const targets: Array<{ owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta'; chart: any }> = [
       { owner: 'price', chart: priceChart },
       { owner: 'volumeDeltaRsi', chart: volumeDeltaRsiChartInstance },
       { owner: 'rsi', chart: rsiChartInstance },
@@ -2649,6 +2658,7 @@ function setupChartSync() {
     scheduleChartLayoutRefresh();
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
     syncLock = 'price';
@@ -2659,6 +2669,7 @@ function setupChartSync() {
     }
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaRsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (isVolumeDeltaSyncSuppressed()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
@@ -2670,6 +2681,7 @@ function setupChartSync() {
     }
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (rsiChart?.isSyncSuppressed?.()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'volumeDelta') return;
@@ -2681,6 +2693,7 @@ function setupChartSync() {
     }
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi') return;
     syncLock = 'volumeDelta';
@@ -2744,6 +2757,7 @@ function setupChartSync() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   priceChart.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
@@ -2759,6 +2773,7 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaRsiChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2777,6 +2792,7 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2795,6 +2811,7 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2810,6 +2827,7 @@ function setupChartSync() {
     setCrosshairOnRsi(param.time);
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.subscribeClick((param: any) => {
     if (!param || !param.time) return;
     if (!isRsiDivergencePlotToolActive()) return;
@@ -2863,7 +2881,7 @@ export function initChartControls() {
   controls.querySelectorAll('button[data-mode]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       const target = e.currentTarget as HTMLElement;
-      const mode = target.getAttribute('data-mode') as any;
+      const mode = target.getAttribute('data-mode') as import('./chartApi').RSIDisplayMode | null;
       if (!mode) return;
 
       controls.querySelectorAll('button[data-mode]').forEach((b) => b.classList.remove('active'));

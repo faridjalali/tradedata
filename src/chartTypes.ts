@@ -26,6 +26,8 @@ export interface MASetting {
   type: MAType;
   length: number;
   color: string;
+  // LightweightCharts CDN — no bundled declarations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   series: any | null;
   values: Array<number | null>;
 }

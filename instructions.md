@@ -375,9 +375,13 @@ if (!result.success) {
 | Error in `catch` | `catch (err: unknown)` + `err instanceof Error ? err.message : String(err)` |
 | Dynamic DB row | Define an explicit interface matching the SELECT columns |
 | Unknown JSON shape | `Record<string, unknown>` + explicit narrowing at each property access |
-| CDN global (Chart.js) | Define a minimal interface: `interface ChartInstance { ... }` |
+| CDN global (Chart.js, Lightweight Charts) | `// eslint-disable-next-line @typescript-eslint/no-explicit-any` + `declare const LightweightCharts: any; // loaded from CDN` |
+| CDN callback params (chart events) | `// eslint-disable-next-line @typescript-eslint/no-explicit-any` + `(param: any) =>` with a comment |
 | Resume state bag | `Record<string, unknown>` — wrap all property accesses in `Number()` / `Array.isArray()` |
 | Test I/O stubs | `() => null as any` is acceptable with a comment when the return type is complex |
+| `Function` type | **Banned.** Always write the explicit signature: `(...args: unknown[]) => Promise<unknown>` or `() => void` |
+| OHLCV bar arrays (frontend) | `CandleBar[]` — import from `shared/api-types.ts` |
+| Chart interval params (frontend) | `ChartInterval` — import from `shared/api-types.ts` |
 
 ### Error Type Narrowing Pattern
 
@@ -1002,6 +1006,9 @@ git push --mirror https://github.com/faridjalali/tradedata-backup.git
 |---|---|---|
 | `catch (err: any)` | Defeats type safety | `catch (err: unknown)` + `instanceof Error` check |
 | `Record<string, any>` for known shapes | Loses all type safety | Define an explicit interface |
+| `Function` type | No signature — as loose as `any` | Write the explicit signature: `(...args: unknown[]) => void` |
+| `bars: any[]` in frontend | Loses OHLCV type safety | `CandleBar[]` from `shared/api-types.ts` |
+| `interval: any` in frontend | Loses interval constraint | `ChartInterval` from `shared/api-types.ts` |
 | `process.env.X` outside config.ts | Config is scattered, untestable | Add constant to config.ts |
 | `setTimeout(r, 0)` for test sync | Race condition, flaky | Promise gate resolved by the code under test |
 | Unused test helpers | Dead code | Delete them |

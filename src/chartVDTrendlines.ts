@@ -33,6 +33,7 @@ import {
 } from './chartTypes';
 import type { RSIChart } from './rsi';
 import type { ChartInterval } from './chartApi';
+import type { CandleBar } from '../shared/api-types';
 
 function tc() {
   return getThemeColors();
@@ -43,7 +44,10 @@ function tc() {
 // ---------------------------------------------------------------------------
 
 export interface VDTrendlineCallbacks {
+  // LightweightCharts CDN — no bundled declarations
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getVDRsiChart: () => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getVDRsiSeries: () => any;
   getCurrentTicker: () => string | null;
   getCurrentInterval: () => ChartInterval;
@@ -61,7 +65,10 @@ let cb: VDTrendlineCallbacks;
 
 let volumeDeltaRsiPoints: Array<{ time: string | number; value: number }> = [];
 let volumeDeltaIndexByTime = new Map<string, number>();
+// LightweightCharts CDN — no bundled declarations
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaHighlightSeries: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let volumeDeltaTrendLineSeriesList: any[] = [];
 let volumeDeltaTrendlineCrossLabels: Array<{
   element: HTMLDivElement;
@@ -139,6 +146,8 @@ export function getVolumeDeltaTrendlineDefinitions(): RSIPersistedTrendline[] {
 // Pure helpers (also used by chart.ts for VD-RSI chart creation)
 // ---------------------------------------------------------------------------
 
+// LightweightCharts CDN — AutoscaleInfo type from CDN has no bundled declarations
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function fixedVolumeDeltaAutoscaleInfoProvider(): any {
   return {
     priceRange: {
@@ -702,7 +711,7 @@ export function clearVolumeDeltaDivergenceSummary(): void {
 
 export function renderVolumeDeltaDivergenceSummary(
   container: HTMLElement,
-  bars: any[],
+  bars: CandleBar[],
   options?: { noCache?: boolean },
 ): void {
   if (!volumeDeltaSettings.divergenceTable) {
