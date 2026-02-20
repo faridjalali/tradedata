@@ -1,5 +1,5 @@
 import { Alert } from './types';
-import { formatVolume, escapeHtml } from './utils';
+import { escapeHtml } from './utils';
 import { DIVERGENCE_LOOKBACK_DAYS } from './divergenceTable';
 
 function formatAlertCardDate(rawDate: string | null | undefined): string {
@@ -43,7 +43,6 @@ export function createAlertCard(alert: Alert): string {
 
   const cardClass = isBull ? 'bullish-card' : isBear ? 'bearish-card' : '';
 
-  const volStr = formatVolume(alert.signal_volume || 0);
   // Strict boolean check
   const isFav = alert.is_favorite === true || String(alert.is_favorite).toLowerCase() === 'true';
   const starClass = isFav ? 'filled' : '';
@@ -86,7 +85,6 @@ export function createAlertCard(alert: Alert): string {
                 <span class="div-dot-row" data-ticker="${escapeHtml(alert.ticker)}" title="Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)">
                     ${divergenceDots}
                 </span>
-                <span class="volume-text">${volStr}</span>
             </div>
             <div class="card-group card-group-badges">
                 ${

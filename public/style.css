@@ -972,12 +972,6 @@ h2 {
   background: var(--text-primary);
 }
 
-.volume-text {
-  font-family: var(--font-mono);
-  font-weight: 500;
-  white-space: pre;
-}
-
 .vdf-tag {
   display: inline-block;
   font-family: var(--font-mono);
@@ -1365,8 +1359,6 @@ button:hover {
   .column-header h2,
   .header-title-group h2 { cursor: pointer; user-select: none; -webkit-user-select: none; }
   .column.collapsed .alerts-list { display: none; }
-  .volume-text { display: none; }
-
   /* Single-page chart */
   .single-page-chart-wrapper { height: 300px; }
   .single-page-controls { flex-direction: column; gap: var(--sp-md); align-items: flex-start; }

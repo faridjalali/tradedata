@@ -31,14 +31,6 @@ function formatFormatAlertCardDate(rawDate: string | null | undefined): string {
   return `${parsed.getMonth() + 1}/${parsed.getDate()}`;
 }
 
-function formatVolume(vol: number): string {
-  if (vol === null || vol === undefined) return '';
-  if (vol >= 1000000000) return (vol / 1000000000).toFixed(1) + 'B';
-  if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M';
-  if (vol >= 1000) return (vol / 1000).toFixed(1) + 'K';
-  return vol.toString();
-}
-
 /** Apply column feed mode date filter */
 function filterToLatestNDates(alerts: Alert[], n: number): Alert[] {
   const dates = new Set<string>();
@@ -83,8 +75,7 @@ function AlertCard({ alert }: { alert: Alert }) {
   }
 
   const cardClass = isBull ? 'bullish-card' : isBear ? 'bearish-card' : '';
-  const volStr = formatVolume(alert.signal_volume || 0);
-  
+
   const isFav = alert.is_favorite === true || String(alert.is_favorite).toLowerCase() === 'true';
   const starClass = isFav ? 'fav-icon filled' : 'fav-icon';
 
@@ -124,7 +115,6 @@ function AlertCard({ alert }: { alert: Alert }) {
             return <span key={days} className={`div-dot ${cls}`} data-days={days} />;
           })}
         </span>
-        <span className="volume-text">{volStr}</span>
       </div>
       <div className="card-group card-group-badges">
         {alert.vdf_detected && alert.vdf_score ? (
