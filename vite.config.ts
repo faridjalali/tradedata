@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
+import preact from '@preact/preset-vite';
 
 export default defineConfig({
   root: './', // Root is now the project root where index.html lies
   base: './', // Relative base path
   publicDir: 'public', // Static assets
+  plugins: [preact()],
   server: {
     port: 5173,
     proxy: {

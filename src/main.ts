@@ -1,15 +1,12 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import { setChartNavigationCallbacks } from './chartNavigation';
-
+import { render, h } from 'preact';
+import { AdminView } from './components/AdminView';
 
 // --- Lazy-loaded view modules (code splitting) ---
-
-let _adminModule: typeof import('./admin') | null = null;
-async function loadAdmin() {
-  if (!_adminModule) _adminModule = await import('./admin');
-  return _adminModule;
-}
+// Admin view — now Preact-managed
+let adminMounted = false;
 
 let _breadthModule: typeof import('./breadth') | null = null;
 async function loadBreadth() {
@@ -37,7 +34,6 @@ let divergenceDashboardScrollY = 0;
 let tickerOriginView = 'divergence' as const;
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
-
 
 // ---------------------------------------------------------------------------
 // Hash Router — maps URL hash to views so browser back/forward works and
@@ -162,7 +158,11 @@ function switchView(view: 'admin' | 'divergence' | 'breadth') {
   cancelChartLoading();
 
   // Stop admin polling when leaving admin view
-  loadAdmin().then((m) => m.stopAdminPolling()).catch(() => {});
+  if (adminMounted) {
+    const adminRoot = document.getElementById('admin-root');
+    if (adminRoot) render(null, adminRoot);
+    adminMounted = false;
+  }
 
   // Close any open dropdowns
   closeAllHeaderDropdowns();
@@ -170,14 +170,23 @@ function switchView(view: 'admin' | 'divergence' | 'breadth') {
   // Show the selected view and controls
   if (view === 'admin') {
     document.getElementById('view-admin')?.classList.remove('hidden');
-    loadAdmin().then((m) => { m.initAdminView(); m.startAdminPolling(); }).catch(() => {});
+    const adminRoot = document.getElementById('admin-root');
+    if (adminRoot && !adminMounted) {
+      render(h(AdminView, null), adminRoot);
+      adminMounted = true;
+    }
   } else if (view === 'divergence') {
     document.getElementById('view-divergence')?.classList.remove('hidden');
     fetchDivergenceSignals(true).then(renderDivergenceOverview);
     syncDivergenceScanUiState();
   } else if (view === 'breadth') {
     document.getElementById('view-breadth')?.classList.remove('hidden');
-    loadBreadth().then((m) => { m.initBreadth(); m.initBreadthThemeListener(); }).catch(() => {});
+    loadBreadth()
+      .then((m) => {
+        m.initBreadth();
+        m.initBreadthThemeListener();
+      })
+      .catch(() => {});
   }
 }
 
@@ -277,10 +286,7 @@ async function refreshViewAfterTimeZoneChange(): Promise<void> {
     return;
   }
 
-  if (currentView === 'admin') {
-    const admin = await loadAdmin();
-    await admin.refreshAdminView();
-  }
+  // Admin view is Preact-managed and handles its own refresh via useEffect
 }
 
 function initGlobalSettingsPanel() {
@@ -360,7 +366,6 @@ function initGlobalSettingsPanel() {
     });
   });
 }
-
 
 function initHeaderNavDropdown(): void {
   const toggle = document.getElementById('header-nav-toggle');
@@ -545,14 +550,18 @@ function bootstrapApplication(): void {
   document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const days = Number((btn as HTMLElement).dataset.days);
-      loadBreadth().then((m) => m.setBreadthTimeframe(days)).catch(() => {});
+      loadBreadth()
+        .then((m) => m.setBreadthTimeframe(days))
+        .catch(() => {});
     });
   });
 
   document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
-      loadBreadth().then((m) => m.setBreadthMetric(metric)).catch(() => {});
+      loadBreadth()
+        .then((m) => m.setBreadthMetric(metric))
+        .catch(() => {});
     });
   });
 
@@ -563,13 +572,17 @@ function bootstrapApplication(): void {
   document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const days = Number((btn as HTMLElement).dataset.days);
-      loadBreadth().then((m) => m.setBreadthCompareTf(days)).catch(() => {});
+      loadBreadth()
+        .then((m) => m.setBreadthCompareTf(days))
+        .catch(() => {});
     });
   });
 
   // Comparative Breadth: Compare mode toggle
   document.getElementById('breadth-compare-toggle')?.addEventListener('click', () => {
-    loadBreadth().then((m) => m.toggleBreadthCompareMode()).catch(() => {});
+    loadBreadth()
+      .then((m) => m.toggleBreadthCompareMode())
+      .catch(() => {});
   });
 
   // ETF Bar Rankings: MA window selector
@@ -577,9 +590,12 @@ function bootstrapApplication(): void {
     btn.addEventListener('click', () => {
       const ma = (btn as HTMLElement).dataset.ma;
       if (!ma) return;
-      document.querySelectorAll('#breadth-bars-ma-btns .pane-btn').forEach((b) =>
-        b.classList.toggle('active', b === btn));
-      loadBreadth().then((m) => m.setBreadthBarsMA(ma)).catch(() => {});
+      document
+        .querySelectorAll('#breadth-bars-ma-btns .pane-btn')
+        .forEach((b) => b.classList.toggle('active', b === btn));
+      loadBreadth()
+        .then((m) => m.setBreadthBarsMA(ma))
+        .catch(() => {});
     });
   });
 
