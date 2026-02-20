@@ -34,9 +34,18 @@ export const DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY = Math.max(
   25,
   Number(process.env.DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY) || 500,
 );
-export const DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS = Math.max(45, Number(process.env.DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS) || 60);
-export const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(1, Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 24);
-export const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(29, Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29);
+export const DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS = Math.max(
+  45,
+  Number(process.env.DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS) || 60,
+);
+export const DIVERGENCE_TABLE_BUILD_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.DIVERGENCE_TABLE_BUILD_CONCURRENCY) || 24,
+);
+export const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(
+  29,
+  Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29,
+);
 export const DIVERGENCE_SCANNER_ENABLED = false;
 export const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 export const DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE = Math.max(
@@ -55,19 +64,31 @@ export const DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE = Math.max(
   1,
   Number(process.env.DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE) || 25,
 );
-export const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(28, Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 50);
+export const DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS = Math.max(
+  28,
+  Number(process.env.DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS) || 50,
+);
 export const DIVERGENCE_FETCH_TICKER_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.DIVERGENCE_FETCH_TICKER_TIMEOUT_MS) || 60_000,
 );
-export const DIVERGENCE_FETCH_MA_TIMEOUT_MS = Math.max(5_000, Number(process.env.DIVERGENCE_FETCH_MA_TIMEOUT_MS) || 30_000);
+export const DIVERGENCE_FETCH_MA_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.DIVERGENCE_FETCH_MA_TIMEOUT_MS) || 30_000,
+);
 export const DIVERGENCE_STALL_TIMEOUT_MS = Math.max(30_000, Number(process.env.DIVERGENCE_STALL_TIMEOUT_MS) || 90_000);
 export const DIVERGENCE_STALL_CHECK_INTERVAL_MS = Math.max(
   1_000,
   Number(process.env.DIVERGENCE_STALL_CHECK_INTERVAL_MS) || 2_000,
 );
-export const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000);
-export const DIVERGENCE_STALL_MAX_RETRIES = Math.max(0, Math.floor(Number(process.env.DIVERGENCE_STALL_MAX_RETRIES) || 3));
+export const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(
+  1_000,
+  Number(process.env.DIVERGENCE_STALL_RETRY_BASE_MS) || 5_000,
+);
+export const DIVERGENCE_STALL_MAX_RETRIES = Math.max(
+  0,
+  Math.floor(Number(process.env.DIVERGENCE_STALL_MAX_RETRIES) || 3),
+);
 
 // --- Mini-bars cache ---
 export const MINI_BARS_CACHE_MAX_TICKERS = 2000;
@@ -113,7 +134,7 @@ export function validateStartupEnvironment() {
     }
   };
 
-  requireNonEmpty('DATABASE_URL');
+  requireNonEmpty('DIVERGENCE_DATABASE_URL');
   warnIfMissing('SITE_LOCK_PASSCODE');
   if (!SESSION_SECRET) {
     errors.push('SESSION_SECRET (or SITE_LOCK_PASSCODE) must be set — session tokens cannot be signed securely');

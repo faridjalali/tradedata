@@ -1,4 +1,4 @@
-import { db } from '../db.js';
+import { divergenceDb } from '../db.js';
 import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
 
 interface VdfEnrichment {
@@ -6,6 +6,28 @@ interface VdfEnrichment {
   proximityLevel: string;
   numZones: number;
   bullFlagConfidence: number | null;
+}
+
+function toOptionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function toBoolean(value: unknown): boolean {
+  if (value === true) return true;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 't' || normalized === 'yes';
+  }
+  return false;
+}
+
+function normalizeVdfScore(score: number | null): number {
+  if (score == null) return 0;
+  if (score >= 0 && score <= 1) return Math.min(100, Math.round(score * 100));
+  return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 /**
@@ -38,8 +60,8 @@ export async function enrichRowsWithDivergenceData(opts: {
   // scans may not have run yet for the current ET date.
   const vdfDataMap = new Map<string, VdfEnrichment>();
   try {
-    if (tickers.length > 0) {
-      const vdfRes = await db
+    if (tickers.length > 0 && divergenceDb) {
+      const vdfRes = await divergenceDb
         .selectFrom('vdf_results')
         .select(['ticker', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
         .distinctOn(['ticker'])
@@ -58,8 +80,9 @@ export async function enrichRowsWithDivergenceData(opts: {
         });
       }
     }
-  } catch {
-    /* VDF enrichment is non-critical */
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to enrich ${contextLabel} with VDF data: ${message}`);
   }
 
   // 3. Map enriched rows
@@ -70,6 +93,14 @@ export async function enrichRowsWithDivergenceData(opts: {
     const summary = (summariesByTicker.get(ticker) || null) as Record<string, unknown> | null;
     const states = (summary?.states || neutralStates) as Record<string, string>;
     const vdfData = vdfDataMap.get(ticker);
+    const rowVdfDetected = toBoolean(row?.vdf_detected);
+    const rowVdfScore = normalizeVdfScore(toOptionalNumber(row?.vdf_score));
+    const rowBullFlagConfidence = toOptionalNumber(row?.bull_flag_confidence);
+    const rowVdfProximity =
+      typeof row?.vdf_proximity === 'string' && row.vdf_proximity.trim() ? String(row.vdf_proximity).trim() : 'none';
+
+    const mergedVdfDetected = Boolean(vdfData) || rowVdfDetected || rowVdfScore > 0;
+
     return {
       ...row,
       divergence_trade_date: summary?.tradeDate || null,
@@ -86,10 +117,10 @@ export async function enrichRowsWithDivergenceData(opts: {
         14: String(states['14'] || 'neutral'),
         28: String(states['28'] || 'neutral'),
       },
-      vdf_detected: !!vdfData,
-      vdf_score: vdfData?.score || 0,
-      vdf_proximity: vdfData?.proximityLevel || 'none',
-      bull_flag_confidence: vdfData?.bullFlagConfidence ?? null,
+      vdf_detected: mergedVdfDetected,
+      vdf_score: vdfData?.score ?? rowVdfScore,
+      vdf_proximity: vdfData?.proximityLevel || rowVdfProximity,
+      bull_flag_confidence: vdfData?.bullFlagConfidence ?? rowBullFlagConfidence,
     };
   });
 }
