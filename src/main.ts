@@ -5,11 +5,9 @@ import { render, h } from 'preact';
 import { AdminView } from './components/AdminView';
 import { pushHash, onRouteChange, installHashListener, getInitialRoute } from './router';
 import type { ViewName, Route } from './router';
+import { appStore } from './store/appStore';
 
 // --- Lazy-loaded view modules (code splitting) ---
-// Admin view — now Preact-managed
-let adminMounted = false;
-
 let _breadthModule: typeof import('./breadth') | null = null;
 async function loadBreadth() {
   if (!_breadthModule) _breadthModule = await import('./breadth');
@@ -30,18 +28,12 @@ import { SortMode, TickerListContext } from './types';
 import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOptions } from './timezone';
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
-
-let currentView: ViewName = 'divergence';
-let divergenceDashboardScrollY = 0;
-let tickerOriginView = 'divergence' as const;
-let tickerListContext: TickerListContext = null;
-let appInitialized = false;
 // ---------------------------------------------------------------------------
 // Route handler — called by the router on hashchange
 // ---------------------------------------------------------------------------
 
 function handleRoute(route: Route): void {
-  if (!appInitialized) return;
+  if (!appStore.getState().appInitialized) return;
   if (route.kind === 'ticker') {
     window.showTickerView(route.ticker);
   } else {
@@ -64,11 +56,11 @@ window.setTickerDailySort = setTickerDailySort;
 window.setTickerWeeklySort = setTickerWeeklySort;
 
 export function getTickerListContext(): TickerListContext {
-  return tickerListContext;
+  return appStore.getState().tickerListContext;
 }
 
 export function getTickerOriginView(): 'divergence' {
-  return tickerOriginView;
+  return appStore.getState().tickerOriginView;
 }
 
 window.showTickerView = function (
@@ -76,12 +68,11 @@ window.showTickerView = function (
   sourceView: 'divergence' = 'divergence',
   listContext: TickerListContext = null,
 ) {
-  tickerOriginView = sourceView;
-  tickerListContext = listContext;
+  appStore.getState().setTickerOriginView(sourceView);
+  appStore.getState().setTickerListContext(listContext);
+  appStore.getState().saveDivergenceScroll();
 
-  divergenceDashboardScrollY = window.scrollY;
-
-  if (currentView !== 'divergence') {
+  if (appStore.getState().currentView !== 'divergence') {
     switchView('divergence');
   }
   setActiveNavTab('divergence');
@@ -105,11 +96,11 @@ window.showOverview = function () {
   if (tickerView) delete tickerView.dataset.ticker;
 
   switchView('divergence'); // pushes #/divergence
-  window.scrollTo(0, divergenceDashboardScrollY);
+  appStore.getState().restoreDivergenceScroll();
 };
 
 function switchView(view: ViewName) {
-  currentView = view;
+  appStore.getState().setCurrentView(view);
   pushHash(`/${view}`);
   setActiveNavTab(view);
 
@@ -123,10 +114,10 @@ function switchView(view: ViewName) {
   cancelChartLoading();
 
   // Stop admin polling when leaving admin view
-  if (adminMounted) {
+  if (appStore.getState().adminMounted) {
     const adminRoot = document.getElementById('admin-root');
     if (adminRoot) render(null, adminRoot);
-    adminMounted = false;
+    appStore.getState().setAdminMounted(false);
   }
 
   // Close any open dropdowns
@@ -136,9 +127,9 @@ function switchView(view: ViewName) {
   if (view === 'admin') {
     document.getElementById('view-admin')?.classList.remove('hidden');
     const adminRoot = document.getElementById('admin-root');
-    if (adminRoot && !adminMounted) {
+    if (adminRoot && !appStore.getState().adminMounted) {
       render(h(AdminView, null), adminRoot);
-      adminMounted = true;
+      appStore.getState().setAdminMounted(true);
     }
   } else if (view === 'divergence') {
     document.getElementById('view-divergence')?.classList.remove('hidden');
@@ -238,13 +229,14 @@ declare global {
 }
 
 async function refreshViewAfterTimeZoneChange(): Promise<void> {
-  if (currentView === 'divergence') {
+  const view = appStore.getState().currentView;
+  if (view === 'divergence') {
     await fetchDivergenceSignals(true);
     renderDivergenceOverview();
     return;
   }
 
-  if (currentView === 'breadth') {
+  if (view === 'breadth') {
     const breadth = await loadBreadth();
     breadth.initBreadth();
     breadth.initBreadthThemeListener();
@@ -476,8 +468,8 @@ function closeAllColumnCustomPanels(): void {
 }
 
 function bootstrapApplication(): void {
-  if (appInitialized) return;
-  appInitialized = true;
+  if (appStore.getState().appInitialized) return;
+  appStore.getState().setAppInitialized();
 
   // Prevent long-press text selection / callout on touch devices globally
   if (isMobileTouch) {

@@ -1,44 +1,30 @@
-import { Alert } from './types';
-
-let allDivergenceSignals: Alert[] = [];
-
 /**
- * Tracks in-flight favorite toggles so that auto-refresh re-renders don't
- * overwrite an optimistic UI update with stale server data.
- * Key = signal ID, value = optimistic is_favorite value.
+ * divergenceState.ts — Legacy compatibility wrapper.
+ * Delegates to the Zustand divergenceStore so all existing consumers
+ * (divergenceFeedRender.ts, divergenceFeedEvents.ts, ticker.ts) continue
+ * working without import changes.
  */
-const pendingFavoriteToggles = new Map<number, boolean>();
+
+import { divergenceStore } from './store/divergenceStore';
+import type { Alert } from './types';
 
 export function addPendingFavoriteToggle(id: number, isFavorite: boolean): void {
-  pendingFavoriteToggles.set(id, isFavorite);
+  divergenceStore.getState().addPendingFavorite(id, isFavorite);
 }
 
 export function removePendingFavoriteToggle(id: number): void {
-  pendingFavoriteToggles.delete(id);
-}
-
-/** Apply pending favorite overrides onto a signal array (mutates in place). */
-function applyPendingFavorites(signals: Alert[]): void {
-  if (pendingFavoriteToggles.size === 0) return;
-  for (const signal of signals) {
-    const pending = pendingFavoriteToggles.get(signal.id);
-    if (pending !== undefined) {
-      signal.is_favorite = pending;
-    }
-  }
+  divergenceStore.getState().removePendingFavorite(id);
 }
 
 export function getDivergenceSignals(): Alert[] {
-  return allDivergenceSignals;
+  return divergenceStore.getState().getSignals();
 }
 
 export function setDivergenceSignals(signals: Alert[]): void {
-  allDivergenceSignals = signals;
+  divergenceStore.getState().setSignals(signals);
 }
 
 /** Replace only signals matching `timeframe`, keeping the other timeframe untouched. */
 export function setDivergenceSignalsByTimeframe(timeframe: '1d' | '1w', signals: Alert[]): void {
-  applyPendingFavorites(signals);
-  const kept = allDivergenceSignals.filter((a) => (a.timeframe || '').trim() !== timeframe);
-  allDivergenceSignals = [...kept, ...signals];
+  divergenceStore.getState().setSignalsByTimeframe(timeframe, signals);
 }
