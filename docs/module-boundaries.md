@@ -24,6 +24,13 @@ This repository uses explicit boundaries to keep coupling low and reduce archite
 - ESLint `no-restricted-imports` guards are configured in `eslint.config.mjs`.
 - CI runs ESLint and both TypeScript projects on each pull request.
 
+## Runtime Context Endpoints
+
+- `index.ts` may host lightweight operational/context routes that compose existing
+  services without introducing new route-module coupling (for example
+  `/api/trading-calendar/context` based on `server/services/tradingCalendar.ts`).
+- Keep these handlers thin, side-effect free, and dependency-direction compliant.
+
 ## Dead Code Policy
 
 - Do not keep no-op placeholders in production paths.

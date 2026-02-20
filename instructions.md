@@ -24,6 +24,7 @@ fixed before committing. This is not aspirational — it is the minimum bar.
 1. **`catch (err: unknown)`, always.**
    TypeScript 4+ defaults catch bindings to `unknown`. Using `catch (err: any)` defeats
    type safety. Narrow the error explicitly:
+
    ```typescript
    } catch (err: unknown) {
      const message = err instanceof Error ? err.message : String(err);
@@ -35,18 +36,19 @@ fixed before committing. This is not aspirational — it is the minimum bar.
    - CDN globals that cannot be imported (e.g., `declare const Chart: any; // LightweightCharts CDN`)
    - Runtime monkey-patching where public API is absent (e.g., `instrumentPool` in `dbMonitor.ts`)
    - `() => null as any` when satisfying a complex return type in tests
-   Unacceptable uses: `Record<string, any>` for known shapes, `(x: any)` parameters,
-   `(err as any).prop`, `const x: any = ...`. Use `unknown` + narrowing, generics, or proper interfaces.
-   For custom error properties use `Object.assign(new Error(...), { httpStatus: 400 }) as HttpError`.
-   For Fastify request augmentation use `declare module 'fastify' { interface FastifyRequest { ... } }`.
-   For accessing unknown API response payloads, cast to the expected return type directly:
-   `const payload = await res.json() as ExpectedType | null`.
+     Unacceptable uses: `Record<string, any>` for known shapes, `(x: any)` parameters,
+     `(err as any).prop`, `const x: any = ...`. Use `unknown` + narrowing, generics, or proper interfaces.
+     For custom error properties use `Object.assign(new Error(...), { httpStatus: 400 }) as HttpError`.
+     For Fastify request augmentation use `declare module 'fastify' { interface FastifyRequest { ... } }`.
+     For accessing unknown API response payloads, cast to the expected return type directly:
+     `const payload = await res.json() as ExpectedType | null`.
 
 3. **No dead code.** Unused functions, variables, imports, and type aliases must be deleted.
    This applies to test helpers too — if a helper is not called in a test, remove it.
 
 4. **Tests must be deterministic.** Never use `setTimeout(r, 0)` to yield and hope state
    has changed. Use explicit synchronization (Promise gates, counters, event flags):
+
    ```typescript
    // BAD — race condition
    await new Promise((r) => setTimeout(r, 0));
@@ -54,7 +56,11 @@ fixed before committing. This is not aspirational — it is the minimum bar.
 
    // GOOD — deterministic
    const running = new Promise<void>((r) => (signalRunning = r));
-   getTickers: async () => { signalRunning(); await block; return []; }
+   getTickers: async () => {
+     signalRunning();
+     await block;
+     return [];
+   };
    await running; // guaranteed: isRunning is true
    ```
 
@@ -104,17 +110,17 @@ fixed before committing. This is not aspirational — it is the minimum bar.
 
 ### Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 20+ / TypeScript 5.9 ESM |
-| HTTP server | Fastify 5 |
-| Database | PostgreSQL via `pg` (two optional pools) |
-| Frontend build | Vite 7 |
+| Layer           | Technology                                              |
+| --------------- | ------------------------------------------------------- |
+| Runtime         | Node.js 20+ / TypeScript 5.9 ESM                        |
+| HTTP server     | Fastify 5                                               |
+| Database        | PostgreSQL via `pg` (two optional pools)                |
+| Frontend build  | Vite 7                                                  |
 | Frontend charts | Lightweight Charts (CDN) + Chart.js (CDN, breadth only) |
-| Logging | Pino (structured JSON) |
-| Validation | Zod |
-| Caching | lru-cache |
-| Testing | Node.js built-in `test` + `tsx` for TypeScript |
+| Logging         | Pino (structured JSON)                                  |
+| Validation      | Zod                                                     |
+| Caching         | lru-cache                                               |
+| Testing         | Node.js built-in `test` + `tsx` for TypeScript          |
 
 ---
 
@@ -324,6 +330,7 @@ Reusable lifecycle manager for background scan jobs. See the **ScanState API Ref
 section under "New Background Job" for the complete method list.
 
 Also exports:
+
 - `runRetryPasses<TSettled extends TickerWorkerSettled>`: runs up to 2 retry passes over
   failed tickers with halving concurrency. Fully generic, callable from any orchestrator.
 - `TickerWorkerSettled` interface: all scan workers must return this shape.
@@ -346,24 +353,24 @@ Configurable parallel worker pool. Key properties:
 
 Required. Stores:
 
-| Table | Purpose |
-|---|---|
-| `sessions` | Auth session tokens (in-memory backed but also persisted) |
+| Table                 | Purpose                                                          |
+| --------------------- | ---------------------------------------------------------------- |
+| `sessions`            | Auth session tokens (in-memory backed but also persisted)        |
 | `run_metrics_history` | Historical run snapshots (fetch times, error rates, concurrency) |
-| `alerts` | Divergence alert records with TTL |
+| `alerts`              | Divergence alert records with TTL                                |
 
 ### Divergence Pool (`DIVERGENCE_DATABASE_URL`)
 
 Optional. Large-scale scan data. If not configured, all divergence features are disabled
 gracefully (`isDivergenceConfigured()` returns false).
 
-| Table | Purpose |
-|---|---|
-| `divergence_symbols` | Universe of tracked symbols (ticker, exchange) |
-| `daily_bars` | Fetched OHLCV bars for divergence detection |
-| `weekly_bars` | Weekly OHLCV bars |
-| `vdf_results` | Per-ticker VDF detection output (is_detected, scores, zones) |
-| `divergence_summary` | Precomputed divergence table (joined/aggregated view) |
+| Table                | Purpose                                                      |
+| -------------------- | ------------------------------------------------------------ |
+| `divergence_symbols` | Universe of tracked symbols (ticker, exchange)               |
+| `daily_bars`         | Fetched OHLCV bars for divergence detection                  |
+| `weekly_bars`        | Weekly OHLCV bars                                            |
+| `vdf_results`        | Per-ticker VDF detection output (is_detected, scores, zones) |
+| `divergence_summary` | Precomputed divergence table (joined/aggregated view)        |
 
 ### Query Patterns
 
@@ -382,6 +389,7 @@ gracefully (`isDivergenceConfigured()` returns false).
 Frontend additionally enforces `"noUnusedLocals"` and `"noUnusedParameters"`.
 
 Always run both:
+
 ```bash
 npx tsc --noEmit                                 # frontend
 npx tsc --noEmit --project tsconfig.server.json  # backend
@@ -406,18 +414,18 @@ if (!result.success) {
 
 ### No `any` — Specific Guidance
 
-| Situation | Correct Pattern |
-|---|---|
-| Error in `catch` | `catch (err: unknown)` + `err instanceof Error ? err.message : String(err)` |
-| Dynamic DB row | Define an explicit interface matching the SELECT columns |
-| Unknown JSON shape | `Record<string, unknown>` + explicit narrowing at each property access |
+| Situation                                 | Correct Pattern                                                                                                               |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Error in `catch`                          | `catch (err: unknown)` + `err instanceof Error ? err.message : String(err)`                                                   |
+| Dynamic DB row                            | Define an explicit interface matching the SELECT columns                                                                      |
+| Unknown JSON shape                        | `Record<string, unknown>` + explicit narrowing at each property access                                                        |
 | CDN global (Chart.js, Lightweight Charts) | `// eslint-disable-next-line @typescript-eslint/no-explicit-any` + `declare const LightweightCharts: any; // loaded from CDN` |
-| CDN callback params (chart events) | `// eslint-disable-next-line @typescript-eslint/no-explicit-any` + `(param: any) =>` with a comment |
-| Resume state bag | `Record<string, unknown>` — wrap all property accesses in `Number()` / `Array.isArray()` |
-| Test I/O stubs | `() => null as any` is acceptable with a comment when the return type is complex |
-| `Function` type | **Banned.** Always write the explicit signature: `(...args: unknown[]) => Promise<unknown>` or `() => void` |
-| OHLCV bar arrays (frontend) | `CandleBar[]` — import from `shared/api-types.ts` |
-| Chart interval params (frontend) | `ChartInterval` — import from `shared/api-types.ts` |
+| CDN callback params (chart events)        | `// eslint-disable-next-line @typescript-eslint/no-explicit-any` + `(param: any) =>` with a comment                           |
+| Resume state bag                          | `Record<string, unknown>` — wrap all property accesses in `Number()` / `Array.isArray()`                                      |
+| Test I/O stubs                            | `() => null as any` is acceptable with a comment when the return type is complex                                              |
+| `Function` type                           | **Banned.** Always write the explicit signature: `(...args: unknown[]) => Promise<unknown>` or `() => void`                   |
+| OHLCV bar arrays (frontend)               | `CandleBar[]` — import from `shared/api-types.ts`                                                                             |
+| Chart interval params (frontend)          | `ChartInterval` — import from `shared/api-types.ts`                                                                           |
 
 ### Error Type Narrowing Pattern
 
@@ -474,8 +482,8 @@ Add new polling endpoints to the exempt list.
 ```typescript
 interface TimedCacheEntry {
   value: unknown;
-  freshUntil: number;   // Serve directly; no revalidation needed
-  staleUntil: number;   // Serve stale; trigger background refresh
+  freshUntil: number; // Serve directly; no revalidation needed
+  staleUntil: number; // Serve stale; trigger background refresh
 }
 ```
 
@@ -487,7 +495,10 @@ In-flight map prevents duplicate concurrent fetches for identical cache keys:
 
 ```typescript
 const inFlight = CHART_IN_FLIGHT_REQUESTS.get(key);
-if (inFlight) { await inFlight; return; }
+if (inFlight) {
+  await inFlight;
+  return;
+}
 ```
 
 ### Pre-Warming
@@ -548,6 +559,7 @@ failure → logged, never crashes server. Pre-warm errors → swallowed.
 ### Adaptive Concurrency
 
 `resolveAdaptiveFetchConcurrency(runType)` computes concurrency from:
+
 - `DIVERGENCE_TABLE_BUILD_CONCURRENCY` (configured ceiling)
 - `DATA_API_MAX_REQUESTS_PER_SECOND` (rate limit budget)
 - `ESTIMATED_API_CALLS_PER_TICKER` (per run type)
@@ -595,8 +607,8 @@ All orchestrators use a `ScanState` instance (from `lib/ScanState.ts`) for lifec
 // Starting a run
 const abort = myScan.beginRun(resumeRequested);
 // ... run work ...
-myScan.markCompleted(fields);   // or markStopped / markFailed
-myScan.cleanup(abort);          // always in finally block
+myScan.markCompleted(fields); // or markStopped / markFailed
+myScan.cleanup(abort); // always in finally block
 ```
 
 ### Full ScanState API Reference
@@ -647,11 +659,11 @@ Resume state bags are `Record<string, unknown>`. Wrap every property access in a
 const rs = myScan.currentResumeState;
 // ✓ correct
 const total = Number(rs?.totalTickers) || 0;
-const tickers: string[] = (rs && Array.isArray(rs.tickers)) ? (rs.tickers as string[]) : [];
+const tickers: string[] = rs && Array.isArray(rs.tickers) ? (rs.tickers as string[]) : [];
 const nextIndex = Math.max(0, Number(rs?.nextIndex || 0));
 // ✗ wrong
-const tickers = rs?.tickers || [];   // unknown, causes type error
-const idx = rs.nextIndex < total;    // unknown < number, type error
+const tickers = rs?.tickers || []; // unknown, causes type error
+const idx = rs.nextIndex < total; // unknown < number, type error
 ```
 
 ### runRetryPasses
@@ -689,6 +701,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
 ```
 
 Test usage:
+
 ```typescript
 await runVDFScan({
   _deps: {
@@ -696,7 +709,7 @@ await runVDFScan({
     getTickers: async () => ['AAPL', 'MSFT'],
     detectTicker: async (ticker) => ({ is_detected: ticker === 'AAPL' }),
     sweepCache: () => {},
-    createMetricsTracker: () => null as any,  // suppresses DB writes
+    createMetricsTracker: () => null as any, // suppresses DB writes
   },
 });
 ```
@@ -741,12 +754,12 @@ and first 200 chars of SQL (sanitized).
 All views are in `index.html` — shown/hidden by CSS class toggling (`.hidden`). No routing
 library. `main.ts` owns the view-switching logic.
 
-| View | Key Module | Hash Route | Description |
-|---|---|---|---|
-| Alerts (default) | `divergenceFeed.ts` | `#/divergence` | Auto-polling alert list, VDF status panel |
-| Breadth | `breadth.ts` | `#/breadth` | MA breadth gauges + history + normalized compare (Chart.js) |
-| Admin | `admin.ts` | `#/admin` | System health, operations, run metrics, history, preferences |
-| Chart (sub-view) | `chart.ts` | — | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
+| View             | Key Module          | Hash Route     | Description                                                      |
+| ---------------- | ------------------- | -------------- | ---------------------------------------------------------------- |
+| Alerts (default) | `divergenceFeed.ts` | `#/divergence` | Auto-polling alert list, VDF status panel                        |
+| Breadth          | `breadth.ts`        | `#/breadth`    | MA breadth gauges + history + normalized compare (Chart.js)      |
+| Admin            | `admin.ts`          | `#/admin`      | System health, operations, run metrics, history, preferences     |
+| Chart (sub-view) | `chart.ts`          | —              | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
 
 ### Admin View (`src/admin.ts`)
 
@@ -772,6 +785,8 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
 - VDF zone overlays rendered as custom primitives.
 - `chartDataCache` (Map in module scope) caches fetched data; persisted to `sessionStorage`.
 - Refresh button: clears cache entry → re-fetches → re-renders.
+- Live refresh: 1-minute polling cadence, but chart updates only during regular U.S. market hours
+  (9:30 AM-4:00 PM ET) using server trading-calendar context (holiday + early-close aware).
 - Pre-warm triggered after render: loads adjacent intervals in background.
 - **Ticker badge tooltip**: Clicking the ticker badge in the chart shows an info tooltip
   (name, SIC description, market cap, business description) fetched from
@@ -898,16 +913,17 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
 All in-memory caches must have both a **max size cap** and a **TTL** (or per-entry expiration).
 FIFO eviction via `Map.keys().next()` when cap is exceeded.
 
-| Cache | File | Max | TTL | Storage |
-|---|---|---|---|---|
-| Chart OHLCV data | `chartDataCache.ts` | 16 / 6 session | 15 min | Map + sessionStorage |
-| VDF results | `chartVDF.ts` | 200 | None (session-scoped) | Map |
-| Mini-chart bars | `divergenceMinichart.ts` | 400 | 30 min | Map (TTL wrapper) |
-| Divergence summaries | `divergenceTable.ts` | 600 | Per-entry `expiresAtMs` | Map |
-| Chart prefetch dedup | `chart.ts` | Self-cleaning | Until settled | Map of Promises |
-| Ticker info | `chart.ts` | Unbounded (session) | None (session-scoped) | Map |
+| Cache                | File                     | Max                 | TTL                     | Storage              |
+| -------------------- | ------------------------ | ------------------- | ----------------------- | -------------------- |
+| Chart OHLCV data     | `chartDataCache.ts`      | 16 / 6 session      | 15 min                  | Map + sessionStorage |
+| VDF results          | `chartVDF.ts`            | 200                 | None (session-scoped)   | Map                  |
+| Mini-chart bars      | `divergenceMinichart.ts` | 400                 | 30 min                  | Map (TTL wrapper)    |
+| Divergence summaries | `divergenceTable.ts`     | 600                 | Per-entry `expiresAtMs` | Map                  |
+| Chart prefetch dedup | `chart.ts`               | Self-cleaning       | Until settled           | Map of Promises      |
+| Ticker info          | `chart.ts`               | Unbounded (session) | None (session-scoped)   | Map                  |
 
 **Chart pre-warming priority chain** (all share an AbortController — new navigation cancels in-flight):
+
 - **P0**: Active chart load (highest priority)
 - **P1**: Same ticker, related intervals (e.g. 4hour → 1day, 1week)
 - **P3**: Neighbor tickers (next + prev) at the current interval
@@ -925,7 +941,7 @@ const span = document.createElement('span');
 span.textContent = label;
 
 // ✗ XSS risk
-el.innerHTML = `<b>${userValue}</b>`;   // never with any user-controlled data
+el.innerHTML = `<b>${userValue}</b>`; // never with any user-controlled data
 
 // ✓ innerHTML only with static string literals
 el.innerHTML = '<svg viewBox="0 0 24 24"><path d="..."/></svg>';
@@ -1006,14 +1022,14 @@ test('runVDFScan returns running when already in progress', async () => {
   const firstRun = runVDFScan({
     _deps: baseDeps({
       getTickers: async () => {
-        releaseGetTickers();  // beginRun() already called → isRunning is true
+        releaseGetTickers(); // beginRun() already called → isRunning is true
         await workerBlocked;
         return ['AAA'];
       },
     }),
   });
 
-  await getTickersCalled;  // deterministic — no setTimeout
+  await getTickersCalled; // deterministic — no setTimeout
   const concurrent = await runVDFScan({ _deps: baseDeps() });
   assert.equal(concurrent.status, 'running');
 
@@ -1037,21 +1053,21 @@ test('runVDFScan returns running when already in progress', async () => {
 
 ### Key Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | **Yes** | — | PostgreSQL primary connection string |
-| `DATA_API_KEY` | Warn | — | Market data provider API key |
-| `PORT` | No | 3000 | HTTP listen port |
-| `SITE_LOCK_PASSCODE` | No | — | Enables site-wide passcode gate |
-| `SESSION_SECRET` | Warn | passcode | Secret for signing session tokens |
-| `CORS_ORIGIN` | No | `*` | Allowed CORS origins |
-| `API_RATE_LIMIT_MAX` | No | 300 | Max requests per 15-minute window |
-| `DATA_API_MAX_REQUESTS_PER_SECOND` | No | 99 | Upstream API RPS budget (adaptive concurrency) |
-| `DIVERGENCE_DATABASE_URL` | No | — | PostgreSQL for scan/divergence data |
-| `DIVERGENCE_TABLE_BUILD_CONCURRENCY` | No | 24 | Max parallel tickers during fetch runs |
-| `DIVERGENCE_SCAN_CONCURRENCY` | No | 128 | Max parallel tickers during divergence scan |
-| `DEBUG_METRICS_SECRET` | No | — | Secret for debug metrics endpoint |
-| `DATA_API_REQUESTS_PAUSED` | No | false | Block all outbound market data calls |
+| Variable                             | Required | Default  | Description                                    |
+| ------------------------------------ | -------- | -------- | ---------------------------------------------- |
+| `DATABASE_URL`                       | **Yes**  | —        | PostgreSQL primary connection string           |
+| `DATA_API_KEY`                       | Warn     | —        | Market data provider API key                   |
+| `PORT`                               | No       | 3000     | HTTP listen port                               |
+| `SITE_LOCK_PASSCODE`                 | No       | —        | Enables site-wide passcode gate                |
+| `SESSION_SECRET`                     | Warn     | passcode | Secret for signing session tokens              |
+| `CORS_ORIGIN`                        | No       | `*`      | Allowed CORS origins                           |
+| `API_RATE_LIMIT_MAX`                 | No       | 300      | Max requests per 15-minute window              |
+| `DATA_API_MAX_REQUESTS_PER_SECOND`   | No       | 99       | Upstream API RPS budget (adaptive concurrency) |
+| `DIVERGENCE_DATABASE_URL`            | No       | —        | PostgreSQL for scan/divergence data            |
+| `DIVERGENCE_TABLE_BUILD_CONCURRENCY` | No       | 24       | Max parallel tickers during fetch runs         |
+| `DIVERGENCE_SCAN_CONCURRENCY`        | No       | 128      | Max parallel tickers during divergence scan    |
+| `DEBUG_METRICS_SECRET`               | No       | —        | Secret for debug metrics endpoint              |
+| `DATA_API_REQUESTS_PAUSED`           | No       | false    | Block all outbound market data calls           |
 
 ---
 
@@ -1118,28 +1134,31 @@ test('runVDFScan returns running when already in progress', async () => {
 ### Required Services
 
 Create in one Railway project/environment:
+
 1. `tradedata` app service (this repo)
 2. Primary Postgres service (`DATABASE_URL`)
 3. Separate divergence Postgres service (`DIVERGENCE_DATABASE_URL`)
 
 ### Service Settings
 
-| Setting | Value |
-|---|---|
-| Start command | `npm run start` |
-| Healthcheck path | `/readyz` |
-| Healthcheck timeout | `5s` |
-| Healthcheck interval | `15s` |
-| Restart policy | `ON_FAILURE` |
+| Setting              | Value           |
+| -------------------- | --------------- |
+| Start command        | `npm run start` |
+| Healthcheck path     | `/readyz`       |
+| Healthcheck timeout  | `5s`            |
+| Healthcheck interval | `15s`           |
+| Restart policy       | `ON_FAILURE`    |
 
 ### Health Response Shapes
 
 `GET /healthz` (liveness — always 200 while process is alive):
+
 ```json
 { "status": "ok", "timestamp": "...", "uptimeSeconds": 12345, "shuttingDown": false }
 ```
 
 `GET /readyz` (readiness — 503 if `primaryDb` is not `true` or `shuttingDown` is `true`):
+
 ```json
 {
   "ready": true,
@@ -1156,9 +1175,11 @@ Create in one Railway project/environment:
   "errors": { "primaryDb": null, "divergenceDb": null }
 }
 ```
+
 Notes: `dbPool` is omitted when pool stats are unavailable; `warnings` is omitted when `degraded` is false.
 
 Quick verification:
+
 ```bash
 curl -sS http://localhost:3000/healthz | jq
 curl -sS http://localhost:3000/readyz | jq
@@ -1190,21 +1211,21 @@ git push --mirror https://github.com/faridjalali/tradedata-backup.git
 
 ## Anti-Patterns
 
-| Pattern | Why it's wrong | Correct alternative |
-|---|---|---|
-| `catch (err: any)` | Defeats type safety | `catch (err: unknown)` + `instanceof Error` check |
-| `Record<string, any>` for known shapes | Loses all type safety | Define an explicit interface |
-| `Function` type | No signature — as loose as `any` | Write the explicit signature: `(...args: unknown[]) => void` |
-| `bars: any[]` in frontend | Loses OHLCV type safety | `CandleBar[]` from `shared/api-types.ts` |
-| `interval: any` in frontend | Loses interval constraint | `ChartInterval` from `shared/api-types.ts` |
-| `process.env.X` outside config.ts | Config is scattered, untestable | Add constant to config.ts |
-| `setTimeout(r, 0)` for test sync | Race condition, flaky | Promise gate resolved by the code under test |
-| Unused test helpers | Dead code | Delete them |
-| DB errors in test output | Missing dep injection | Inject `createMetricsTracker: () => null as any` |
-| Module-level `window.addEventListener` | Side effect on import | Export `initXxxListener()`, call from main.ts |
-| `innerHTML` with non-literal strings | XSS risk | `textContent` or `createElement` |
-| `export let mutableSet` | Leaks mutable state | Unexport; provide read-only accessor if needed |
-| Reading `process.env` in lib/ | lib/ must have no external deps | Import constant from config.ts |
-| Magic number in concurrency/retry | Unreadable, untunable | Named constant + comment explaining the value |
-| `lib/` importing from `services/` | Circular dep risk | Move the pure predicate to `lib/` |
-| `err.message` without narrowing | Throws on non-Error | `err instanceof Error ? err.message : String(err)` |
+| Pattern                                | Why it's wrong                   | Correct alternative                                          |
+| -------------------------------------- | -------------------------------- | ------------------------------------------------------------ |
+| `catch (err: any)`                     | Defeats type safety              | `catch (err: unknown)` + `instanceof Error` check            |
+| `Record<string, any>` for known shapes | Loses all type safety            | Define an explicit interface                                 |
+| `Function` type                        | No signature — as loose as `any` | Write the explicit signature: `(...args: unknown[]) => void` |
+| `bars: any[]` in frontend              | Loses OHLCV type safety          | `CandleBar[]` from `shared/api-types.ts`                     |
+| `interval: any` in frontend            | Loses interval constraint        | `ChartInterval` from `shared/api-types.ts`                   |
+| `process.env.X` outside config.ts      | Config is scattered, untestable  | Add constant to config.ts                                    |
+| `setTimeout(r, 0)` for test sync       | Race condition, flaky            | Promise gate resolved by the code under test                 |
+| Unused test helpers                    | Dead code                        | Delete them                                                  |
+| DB errors in test output               | Missing dep injection            | Inject `createMetricsTracker: () => null as any`             |
+| Module-level `window.addEventListener` | Side effect on import            | Export `initXxxListener()`, call from main.ts                |
+| `innerHTML` with non-literal strings   | XSS risk                         | `textContent` or `createElement`                             |
+| `export let mutableSet`                | Leaks mutable state              | Unexport; provide read-only accessor if needed               |
+| Reading `process.env` in lib/          | lib/ must have no external deps  | Import constant from config.ts                               |
+| Magic number in concurrency/retry      | Unreadable, untunable            | Named constant + comment explaining the value                |
+| `lib/` importing from `services/`      | Circular dep risk                | Move the pure predicate to `lib/`                            |
+| `err.message` without narrowing        | Throws on non-Error              | `err instanceof Error ? err.message : String(err)`           |

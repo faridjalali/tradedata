@@ -625,7 +625,36 @@ app.get('/api/logs/run-metrics', async (request, reply) => {
 app.get('/api/trading-calendar/context', async (request, reply) => {
   const today = currentEtDateString();
   const isTodayTradingDay = tradingCalendar.isTradingDay(today);
+  const isTodayEarlyClose = isTodayTradingDay ? tradingCalendar.isEarlyClose(today) : false;
+  const closeTimeEt = isTodayTradingDay ? tradingCalendar.getCloseTimeEt(today) : null;
   const lastTradingDay = isTodayTradingDay ? today : tradingCalendar.previousTradingDay(today);
+  const nowEtParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const part = (type: string): string => nowEtParts.find((p) => p.type === type)?.value || '';
+  const nowEtDate = `${part('year')}-${part('month')}-${part('day')}`;
+  const nowEtTime = `${part('hour')}:${part('minute')}:${part('second')}`;
+  const etMinutesSinceMidnight = Number(part('hour')) * 60 + Number(part('minute'));
+  const marketOpenMinutes = 9 * 60 + 30;
+  const defaultCloseMinutes = 16 * 60;
+  const closeParts = String(closeTimeEt || '16:00')
+    .split(':')
+    .map((v) => Number(v));
+  const closeMinutesEt =
+    closeParts.length >= 2 && Number.isFinite(closeParts[0]) && Number.isFinite(closeParts[1])
+      ? closeParts[0] * 60 + closeParts[1]
+      : defaultCloseMinutes;
+  const isRegularHoursEt =
+    isTodayTradingDay && etMinutesSinceMidnight >= marketOpenMinutes && etMinutesSinceMidnight < closeMinutesEt;
+  const nextRegularOpenDateEt =
+    isTodayTradingDay && etMinutesSinceMidnight < marketOpenMinutes ? today : tradingCalendar.nextTradingDay(today);
   let cursor = today;
   for (let i = 0; i < 5; i++) cursor = tradingCalendar.previousTradingDay(cursor);
   return reply.send({
@@ -633,6 +662,12 @@ app.get('/api/trading-calendar/context', async (request, reply) => {
     lastTradingDay,
     tradingDay5Back: cursor,
     isTodayTradingDay,
+    isTodayEarlyClose,
+    closeTimeEt,
+    etMinutesSinceMidnight,
+    isRegularHoursEt,
+    nowEt: `${nowEtDate}T${nowEtTime}`,
+    nextRegularOpenEt: `${nextRegularOpenDateEt}T09:30:00`,
     calendarInitialized: tradingCalendar.getStatus().initialized,
   });
 });

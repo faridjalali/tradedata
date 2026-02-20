@@ -228,6 +228,7 @@ Opens when clicking an alert card. Shows:
 **Chart controls:**
 
 - Refresh button (forces re-fetch, clears cache)
+- Live refresh checks every 1 minute, but only applies updates during regular U.S. market hours (9:30 AM-4:00 PM ET), including holiday and early-close awareness from the server trading calendar
 - Previous/Next ticker navigation (cycles through visible alert list)
 - Fullscreen toggle (Escape to exit)
 - Trendline drawing and eraser tools
@@ -336,6 +337,7 @@ Fetch full chart data (bars + indicators) for a ticker.
 #### `GET /api/chart/latest`
 
 Same params as `/api/chart`. Returns only the most recent data point for each indicator.
+Used by the ticker chart's live-refresh loop (1-minute poll cadence during regular market hours only).
 
 **Response:** `{ interval, timezone, latestBar, latestRsi, latestVolumeDeltaRsi, latestVolumeDelta }`
 
@@ -428,7 +430,10 @@ Fetch company reference info for a ticker (name, description, SIC, market cap).
 
 ### Scan Control Endpoints
 
-All scan control endpoints require secret-based auth.
+Scan control endpoints accept either:
+
+- Secret-based auth (`?secret=...` or `x-divergence-secret`), or
+- Valid site-lock session cookie (`/api/auth/verify`).
 
 | Endpoint                            | Method | Description                            |
 | ----------------------------------- | ------ | -------------------------------------- |
@@ -463,10 +468,10 @@ All scan control endpoints require secret-based auth.
 
 ### Utility Endpoints
 
-| Endpoint                        | Method | Description                      |
-| ------------------------------- | ------ | -------------------------------- |
-| `/api/logs/run-metrics`         | GET    | Run metrics history              |
-| `/api/trading-calendar/context` | GET    | Current trading calendar context |
+| Endpoint                        | Method | Description                                                                                                          |
+| ------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `/api/logs/run-metrics`         | GET    | Run metrics history                                                                                                  |
+| `/api/trading-calendar/context` | GET    | Current trading-calendar context (`isTodayTradingDay`, `isTodayEarlyClose`, `closeTimeEt`, `isRegularHoursEt`, etc.) |
 
 ### Health Endpoints
 

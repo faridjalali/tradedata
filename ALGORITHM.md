@@ -1040,6 +1040,15 @@ Exports:
 
 ---
 
+## Platform Integration Notes
+
+- The custom ticker chart live-refresh loop polls every 1 minute.
+- Live updates are applied only during U.S. regular trading hours.
+- Session gating is calendar-aware (holidays + early closes) via `GET /api/trading-calendar/context`, not just weekday/time heuristics.
+- Outside regular trading hours, the chart does not request `/api/chart/latest`.
+
+---
+
 ## Open Questions / Future Work
 
 ### Completed

@@ -188,6 +188,14 @@ let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
 let chartLayoutRefreshRafId: number | null = null;
 const chartPrefetchInFlight = new Map<string, Promise<void>>();
+const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
+
+interface TradingCalendarContextPayload {
+  isRegularHoursEt?: boolean;
+}
+
+let marketContextCachedAtMs = 0;
+let marketContextIsRegularHoursEt = false;
 function tc() {
   return getThemeColors();
 }
@@ -2174,6 +2182,42 @@ function isRegularTradingHoursEtNow(now: Date = new Date()): boolean {
   return minutesSinceMidnight >= marketOpenMinutes && minutesSinceMidnight < marketCloseMinutes;
 }
 
+async function isRegularTradingHoursByServerContext(): Promise<boolean> {
+  const nowMs = Date.now();
+  if (nowMs - marketContextCachedAtMs <= MARKET_CONTEXT_CACHE_MS) {
+    return marketContextIsRegularHoursEt;
+  }
+
+  const abortController = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    abortController.abort();
+  }, 4000);
+  try {
+    const response = await fetch('/api/trading-calendar/context', {
+      cache: 'no-store',
+      signal: abortController.signal,
+    });
+    if (!response.ok) {
+      const fallback = isRegularTradingHoursEtNow();
+      marketContextCachedAtMs = nowMs;
+      marketContextIsRegularHoursEt = fallback;
+      return fallback;
+    }
+    const payload = (await response.json().catch(() => null)) as TradingCalendarContextPayload | null;
+    const open = Boolean(payload?.isRegularHoursEt);
+    marketContextCachedAtMs = nowMs;
+    marketContextIsRegularHoursEt = open;
+    return open;
+  } catch {
+    const fallback = isRegularTradingHoursEtNow();
+    marketContextCachedAtMs = nowMs;
+    marketContextIsRegularHoursEt = fallback;
+    return fallback;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
   if (!candleSeries || !rsiChart || !volumeDeltaRsiSeries || !volumeDeltaHistogramSeries) return false;
   if (!Array.isArray(currentBars) || currentBars.length === 0) return false;
@@ -2378,12 +2422,15 @@ function ensureChartLiveRefreshTimer(): void {
     if (chartFetchAbortController) return;
     if (!currentChartTicker) return;
     if (!isTickerChartVisible()) return;
-    if (!isRegularTradingHoursEtNow()) return;
 
     const scheduledTicker = currentChartTicker;
     const scheduledInterval = currentChartInterval;
     chartLiveRefreshInFlight = true;
-    refreshLatestChartDataInPlace(scheduledTicker, scheduledInterval)
+    isRegularTradingHoursByServerContext()
+      .then((isOpen) => {
+        if (!isOpen) return;
+        return refreshLatestChartDataInPlace(scheduledTicker, scheduledInterval);
+      })
       .catch(() => {})
       .finally(() => {
         chartLiveRefreshInFlight = false;

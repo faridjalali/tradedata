@@ -17,6 +17,8 @@ This project is not enterprise-grade, but releases should still follow a consist
    - `npm run build`
 3. Run smoke checks against the deployed target:
    - `BASE_URL=https://catvue.com npm run release:smoke`
+4. Verify market-session context correctness:
+   - `curl -sS https://catvue.com/api/trading-calendar/context | jq '.isTodayTradingDay, .isTodayEarlyClose, .isRegularHoursEt, .closeTimeEt'`
 
 ## Deployment Steps
 
@@ -24,6 +26,8 @@ This project is not enterprise-grade, but releases should still follow a consist
 2. Deploy `main` using the standard Railway deployment flow.
 3. Re-run smoke checks on production:
    - `BASE_URL=https://catvue.com npm run release:smoke`
+4. Re-check trading-calendar context payload:
+   - `curl -sS https://catvue.com/api/trading-calendar/context | jq '.isRegularHoursEt, .nextRegularOpenEt'`
 
 ## Rollback Checklist
 
