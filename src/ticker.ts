@@ -76,8 +76,8 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
   // Apply per-column date filter (last N fetch days)
   const applyTickerDateFilter = (alerts: typeof daily, mode: ColumnFeedMode) => {
     if (mode === '1') return filterToLatestNDates(alerts, 1);
-    if (mode === '2') return filterToLatestNDates(alerts, 2);
     if (mode === '5') return filterToLatestNDates(alerts, 5);
+    if (mode === '30') return filterToLatestNDates(alerts, 30);
     return alerts;
   };
   daily = applyTickerDateFilter(daily, getColumnFeedMode('daily'));

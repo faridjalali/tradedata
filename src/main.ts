@@ -398,7 +398,7 @@ function initColumnTimeframeButtons(): void {
   document.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
 
-    // Timeframe button click (1, 2, 5, custom)
+    // Timeframe button click (1, 5, 30, custom)
     const tfBtn = target.closest('.column-tf-controls .pane-btn[data-tf]') as HTMLElement | null;
     if (tfBtn) {
       const controls = tfBtn.closest('.column-tf-controls') as HTMLElement | null;

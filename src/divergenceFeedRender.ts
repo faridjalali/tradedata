@@ -28,7 +28,7 @@ import { SortMode, Alert } from './types';
 // Types
 // ---------------------------------------------------------------------------
 
-export type ColumnFeedMode = '1' | '2' | '5' | 'custom';
+export type ColumnFeedMode = '1' | '5' | '30' | 'custom';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -115,8 +115,8 @@ export function filterToLatestNDates(alerts: Alert[], n: number): Alert[] {
 /** Apply column feed mode date filter */
 function applyColumnDateFilter(alerts: Alert[], mode: ColumnFeedMode): Alert[] {
   if (mode === '1') return filterToLatestNDates(alerts, 1);
-  if (mode === '2') return filterToLatestNDates(alerts, 2);
   if (mode === '5') return filterToLatestNDates(alerts, 5);
+  if (mode === '30') return filterToLatestNDates(alerts, 30);
   return alerts; // 'custom' — server already filtered
 }
 

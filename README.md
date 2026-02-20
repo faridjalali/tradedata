@@ -183,7 +183,7 @@ The application has three main views accessible from the header navigation:
 Two-column layout showing daily and weekly divergence signals.
 
 **Each column provides:**
-- Date range controls: 1, 2, 5 days, or custom date range (C button)
+- Date range controls: 1, 5, 30 days, or custom date range (C button)
 - Sort modes: Favorite, Date, Volume, Score
 - Infinite scroll pagination (100 alerts per page)
 
