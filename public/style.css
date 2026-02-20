@@ -291,7 +291,7 @@ h2 {
   height: 24px;
   border-radius: 4px;
   cursor: pointer;
-  padding: 0;
+  padding: 0 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -315,7 +315,7 @@ h2 {
   border-color: var(--highlight);
 }
 .pane-btn.label {
-  padding: 0 8px;
+  padding: 0 6px;
   cursor: default;
   pointer-events: none;
   user-select: none;
@@ -1481,7 +1481,7 @@ button:hover {
 
 
 #breadth-metric-btns .pane-btn {
-  padding: 0 14px;
+  padding: 0 6px;
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
