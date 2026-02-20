@@ -203,6 +203,8 @@ declare module 'fastify' {
 app.addHook('onRequest', async (request, reply) => {
   const nonce = crypto.randomBytes(16).toString('base64');
   reply.cspNonce = { script: nonce, style: nonce };
+  // fastify-helmet's directives callback gives the raw Node response, so attach it there too
+  (reply.raw as any).cspNonce = reply.cspNonce;
 });
 
 await app.register(fastifyHelmet, {
