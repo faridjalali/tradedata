@@ -25,34 +25,13 @@ export function showLoadingOverlay(container: HTMLElement): void {
   // Create loading overlay
   const overlay = document.createElement('div');
   overlay.className = 'chart-loading-overlay';
-  overlay.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: ${tc().bgOverlay95};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    pointer-events: none;
-  `;
 
   // Create loading spinner
   const spinner = document.createElement('div');
-  spinner.innerHTML = `
-    <svg width="40" height="40" viewBox="0 0 40 40" style="animation: spin 1s linear infinite;">
-      <circle cx="20" cy="20" r="16" fill="none" stroke="${tc().spinnerColor}" stroke-width="3"
-              stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" opacity="0.8"/>
-    </svg>
-    <style>
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-    </style>
-  `;
+  spinner.className = 'chart-loading-spinner';
+  spinner.innerHTML = `<svg class="chart-loading-spinner-svg" viewBox="0 0 40 40" aria-hidden="true">
+      <circle class="chart-loading-spinner-circle" cx="20" cy="20" r="16" fill="none" />
+    </svg>`;
 
   overlay.appendChild(spinner);
   container.appendChild(overlay);
@@ -65,33 +44,12 @@ export function showRetryOverlay(container: HTMLElement, onRetry: () => void): v
   }
 
   const overlay = document.createElement('div');
-  overlay.className = 'chart-loading-overlay';
-  overlay.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: ${tc().bgOverlay95};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    pointer-events: auto;
-  `;
+  overlay.className = 'chart-loading-overlay is-interactive';
 
   const retryBtn = document.createElement('button');
   retryBtn.type = 'button';
+  retryBtn.className = 'chart-retry-btn';
   retryBtn.textContent = 'Try Refreshing';
-  retryBtn.style.background = tc().cardBg;
-  retryBtn.style.color = tc().textPrimary;
-  retryBtn.style.border = `1px solid ${tc().borderColor}`;
-  retryBtn.style.borderRadius = '6px';
-  retryBtn.style.padding = '8px 12px';
-  retryBtn.style.fontSize = '12px';
-  retryBtn.style.fontWeight = '600';
-  retryBtn.style.cursor = 'pointer';
-  retryBtn.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   retryBtn.addEventListener('click', (event) => {
     event.preventDefault();
     onRetry();
@@ -159,12 +117,11 @@ export function reapplyInlineThemeStyles(): void {
 
   // Loading / retry overlays
   document.querySelectorAll<HTMLElement>('.chart-loading-overlay').forEach((el) => {
-    el.style.background = c.bgOverlay95;
     const btn = el.querySelector('button') as HTMLElement | null;
     if (btn) {
-      btn.style.background = c.cardBg;
-      btn.style.color = c.textPrimary;
-      btn.style.borderColor = c.borderColor;
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.borderColor = '';
     }
   });
 

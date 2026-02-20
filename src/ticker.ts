@@ -62,6 +62,8 @@ export function setTickerWeeklySort(mode: SortMode): void {
 
 export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
   const refreshCharts = options.refreshCharts !== false;
+  updateSortButtonUi('#ticker-view .ticker-daily-sort', tickerDailySortMode, tickerDailySortDirection);
+  updateSortButtonUi('#ticker-view .ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
   const allAlerts = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allAlerts);
   const alerts = allAlerts.filter((a) => a.ticker === ticker);

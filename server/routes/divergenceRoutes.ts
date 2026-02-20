@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
 import { timingSafeStringEqual } from '../middleware.js';
 import { IS_PRODUCTION } from '../config.js';
+import * as sessionAuth from '../services/sessionAuth.js';
 
 interface DivergenceRoutesOptions {
   app: FastifyInstance;
@@ -104,7 +105,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   }
 
   /** Send 503 or 401 if not configured or secret mismatch. Returns true if rejected. */
-  function rejectIfUnauthorized(req: FastifyRequest, res: FastifyReply): boolean {
+  async function rejectIfUnauthorized(req: FastifyRequest, res: FastifyReply): Promise<boolean> {
     if (rejectIfNotConfigured(res)) return true;
     const configuredSecret = String(divergenceScanSecret || '').trim();
     if (!configuredSecret && IS_PRODUCTION) {
@@ -114,7 +115,19 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
     const providedSecret = String(
       (req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '',
     ).trim();
-    if (configuredSecret && !timingSafeStringEqual(configuredSecret, providedSecret)) {
+    if (configuredSecret && timingSafeStringEqual(configuredSecret, providedSecret)) {
+      return false;
+    }
+
+    // If the caller has a valid site-lock session, allow UI-admin actions
+    // without requiring manual secret propagation through frontend requests.
+    const sessionToken = sessionAuth.parseCookieValue(req as { headers: { cookie?: string } });
+    const hasValidSession = await sessionAuth.validateSession(sessionToken);
+    if (!configuredSecret || hasValidSession) {
+      return false;
+    }
+
+    if (configuredSecret) {
       res.code(401).send({ error: 'Unauthorized' });
       return true;
     }
@@ -156,7 +169,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   }
 
   app.post('/api/divergence/scan', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     const scanRequest = buildManualScanRequest({
@@ -177,7 +190,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/pause', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof requestPauseScan !== 'function') {
       return res.code(501).send({ error: 'Scan pause endpoint is not enabled' });
     }
@@ -188,7 +201,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/resume', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof runDailyDivergenceScan !== 'function') {
       return res.code(501).send({ error: 'Scan resume endpoint is not enabled' });
     }
@@ -205,7 +218,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopScan !== 'function') {
       return res.code(501).send({ error: 'Scan stop endpoint is not enabled' });
     }
@@ -215,7 +228,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceTableBuild !== 'function') {
@@ -235,7 +248,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/pause', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
 
     if (typeof requestPauseTableBuild !== 'function') {
       return res.code(501).send({ error: 'Pause endpoint is not enabled' });
@@ -252,7 +265,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/resume', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof runDivergenceTableBuild !== 'function') {
       return res.code(501).send({ error: 'Table resume endpoint is not enabled' });
     }
@@ -269,7 +282,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/table/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
 
     if (typeof requestStopTableBuild !== 'function') {
       return res.code(501).send({ error: 'Table stop endpoint is not enabled' });
@@ -282,7 +295,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-daily/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceFetchDailyData !== 'function') {
@@ -300,7 +313,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-daily/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopFetchDailyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-all stop endpoint is not enabled' });
     }
@@ -310,7 +323,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-weekly/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (isAnyJobRunning()) return res.code(409).send({ status: 'running' });
 
     if (typeof runDivergenceFetchWeeklyData !== 'function') {
@@ -328,7 +341,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/fetch-weekly/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopFetchWeeklyData !== 'function') {
       return res.code(501).send({ error: 'Fetch-weekly stop endpoint is not enabled' });
     }
@@ -382,7 +395,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/vdf-scan/run', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
 
     if (typeof getIsVDFScanRunning === 'function' && getIsVDFScanRunning()) {
       return res.code(409).send({ status: 'running' });
@@ -403,7 +416,7 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   });
 
   app.post('/api/divergence/vdf-scan/stop', async (req: FastifyRequest, res: FastifyReply) => {
-    if (rejectIfUnauthorized(req, res)) return;
+    if (await rejectIfUnauthorized(req, res)) return;
     if (typeof requestStopVDFScan !== 'function') {
       return res.code(501).send({ error: 'VDF scan stop endpoint is not enabled' });
     }

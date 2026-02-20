@@ -4,9 +4,7 @@
  */
 
 import { isMobileTouch } from './chart';
-import {
-  toggleDivergenceFavorite,
-} from './divergenceApi';
+import { toggleDivergenceFavorite } from './divergenceApi';
 import {
   getDivergenceSignals,
   setDivergenceSignals,
@@ -23,14 +21,6 @@ import {
   renderInlineMinicharts,
   isMinichartEnabled,
 } from './divergenceMinichart';
-import {
-  setDivergenceDailySort,
-  setDivergenceWeeklySort,
-  renderDivergenceContainer,
-  incrementDailyVisibleCount,
-  incrementWeeklyVisibleCount,
-} from './divergenceFeedRender';
-import { SortMode } from './types';
 
 // ---------------------------------------------------------------------------
 // Favorites
@@ -158,21 +148,6 @@ export function setupDivergenceFeedDelegation(): void {
     }
   });
 
-  // Sort Buttons
-  document.querySelectorAll('#view-divergence .divergence-daily-sort .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = (btn as HTMLElement).dataset.sort as SortMode;
-      setDivergenceDailySort(mode);
-    });
-  });
-
-  document.querySelectorAll('#view-divergence .divergence-weekly-sort .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = (btn as HTMLElement).dataset.sort as SortMode;
-      setDivergenceWeeklySort(mode);
-    });
-  });
-
   // --- Mini-chart hover overlay on alert cards ---
   // Use capture phase because mouseenter/mouseleave don't bubble.
   // Guard with relatedTarget so moves between children within the same card
@@ -202,11 +177,13 @@ export function setupDivergenceFeedDelegation(): void {
       if (currentTimer !== null) {
         window.clearTimeout(currentTimer);
       }
-      setMiniChartHoverTimer(window.setTimeout(() => {
-        setMiniChartHoverTimer(null);
-        const rect = card.getBoundingClientRect();
-        showMiniChartOverlay(ticker, rect);
-      }, 1000));
+      setMiniChartHoverTimer(
+        window.setTimeout(() => {
+          setMiniChartHoverTimer(null);
+          const rect = card.getBoundingClientRect();
+          showMiniChartOverlay(ticker, rect);
+        }, 1000),
+      );
     },
     true,
   );
@@ -319,18 +296,12 @@ export function setupDivergenceFeedDelegation(): void {
     if (weekly) renderInlineMinicharts(weekly);
   });
 
-  // "Show more" pagination button
-  view.addEventListener('click', (e: Event) => {
-    const btn = (e.target as HTMLElement).closest('.show-more-btn') as HTMLElement | null;
-    if (!btn) return;
-    const tf = btn.dataset.timeframe as '1d' | '1w' | undefined;
-    if (!tf) return;
-    if (tf === '1d') {
-      incrementDailyVisibleCount();
-      renderDivergenceContainer('1d');
-    } else {
-      incrementWeeklyVisibleCount();
-      renderDivergenceContainer('1w');
-    }
-  });
+  // Keep minicharts in sync with current cards even when no setting toggle event fires.
+  const rerenderMinicharts = () => {
+    const daily = document.getElementById('divergence-daily-container');
+    const weekly = document.getElementById('divergence-weekly-container');
+    if (daily) renderInlineMinicharts(daily);
+    if (weekly) renderInlineMinicharts(weekly);
+  };
+  window.setTimeout(rerenderMinicharts, 0);
 }

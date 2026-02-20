@@ -257,7 +257,11 @@ export function renderDivergenceOverview(): void {
       renderInlineMinicharts(dailyContainer);
       renderInlineMinicharts(weeklyContainer);
     })
-    .catch(() => {});
+    .catch(() => {
+      // Fall back to per-card fetch path when batch prefetch fails.
+      renderInlineMinicharts(dailyContainer);
+      renderInlineMinicharts(weeklyContainer);
+    });
 }
 
 /**
@@ -306,7 +310,10 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
       // new ones for cards added in this render (e.g. new tickers or "show more")
       renderInlineMinicharts(container);
     })
-    .catch(() => {});
+    .catch(() => {
+      // Fall back to per-card fetch path when batch prefetch fails.
+      renderInlineMinicharts(container);
+    });
 }
 
 /**

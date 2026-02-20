@@ -1633,6 +1633,59 @@ button:hover {
   font-size: 0.9rem;
 }
 
+.chart-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-overlay-95);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.chart-loading-overlay.is-interactive {
+  pointer-events: auto;
+}
+
+.chart-loading-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-loading-spinner-svg {
+  width: 40px;
+  height: 40px;
+  animation: chart-loading-spin 1s linear infinite;
+}
+
+.chart-loading-spinner-circle {
+  stroke: var(--spinner-color);
+  stroke-width: 3;
+  stroke-dasharray: 80;
+  stroke-dashoffset: 60;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+@keyframes chart-loading-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.chart-retry-btn {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+
 .chart-error {
   text-align: center;
   padding: 40px;

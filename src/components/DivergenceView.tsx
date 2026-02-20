@@ -1,9 +1,11 @@
+import { useEffect } from 'preact/hooks';
 import { useStore } from 'zustand';
 import { divergenceStore } from '../store/divergenceStore';
-import { createAlertSortFn } from '../utils';
-import { Alert } from '../types';
+import { createAlertSortFn, updateSortButtonUi } from '../utils';
+import { Alert, SortMode } from '../types';
 import { fetchDivergenceSignalsByTimeframe, setColumnFeedMode, setColumnCustomDates } from '../divergenceFeedRender';
 import { DIVERGENCE_LOOKBACK_DAYS } from '../divergenceTable';
+import { renderInlineMinicharts } from '../divergenceMinichart';
 import type { ColumnKey, ColumnFeedMode } from '../store/divergenceStore';
 
 // ---------------------------------------------------------------------------
@@ -175,7 +177,7 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
     }
   };
 
-  const setDivergenceSort = (mode: any) => {
+  const setDivergenceSort = (mode: SortMode) => {
     const store = divergenceStore.getState();
     const s = store.getColumn(columnKey);
     let newSort = s.sortMode;
@@ -208,6 +210,21 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
   const handleShowMore = () => {
     divergenceStore.getState().incrementColumnVisibleCount(columnKey);
   };
+
+  useEffect(() => {
+    updateSortButtonUi(`#view-divergence .divergence-${columnKey}-sort`, columnState.sortMode, columnState.sortDirection);
+  }, [columnKey, columnState.sortMode, columnState.sortDirection]);
+
+  useEffect(() => {
+    const container = document.getElementById(`divergence-${columnKey}-container`) as HTMLElement | null;
+    if (!container) return;
+    const raf = window.requestAnimationFrame(() => {
+      renderInlineMinicharts(container);
+    });
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [columnKey, slice.length, total, columnState.feedMode, columnState.sortMode, columnState.sortDirection]);
 
   return (
     <div className="column">
