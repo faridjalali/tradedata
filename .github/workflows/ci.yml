@@ -81,3 +81,11 @@ jobs:
 
       - name: E2E (Playwright)
         run: npx playwright test
+
+  required-pr-checks:
+    if: github.event_name == 'pull_request'
+    needs: [dependency-review, security, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Required checks passed
+        run: echo "All required PR checks completed successfully."

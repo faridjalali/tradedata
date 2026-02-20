@@ -266,7 +266,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         summary: 'Favorite Divergence Signal',
         description: 'Toggle favorite status for a Divergence Signal',
         params: z.object({ id: z.coerce.number().positive() }),
-        body: z.object({ is_favorite: z.boolean().optional() }),
+        body: z.object({ is_favorite: z.boolean().optional() }).optional(),
         response: {
           200: z.any(),
           400: z.object({ error: z.string() }),
@@ -279,7 +279,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
     async (request, reply) => {
       if (!isDivergenceConfigured()) return reply.code(503).send({ error: 'Divergence database is not configured' });
       const { id } = request.params;
-      const is_favorite = request.body.is_favorite;
+      const is_favorite = request.body?.is_favorite;
       try {
         if (!divergenceDb) return reply.code(503).send({ error: 'Divergence database is not configured' });
         let queryResult: SqlRowsResult;

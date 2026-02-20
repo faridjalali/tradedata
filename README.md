@@ -176,6 +176,7 @@ Routes never contain business logic. Services never import routes. No circular d
 - Module boundaries: `docs/module-boundaries.md`
 - Ownership rules: `.github/CODEOWNERS`
 - Pull request checklist: `.github/pull_request_template.md`
+- Release/rollback runbook: `docs/release-runbook.md`
 
 ---
 

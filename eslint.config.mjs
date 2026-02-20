@@ -16,6 +16,7 @@ const nodeGlobals = {
   URLSearchParams: 'readonly',
   fetch: 'readonly',
   AbortController: 'readonly',
+  AbortSignal: 'readonly',
   Response: 'readonly',
   Headers: 'readonly',
 };

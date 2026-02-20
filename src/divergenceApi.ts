@@ -44,9 +44,18 @@ export async function fetchDivergenceSignalsFromApi(params: string = ''): Promis
 export async function toggleDivergenceFavorite(id: number): Promise<Alert> {
   const response = await fetch(`/api/divergence/signals/${id}/favorite`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
   });
   if (!response.ok) {
-    throw new Error('Network response was not ok');
+    const payload = await response.json().catch(() => ({}) as { error?: string });
+    const reason =
+      typeof payload?.error === 'string' && payload.error.trim()
+        ? payload.error.trim()
+        : `Favorite toggle failed (HTTP ${response.status})`;
+    throw new Error(reason);
   }
   return normalizeAlert(await response.json());
 }
@@ -126,59 +135,112 @@ async function postDivergenceAction(
 // ---------------------------------------------------------------------------
 
 export const pauseDivergenceScan = () =>
-  postDivergenceAction('/api/divergence/scan/pause', { label: 'pause divergence scan', defaultStatus: 'pause-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/scan/pause', {
+    label: 'pause divergence scan',
+    defaultStatus: 'pause-requested',
+    on409: 'return-status',
+  });
 
 export const resumeDivergenceScan = () =>
-  postDivergenceAction('/api/divergence/scan/resume', { label: 'resume divergence scan', defaultStatus: 'started', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/scan/resume', {
+    label: 'resume divergence scan',
+    defaultStatus: 'started',
+    on409: 'return-status',
+  });
 
 export const stopDivergenceScan = () =>
-  postDivergenceAction('/api/divergence/scan/stop', { label: 'stop divergence scan', defaultStatus: 'stop-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/scan/stop', {
+    label: 'stop divergence scan',
+    defaultStatus: 'stop-requested',
+    on409: 'return-status',
+  });
 
 // ---------------------------------------------------------------------------
 // Table build actions
 // ---------------------------------------------------------------------------
 
 export const startDivergenceTableBuild = () =>
-  postDivergenceAction('/api/divergence/table/run', { body: { force: true }, label: 'start table build', defaultStatus: 'started', on409: 'return-running' });
+  postDivergenceAction('/api/divergence/table/run', {
+    body: { force: true },
+    label: 'start table build',
+    defaultStatus: 'started',
+    on409: 'return-running',
+  });
 
 export const pauseDivergenceTableBuild = () =>
-  postDivergenceAction('/api/divergence/table/pause', { label: 'pause table build', defaultStatus: 'pause-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/table/pause', {
+    label: 'pause table build',
+    defaultStatus: 'pause-requested',
+    on409: 'return-status',
+  });
 
 export const resumeDivergenceTableBuild = () =>
-  postDivergenceAction('/api/divergence/table/resume', { label: 'resume table build', defaultStatus: 'started', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/table/resume', {
+    label: 'resume table build',
+    defaultStatus: 'started',
+    on409: 'return-status',
+  });
 
 export const stopDivergenceTableBuild = () =>
-  postDivergenceAction('/api/divergence/table/stop', { label: 'stop table build', defaultStatus: 'stop-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/table/stop', {
+    label: 'stop table build',
+    defaultStatus: 'stop-requested',
+    on409: 'return-status',
+  });
 
 // ---------------------------------------------------------------------------
 // Fetch daily / weekly data actions
 // ---------------------------------------------------------------------------
 
 export const startDivergenceFetchDailyData = () =>
-  postDivergenceAction('/api/divergence/fetch-daily/run', { label: 'start fetch-daily run', defaultStatus: 'started', on409: 'return-running' });
+  postDivergenceAction('/api/divergence/fetch-daily/run', {
+    label: 'start fetch-daily run',
+    defaultStatus: 'started',
+    on409: 'return-running',
+  });
 
 export const stopDivergenceFetchDailyData = () =>
-  postDivergenceAction('/api/divergence/fetch-daily/stop', { label: 'stop fetch-daily run', defaultStatus: 'stop-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/fetch-daily/stop', {
+    label: 'stop fetch-daily run',
+    defaultStatus: 'stop-requested',
+    on409: 'return-status',
+  });
 
 export const startDivergenceFetchWeeklyData = () =>
-  postDivergenceAction('/api/divergence/fetch-weekly/run', { label: 'start fetch-weekly run', defaultStatus: 'started', on409: 'return-running' });
+  postDivergenceAction('/api/divergence/fetch-weekly/run', {
+    label: 'start fetch-weekly run',
+    defaultStatus: 'started',
+    on409: 'return-running',
+  });
 
 export const stopDivergenceFetchWeeklyData = () =>
-  postDivergenceAction('/api/divergence/fetch-weekly/stop', { label: 'stop fetch-weekly run', defaultStatus: 'stop-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/fetch-weekly/stop', {
+    label: 'stop fetch-weekly run',
+    defaultStatus: 'stop-requested',
+    on409: 'return-status',
+  });
 
 // ---------------------------------------------------------------------------
 // VDF scan actions
 // ---------------------------------------------------------------------------
 
 export const startVDFScan = () =>
-  postDivergenceAction('/api/divergence/vdf-scan/run', { label: 'start VDF scan', defaultStatus: 'started', on409: 'return-running' });
+  postDivergenceAction('/api/divergence/vdf-scan/run', {
+    label: 'start VDF scan',
+    defaultStatus: 'started',
+    on409: 'return-running',
+  });
 
 export const stopVDFScan = () =>
-  postDivergenceAction('/api/divergence/vdf-scan/stop', { label: 'stop VDF scan', defaultStatus: 'stop-requested', on409: 'return-status' });
+  postDivergenceAction('/api/divergence/vdf-scan/stop', {
+    label: 'stop VDF scan',
+    defaultStatus: 'stop-requested',
+    on409: 'return-status',
+  });
 
 export async function fetchDivergenceScanStatus(): Promise<DivergenceScanStatus> {
   const response = await fetch('/api/divergence/scan/status');
-  const payload = await response.json().catch(() => null) as (DivergenceScanStatus & { error?: string }) | null;
+  const payload = (await response.json().catch(() => null)) as (DivergenceScanStatus & { error?: string }) | null;
   if (!response.ok || !payload) {
     const reason =
       typeof payload?.error === 'string' && payload.error.trim()

@@ -93,6 +93,8 @@ import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestr
 import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
 import { initBreadthTables, getLatestBreadthSnapshots, isBreadthMa200Valid } from './server/data/breadthStore.js';
 import { bootstrapBreadthHistory } from './server/services/breadthService.js';
+import { startAlertRetentionScheduler } from './server/services/alertRetentionService.js';
+import { scheduleBreadthAutoBootstrap } from './server/services/breadthBootstrapService.js';
 import { ALL_BREADTH_INDICES } from './server/data/etfConstituents.js';
 
 import { currentEtDateString } from './server/lib/dateUtils.js';
@@ -162,6 +164,8 @@ const port = Number(PORT) || 3000;
 
 let isShuttingDown = false;
 const startedAtMs = Date.now();
+let stopAlertRetentionScheduler: (() => void) | null = null;
+let cancelBreadthBootstrap: (() => void) | null = null;
 
 validateStartupEnvironment();
 
@@ -620,21 +624,6 @@ app.setNotFoundHandler(async (request, reply) => {
 });
 
 // --- Startup ---
-async function pruneOldAlerts() {
-  try {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - ALERT_RETENTION_DAYS);
-    const result = await pool.query('DELETE FROM alerts WHERE timestamp < $1', [cutoffDate]);
-    if (result.rowCount && result.rowCount > 0) {
-      console.log(`Pruned ${result.rowCount} old alerts created before ${cutoffDate.toISOString()}`);
-    }
-  } catch (err: unknown) {
-    console.error('Failed to prune old alerts:', err instanceof Error ? err.message : String(err));
-  }
-}
-
-let pruneOldAlertsInitialTimer: ReturnType<typeof setTimeout> | null = null;
-let pruneOldAlertsIntervalTimer: ReturnType<typeof setInterval> | null = null;
 
 try {
   await initDB();
@@ -668,43 +657,25 @@ if (SITE_LOCK_ENABLED) {
 }
 scheduleNextDivergenceScan();
 scheduleNextBreadthComputation();
+const alertRetention = startAlertRetentionScheduler({
+  pool,
+  retentionDays: ALERT_RETENTION_DAYS,
+  checkIntervalMs: PRUNE_CHECK_INTERVAL_MS,
+});
+stopAlertRetentionScheduler = alertRetention.stop;
 
 // Auto-bootstrap breadth — delayed 15 s after startup so the server is fully
 // warm before the heavy data-fetch begins. Runs only when data is absent or
 // the 200d MA history contains zeros (stale bootstrap with insufficient history).
 if (divergencePool) {
-  setTimeout(() => {
-    const BOOTSTRAP_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-    const timeoutGuard = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Breadth bootstrap timed out after 15 minutes')), BOOTSTRAP_TIMEOUT_MS),
-    );
-    (async () => {
-      try {
-        const snapshots = await getLatestBreadthSnapshots();
-        const ma200Valid = snapshots.length > 0 ? await isBreadthMa200Valid() : false;
-        const indexedSet = new Set(snapshots.map((s) => s.index));
-        const missingIndices = ALL_BREADTH_INDICES.filter((idx) => !indexedSet.has(idx));
-        if (snapshots.length === 0) {
-          console.log('[breadth] No snapshots — auto-bootstrapping 300d in background...');
-          await Promise.race([bootstrapBreadthHistory(300), timeoutGuard]);
-        } else if (!ma200Valid) {
-          console.log('[breadth] 200d MA zeros detected — re-bootstrapping 300d to fix...');
-          await Promise.race([bootstrapBreadthHistory(300), timeoutGuard]);
-        } else if (missingIndices.length > 0) {
-          console.log(
-            `[breadth] New indices detected (${missingIndices.join(', ')}) — re-bootstrapping 300d to fill gaps...`,
-          );
-          await Promise.race([bootstrapBreadthHistory(300), timeoutGuard]);
-        }
-      } catch (err: unknown) {
-        console.error('[breadth] Auto-bootstrap failed:', err instanceof Error ? err.message : String(err));
-      }
-    })();
-  }, 15_000);
+  const breadthBootstrap = scheduleBreadthAutoBootstrap({
+    allIndices: ALL_BREADTH_INDICES,
+    getLatestBreadthSnapshots,
+    isBreadthMa200Valid,
+    bootstrapBreadthHistory,
+  });
+  cancelBreadthBootstrap = breadthBootstrap.cancel;
 }
-
-pruneOldAlertsInitialTimer = setTimeout(pruneOldAlerts, 60 * 1000);
-pruneOldAlertsIntervalTimer = setInterval(pruneOldAlerts, PRUNE_CHECK_INTERVAL_MS);
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection:', reason);
@@ -723,13 +694,13 @@ async function shutdownServer(signal: string) {
     clearTimeout(divergenceSchedulerTimer);
     setDivergenceSchedulerTimer(null);
   }
-  if (pruneOldAlertsInitialTimer) {
-    clearTimeout(pruneOldAlertsInitialTimer);
-    pruneOldAlertsInitialTimer = null;
+  if (stopAlertRetentionScheduler) {
+    stopAlertRetentionScheduler();
+    stopAlertRetentionScheduler = null;
   }
-  if (pruneOldAlertsIntervalTimer) {
-    clearInterval(pruneOldAlertsIntervalTimer);
-    pruneOldAlertsIntervalTimer = null;
+  if (cancelBreadthBootstrap) {
+    cancelBreadthBootstrap();
+    cancelBreadthBootstrap = null;
   }
   tradingCalendar.destroy();
   clearInterval(vdRsiCacheCleanupTimer);

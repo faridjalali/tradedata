@@ -29,6 +29,7 @@
     "test": "tsx --test test/*.test.ts",
     "build": "vite build",
     "preview": "vite preview",
+    "release:smoke": "node scripts/release-smoke.mjs",
     "prepare": "husky"
   },
   "dependencies": {
