@@ -2152,6 +2152,28 @@ function isTickerChartVisible(): boolean {
   return true;
 }
 
+function isRegularTradingHoursEtNow(now: Date = new Date()): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const weekday = parts.find((part) => part.type === 'weekday')?.value || '';
+  if (!['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday)) return false;
+
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return false;
+
+  const minutesSinceMidnight = hour * 60 + minute;
+  const marketOpenMinutes = 9 * 60 + 30;
+  const marketCloseMinutes = 16 * 60;
+  return minutesSinceMidnight >= marketOpenMinutes && minutesSinceMidnight < marketCloseMinutes;
+}
+
 function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
   if (!candleSeries || !rsiChart || !volumeDeltaRsiSeries || !volumeDeltaHistogramSeries) return false;
   if (!Array.isArray(currentBars) || currentBars.length === 0) return false;
@@ -2356,6 +2378,7 @@ function ensureChartLiveRefreshTimer(): void {
     if (chartFetchAbortController) return;
     if (!currentChartTicker) return;
     if (!isTickerChartVisible()) return;
+    if (!isRegularTradingHoursEtNow()) return;
 
     const scheduledTicker = currentChartTicker;
     const scheduledInterval = currentChartInterval;
