@@ -1445,7 +1445,7 @@ button:hover {
   right: 2px;
   font-size: 0.5rem;
   line-height: 1;
-  color: var(--text-secondary);
+  color: inherit;
   pointer-events: none;
 }
 
