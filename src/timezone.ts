@@ -7,10 +7,10 @@ const APP_TIMEZONE_STORAGE_KEY = 'catvue_app_timezone_v1';
 export const DEFAULT_APP_TIME_ZONE = 'America/Los_Angeles';
 
 const APP_TIMEZONE_OPTIONS: AppTimeZoneOption[] = [
-  { value: 'America/Los_Angeles', label: 'Los Angeles (US Pacific time)' },
-  { value: 'America/Denver', label: 'Denver (US Mountain time)' },
-  { value: 'America/Chicago', label: 'Chicago (US Central time)' },
-  { value: 'America/New_York', label: 'New York (US Eastern time)' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles' },
+  { value: 'America/Denver', label: 'Denver' },
+  { value: 'America/Chicago', label: 'Chicago' },
+  { value: 'America/New_York', label: 'New York' },
   { value: 'UTC', label: 'UTC' },
 ];
 
