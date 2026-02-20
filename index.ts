@@ -240,11 +240,27 @@ await app.register(fastifyHelmet, {
 
 // Inject nonce into the statically served index.html
 app.addHook('onSend', async (request, reply, payload) => {
-  // fastify-static serves files as streams
-  if (reply.getHeader('content-type')?.toString().includes('text/html') && typeof payload === 'string') {
+  if (reply.getHeader('content-type')?.toString().includes('text/html')) {
+    let htmlStr = '';
+
+    if (typeof payload === 'string') {
+      htmlStr = payload;
+    } else if (Buffer.isBuffer(payload)) {
+      htmlStr = payload.toString('utf-8');
+    } else if (payload && typeof (payload as any).pipe === 'function') {
+      const buffs: Buffer[] = [];
+      for await (const chunk of payload as any) {
+        buffs.push(chunk);
+      }
+      htmlStr = Buffer.concat(buffs).toString('utf-8');
+    } else {
+      return payload;
+    }
+
     const nonce = reply.cspNonce?.script;
-    if (!nonce) return payload;
-    let modified = payload.replace(/<script(?=\s|>)/gi, `<script nonce="${nonce}"`);
+    if (!nonce) return htmlStr;
+
+    let modified = htmlStr.replace(/<script(?=\s|>)/gi, `<script nonce="${nonce}"`);
     modified = modified.replace(/<style(?=\s|>)/gi, `<style nonce="${nonce}"`);
     return modified;
   }
