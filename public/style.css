@@ -1420,17 +1420,18 @@ button:hover {
   line-height: 1;
 }
 
-/* Sort arrow indicator — tiny arrow in top-right corner via CSS */
+/* Sort arrow indicator — up arrow top-right, down arrow bottom-right */
 .header-sort-controls .pane-btn[data-sort-dir]::after {
   content: attr(data-sort-dir);
   position: absolute;
-  top: 1px;
   right: 2px;
   font-size: 0.5rem;
   line-height: 1;
   color: inherit;
   pointer-events: none;
 }
+.header-sort-controls .pane-btn[data-sort-dir="↑"]::after { top: 1px; }
+.header-sort-controls .pane-btn[data-sort-dir="↓"]::after { bottom: 1px; }
 
 /* ===== SINGLE-PAGE TEMPLATE (Breadth, future pages) ===== */
 .single-page-container {
