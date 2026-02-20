@@ -8,9 +8,12 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { Redis } from 'ioredis';
+import crypto from 'crypto';
+import { SESSION_SECRET, SESSION_COOKIE_SECURE } from '../config.js';
+import { timingSafeStringEqual } from '../middleware.js';
 
 const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
-const COOKIE_NAME = 'catvue_session';
+const COOKIE_NAME = SESSION_COOKIE_SECURE ? '__Host-catvue_session' : 'catvue_session';
 
 // ---------------------------------------------------------------------------
 // Redis client (best-effort connection)
@@ -66,28 +69,48 @@ function pruneExpired(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
+function signSessionId(sessionId: string): string {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(sessionId).digest('hex');
+}
+
+function createSignedToken(sessionId: string): string {
+  return `${sessionId}.${signSessionId(sessionId)}`;
+}
+
+function parseAndValidateToken(token: string | null | undefined): string | null {
+  const raw = String(token || '').trim();
+  if (!raw || !SESSION_SECRET) return null;
+  const [sessionId, signature] = raw.split('.');
+  if (!sessionId || !signature) return null;
+  const expectedSignature = signSessionId(sessionId);
+  if (!timingSafeStringEqual(signature, expectedSignature)) return null;
+  return sessionId;
+}
+
 export async function createSession(): Promise<string> {
-  const token = uuidv4();
+  const sessionId = uuidv4();
+  const token = createSignedToken(sessionId);
 
   if (redis && redisReady) {
     try {
-      await redis.setex(`session:${token}`, SESSION_TTL_SECONDS, Date.now().toString());
+      await redis.setex(`session:${sessionId}`, SESSION_TTL_SECONDS, Date.now().toString());
       return token;
     } catch {
       // Redis write failed — fall through to memory store
     }
   }
 
-  memoryStore.set(token, Date.now() + SESSION_TTL_SECONDS * 1000);
+  memoryStore.set(sessionId, Date.now() + SESSION_TTL_SECONDS * 1000);
   return token;
 }
 
 export async function validateSession(token: string | null | undefined): Promise<boolean> {
-  if (!token || typeof token !== 'string') return false;
+  const sessionId = parseAndValidateToken(token);
+  if (!sessionId) return false;
 
   if (redis && redisReady) {
     try {
-      const exists = await redis.exists(`session:${token}`);
+      const exists = await redis.exists(`session:${sessionId}`);
       return exists === 1;
     } catch {
       // Redis read failed — fall through to memory store
@@ -95,35 +118,58 @@ export async function validateSession(token: string | null | undefined): Promise
   }
 
   pruneExpired();
-  return memoryStore.has(token);
+  return memoryStore.has(sessionId);
 }
 
 export async function destroySession(token: string | null | undefined): Promise<void> {
-  if (!token || typeof token !== 'string') return;
+  const sessionId = parseAndValidateToken(token);
+  if (!sessionId) return;
 
   if (redis && redisReady) {
     try {
-      await redis.del(`session:${token}`);
+      await redis.del(`session:${sessionId}`);
     } catch {
       // Ignore Redis errors on destroy
     }
   }
 
-  memoryStore.delete(token);
+  memoryStore.delete(sessionId);
 }
 
 export function parseCookieValue(req: { headers: { cookie?: string } }): string | null {
   const header = String(req.headers.cookie || '');
-  const match = header.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]*)`));
-  return match ? match[1] : null;
+  const names = [COOKIE_NAME, 'catvue_session'];
+  let encodedValue: string | null = null;
+  for (const name of names) {
+    const match = header.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+    if (match) {
+      encodedValue = match[1];
+      break;
+    }
+  }
+  if (!encodedValue) return null;
+  try {
+    return decodeURIComponent(encodedValue);
+  } catch {
+    return null;
+  }
 }
 
 export function setSessionCookie(reply: { header: (name: string, value: string) => any }, token: string): void {
-  reply.header('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`);
+  const encodedToken = encodeURIComponent(token);
+  const secureSegment = SESSION_COOKIE_SECURE ? '; Secure' : '';
+  reply.header(
+    'Set-Cookie',
+    `${COOKIE_NAME}=${encodedToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}; Priority=High${secureSegment}`,
+  );
 }
 
 export function clearSessionCookie(reply: { header: (name: string, value: string) => any }): void {
-  reply.header('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  const secureSegment = SESSION_COOKIE_SECURE ? '; Secure' : '';
+  reply.header(
+    'Set-Cookie',
+    `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Priority=High${secureSegment}`,
+  );
 }
 
 export { COOKIE_NAME };

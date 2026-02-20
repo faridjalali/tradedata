@@ -15,6 +15,7 @@ import { registerDivergenceRoutes } from './server/routes/divergenceRoutes.js';
 import { registerHealthRoutes } from './server/routes/healthRoutes.js';
 import { registerAlertRoutes } from './server/routes/alertRoutes.js';
 import { registerBreadthRoutes } from './server/routes/breadthRoutes.js';
+import { registerAuthRoutes } from './server/routes/authRoutes.js';
 import { initDB, initDivergenceDB } from './server/db/initDb.js';
 import * as sessionAuth from './server/services/sessionAuth.js';
 import * as tradingCalendar from './server/services/tradingCalendar.js';
@@ -35,6 +36,8 @@ import {
   ALERT_RETENTION_DAYS,
   PRUNE_CHECK_INTERVAL_MS,
   validateStartupEnvironment,
+  TRUST_PROXY,
+  IS_PRODUCTION,
 } from './server/config.js';
 import { pool, divergencePool, isDivergenceConfigured } from './server/db.js';
 import {
@@ -47,7 +50,6 @@ import {
   parseBooleanInput,
   validateChartPayloadShape,
   validateChartLatestPayloadShape,
-  timingSafeStringEqual,
   basicAuthMiddleware,
 } from './server/middleware.js';
 import { rejectUnauthorized } from './server/routeGuards.js';
@@ -156,7 +158,7 @@ interface HttpError extends Error {
 }
 
 const app = Fastify({
-  trustProxy: true,
+  trustProxy: TRUST_PROXY,
   bodyLimit: 1048576,
 }).withTypeProvider<ZodTypeProvider>();
 
@@ -225,10 +227,9 @@ await app.register(fastifyRateLimit, {
   timeWindow: 15 * 60 * 1000,
   allowList: (req: { url?: string }) => {
     const path = String(req.url || '').split('?')[0];
-    // Exempt non-API paths, auth endpoints, health checks, and scan status polling
+    // Exempt non-API paths, health checks, and scan status polling
     return (
       !path.startsWith('/api/') ||
-      path.startsWith('/api/auth/') ||
       path.startsWith('/api/health') ||
       path.startsWith('/api/ready') ||
       path === '/api/divergence/scan/status'
@@ -249,6 +250,17 @@ await app.register(fastifyStatic, {
 // Basic auth
 app.addHook('onRequest', async (request, reply) => {
   basicAuthMiddleware(request, reply);
+});
+
+// Protect non-API operational routes with debug secret in production.
+app.addHook('onRequest', async (request, reply) => {
+  const urlPath = request.url.split('?')[0];
+  const isOperationalPath = urlPath === '/metrics' || urlPath.startsWith('/docs');
+  if (!isOperationalPath) return;
+  if (!DEBUG_METRICS_SECRET && IS_PRODUCTION) {
+    return reply.code(503).send({ error: 'Operational route secret is not configured' });
+  }
+  if (rejectUnauthorized(request, reply, DEBUG_METRICS_SECRET)) return;
 });
 
 // Session-based site lock auth (auth routes are exempt)
@@ -313,34 +325,11 @@ app.addHook('onResponse', async (request, reply) => {
 });
 
 // --- Auth routes ---
-app.post('/api/auth/verify', async (request, reply) => {
-  const passcode = String((request.body as Record<string, unknown>)?.passcode || '').trim();
-  if (!SITE_LOCK_ENABLED || !passcode) {
-    return reply.code(401).send({ error: 'Invalid passcode' });
-  }
-  if (!timingSafeStringEqual(passcode, SITE_LOCK_PASSCODE)) {
-    return reply.code(401).send({ error: 'Invalid passcode' });
-  }
-  const token = await sessionAuth.createSession();
-  sessionAuth.setSessionCookie(reply, token);
-  return reply.code(200).send({ status: 'ok' });
-});
-
-app.get('/api/auth/check', async (request, reply) => {
-  if (!SITE_LOCK_ENABLED) return reply.code(200).send({ status: 'ok' });
-  const token = sessionAuth.parseCookieValue(request);
-  const isValid = await sessionAuth.validateSession(token);
-  if (isValid) {
-    return reply.code(200).send({ status: 'ok' });
-  }
-  return reply.code(401).send({ error: 'Not authenticated' });
-});
-
-app.post('/api/auth/logout', async (request, reply) => {
-  const token = sessionAuth.parseCookieValue(request);
-  await sessionAuth.destroySession(token);
-  sessionAuth.clearSessionCookie(reply);
-  return reply.code(200).send({ status: 'ok' });
+registerAuthRoutes({
+  app,
+  siteLockEnabled: SITE_LOCK_ENABLED,
+  siteLockPasscode: SITE_LOCK_PASSCODE,
+  sessionAuth,
 });
 
 registerAlertRoutes(app);
@@ -780,7 +769,14 @@ async function shutdownServer(signal: string) {
   try {
     await app.close();
     console.log('HTTP server closed; draining database pools...');
-    await Promise.allSettled([pool.end(), divergencePool ? divergencePool.end() : Promise.resolve()]);
+    const poolsToClose = Array.from(
+      new Set(
+        [pool, divergencePool].filter((candidate): candidate is NonNullable<typeof divergencePool> =>
+          Boolean(candidate),
+        ),
+      ),
+    );
+    await Promise.allSettled(poolsToClose.map((p) => p.end()));
     console.log('Shutdown complete');
     clearTimeout(forceExitTimer);
     process.exit(0);

@@ -1,8 +1,20 @@
 import 'dotenv/config';
 
+const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
+export const IS_PRODUCTION = NODE_ENV === 'production';
+
 // --- Server ---
 export const PORT = process.env.PORT || 3000;
 export const CORS_ORIGIN = String(process.env.CORS_ORIGIN || '').trim();
+const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim();
+export const TRUST_PROXY: boolean | string[] = !trustProxyRaw
+  ? false
+  : trustProxyRaw.toLowerCase() === 'true'
+    ? true
+    : trustProxyRaw
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
 
 // --- Auth ---
 export const BASIC_AUTH_ENABLED = String(process.env.BASIC_AUTH_ENABLED || 'false').toLowerCase() !== 'false';
@@ -13,6 +25,8 @@ export const SITE_LOCK_PASSCODE = String(process.env.SITE_LOCK_PASSCODE || '').t
 export const SITE_LOCK_ENABLED = SITE_LOCK_PASSCODE.length > 0;
 /** Secret for signing session tokens. Falls back to passcode if not explicitly set. */
 export const SESSION_SECRET = String(process.env.SESSION_SECRET || SITE_LOCK_PASSCODE).trim();
+export const SESSION_COOKIE_SECURE =
+  String(process.env.SESSION_COOKIE_SECURE || (IS_PRODUCTION ? 'true' : 'false')).toLowerCase() !== 'false';
 export const REQUEST_LOG_ENABLED = String(process.env.REQUEST_LOG_ENABLED || 'false').toLowerCase() === 'true';
 export const DEBUG_METRICS_SECRET = String(process.env.DEBUG_METRICS_SECRET || '').trim();
 
@@ -147,6 +161,17 @@ export function validateStartupEnvironment() {
   }
   if (!String(process.env.DIVERGENCE_SCAN_SECRET || '').trim()) {
     warnings.push('DIVERGENCE_SCAN_SECRET is not set — divergence admin endpoints are unprotected');
+  }
+  if (IS_PRODUCTION) {
+    if (!String(process.env.DIVERGENCE_SCAN_SECRET || '').trim()) {
+      errors.push('DIVERGENCE_SCAN_SECRET is required in production');
+    }
+    if (!String(process.env.DEBUG_METRICS_SECRET || '').trim()) {
+      errors.push('DEBUG_METRICS_SECRET is required in production');
+    }
+    if (!SESSION_COOKIE_SECURE) {
+      errors.push('SESSION_COOKIE_SECURE must be enabled in production');
+    }
   }
   if (String(process.env.DATA_API_REQUESTS_PAUSED || 'false').toLowerCase() === 'true') {
     warnings.push('DATA_API_REQUESTS_PAUSED is enabled (outbound market-data calls are blocked)');

@@ -1,4 +1,6 @@
-async function checkDatabaseReady(poolInstance: { query: (...args: unknown[]) => Promise<unknown> } | null): Promise<{ ok: boolean | null; error?: string }> {
+async function checkDatabaseReady(
+  poolInstance: { query: (...args: unknown[]) => Promise<unknown> } | null,
+): Promise<{ ok: boolean | null; error?: string }> {
   if (!poolInstance) return { ok: null };
   try {
     await poolInstance.query('SELECT 1');
@@ -78,31 +80,46 @@ interface ReadyPayloadOptions {
 const DATA_STALENESS_WARN_HOURS = 25;
 
 async function buildReadyPayload(options: ReadyPayloadOptions) {
-  const { pool, divergencePool, isDivergenceConfigured, isShuttingDown, divergenceScanRunning, lastScanDateEt, circuitBreakerInfo, getPoolStats } =
-    options;
+  const {
+    pool,
+    divergencePool,
+    isDivergenceConfigured,
+    isShuttingDown,
+    divergenceScanRunning,
+    lastScanDateEt,
+    circuitBreakerInfo,
+    getPoolStats,
+  } = options;
 
   const primaryDb = await checkDatabaseReady(pool);
   const divergenceConfigured = isDivergenceConfigured();
-  const divergenceDb = divergenceConfigured ? await checkDatabaseReady(divergencePool || null) : { ok: null as boolean | null };
+  const divergenceDb =
+    divergenceConfigured && divergencePool && divergencePool !== pool
+      ? await checkDatabaseReady(divergencePool)
+      : { ok: divergenceConfigured ? primaryDb.ok : (null as boolean | null) };
   const ready = !isShuttingDown && primaryDb.ok === true;
 
   // Degraded checks — app is up but operating in a reduced-capacity state.
   const warnings: string[] = [];
   const cbState = circuitBreakerInfo?.state ?? 'CLOSED';
   if (cbState === 'OPEN') warnings.push('data-api circuit breaker is OPEN — external market-data calls are failing');
-  if (cbState === 'HALF_OPEN') warnings.push('data-api circuit breaker is HALF_OPEN — external market-data calls are recovering');
+  if (cbState === 'HALF_OPEN')
+    warnings.push('data-api circuit breaker is HALF_OPEN — external market-data calls are recovering');
   if (lastScanDateEt) {
     const scanDate = new Date(lastScanDateEt + 'T00:00:00-05:00');
     const hoursSinceScan = (Date.now() - scanDate.getTime()) / (60 * 60 * 1000);
     if (hoursSinceScan > DATA_STALENESS_WARN_HOURS) {
-      warnings.push(`divergence scan data is stale — last scan: ${lastScanDateEt} (${Math.floor(hoursSinceScan)}h ago)`);
+      warnings.push(
+        `divergence scan data is stale — last scan: ${lastScanDateEt} (${Math.floor(hoursSinceScan)}h ago)`,
+      );
     }
   }
   const poolStats = typeof getPoolStats === 'function' ? getPoolStats() : null;
   if (poolStats && poolStats.max > 0) {
     const utilization = poolStats.total / poolStats.max;
     if (poolStats.waiting > 0) warnings.push(`DB pool has ${poolStats.waiting} waiting connection(s)`);
-    else if (utilization >= 0.9) warnings.push(`DB pool near capacity (${poolStats.total}/${poolStats.max} connections)`);
+    else if (utilization >= 0.9)
+      warnings.push(`DB pool near capacity (${poolStats.total}/${poolStats.max} connections)`);
   }
 
   const degraded = warnings.length > 0;

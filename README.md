@@ -54,7 +54,8 @@ npm run dev          # Vite dev server on :5173, proxies /api → :3000
 ```bash
 npm run typecheck           # Frontend TypeScript check
 npm run typecheck:server    # Server TypeScript check
-npm test                    # 106 tests (Node.js test runner)
+npm test                    # Node.js test runner
+npx playwright test         # Browser E2E suite
 npm run build               # Vite production build
 npm run lint:eslint         # ESLint
 npm run format:check        # Prettier check
@@ -66,17 +67,17 @@ npm run format:check        # Prettier check
 
 ### Tech Stack
 
-| Layer           | Technology                                 |
-| --------------- | ------------------------------------------ |
-| **Server**      | Fastify 5, Node.js 22                      |
-| **Language**    | TypeScript 5.9 (strict mode)               |
-| **Database**    | PostgreSQL (pg), single divergence pool    |
-| **Frontend**    | Vanilla TypeScript, Lightweight Charts 4.2 |
-| **Build**       | Vite 7                                     |
-| **Validation**  | Zod 4                                      |
-| **Logging**     | Pino (structured JSON)                     |
-| **Caching**     | LRU-cache (multi-tier with SWR)            |
-| **HTTP Client** | Undici                                     |
+| Layer           | Technology                                  |
+| --------------- | ------------------------------------------- |
+| **Server**      | Fastify 5, Node.js 22                       |
+| **Language**    | TypeScript 5.9 (strict mode)                |
+| **Database**    | PostgreSQL (pg), single divergence pool     |
+| **Frontend**    | Preact + TypeScript, Lightweight Charts 4.2 |
+| **Build**       | Vite 7 + @preact/preset-vite                |
+| **Validation**  | Zod 4                                       |
+| **Logging**     | Pino (structured JSON)                      |
+| **Caching**     | LRU-cache (multi-tier with SWR)             |
+| **HTTP Client** | Undici                                      |
 
 ### Directory Structure
 
@@ -92,7 +93,7 @@ server/
   logger.ts                           Pino structured logging + console redirect
   chartMath.ts                        Pure math: RSI, RMA, OHLCV aggregation
   db/
-    initDb.ts                         Table creation (CREATE TABLE IF NOT EXISTS) for both pools
+    initDb.ts                         Table creation (CREATE TABLE IF NOT EXISTS) on the divergence DB
   routes/
     chartRoutes.ts                    Chart data, mini-bars, VDF status, divergence summary, ticker info
     divergenceRoutes.ts               Scan control, signal queries, table build triggers
@@ -291,7 +292,7 @@ Unified administrative page consolidating system health, operations, metrics, an
 - `GET /api/auth/check` — Verify current session
 - `POST /api/auth/logout` — Destroy session
 
-All `/api/*` endpoints (except auth, health) require a valid session when site lock is enabled. Sessions last 24 hours via `HttpOnly; SameSite=Lax` cookie.
+All `/api/*` endpoints (except auth, health) require a valid session when site lock is enabled. Sessions last 24 hours via `HttpOnly; SameSite=Strict` cookie (`Secure` in production).
 
 **Secret-based auth** (for scan control endpoints):
 
@@ -302,7 +303,7 @@ All `/api/*` endpoints (except auth, health) require a valid session when site l
 
 Default: 300 requests per 15-minute window (configurable via `API_RATE_LIMIT_MAX`).
 
-**Exempt paths:** `/api/auth/*`, `/api/health*`, `/api/ready*`, `/api/divergence/scan/status`
+**Exempt paths:** `/api/health*`, `/api/ready*`, `/api/divergence/scan/status`
 
 ### Chart Endpoints
 
@@ -1023,8 +1024,8 @@ curl "https://your-server/api/breadth/ma/recompute/status"
 **"Bad Request" on scan control buttons:**
 Fastify rejects empty JSON bodies by default. The custom content-type parser handles this. If the issue recurs, check that the parser is registered before route registration in `index.ts`.
 
-**Auth failures during VDF scan:**
-Rate limiter exhaustion. VDF scans trigger frequent `/api/auth/verify` polling. Auth endpoints are exempt from rate limiting. If the issue recurs, check the `allowList` in the rate limiter configuration.
+**Auth failures during passcode verification:**
+`/api/auth/verify` is guarded by brute-force backoff/lockout. Repeated invalid attempts return `429` with `Retry-After`. Check IP/user-agent attempt history and `DIVERGENCE_SCAN_SECRET`/passcode configuration.
 
 **Slow chart loads:**
 Check for `[slow-query]` entries in logs. Verify cache hit rates via `X-Chart-Cache` response header. Check `CHART_FINAL_RESULT_CACHE_MAX_ENTRIES` sizing.
@@ -1033,7 +1034,7 @@ Check for `[slow-query]` entries in logs. Verify cache hit rates via `X-Chart-Ca
 The stall watchdog (`DIVERGENCE_STALL_TIMEOUT_MS`) detects stuck tickers and retries with exponential backoff. If stalls are frequent, consider increasing `DIVERGENCE_FETCH_TICKER_TIMEOUT_MS` or reducing concurrency.
 
 **Database connection exhaustion:**
-Both pools are capped at 20 connections with 30s idle timeout. If `connectionTimeoutMillis` errors appear, check for long-running queries (increase `statement_timeout`) or reduce scan concurrency.
+The divergence PostgreSQL pool is capped at 20 connections with 30s idle timeout. If `connectionTimeoutMillis` errors appear, check for long-running queries (increase `statement_timeout`) or reduce scan concurrency.
 
 ---
 
@@ -1122,5 +1123,5 @@ Set `DIVERGENCE_DATABASE_URL` to the PostgreSQL connection string used by the ap
 - Set `DEBUG_METRICS_SECRET` to protect the metrics endpoint
 - Configure `CORS_ORIGIN` to restrict allowed origins
 - SSL is enforced for database connections (configurable via `DB_SSL_REJECT_UNAUTHORIZED`)
-- All session cookies are `HttpOnly; SameSite=Lax`
+- All session cookies are `HttpOnly; SameSite=Strict` (`Secure` in production)
 - Security headers via Helmet: CSP, HSTS, referrer policy, frame guard

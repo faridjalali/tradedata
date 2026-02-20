@@ -2,6 +2,7 @@ import { divergenceDb } from '../db.js';
 import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
 
 interface VdfEnrichment {
+  detected: boolean;
   score: number;
   proximityLevel: string;
   numZones: number;
@@ -63,17 +64,22 @@ export async function enrichRowsWithDivergenceData(opts: {
     if (tickers.length > 0 && divergenceDb) {
       const vdfRes = await divergenceDb
         .selectFrom('vdf_results')
-        .select(['ticker', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
+        .select(['ticker', 'is_detected', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
         .distinctOn(['ticker'])
-        .where('is_detected', '=', true)
         .where('ticker', 'in', tickers)
         .orderBy('ticker', 'asc')
         .orderBy('trade_date', 'desc')
         .execute();
 
       for (const row of vdfRes) {
+        const bestZoneScore = toOptionalNumber((row as unknown as { best_zone_score?: unknown }).best_zone_score);
+        const rawScore = bestZoneScore ?? 0;
+        const normalizedScore = rawScore <= 1 ? rawScore * 100 : rawScore;
+        const detected = toBoolean((row as unknown as { is_detected?: unknown }).is_detected);
+
         vdfDataMap.set(String(row.ticker).toUpperCase(), {
-          score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
+          detected,
+          score: normalizeVdfScore(normalizedScore),
           proximityLevel: row.proximity_level || 'none',
           numZones: Number(row.num_zones) || 0,
           bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
@@ -99,7 +105,7 @@ export async function enrichRowsWithDivergenceData(opts: {
     const rowVdfProximity =
       typeof row?.vdf_proximity === 'string' && row.vdf_proximity.trim() ? String(row.vdf_proximity).trim() : 'none';
 
-    const mergedVdfDetected = Boolean(vdfData) || rowVdfDetected || rowVdfScore > 0;
+    const mergedVdfDetected = Boolean(vdfData?.detected) || rowVdfDetected || rowVdfScore > 0;
 
     return {
       ...row,
@@ -118,7 +124,7 @@ export async function enrichRowsWithDivergenceData(opts: {
         28: String(states['28'] || 'neutral'),
       },
       vdf_detected: mergedVdfDetected,
-      vdf_score: vdfData?.score ?? rowVdfScore,
+      vdf_score: normalizeVdfScore(vdfData?.score ?? rowVdfScore),
       vdf_proximity: vdfData?.proximityLevel || rowVdfProximity,
       bull_flag_confidence: vdfData?.bullFlagConfidence ?? rowBullFlagConfidence,
     };

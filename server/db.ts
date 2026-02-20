@@ -2,8 +2,10 @@ import { Pool, PoolClient } from 'pg';
 import { Kysely, PostgresDialect } from 'kysely';
 import { instrumentPool } from './lib/dbMonitor.js';
 import type { Database } from './db/types.js';
+import { IS_PRODUCTION } from './config.js';
 
-const dbSslRejectUnauthorized = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() !== 'false';
+const dbSslRejectUnauthorized =
+  String(process.env.DB_SSL_REJECT_UNAUTHORIZED || (IS_PRODUCTION ? 'true' : 'false')).toLowerCase() !== 'false';
 
 /**
  * Single-DB mode:

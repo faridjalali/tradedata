@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { timingSafeStringEqual } from './middleware.js';
+import { IS_PRODUCTION } from './config.js';
 
 /**
  * Check a debug-metrics secret from query param or header.
@@ -11,7 +12,7 @@ export function checkDebugSecret(
   headerName = 'x-debug-secret',
 ): boolean {
   const trimmed = String(configuredSecret || '').trim();
-  if (!trimmed) return true; // no secret configured → open
+  if (!trimmed) return !IS_PRODUCTION;
   const provided = String(
     (req.query as Record<string, string | undefined>).secret || req.headers[headerName] || '',
   ).trim();

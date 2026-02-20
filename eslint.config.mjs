@@ -21,7 +21,18 @@ const nodeGlobals = {
 };
 
 export default [
-  { ignores: ['node_modules/', 'dist/', 'analysis-*.js', 'bin/', 'public/*.js', 'test-*.js'] },
+  {
+    ignores: [
+      'node_modules/',
+      'dist/',
+      'analysis/',
+      'analysis-*.js',
+      'playwright-report/',
+      'bin/',
+      'public/*.js',
+      'test-*.js',
+    ],
+  },
   js.configs.recommended,
   {
     files: ['**/*.ts'],
@@ -45,6 +56,12 @@ export default [
       '@typescript-eslint/no-unsafe-function-type': 'off',
       'prefer-const': 'warn',
       eqeqeq: ['warn', 'always'],
+    },
+  },
+  {
+    files: ['index.ts', 'server/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
   {

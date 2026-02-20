@@ -7,10 +7,8 @@ import { getThemeColors } from './theme';
 
 // Declare Lightweight Charts global
 // LightweightCharts CDN — loaded globally; no npm package bundled declarations available
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 declare const LightweightCharts: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare const LightweightChartsLineTools: any;
 
 export interface RSIChartOptions {
   container: HTMLElement;
@@ -40,39 +38,37 @@ export class RSIChart {
   private static readonly MIDLINE_VALUE = 50;
   private container: HTMLElement;
   // LightweightCharts CDN objects — any is required; no bundled type declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private chart: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private series: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private lineTools: any;
   private displayMode: RSIDisplayMode;
   private lineColor: string = '#58a6ff';
   private midlineColor: string = getThemeColors().textPrimary;
   private midlineStyle: 'dotted' | 'solid' = 'dotted';
   private data: RSIPoint[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private seriesData: any[] = [];
   private referenceLines: Array<{ value: number; label: string; color: string; lineStyle: number }> = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private midlinePriceLine: any = null;
   private priceData: Array<{ time: string | number; close: number }> = [];
   private priceByTime = new Map<string, number>();
   private indexByTime = new Map<string, number>();
   private divergencePointTimeKeys = new Set<string>();
   private divergenceToolActive: boolean = false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private highlightSeries: any = null;
   private firstPoint: { time: string | number; rsi: number; price: number; index: number } | null = null;
   private divergencePoints: RSIPoint[] = [];
   private static readonly MAX_HIGHLIGHT_POINTS = 2000;
   private static readonly FUTURE_TIMELINE_TRADING_DAYS = 252;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private trendLineSeriesList: any[] = [];
   private trendlineCrossLabels: Array<{ element: HTMLDivElement; anchorTime: string | number; anchorValue: number }> =
     [];
   private trendlineDefinitions: RSIPersistedTrendline[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private timelineSeries: any = null;
   private suppressExternalSync: boolean = false;
   private onTrendLineDrawn?: () => void;
@@ -112,7 +108,7 @@ export class RSIChart {
         fixRightEdge: false,
         rightBarStaysOnScroll: false,
         rightOffset: 10,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         tickMarkFormatter: (time: any, tickMarkType: number) => this.formatTickMark(time, tickMarkType),
         borderColor: themeColors.surfaceElevated, // Show time scale at bottom of RSI chart
       },
@@ -162,14 +158,13 @@ export class RSIChart {
     this.updateTimelineSeriesData();
 
     // Set up click handler for divergence detection
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     this.chart.subscribeCrosshairMove((param: any) => {
       if (this.divergenceToolActive && param && param.time) {
         // We'll handle the actual click in a separate event
       }
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.chart.subscribeClick((param: any) => {
       if (this.divergenceToolActive && param && param.time) {
         this.detectAndHighlightDivergence(param.time);
@@ -201,7 +196,6 @@ export class RSIChart {
     return label.length >= RSIChart.SCALE_LABEL_CHARS ? label : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private fixedRSIAutoscaleInfoProvider(): any {
     // Return the default axis range (20-80) to match VD-RSI behavior
     // Combined with scaleMargins, this creates the proper Y-axis bounds
@@ -234,7 +228,6 @@ export class RSIChart {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private toDateFromScaleTime(time: any): Date | null {
     if (typeof time === 'number' && Number.isFinite(time)) {
       return new Date(time * 1000);
@@ -274,7 +267,6 @@ export class RSIChart {
     return Math.floor(ms / 1000);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private formatTickMark(time: any, tickMarkType: number): string {
     const date = this.toDateFromScaleTime(time);
     if (!date) return '';
@@ -377,7 +369,6 @@ export class RSIChart {
     this.timelineSeries.setData(timelinePoints);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private buildSeriesData(data: RSIPoint[], priceData: Array<{ time: string | number; close: number }>): any[] {
     if (!priceData || priceData.length === 0) return data;
 
@@ -615,12 +606,10 @@ export class RSIChart {
     return true;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getChart(): any {
     return this.chart;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getSeries(): any {
     return this.series;
   }
@@ -650,11 +639,6 @@ export class RSIChart {
 
   refreshTrendlineLabels(): void {
     this.refreshTrendlineCrossLabels();
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getLineTools(): any {
-    return this.lineTools;
   }
 
   activateDivergenceTool(): void {

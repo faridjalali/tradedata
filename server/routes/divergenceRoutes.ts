@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { buildManualScanRequest, fetchLatestDivergenceScanStatus } from '../services/divergenceService.js';
 import { timingSafeStringEqual } from '../middleware.js';
+import { IS_PRODUCTION } from '../config.js';
 
 interface DivergenceRoutesOptions {
   app: FastifyInstance;
@@ -106,6 +107,10 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   function rejectIfUnauthorized(req: FastifyRequest, res: FastifyReply): boolean {
     if (rejectIfNotConfigured(res)) return true;
     const configuredSecret = String(divergenceScanSecret || '').trim();
+    if (!configuredSecret && IS_PRODUCTION) {
+      res.code(503).send({ error: 'Divergence admin secret is not configured' });
+      return true;
+    }
     const providedSecret = String(
       (req.query as Record<string, unknown>).secret || req.headers['x-divergence-secret'] || '',
     ).trim();
@@ -127,12 +132,24 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
   }
 
   /** Start an async job and surface immediate startup errors before returning 202. */
-  async function startJob(jobFn: () => Promise<unknown>, label: string, res: FastifyReply, successStatus = 'started'): Promise<unknown> {
+  async function startJob(
+    jobFn: () => Promise<unknown>,
+    label: string,
+    res: FastifyReply,
+    successStatus = 'started',
+  ): Promise<unknown> {
     const earlyErr = await Promise.race<string | null>([
       jobFn()
-        .then((summary) => { console.log(`${label} completed:`, summary); return null; })
-        .catch((err: unknown) => { const m = err instanceof Error ? err.message : String(err); console.error(`${label} failed: ${m}`); return m; }),
-      new Promise<null>(resolve => setTimeout(resolve, 0, null)),
+        .then((summary) => {
+          console.log(`${label} completed:`, summary);
+          return null;
+        })
+        .catch((err: unknown) => {
+          const m = err instanceof Error ? err.message : String(err);
+          console.error(`${label} failed: ${m}`);
+          return m;
+        }),
+      new Promise<null>((resolve) => setTimeout(resolve, 0, null)),
     ]);
     if (earlyErr) return res.code(500).send({ error: `${label} startup failed: ${earlyErr}` });
     return res.code(202).send({ status: successStatus });
@@ -205,7 +222,10 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
       return res.code(501).send({ error: 'Table run endpoint is not enabled' });
     }
 
-    const force = typeof parseBooleanInput === 'function' ? parseBooleanInput((req.body as Record<string, unknown> | undefined)?.force, true) : true;
+    const force =
+      typeof parseBooleanInput === 'function'
+        ? parseBooleanInput((req.body as Record<string, unknown> | undefined)?.force, true)
+        : true;
 
     return startJob(
       () => runDivergenceTableBuild({ trigger: 'manual-api', force }),
@@ -338,7 +358,10 @@ function registerDivergenceRoutes(options: DivergenceRoutesOptions): void {
         getLastScanDateEt,
       });
     } catch (err: unknown) {
-      console.error('Scan status DB query failed (returning in-memory status):', err instanceof Error ? err.message : String(err));
+      console.error(
+        'Scan status DB query failed (returning in-memory status):',
+        err instanceof Error ? err.message : String(err),
+      );
       statusPayload = {
         running: getIsScanRunning(),
         lastScanDateEt: getLastFetchedTradeDateEt() || getLastScanDateEt() || null,
