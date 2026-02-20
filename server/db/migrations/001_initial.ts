@@ -1,6 +1,8 @@
 import { Kysely, sql } from 'kysely';
 
-export async function up(db: Kysely<any>): Promise<void> {
+type MigrationDatabase = Record<string, unknown>;
+
+export async function up(db: Kysely<MigrationDatabase>): Promise<void> {
   // alerts
   await db.schema
     .createTable('alerts')
@@ -231,7 +233,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 }
 
-export async function down(db: Kysely<any>): Promise<void> {
+export async function down(db: Kysely<MigrationDatabase>): Promise<void> {
   // Ideally, all tables would be dropped in reverse order.
   // Since this is an initial migration, we assume destruction is intentional if run.
   const tables = [

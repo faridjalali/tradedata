@@ -6,7 +6,7 @@ import { Migrator, FileMigrationProvider, Kysely } from 'kysely';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function runMigrations(db: Kysely<any>): Promise<void> {
+export async function runMigrations<DB>(db: Kysely<DB>): Promise<void> {
   const migrator = new Migrator({
     db,
     provider: new FileMigrationProvider({

@@ -142,6 +142,24 @@ interface HttpError extends Error {
   httpStatus: number;
 }
 
+type CspNonceBag = { cspNonce?: { script?: string; style?: string } };
+
+type PipeableAsyncPayload = AsyncIterable<unknown> & {
+  pipe: (...args: unknown[]) => unknown;
+};
+
+function isPipeableAsyncPayload(payload: unknown): payload is PipeableAsyncPayload {
+  if (!payload || typeof payload !== 'object') return false;
+  const candidate = payload as { pipe?: unknown; [Symbol.asyncIterator]?: unknown };
+  return typeof candidate.pipe === 'function' && typeof candidate[Symbol.asyncIterator] === 'function';
+}
+
+function getCspNonceValue(rawResponse: unknown, key: 'script' | 'style'): string | undefined {
+  const nonceBag = rawResponse as CspNonceBag | null | undefined;
+  const value = nonceBag?.cspNonce?.[key];
+  return typeof value === 'string' && value.length ? value : undefined;
+}
+
 const app = Fastify({
   trustProxy: TRUST_PROXY,
   bodyLimit: 1048576,
@@ -204,7 +222,8 @@ app.addHook('onRequest', async (request, reply) => {
   const nonce = crypto.randomBytes(16).toString('base64');
   reply.cspNonce = { script: nonce, style: nonce };
   // fastify-helmet's directives callback gives the raw Node response, so attach it there too
-  (reply.raw as any).cspNonce = reply.cspNonce;
+  const rawReply = reply.raw as NodeJS.WritableStream & CspNonceBag;
+  rawReply.cspNonce = reply.cspNonce;
 });
 
 await app.register(fastifyHelmet, {
@@ -213,8 +232,8 @@ await app.register(fastifyHelmet, {
       defaultSrc: ["'self'"],
       scriptSrc: [
         "'self'",
-        (req: any, res: any) => {
-          const nonce = res.cspNonce?.script;
+        (_req: unknown, res: unknown) => {
+          const nonce = getCspNonceValue(res, 'script');
           return nonce ? `'nonce-${nonce}'` : '';
         },
         'https://cdn.jsdelivr.net',
@@ -222,8 +241,8 @@ await app.register(fastifyHelmet, {
       ].filter(Boolean) as string[],
       styleSrc: [
         "'self'",
-        (req: any, res: any) => {
-          const nonce = res.cspNonce?.style;
+        (_req: unknown, res: unknown) => {
+          const nonce = getCspNonceValue(res, 'style');
           return nonce ? `'nonce-${nonce}'` : '';
         },
         'https://fonts.googleapis.com',
@@ -249,10 +268,14 @@ app.addHook('onSend', async (request, reply, payload) => {
       htmlStr = payload;
     } else if (Buffer.isBuffer(payload)) {
       htmlStr = payload.toString('utf-8');
-    } else if (payload && typeof (payload as any).pipe === 'function') {
+    } else if (isPipeableAsyncPayload(payload)) {
       const buffs: Buffer[] = [];
-      for await (const chunk of payload as any) {
-        buffs.push(chunk);
+      for await (const chunk of payload) {
+        if (Buffer.isBuffer(chunk)) {
+          buffs.push(chunk);
+        } else if (typeof chunk === 'string' || chunk instanceof Uint8Array) {
+          buffs.push(Buffer.from(chunk));
+        }
       }
       htmlStr = Buffer.concat(buffs).toString('utf-8');
     } else {
