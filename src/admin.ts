@@ -9,8 +9,6 @@ import {
   fmtNumber,
   HISTORY_PAGE_SIZE,
 } from './logs';
-import { getTheme, setTheme, type ThemeName } from './theme';
-import { getAppTimeZone, setAppTimeZone, getAppTimeZoneOptions } from './timezone';
 
 let adminInitialized = false;
 let adminPollTimer: number | null = null;
@@ -177,69 +175,6 @@ function renderHistoryPage(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Preferences Wiring
-// ---------------------------------------------------------------------------
-
-function initAdminPreferences(): void {
-  // Theme buttons
-  const themeContainer = document.getElementById('admin-theme-btns');
-  if (themeContainer) {
-    const themeBtns = themeContainer.querySelectorAll<HTMLElement>('.theme-swatch-btn');
-    const currentThemeName = getTheme();
-    themeBtns.forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.theme === currentThemeName);
-      btn.addEventListener('click', () => {
-        const name = btn.dataset.theme as ThemeName;
-        setTheme(name);
-        themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
-        // Also sync the gear panel theme buttons
-        document.querySelectorAll('#global-theme-btns .theme-swatch-btn').forEach((b) => {
-          (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.theme === name);
-        });
-      });
-    });
-  }
-
-  // Timezone select
-  const tzSelect = document.getElementById('admin-timezone-select') as HTMLSelectElement | null;
-  if (tzSelect) {
-    const options = getAppTimeZoneOptions();
-    tzSelect.innerHTML = options.map((o) => `<option value="${o.value}">${o.label}</option>`).join('');
-    tzSelect.value = getAppTimeZone();
-    tzSelect.addEventListener('change', () => {
-      setAppTimeZone(tzSelect.value);
-      // Sync gear panel timezone select
-      const gearTz = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
-      if (gearTz) gearTz.value = tzSelect.value;
-    });
-  }
-
-  // Minichart toggle
-  const mcContainer = document.getElementById('admin-minichart-btns');
-  if (mcContainer) {
-    const mcBtns = mcContainer.querySelectorAll<HTMLElement>('[data-minichart]');
-    const storedMc = localStorage.getItem('minichart_mobile') || 'off';
-    mcBtns.forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.minichart === storedMc);
-      btn.addEventListener('click', () => {
-        const val = btn.dataset.minichart || 'off';
-        mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichart === val));
-        // Sync gear panel minichart buttons
-        document.querySelectorAll('#global-minichart-btns [data-minichart]').forEach((b) => {
-          (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.minichart === val);
-        });
-        try {
-          localStorage.setItem('minichart_mobile', val);
-        } catch {
-          /* ignore */
-        }
-        window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
-      });
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Data Fetching
 // ---------------------------------------------------------------------------
 
@@ -321,9 +256,6 @@ export function initAdminView(): void {
       }
     }
   });
-
-  // Wire preferences
-  initAdminPreferences();
 
   // Initial data load
   refreshAdminView().catch(() => {});

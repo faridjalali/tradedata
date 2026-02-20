@@ -100,8 +100,7 @@ fixed before committing. This is not aspirational — it is the minimum bar.
 - **Divergence feed**: Live feed of VDF (Volume Distribution Formation) divergence alerts
   detected across the universe of tracked symbols.
 - **Admin page**: Unified administrative view consolidating system health, operations
-  (fetch buttons), run metrics, history, and preferences (theme, timezone, minichart).
-  Replaces the separate Logs view and gear panel settings.
+  (fetch buttons), run metrics, and history. Preferences live in the gear panel dropdown.
 
 ### Tech Stack
 
@@ -163,7 +162,7 @@ server/
     apiSchemas.ts                   # Zod schemas for external API response validation
 src/                                # Frontend TypeScript (compiled by Vite)
   main.ts                           # View router, global event handlers, scan control wiring
-  admin.ts                          # Admin page: health cards, operations, metrics, history, preferences
+  admin.ts                          # Admin page: health cards, operations, metrics, history
   fetchButton.ts                    # FetchButton class + registry (operation buttons)
   chart.ts                          # Lightweight Charts integration, indicator rendering
   breadth.ts                        # Breadth analysis charts (Chart.js), comparison view
@@ -751,7 +750,7 @@ library. `main.ts` owns the view-switching logic.
 
 ### Admin View (`src/admin.ts`)
 
-Lazy-loaded module for the unified admin page (`#/admin`). Five sections:
+Lazy-loaded module for the unified admin page (`#/admin`). Four sections:
 
 1. **System Health**: 2×2 card grid showing Server, Database, Circuit Breaker, Scan Data status.
    Data from `GET /api/admin/status`. Auto-refreshes on 10s polling interval.
@@ -759,13 +758,11 @@ Lazy-loaded module for the unified admin page (`#/admin`). Five sections:
    Same DOM element IDs as before — `FetchButton` class finds elements by `getElementById()`.
 3. **Run Metrics**: Reuses `buildRunCardHtml()` and `buildConfigCardHtml()` from `logs.ts`.
 4. **Recent Runs**: Reuses `buildHistoryEntryHtml()` from `logs.ts` with own pagination state.
-5. **Preferences**: Theme buttons (cross-synced with gear panel), timezone select, minichart toggle.
 
 Activity dot (`#admin-activity-dot`) on the Admin nav item pulses when any scan is running.
 Toggled by `divergenceScanControl.ts` polling loop.
 
-The gear icon in the header provides a user-centric settings dropdown (theme, timezone, minichart)
-with cross-sync to admin page preferences and vice versa.
+The gear icon in the header provides a settings dropdown (theme, minichart, timezone).
 `#/logs` hash routes redirect to `#/admin` for backward compatibility.
 
 ### Chart View (`src/chart.ts`)

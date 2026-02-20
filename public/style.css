@@ -1302,22 +1302,6 @@ button:hover {
   gap: var(--sp-md);
   flex-wrap: wrap;
 }
-.admin-preferences-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-lg);
-}
-.admin-pref-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-md);
-}
-.admin-pref-label {
-  color: var(--text-secondary);
-  font-size: var(--fs-md);
-  white-space: nowrap;
-}
 .admin-status-ok { color: var(--color-log-success); }
 .admin-status-warn { color: var(--color-vdf-high); }
 .admin-status-error { color: var(--color-log-error); }
@@ -1378,7 +1362,6 @@ button:hover {
 
   /* Admin page mobile */
   .admin-health-grid { grid-template-columns: 1fr; }
-  .admin-pref-row { flex-direction: column; align-items: flex-start; gap: var(--sp-sm); }
 }
 
 .show-more-btn {

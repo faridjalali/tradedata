@@ -320,7 +320,7 @@ function initGlobalSettingsPanel() {
     closePanel();
   });
 
-  // Theme buttons (quick access — also available in Admin > Preferences)
+  // Theme buttons
   const themeBtns = panel.querySelectorAll<HTMLElement>('.theme-swatch-btn');
   const currentThemeName = getTheme();
   themeBtns.forEach((btn) => {
@@ -329,10 +329,6 @@ function initGlobalSettingsPanel() {
       const name = btn.dataset.theme as ThemeName;
       setTheme(name);
       themeBtns.forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
-      // Sync admin page theme buttons if they exist
-      document.querySelectorAll('#admin-theme-btns .theme-swatch-btn').forEach((b) => {
-        (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.theme === name);
-      });
     });
   });
 
@@ -344,9 +340,6 @@ function initGlobalSettingsPanel() {
     tzSelect.value = getAppTimeZone();
     tzSelect.addEventListener('change', () => {
       setAppTimeZone(tzSelect.value);
-      // Sync admin page timezone select
-      const adminTz = document.getElementById('admin-timezone-select') as HTMLSelectElement | null;
-      if (adminTz) adminTz.value = tzSelect.value;
     });
   }
 
@@ -358,10 +351,6 @@ function initGlobalSettingsPanel() {
     btn.addEventListener('click', () => {
       const val = btn.dataset.minichart || 'off';
       mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichart === val));
-      // Sync admin page minichart buttons
-      document.querySelectorAll('#admin-minichart-btns [data-minichart]').forEach((b) => {
-        (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.minichart === val);
-      });
       try {
         localStorage.setItem('minichart_mobile', val);
       } catch {
