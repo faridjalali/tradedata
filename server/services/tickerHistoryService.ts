@@ -1,17 +1,25 @@
-import { pool, divergencePool, isDivergenceConfigured } from '../db.js';
+import { db, pool, divergencePool, isDivergenceConfigured } from '../db.js';
 import {
-  DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
+  DIVERGENCE_SOURCE_INTERVAL,
+  DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
   DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
 } from '../config.js';
 import {
-  currentEtDateString, maxEtDateString, etDateStringFromUnixSeconds,
-  dateKeyDaysAgo, addUtcDays,
+  currentEtDateString,
+  maxEtDateString,
+  etDateStringFromUnixSeconds,
+  dateKeyDaysAgo,
+  addUtcDays,
 } from '../lib/dateUtils.js';
 import {
-  dataApiIntradayChartHistory, computeVolumeDeltaByParentBars,
-  dataApiIntraday, calculateVolumeDeltaRsiSeries,
-  DIVERGENCE_LOOKBACK_DAYS, toVolumeDeltaSourceInterval,
-  DIVERGENCE_SUMMARY_BUILD_CONCURRENCY, DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS,
+  dataApiIntradayChartHistory,
+  computeVolumeDeltaByParentBars,
+  dataApiIntraday,
+  calculateVolumeDeltaRsiSeries,
+  DIVERGENCE_LOOKBACK_DAYS,
+  toVolumeDeltaSourceInterval,
+  DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
+  DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS,
   convertToLATime,
 } from './chartEngine.js';
 import { classifyDivergenceSignal } from '../chartMath.js';
@@ -24,7 +32,8 @@ import {
   classifyDivergenceStateMapFromDailyRows,
 } from './divergenceStateService.js';
 import {
-  upsertDivergenceSummaryBatch, upsertDivergenceDailyBarsBatch,
+  upsertDivergenceSummaryBatch,
+  upsertDivergenceDailyBarsBatch,
   resolveDivergenceAsOfTradeDate,
 } from './divergenceDbService.js';
 import { miniBarsCacheByTicker, persistMiniChartBars } from './miniBarService.js';
@@ -32,13 +41,17 @@ import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
 import { DIVERGENCE_SCAN_PARENT_INTERVAL, DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS } from '../config.js';
 import { pacificDateStringFromUnixSeconds, parseDateKeyToUtcMs } from '../lib/dateUtils.js';
 import { isValidTickerSymbol } from '../middleware.js';
-import { getIntradayLookbackDays, nextPacificDivergenceRefreshUtcMs, normalizeIntradayVolumesFromCumulativeIfNeeded } from './chartEngine.js';
+import {
+  getIntradayLookbackDays,
+  nextPacificDivergenceRefreshUtcMs,
+  normalizeIntradayVolumesFromCumulativeIfNeeded,
+} from './chartEngine.js';
 import { buildNeutralDivergenceStateMap, setDivergenceSummaryCacheEntry } from './divergenceStateService.js';
 import { resolveLastClosedDailyCandleDate } from './scanControlService.js';
 
-
-
-export async function buildDailyDivergenceSummaryInput(options: { ticker?: string; vdSourceInterval?: string; lookbackDays?: number } = {}) {
+export async function buildDailyDivergenceSummaryInput(
+  options: { ticker?: string; vdSourceInterval?: string; lookbackDays?: number } = {},
+) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const lookbackDays = Math.max(1, Math.floor(Number(options.lookbackDays) || getIntradayLookbackDays('1day')));
@@ -80,8 +93,9 @@ export async function buildDailyDivergenceSummaryInput(options: { ticker?: strin
   };
 }
 
-
-export async function persistOnDemandTickerDivergenceSummary(options: { entry?: Record<string, unknown>; latestDailyBar?: Record<string, unknown> | null } = {}) {
+export async function persistOnDemandTickerDivergenceSummary(
+  options: { entry?: Record<string, unknown>; latestDailyBar?: Record<string, unknown> | null } = {},
+) {
   if (!divergencePool) return;
   const entry = options.entry || null;
   const latestDailyBar = options.latestDailyBar || null;
@@ -94,11 +108,11 @@ export async function persistOnDemandTickerDivergenceSummary(options: { entry?: 
     await upsertDivergenceSummaryBatch(
       [
         {
-          ticker: entry.ticker,
-          source_interval: entry.sourceInterval,
-          trade_date: entry.tradeDate,
-          states: entry.states,
-          ma_states: entry.maStates || null,
+          ticker: String(entry.ticker),
+          source_interval: String(entry.sourceInterval),
+          trade_date: String(entry.tradeDate),
+          states: (entry.states || {}) as Record<string, string>,
+          ma_states: (entry.maStates || null) as Record<string, boolean> | null,
         },
       ],
       null,
@@ -106,8 +120,9 @@ export async function persistOnDemandTickerDivergenceSummary(options: { entry?: 
   }
 }
 
-
-export async function getOrBuildTickerDivergenceSummary(options: { ticker?: string; vdSourceInterval?: string; forceRefresh?: boolean; persistToDatabase?: boolean } = {}) {
+export async function getOrBuildTickerDivergenceSummary(
+  options: { ticker?: string; vdSourceInterval?: string; forceRefresh?: boolean; persistToDatabase?: boolean } = {},
+) {
   const ticker = String(options.ticker || '').toUpperCase();
   const vdSourceInterval = toVolumeDeltaSourceInterval(options.vdSourceInterval, '1min');
   const forceRefresh = Boolean(options.forceRefresh);
@@ -165,8 +180,9 @@ export async function getOrBuildTickerDivergenceSummary(options: { ticker?: stri
   return entry;
 }
 
-
-export async function getDivergenceSummaryForTickers(options: { tickers?: string[]; vdSourceInterval?: string; forceRefresh?: boolean } = {}) {
+export async function getDivergenceSummaryForTickers(
+  options: { tickers?: string[]; vdSourceInterval?: string; forceRefresh?: boolean } = {},
+) {
   const tickers = Array.isArray(options.tickers)
     ? options.tickers
         .map((ticker: string) => String(ticker || '').toUpperCase())
@@ -245,8 +261,9 @@ export async function getDivergenceSummaryForTickers(options: { tickers?: string
   };
 }
 
-
-export async function rebuildStoredDivergenceSummariesForTickers(options: { sourceInterval?: string; tickers?: string[]; asOfTradeDate?: string; lookbackDays?: number } = {}) {
+export async function rebuildStoredDivergenceSummariesForTickers(
+  options: { sourceInterval?: string; tickers?: string[]; asOfTradeDate?: string; lookbackDays?: number } = {},
+) {
   if (!divergencePool) return new Map();
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -275,14 +292,22 @@ export async function rebuildStoredDivergenceSummariesForTickers(options: { sour
   });
 
   const neutralStates = buildNeutralDivergenceStateMap();
-  const summaryRows: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string> }> = [];
+  const summaryRows: Array<{
+    ticker: string;
+    source_interval: string;
+    trade_date: string;
+    states: Record<string, string>;
+  }> = [];
   const summaryByTicker = new Map();
   const nowMs = Date.now();
   const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
 
   for (const ticker of tickers) {
     const rows = rowsByTicker.get(ticker) || [];
-    const filtered = rows.filter((row: { trade_date: string; close: number; volume_delta: number }) => row.trade_date && row.trade_date <= asOfTradeDate);
+    const filtered = rows.filter(
+      (row: { trade_date: string; close: number; volume_delta: number }) =>
+        row.trade_date && row.trade_date <= asOfTradeDate,
+    );
     const latestRowDate = filtered.length ? String(filtered[filtered.length - 1].trade_date || '').trim() : '';
     const tradeDate = latestRowDate || asOfTradeDate;
     const states = filtered.length >= 2 ? classifyDivergenceStateMapFromDailyRows(filtered) : neutralStates;
@@ -312,8 +337,14 @@ export async function rebuildStoredDivergenceSummariesForTickers(options: { sour
   return summaryByTicker;
 }
 
-
-export function buildLatestDailyBarSnapshotForTicker(options: { ticker?: string; sourceInterval?: string; maxTradeDateKey?: string; dailyInput?: Record<string, unknown> } = {}) {
+export function buildLatestDailyBarSnapshotForTicker(
+  options: {
+    ticker?: string;
+    sourceInterval?: string;
+    maxTradeDateKey?: string;
+    dailyInput?: Record<string, unknown>;
+  } = {},
+) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
@@ -358,8 +389,19 @@ export function buildLatestDailyBarSnapshotForTicker(options: { ticker?: string;
   };
 }
 
-
-export async function buildLatestWeeklyBarSnapshotForTicker(options: { ticker?: string; sourceInterval?: string; lookbackDays?: number; asOfTradeDate?: string; signal?: AbortSignal | null; noCache?: boolean; parentRows?: Array<Record<string, unknown>>; sourceRows?: Array<Record<string, unknown>>; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {}) {
+export async function buildLatestWeeklyBarSnapshotForTicker(
+  options: {
+    ticker?: string;
+    sourceInterval?: string;
+    lookbackDays?: number;
+    asOfTradeDate?: string;
+    signal?: AbortSignal | null;
+    noCache?: boolean;
+    parentRows?: Array<Record<string, unknown>>;
+    sourceRows?: Array<Record<string, unknown>>;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
+) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS));
@@ -411,17 +453,18 @@ export async function buildLatestWeeklyBarSnapshotForTicker(options: { ticker?: 
   };
 }
 
-
 export async function getDivergenceTableTickerUniverseFromAlerts(): Promise<string[]> {
   const tickers = new Set<string>();
 
   try {
-    const tvResult = await pool.query(`
-      SELECT DISTINCT UPPER(TRIM(ticker)) AS ticker
-      FROM alerts
-      WHERE ticker IS NOT NULL
-    `);
-    for (const row of tvResult.rows) {
+    const tvResult = await db
+      .selectFrom('alerts')
+      .select('ticker')
+      .distinct()
+      .where('ticker', 'is not', null)
+      .execute();
+
+    for (const row of tvResult) {
       const ticker = String(row?.ticker || '')
         .trim()
         .toUpperCase();
@@ -454,7 +497,6 @@ export async function getDivergenceTableTickerUniverseFromAlerts(): Promise<stri
   return Array.from(tickers).sort((a, b) => a.localeCompare(b));
 }
 
-
 export function groupDivergenceDailyRowsByTicker(rows: Array<Record<string, unknown>>) {
   const out = new Map<string, Array<{ trade_date: string; close: number; volume_delta: number }>>();
   for (const row of rows || []) {
@@ -470,8 +512,9 @@ export function groupDivergenceDailyRowsByTicker(rows: Array<Record<string, unkn
   return out;
 }
 
-
-export async function loadDivergenceDailyHistoryByTicker(options: { sourceInterval?: string; tickers?: string[]; historyStartDate?: string; asOfTradeDate?: string } = {}) {
+export async function loadDivergenceDailyHistoryByTicker(
+  options: { sourceInterval?: string; tickers?: string[]; historyStartDate?: string; asOfTradeDate?: string } = {},
+) {
   const sourceInterval =
     String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const tickers = Array.isArray(options.tickers) ? options.tickers : [];
@@ -501,8 +544,11 @@ export async function loadDivergenceDailyHistoryByTicker(options: { sourceInterv
   return groupDivergenceDailyRowsByTicker(historyResult.rows);
 }
 
-
-export function hasDivergenceHistoryCoverage(rows: Array<{ trade_date: string }>, asOfTradeDate: string, minCoverageDays: number) {
+export function hasDivergenceHistoryCoverage(
+  rows: Array<{ trade_date: string }>,
+  asOfTradeDate: string,
+  minCoverageDays: number,
+) {
   const safeRows = (Array.isArray(rows) ? rows : []).filter((row) => row.trade_date && row.trade_date <= asOfTradeDate);
   if (safeRows.length < 2) return false;
 
@@ -520,8 +566,20 @@ export function hasDivergenceHistoryCoverage(rows: Array<{ trade_date: string }>
   return coverageDays >= Math.max(1, Number(minCoverageDays) || DIVERGENCE_TABLE_MIN_COVERAGE_DAYS);
 }
 
-
-export async function buildDivergenceDailyRowsForTicker(options: { ticker?: string; sourceInterval?: string; lookbackDays?: number; asOfTradeDate?: string; signal?: AbortSignal | null; noCache?: boolean; parentRows?: Array<Record<string, unknown>>; sourceRows?: Array<Record<string, unknown>>; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null; parentInterval?: string } = {}) {
+export async function buildDivergenceDailyRowsForTicker(
+  options: {
+    ticker?: string;
+    sourceInterval?: string;
+    lookbackDays?: number;
+    asOfTradeDate?: string;
+    signal?: AbortSignal | null;
+    noCache?: boolean;
+    parentRows?: Array<Record<string, unknown>>;
+    sourceRows?: Array<Record<string, unknown>>;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+    parentInterval?: string;
+  } = {},
+) {
   const ticker = String(options.ticker || '').toUpperCase();
   const sourceInterval = toVolumeDeltaSourceInterval(options.sourceInterval, DIVERGENCE_SOURCE_INTERVAL);
   const lookbackDays = Math.max(35, Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS));

@@ -12,49 +12,36 @@
  * effectively invalidates all outstanding tokens within 24 hours.
  */
 
-import crypto from 'crypto';
-import { SESSION_SECRET } from '../config.js';
+import { v4 as uuidv4 } from 'uuid';
+import { Redis } from 'ioredis';
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 const COOKIE_NAME = 'catvue_session';
 
-function sign(payload: string): string {
-  return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+// Initialize Redis client using REDIS_URL from process environment
+// Fallback to local default if unconfigured for dev environments
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+redis.on('error', (err: Error) => console.error('Redis Session Cache error:', err));
+redis.on('connect', () => console.log('Successfully connected to Redis Session Store'));
+
+export async function createSession(): Promise<string> {
+  const token = uuidv4();
+  // Store empty string or timestamp since the key's existence proves the session
+  await redis.setex(`session:${token}`, SESSION_TTL_SECONDS, Date.now().toString());
+  return token;
 }
 
-function timingSafeStrEqual(a: string, b: string): boolean {
-  // Both are hex strings from the same HMAC → always equal length when valid.
-  // Pad shorter string to avoid length-leaking side channel.
-  const len = Math.max(a.length, b.length);
-  const bufA = Buffer.alloc(len);
-  const bufB = Buffer.alloc(len);
-  bufA.write(a);
-  bufB.write(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-export function createSession(): string {
-  const expiresAt = (Date.now() + SESSION_TTL_MS).toString(16);
-  const sig = sign(expiresAt);
-  return `${expiresAt}.${sig}`;
-}
-
-export function validateSession(token: string | null | undefined): boolean {
+export async function validateSession(token: string | null | undefined): Promise<boolean> {
   if (!token || typeof token !== 'string') return false;
-  const dot = token.indexOf('.');
-  if (dot === -1) return false;
-  const payload = token.slice(0, dot);
-  const providedSig = token.slice(dot + 1);
-  const expectedSig = sign(payload);
-  if (!timingSafeStrEqual(providedSig, expectedSig)) return false;
-  const expiresAt = parseInt(payload, 16);
-  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false;
-  return true;
+  // Use GET or EXISTS. Exists returns 1 if key exists.
+  const exists = await redis.exists(`session:${token}`);
+  return exists === 1;
 }
 
-/** No-op for stateless tokens — expiry is encoded in the token itself. */
-export function destroySession(_token: string | null | undefined): void {
-  // Nothing to do — client clears the cookie via clearSessionCookie().
+export async function destroySession(token: string | null | undefined): Promise<void> {
+  if (!token || typeof token !== 'string') return;
+  await redis.del(`session:${token}`);
 }
 
 export function parseCookieValue(req: { headers: { cookie?: string } }): string | null {
@@ -64,8 +51,7 @@ export function parseCookieValue(req: { headers: { cookie?: string } }): string 
 }
 
 export function setSessionCookie(reply: { header: (name: string, value: string) => any }, token: string): void {
-  const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-  reply.header('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+  reply.header('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}`);
 }
 
 export function clearSessionCookie(reply: { header: (name: string, value: string) => any }): void {

@@ -1,7 +1,7 @@
 // Shared API types — single source of truth for frontend ↔ backend contract.
 // Frontend imports these directly; backend references them via JSDoc.
 
-import type { VALID_CHART_INTERVALS } from './constants';
+import type { VALID_CHART_INTERVALS } from './constants.js';
 
 // --- Chart types ---
 
@@ -122,19 +122,27 @@ export interface DivergenceScanStatus {
     stop_requested?: boolean;
     can_resume?: boolean;
   } | null;
-  tableBuild?: (ScanSubStatus & {
-    pause_requested?: boolean;
-    last_published_trade_date?: string | null;
-  }) | null;
-  fetchDailyData?: (ScanSubStatus & {
-    last_published_trade_date?: string | null;
-  }) | null;
-  fetchWeeklyData?: (ScanSubStatus & {
-    last_published_trade_date?: string | null;
-  }) | null;
-  vdfScan?: (ScanSubStatus & {
-    detected_tickers?: number;
-  }) | null;
+  tableBuild?:
+    | (ScanSubStatus & {
+        pause_requested?: boolean;
+        last_published_trade_date?: string | null;
+      })
+    | null;
+  fetchDailyData?:
+    | (ScanSubStatus & {
+        last_published_trade_date?: string | null;
+      })
+    | null;
+  fetchWeeklyData?:
+    | (ScanSubStatus & {
+        last_published_trade_date?: string | null;
+      })
+    | null;
+  vdfScan?:
+    | (ScanSubStatus & {
+        detected_tickers?: number;
+      })
+    | null;
   latestJob: {
     run_for_date?: string;
     scanned_trade_date?: string;
@@ -165,13 +173,13 @@ export interface BreadthResponse {
 // --- Breadth MA (% above moving averages) types ---
 
 export interface BreadthMASnapshot {
-  index: string;       // 'SPY' | 'QQQ' | 'SMH'
+  index: string; // 'SPY' | 'QQQ' | 'SMH'
   date: string;
-  ma21: number;        // percentage 0-100
+  ma21: number; // percentage 0-100
   ma50: number;
   ma100: number;
   ma200: number;
-  total: number;       // total constituents evaluated
+  total: number; // total constituents evaluated
 }
 
 export interface BreadthMAHistory {

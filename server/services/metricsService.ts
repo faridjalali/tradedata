@@ -1,7 +1,9 @@
 import { randomBytes } from 'crypto';
-import { pool } from '../db.js';
+import { db } from '../db.js';
 import {
-  CHART_TIMING_SAMPLE_MAX, RUN_METRICS_SAMPLE_CAP, RUN_METRICS_HISTORY_LIMIT,
+  CHART_TIMING_SAMPLE_MAX,
+  RUN_METRICS_SAMPLE_CAP,
+  RUN_METRICS_HISTORY_LIMIT,
   DIVERGENCE_SOURCE_INTERVAL,
 } from '../config.js';
 import {
@@ -30,14 +32,24 @@ export interface RunMetricsInternal {
   updatedAt: string;
   tickers: { total: number; processed: number; errors: number };
   api: {
-    calls: number; successes: number; failures: number;
-    rateLimited: number; timedOut: number; aborted: number;
-    subscriptionRestricted: number; totalLatencyMs: number;
+    calls: number;
+    successes: number;
+    failures: number;
+    rateLimited: number;
+    timedOut: number;
+    aborted: number;
+    subscriptionRestricted: number;
+    totalLatencyMs: number;
     latencySamples: number[];
   };
   db: {
-    flushCount: number; totalFlushMs: number; maxFlushMs: number;
-    dailyRows: number; summaryRows: number; signalRows: number; neutralRows: number;
+    flushCount: number;
+    totalFlushMs: number;
+    maxFlushMs: number;
+    dailyRows: number;
+    summaryRows: number;
+    signalRows: number;
+    neutralRows: number;
   };
   stalls: { retries: number; watchdogAborts: number };
   failedTickers: string[];
@@ -56,14 +68,25 @@ export interface RunMetricsSummary {
   durationSeconds: number;
   tickers: { total: number; processed: number; errors: number; processedPerSecond: number };
   api: {
-    calls: number; successes: number; failures: number;
-    rateLimited: number; timedOut: number; aborted: number;
-    subscriptionRestricted: number; avgLatencyMs: number;
-    p50LatencyMs: number; p95LatencyMs: number;
+    calls: number;
+    successes: number;
+    failures: number;
+    rateLimited: number;
+    timedOut: number;
+    aborted: number;
+    subscriptionRestricted: number;
+    avgLatencyMs: number;
+    p50LatencyMs: number;
+    p95LatencyMs: number;
   };
   db: {
-    flushCount: number; dailyRows: number; summaryRows: number;
-    signalRows: number; neutralRows: number; avgFlushMs: number; maxFlushMs: number;
+    flushCount: number;
+    dailyRows: number;
+    summaryRows: number;
+    signalRows: number;
+    neutralRows: number;
+    avgFlushMs: number;
+    maxFlushMs: number;
   };
   stalls: { retries: number; watchdogAborts: number };
   failedTickers: string[];
@@ -127,13 +150,11 @@ export const runMetricsByType: Record<string, RunMetricsInternal | null> = {
 
 export const runMetricsHistory: RunMetricsSummary[] = [];
 
-
 export function clampTimingSample(valueMs: number | undefined | null) {
   const numeric = Number(valueMs);
   if (!Number.isFinite(numeric) || numeric < 0) return null;
   return Math.round(numeric * 100) / 100;
 }
-
 
 export function pushTimingSample(cacheKey: string, valueMs: number | undefined | null) {
   const value = clampTimingSample(valueMs);
@@ -149,14 +170,12 @@ export function pushTimingSample(cacheKey: string, valueMs: number | undefined |
   }
 }
 
-
 export function calculateP95Ms(samples: number[] | undefined) {
   if (!Array.isArray(samples) || samples.length === 0) return 0;
   const sorted = [...samples].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1));
   return Math.round(sorted[index] * 100) / 100;
 }
-
 
 export function getOrCreateChartTimingSummary(interval: string): ChartTimingSummary {
   const key = String(interval || '').trim() || 'unknown';
@@ -175,8 +194,9 @@ export function getOrCreateChartTimingSummary(interval: string): ChartTimingSumm
   return chartDebugMetrics.requestTimingByInterval[key];
 }
 
-
-export function recordChartRequestTiming(options: { interval?: string; route?: string; cacheHit?: boolean; durationMs?: number } = {}) {
+export function recordChartRequestTiming(
+  options: { interval?: string; route?: string; cacheHit?: boolean; durationMs?: number } = {},
+) {
   const interval = String(options.interval || '').trim() || 'unknown';
   const route = options.route === 'chart_latest' ? 'chart_latest' : 'chart';
   const cacheHit = options.cacheHit === true;
@@ -203,14 +223,12 @@ export function recordChartRequestTiming(options: { interval?: string; route?: s
   summary.cacheMissP95Ms = calculateP95Ms(chartTimingSamplesByKey.get(`${interval}|miss`));
 }
 
-
 export function clampMetricNumber(value: number | undefined | null, digits = 2) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   const factor = 10 ** Math.max(0, Number(digits) || 0);
   return Math.round(numeric * factor) / factor;
 }
-
 
 export function percentileFromSortedSamples(samples: number[] | undefined, percentile: number) {
   if (!Array.isArray(samples) || samples.length === 0) return 0;
@@ -219,7 +237,6 @@ export function percentileFromSortedSamples(samples: number[] | undefined, perce
   const value = Number(samples[index]);
   return Number.isFinite(value) ? value : 0;
 }
-
 
 export function summarizeRunMetrics(metrics: RunMetricsInternal | null): RunMetricsSummary | null {
   if (!metrics || typeof metrics !== 'object') return null;
@@ -283,7 +300,6 @@ export function summarizeRunMetrics(metrics: RunMetricsInternal | null): RunMetr
   };
 }
 
-
 export function pushRunMetricsHistory(snapshot: RunMetricsSummary | null) {
   if (!snapshot) return;
   runMetricsHistory.unshift(snapshot);
@@ -293,50 +309,55 @@ export function pushRunMetricsHistory(snapshot: RunMetricsSummary | null) {
   persistRunSnapshotToDb(snapshot);
 }
 
-
 export function persistRunSnapshotToDb(snapshot: RunMetricsSummary | null) {
   if (!snapshot || !snapshot.runId) return;
-  pool
-    .query(
-      `INSERT INTO run_metrics_history (run_id, run_type, status, snapshot, started_at, finished_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (run_id) DO UPDATE SET status = $3, snapshot = $4, finished_at = $6`,
-      [
-        snapshot.runId,
-        snapshot.runType || 'unknown',
-        snapshot.status || 'unknown',
-        JSON.stringify(snapshot),
-        snapshot.startedAt || null,
-        snapshot.finishedAt || null,
-      ],
+  db.insertInto('run_metrics_history')
+    .values({
+      run_id: snapshot.runId,
+      run_type: snapshot.runType || 'unknown',
+      status: snapshot.status || 'unknown',
+      snapshot: JSON.stringify(snapshot),
+      started_at: snapshot.startedAt || null,
+      finished_at: snapshot.finishedAt || null,
+    })
+    .onConflict((oc) =>
+      oc.column('run_id').doUpdateSet({
+        status: snapshot.status || 'unknown',
+        snapshot: JSON.stringify(snapshot),
+        finished_at: snapshot.finishedAt || null,
+      }),
     )
+    .execute()
     .then(() => {
       // Prune old rows beyond the limit
-      return pool.query(
-        `DELETE FROM run_metrics_history WHERE id NOT IN (
-         SELECT id FROM run_metrics_history ORDER BY created_at DESC LIMIT $1
-       )`,
-        [RUN_METRICS_DB_LIMIT],
-      );
+      return db
+        .deleteFrom('run_metrics_history')
+        .where(
+          'id',
+          'not in',
+          db.selectFrom('run_metrics_history').select('id').orderBy('created_at', 'desc').limit(RUN_METRICS_DB_LIMIT),
+        )
+        .execute();
     })
     .catch((err) => {
       console.error('Failed to persist run snapshot:', err instanceof Error ? err.message : String(err));
     });
 }
 
-
 export async function loadRunHistoryFromDb() {
   try {
-    const result = await pool.query(`SELECT snapshot FROM run_metrics_history ORDER BY created_at DESC LIMIT $1`, [
-      RUN_METRICS_DB_LIMIT,
-    ]);
-    return result.rows.map((r) => r.snapshot);
+    const rows = await db
+      .selectFrom('run_metrics_history')
+      .select('snapshot')
+      .orderBy('created_at', 'desc')
+      .limit(RUN_METRICS_DB_LIMIT)
+      .execute();
+    return rows.map((r) => r.snapshot);
   } catch (err: unknown) {
     console.error('Failed to load run history from DB:', err instanceof Error ? err.message : String(err));
     return [];
   }
 }
-
 
 export function createRunMetricsTracker(runType: string, meta: Record<string, unknown> = {}) {
   const normalizedType = String(runType || '').trim() || 'unknown';
@@ -414,7 +435,16 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
       metrics.tickers.errors = Math.max(0, Number(errorTickers) || 0);
       touch();
     },
-    recordApiCall(details: { latencyMs?: number; ok?: boolean; rateLimited?: boolean; timedOut?: boolean; aborted?: boolean; subscriptionRestricted?: boolean } = {}) {
+    recordApiCall(
+      details: {
+        latencyMs?: number;
+        ok?: boolean;
+        rateLimited?: boolean;
+        timedOut?: boolean;
+        aborted?: boolean;
+        subscriptionRestricted?: boolean;
+      } = {},
+    ) {
       const latencyMs = Math.max(0, Number(details.latencyMs) || 0);
       metrics.api.calls += 1;
       metrics.api.totalLatencyMs += latencyMs;
@@ -433,7 +463,15 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
       if (details.subscriptionRestricted) metrics.api.subscriptionRestricted += 1;
       touch();
     },
-    recordDbFlush(details: { durationMs?: number; dailyRows?: number; summaryRows?: number; signalRows?: number; neutralRows?: number } = {}) {
+    recordDbFlush(
+      details: {
+        durationMs?: number;
+        dailyRows?: number;
+        summaryRows?: number;
+        signalRows?: number;
+        neutralRows?: number;
+      } = {},
+    ) {
       const durationMs = Math.max(0, Number(details.durationMs) || 0);
       metrics.db.flushCount += 1;
       metrics.db.totalFlushMs += durationMs;
@@ -473,7 +511,16 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
       metrics.stalls.watchdogAborts += 1;
       touch();
     },
-    finish(status: string, patch: { totalTickers?: number; processedTickers?: number; errorTickers?: number; phase?: string; meta?: Record<string, unknown> } = {}) {
+    finish(
+      status: string,
+      patch: {
+        totalTickers?: number;
+        processedTickers?: number;
+        errorTickers?: number;
+        phase?: string;
+        meta?: Record<string, unknown>;
+      } = {},
+    ) {
       if (finished) return summarizeRunMetrics(metrics);
       finished = true;
       metrics.status = String(status || 'completed').trim() || 'completed';
@@ -506,7 +553,6 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
   };
 }
 
-
 export function getLogsRunMetricsPayload() {
   return {
     generatedAt: new Date().toISOString(),
@@ -519,7 +565,8 @@ export function getLogsRunMetricsPayload() {
       dataApiBase: String(process.env.DATA_API_BASE || 'https://api.massive.com'),
       dataApiTimeoutMs: Number(process.env.DATA_API_TIMEOUT_MS) || 15000,
       dataApiMaxRequestsPerSecond: Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99,
-      dataApiRateBucketCapacity: Number(process.env.DATA_API_RATE_BUCKET_CAPACITY) || Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99,
+      dataApiRateBucketCapacity:
+        Number(process.env.DATA_API_RATE_BUCKET_CAPACITY) || Number(process.env.DATA_API_MAX_REQUESTS_PER_SECOND) || 99,
     },
     statuses: {
       fetchDaily: fetchDailyScan.getStatus(),

@@ -1,15 +1,23 @@
 import { divergencePool } from '../db.js';
 import {
-  DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_SCAN_PARENT_INTERVAL,
-  DIVERGENCE_SCAN_LOOKBACK_DAYS, DIVERGENCE_SCAN_CONCURRENCY,
-  DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY, DIVERGENCE_SCAN_SPREAD_MINUTES,
-  DIVERGENCE_STALL_TIMEOUT_MS, DIVERGENCE_STALL_CHECK_INTERVAL_MS,
-  DIVERGENCE_STALL_RETRY_BASE_MS, DIVERGENCE_STALL_MAX_RETRIES,
+  DIVERGENCE_SOURCE_INTERVAL,
+  DIVERGENCE_SCAN_PARENT_INTERVAL,
+  DIVERGENCE_SCAN_LOOKBACK_DAYS,
+  DIVERGENCE_SCAN_CONCURRENCY,
+  DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY,
+  DIVERGENCE_SCAN_SPREAD_MINUTES,
+  DIVERGENCE_STALL_TIMEOUT_MS,
+  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
+  DIVERGENCE_STALL_RETRY_BASE_MS,
+  DIVERGENCE_STALL_MAX_RETRIES,
 } from '../config.js';
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
 import {
-  isAbortError, sleepWithAbort, createProgressStallWatchdog,
-  getStallRetryBackoffMs, runWithAbortAndTimeout,
+  isAbortError,
+  sleepWithAbort,
+  createProgressStallWatchdog,
+  getStallRetryBackoffMs,
+  runWithAbortAndTimeout,
 } from '../services/dataApi.js';
 import { runRetryPasses } from '../lib/ScanState.js';
 import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
@@ -47,8 +55,9 @@ import {
   setDivergenceScanStopRequested,
 } from '../services/scanControlService.js';
 
-
-export async function runDailyDivergenceScan(options: { force?: boolean; refreshUniverse?: boolean; runDateEt?: string; trigger?: string; resume?: boolean } = {}) {
+export async function runDailyDivergenceScan(
+  options: { force?: boolean; refreshUniverse?: boolean; runDateEt?: string; trigger?: string; resume?: boolean } = {},
+) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -57,7 +66,9 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
   }
 
   const resumeRequested = options.resume === true;
-  const resumeState = resumeRequested ? normalizeDivergenceScanResumeState(divergenceScanResumeState || {}) : null;
+  const resumeState = resumeRequested
+    ? normalizeDivergenceScanResumeState((divergenceScanResumeState as unknown as Record<string, unknown>) || {})
+    : null;
   if (resumeRequested && (!resumeState || resumeState.totalSymbols === 0)) {
     return { status: 'no-resume' };
   }
@@ -94,19 +105,20 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
   let totalSymbols = Math.max(0, Number(resumeState?.totalSymbols || symbols.length));
   let nextIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
 
-  const buildResumeSnapshot = () => normalizeDivergenceScanResumeState({
-    runDateEt: runDate,
-    trigger,
-    symbols,
-    nextIndex,
-    processed,
-    bullishCount,
-    bearishCount,
-    errorCount,
-    latestScannedTradeDate,
-    summaryProcessedTickers,
-    scanJobId,
-  });
+  const buildResumeSnapshot = () =>
+    normalizeDivergenceScanResumeState({
+      runDateEt: runDate,
+      trigger,
+      symbols,
+      nextIndex,
+      processed,
+      bullishCount,
+      bearishCount,
+      errorCount,
+      latestScannedTradeDate,
+      summaryProcessedTickers,
+      scanJobId,
+    });
 
   const persistResumeState = () => {
     setDivergenceScanResumeState(buildResumeSnapshot());
@@ -138,10 +150,9 @@ export async function runDailyDivergenceScan(options: { force?: boolean; refresh
       const deleteClient = await divergencePool!.connect();
       try {
         await deleteClient.query('BEGIN');
-        await deleteClient.query(
-          `DELETE FROM divergence_signals WHERE source_interval = $1 AND timeframe <> '1d'`,
-          [DIVERGENCE_SOURCE_INTERVAL],
-        );
+        await deleteClient.query(`DELETE FROM divergence_signals WHERE source_interval = $1 AND timeframe <> '1d'`, [
+          DIVERGENCE_SOURCE_INTERVAL,
+        ]);
         await deleteClient.query(
           `DELETE FROM divergence_signals WHERE trade_date = $1 AND source_interval = $2 AND timeframe = '1d'`,
           [runDate, DIVERGENCE_SOURCE_INTERVAL],

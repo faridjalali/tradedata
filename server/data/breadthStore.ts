@@ -3,7 +3,8 @@
  * Tables: breadth_daily_closes, breadth_snapshots
  */
 
-import type { Pool } from 'pg';
+import { sql } from 'kysely';
+import { db } from '../db.js';
 import type { BreadthMASnapshot, BreadthMAHistory } from '../../shared/api-types.js';
 import { ALL_BREADTH_INDICES } from './etfConstituents.js';
 
@@ -11,8 +12,8 @@ import { ALL_BREADTH_INDICES } from './etfConstituents.js';
 // Schema initialisation
 // ---------------------------------------------------------------------------
 
-export async function initBreadthTables(dbPool: Pool): Promise<void> {
-  await dbPool.query(`
+export async function initBreadthTables(): Promise<void> {
+  await sql`
     CREATE TABLE IF NOT EXISTS breadth_daily_closes (
       ticker VARCHAR(20) NOT NULL,
       trade_date DATE NOT NULL,
@@ -34,7 +35,7 @@ export async function initBreadthTables(dbPool: Pool): Promise<void> {
       PRIMARY KEY (trade_date, index_name)
     );
     CREATE INDEX IF NOT EXISTS idx_bs_index_date ON breadth_snapshots (index_name, trade_date DESC);
-  `);
+  `.execute(db);
 }
 
 // ---------------------------------------------------------------------------
@@ -44,26 +45,24 @@ export async function initBreadthTables(dbPool: Pool): Promise<void> {
 /**
  * Bulk upsert daily closes for a single trade date using UNNEST.
  */
-export async function upsertDailyCloses(
-  dbPool: Pool,
-  tradeDate: string,
-  closes: Map<string, number>,
-): Promise<void> {
+export async function upsertDailyCloses(tradeDate: string, closes: Map<string, number>): Promise<void> {
   if (closes.size === 0) return;
-  const tickers: string[] = [];
-  const prices: number[] = [];
-  for (const [ticker, close] of closes) {
-    tickers.push(ticker);
-    prices.push(close);
-  }
-  await dbPool.query(
-    `INSERT INTO breadth_daily_closes (ticker, trade_date, close, updated_at)
-     SELECT t, $1::date, c, NOW()
-     FROM UNNEST($2::text[], $3::numeric[]) AS x(t, c)
-     ON CONFLICT (ticker, trade_date)
-     DO UPDATE SET close = EXCLUDED.close, updated_at = NOW()`,
-    [tradeDate, tickers, prices],
-  );
+  const values = Array.from(closes.entries()).map(([ticker, close]) => ({
+    ticker,
+    trade_date: tradeDate,
+    close,
+  }));
+
+  await db
+    .insertInto('breadth_daily_closes')
+    .values(values)
+    .onConflict((oc) =>
+      oc.columns(['ticker', 'trade_date']).doUpdateSet((eb) => ({
+        close: eb.ref('excluded.close'),
+        updated_at: sql`NOW()`,
+      })),
+    )
+    .execute();
 }
 
 /**
@@ -71,38 +70,29 @@ export async function upsertDailyCloses(
  * Returns Map<ticker, number[]> where array is chronological (oldest first).
  */
 export async function getClosesForTickers(
-  dbPool: Pool,
   tickers: string[],
   limit: number,
   beforeDate?: string,
 ): Promise<Map<string, number[]>> {
   if (tickers.length === 0) return new Map();
-  let query: string;
-  let params: unknown[];
+
+  let baseQuery = db
+    .selectFrom('breadth_daily_closes')
+    .select(['ticker', 'trade_date', 'close'])
+    .where('ticker', 'in', tickers)
+    .orderBy('trade_date', 'desc')
+    .limit(limit * tickers.length);
+
   if (beforeDate) {
-    query = `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
-     FROM (
-       SELECT ticker, trade_date, close
-       FROM breadth_daily_closes
-       WHERE ticker = ANY($1) AND trade_date <= $3::date
-       ORDER BY trade_date DESC
-       LIMIT $2 * array_length($1, 1)
-     ) sub
-     GROUP BY ticker`;
-    params = [tickers, limit, beforeDate];
-  } else {
-    query = `SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
-     FROM (
-       SELECT ticker, trade_date, close
-       FROM breadth_daily_closes
-       WHERE ticker = ANY($1)
-       ORDER BY trade_date DESC
-       LIMIT $2 * array_length($1, 1)
-     ) sub
-     GROUP BY ticker`;
-    params = [tickers, limit];
+    baseQuery = baseQuery.where('trade_date', '<=', beforeDate);
   }
-  const { rows } = await dbPool.query(query, params);
+
+  const { rows } = await sql<{ ticker: string; closes: number[] }>`
+    SELECT ticker, array_agg(close::float ORDER BY trade_date ASC) AS closes
+    FROM (${baseQuery}) sub
+    GROUP BY ticker
+  `.execute(db);
+
   const result = new Map<string, number[]>();
   for (const row of rows) {
     result.set(row.ticker, row.closes);
@@ -115,7 +105,6 @@ export async function getClosesForTickers(
 // ---------------------------------------------------------------------------
 
 export async function upsertBreadthSnapshot(
-  dbPool: Pool,
   tradeDate: string,
   indexName: string,
   ma21: number,
@@ -124,28 +113,51 @@ export async function upsertBreadthSnapshot(
   ma200: number,
   total: number,
 ): Promise<void> {
-  await dbPool.query(
-    `INSERT INTO breadth_snapshots (trade_date, index_name, pct_above_ma21, pct_above_ma50, pct_above_ma100, pct_above_ma200, total_constituents, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-     ON CONFLICT (trade_date, index_name)
-     DO UPDATE SET pct_above_ma21 = $3, pct_above_ma50 = $4, pct_above_ma100 = $5, pct_above_ma200 = $6, total_constituents = $7, updated_at = NOW()`,
-    [tradeDate, indexName, ma21, ma50, ma100, ma200, total],
-  );
+  await db
+    .insertInto('breadth_snapshots')
+    .values({
+      trade_date: tradeDate,
+      index_name: indexName,
+      pct_above_ma21: ma21,
+      pct_above_ma50: ma50,
+      pct_above_ma100: ma100,
+      pct_above_ma200: ma200,
+      total_constituents: total,
+    })
+    .onConflict((oc) =>
+      oc.columns(['trade_date', 'index_name']).doUpdateSet((eb) => ({
+        pct_above_ma21: eb.ref('excluded.pct_above_ma21'),
+        pct_above_ma50: eb.ref('excluded.pct_above_ma50'),
+        pct_above_ma100: eb.ref('excluded.pct_above_ma100'),
+        pct_above_ma200: eb.ref('excluded.pct_above_ma200'),
+        total_constituents: eb.ref('excluded.total_constituents'),
+        updated_at: sql`NOW()`,
+      })),
+    )
+    .execute();
 }
 
-export async function getLatestBreadthSnapshots(dbPool: Pool): Promise<BreadthMASnapshot[]> {
+export async function getLatestBreadthSnapshots(): Promise<BreadthMASnapshot[]> {
   const indices = ALL_BREADTH_INDICES as string[];
-  const placeholders = indices.map((_, i) => `$${i + 1}`).join(', ');
-  const { rows } = await dbPool.query(`
+  const { rows } = await sql<{
+    index_name: string;
+    date: string;
+    ma21: number;
+    ma50: number;
+    ma100: number;
+    ma200: number;
+    total: number;
+  }>`
     SELECT DISTINCT ON (index_name)
       index_name, trade_date::text AS date,
       pct_above_ma21::float AS ma21, pct_above_ma50::float AS ma50,
       pct_above_ma100::float AS ma100, pct_above_ma200::float AS ma200,
       total_constituents AS total
     FROM breadth_snapshots
-    WHERE index_name IN (${placeholders})
+    WHERE index_name IN (${sql.join(indices)})
     ORDER BY index_name, trade_date DESC
-  `, indices);
+  `.execute(db);
+
   return rows.map((r) => ({
     index: r.index_name,
     date: r.date,
@@ -157,67 +169,65 @@ export async function getLatestBreadthSnapshots(dbPool: Pool): Promise<BreadthMA
   }));
 }
 
-export async function getBreadthHistory(
-  dbPool: Pool,
-  indexName: string,
-  days: number,
-): Promise<BreadthMAHistory[]> {
-  const { rows } = await dbPool.query(
-    `SELECT date, ma21, ma50, ma100, ma200 FROM (
-       SELECT trade_date::text AS date,
-              pct_above_ma21::float AS ma21, pct_above_ma50::float AS ma50,
-              pct_above_ma100::float AS ma100, pct_above_ma200::float AS ma200
-       FROM breadth_snapshots
-       WHERE index_name = $1
-       ORDER BY trade_date DESC
-       LIMIT $2
-     ) sub
-     ORDER BY date ASC`,
-    [indexName, days],
-  );
-  return rows;
+export async function getBreadthHistory(indexName: string, days: number): Promise<BreadthMAHistory[]> {
+  const innerQuery = db
+    .selectFrom('breadth_snapshots')
+    .select([
+      sql<string>`trade_date::text`.as('date'),
+      sql<number>`pct_above_ma21::float`.as('ma21'),
+      sql<number>`pct_above_ma50::float`.as('ma50'),
+      sql<number>`pct_above_ma100::float`.as('ma100'),
+      sql<number>`pct_above_ma200::float`.as('ma200'),
+    ])
+    .where('index_name', '=', indexName)
+    .orderBy('trade_date', 'desc')
+    .limit(days);
+
+  const rows = await db.selectFrom(innerQuery.as('sub')).selectAll().orderBy('date', 'asc').execute();
+
+  return rows as BreadthMAHistory[];
 }
 
 /**
  * Check whether the 200-day MA breadth history is valid for `checkDays` recent snapshots.
  * Returns true if all checked rows have pct_above_ma200 > 0 (i.e., the data is usable).
  */
-export async function isBreadthMa200Valid(
-  dbPool: Pool,
-  indexName: string = 'SPY',
-  checkDays: number = 30,
-): Promise<boolean> {
-  const { rows } = await dbPool.query(
-    `SELECT COUNT(*) AS zero_count
-     FROM (
-       SELECT pct_above_ma200
-       FROM breadth_snapshots
-       WHERE index_name = $1
-       ORDER BY trade_date DESC
-       LIMIT $2
-     ) sub
-     WHERE pct_above_ma200 = 0`,
-    [indexName, checkDays],
-  );
+export async function isBreadthMa200Valid(indexName: string = 'SPY', checkDays: number = 30): Promise<boolean> {
+  const innerQuery = db
+    .selectFrom('breadth_snapshots')
+    .select('pct_above_ma200')
+    .where('index_name', '=', indexName)
+    .orderBy('trade_date', 'desc')
+    .limit(checkDays);
+
+  const rows = await db
+    .selectFrom(innerQuery.as('sub'))
+    .select((eb) => eb.fn.countAll().as('zero_count'))
+    .where('pct_above_ma200', '=', 0)
+    .execute();
+
   return Number(rows[0]?.zero_count ?? 1) === 0;
 }
 
 /**
  * Delete closes older than `keepDays` trading days.
  */
-export async function cleanupOldCloses(dbPool: Pool, keepDays: number): Promise<number> {
-  const { rowCount } = await dbPool.query(
-    `DELETE FROM breadth_daily_closes
-     WHERE trade_date < (
-       SELECT trade_date FROM (
-         SELECT DISTINCT trade_date FROM breadth_daily_closes
-         ORDER BY trade_date DESC
-         LIMIT $1
-       ) sub
-       ORDER BY trade_date ASC
-       LIMIT 1
-     )`,
-    [keepDays],
-  );
-  return rowCount ?? 0;
+export async function cleanupOldCloses(keepDays: number): Promise<number> {
+  const dateSubquery = db
+    .selectFrom(
+      db
+        .selectFrom('breadth_daily_closes')
+        .select('trade_date')
+        .distinct()
+        .orderBy('trade_date', 'desc')
+        .limit(keepDays)
+        .as('sub'),
+    )
+    .select('trade_date')
+    .orderBy('trade_date', 'asc')
+    .limit(1);
+
+  const result = await db.deleteFrom('breadth_daily_closes').where('trade_date', '<', dateSubquery).executeTakeFirst();
+
+  return Number(result.numDeletedRows ?? 0);
 }

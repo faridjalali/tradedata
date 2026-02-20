@@ -1,5 +1,7 @@
 import { Pool, PoolClient } from 'pg';
+import { Kysely, PostgresDialect } from 'kysely';
 import { instrumentPool } from './lib/dbMonitor.js';
+import type { Database } from './db/types.js';
 
 const dbSslRejectUnauthorized = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() !== 'false';
 
@@ -24,6 +26,20 @@ export const divergencePool = divergenceDatabaseUrl
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
       statement_timeout: 30000,
+    })
+  : null;
+
+export const db = new Kysely<Database>({
+  dialect: new PostgresDialect({
+    pool,
+  }),
+});
+
+export const divergenceDb = divergencePool
+  ? new Kysely<Database>({
+      dialect: new PostgresDialect({
+        pool: divergencePool,
+      }),
     })
   : null;
 if (divergencePool) {

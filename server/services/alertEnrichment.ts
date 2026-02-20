@@ -1,4 +1,4 @@
-import type { Pool as PgPool } from 'pg';
+import { db } from '../db.js';
 import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
 import { currentEtDateString } from '../lib/dateUtils.js';
 
@@ -17,10 +17,9 @@ export async function enrichRowsWithDivergenceData(opts: {
   rows: Record<string, unknown>[];
   tickers: string[];
   sourceInterval: string;
-  pool: PgPool | null;
   contextLabel: string;
 }): Promise<Record<string, unknown>[]> {
-  const { rows, tickers, sourceInterval, pool, contextLabel } = opts;
+  const { rows, tickers, sourceInterval, contextLabel } = opts;
 
   // 1. Fetch divergence summaries
   let summariesByTicker = new Map<string, Record<string, unknown>>();
@@ -38,13 +37,17 @@ export async function enrichRowsWithDivergenceData(opts: {
   // 2. Fetch VDF results
   const vdfDataMap = new Map<string, VdfEnrichment>();
   try {
-    if (tickers.length > 0 && pool) {
+    if (tickers.length > 0) {
       const vdfTradeDate = currentEtDateString();
-      const vdfRes = await pool.query(
-        `SELECT ticker, best_zone_score, proximity_level, num_zones, bull_flag_confidence FROM vdf_results WHERE trade_date = $1 AND is_detected = TRUE AND ticker = ANY($2::text[])`,
-        [vdfTradeDate, tickers],
-      );
-      for (const row of vdfRes.rows) {
+      const vdfRes = await db
+        .selectFrom('vdf_results')
+        .select(['ticker', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
+        .where('trade_date', '=', vdfTradeDate)
+        .where('is_detected', '=', true)
+        .where('ticker', 'in', tickers)
+        .execute();
+
+      for (const row of vdfRes) {
         vdfDataMap.set(String(row.ticker).toUpperCase(), {
           score: Math.min(100, Math.round((Number(row.best_zone_score) || 0) * 100)),
           proximityLevel: row.proximity_level || 'none',
@@ -53,11 +56,15 @@ export async function enrichRowsWithDivergenceData(opts: {
         });
       }
     }
-  } catch { /* VDF enrichment is non-critical */ }
+  } catch {
+    /* VDF enrichment is non-critical */
+  }
 
   // 3. Map enriched rows
   return rows.map((row) => {
-    const ticker = String(row?.ticker || '').trim().toUpperCase();
+    const ticker = String(row?.ticker || '')
+      .trim()
+      .toUpperCase();
     const summary = (summariesByTicker.get(ticker) || null) as Record<string, unknown> | null;
     const states = (summary?.states || neutralStates) as Record<string, string>;
     const vdfData = vdfDataMap.get(ticker);

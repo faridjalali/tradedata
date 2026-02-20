@@ -149,7 +149,13 @@ function getTimedCacheValue(cacheMap: LRUCache<string, TimedCacheEntry>, key: st
   return { status: 'stale', value: entry.value };
 }
 
-function setTimedCacheValue(cacheMap: LRUCache<string, TimedCacheEntry>, key: string, value: unknown, freshUntil: number, staleUntil?: number) {
+function setTimedCacheValue(
+  cacheMap: LRUCache<string, TimedCacheEntry>,
+  key: string,
+  value: unknown,
+  freshUntil: number,
+  staleUntil?: number,
+) {
   const now = Date.now();
   const safeFreshUntil = Number.isFinite(freshUntil) ? freshUntil : now + 60000;
   const safeStaleUntil = staleUntil !== undefined && Number.isFinite(staleUntil) ? staleUntil : safeFreshUntil + 300000;
@@ -291,7 +297,13 @@ function getIntradayLookbackDays(_interval: string) {
 async function dataApiIntraday(
   symbol: string,
   interval: string,
-  options: { from?: string; to?: string; signal?: AbortSignal | null; noCache?: boolean; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    from?: string;
+    to?: string;
+    signal?: AbortSignal | null;
+    noCache?: boolean;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ) {
   const { from, to, signal, noCache = false, metricsTracker = null } = options;
 
@@ -344,7 +356,10 @@ async function dataApiIntraday(
             fetchDataApiJson(url, `DataAPI ${interval} chunk`, { signal, metricsTracker })
               .then((payload) => toArrayPayload(payload) || [])
               .catch((err: unknown) => {
-                console.error(`DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`, err instanceof Error ? err.message : String(err));
+                console.error(
+                  `DataAPI chunk fetch failed (${sanitizeDataApiUrl(url)}):`,
+                  err instanceof Error ? err.message : String(err),
+                );
                 throw err;
               }),
           ),
@@ -386,7 +401,10 @@ async function dataApiIntraday(
 
   if (cached.status === 'stale') {
     executeFetch().catch((err: unknown) => {
-      console.error(`[SWR] Background refresh failed for ${cacheKey}:`, err instanceof Error ? err.message : String(err));
+      console.error(
+        `[SWR] Background refresh failed for ${cacheKey}:`,
+        err instanceof Error ? err.message : String(err),
+      );
     });
     return cached.value as OHLCVBar[] | null;
   }
@@ -398,7 +416,11 @@ async function dataApiIntradayChartHistorySingle(
   symbol: string,
   interval: string,
   lookbackDays: number = CHART_INTRADAY_LOOKBACK_DAYS,
-  options: { signal?: AbortSignal | null; noCache?: boolean; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    noCache?: boolean;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<OHLCVBar[] | null> {
   const signal = options && options.signal ? options.signal : null;
   const noCache = options && options.noCache === true;
@@ -508,7 +530,11 @@ async function dataApiIntradayChartHistory(
   symbol: string,
   interval: string,
   lookbackDays: number = CHART_INTRADAY_LOOKBACK_DAYS,
-  options: { signal?: AbortSignal | null; noCache?: boolean; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    noCache?: boolean;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<OHLCVBar[]> {
   const requestedInterval = String(interval || '').trim();
   const intervalCandidates = [requestedInterval];
@@ -602,7 +628,10 @@ function convertToLATime(bars: Array<Record<string, unknown>>, interval: string)
   return converted;
 }
 
-function patchLatestBarCloseWithQuote(result: { bars?: OHLCVBar[]; rsi?: Array<{ time: number; value: number }> } | null, quote: { price?: number } | null) {
+function patchLatestBarCloseWithQuote(
+  result: { bars?: OHLCVBar[]; rsi?: Array<{ time: number; value: number }> } | null,
+  quote: { price?: number } | null,
+) {
   if (!result || !Array.isArray(result.bars) || result.bars.length === 0) return;
   const quotePrice = Number(quote && quote.price);
   if (!Number.isFinite(quotePrice) || quotePrice <= 0) return;
@@ -713,7 +742,15 @@ function ifNoneMatchMatchesEtag(ifNoneMatchHeader: string | undefined, etag: str
   return candidates.includes(etag);
 }
 
-async function sendChartJsonResponse(req: { headers: Record<string, string | undefined> }, res: { header: (name: string, value: string) => unknown; code: (status: number) => { send: (body?: unknown) => unknown } }, payload: unknown, serverTimingHeader: string | null) {
+async function sendChartJsonResponse(
+  req: { headers: Record<string, string | undefined> },
+  res: {
+    header: (name: string, value: string) => unknown;
+    code: (status: number) => { send: (body?: unknown) => unknown };
+  },
+  payload: unknown,
+  serverTimingHeader: string | null,
+) {
   const body = JSON.stringify(payload);
   const bodyBuffer = Buffer.from(body);
   const etagHash = crypto.createHash('sha1').update(bodyBuffer).digest('hex').slice(0, 16);
@@ -786,7 +823,9 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
   if (timer) timer.step('parent_bars');
 
   if (convertedBars.length === 0) {
-    const err = new Error(`No valid ${interval} chart bars available for this ticker`) as Error & { httpStatus: number };
+    const err = new Error(`No valid ${interval} chart bars available for this ticker`) as Error & {
+      httpStatus: number;
+    };
     err.httpStatus = 404;
     throw err;
   }
@@ -809,14 +848,23 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
     normalizeIntradayVolumesFromCumulativeIfNeeded(
       convertToLATime(rows || [], tf).sort((a, b) => Number(a.time) - Number(b.time)),
     );
-  const vdSourceBars = normalizeSourceBars((rowsByInterval.get(vdSourceInterval) || []) as Array<Record<string, unknown>>, vdSourceInterval);
+  const vdSourceBars = normalizeSourceBars(
+    (rowsByInterval.get(vdSourceInterval) || []) as Array<Record<string, unknown>>,
+    vdSourceInterval,
+  );
   const vdRsiSourceBars =
     vdRsiSourceInterval === vdSourceInterval
       ? vdSourceBars
-      : normalizeSourceBars((rowsByInterval.get(vdRsiSourceInterval) || []) as Array<Record<string, unknown>>, vdRsiSourceInterval);
+      : normalizeSourceBars(
+          (rowsByInterval.get(vdRsiSourceInterval) || []) as Array<Record<string, unknown>>,
+          vdRsiSourceInterval,
+        );
   if (timer) timer.step('source_bars');
 
-  let volumeDeltaRsi: { rsi: Array<{ time: number; value: number }>; deltaValues?: Array<{ time: number; delta: number }> } = { rsi: [] };
+  let volumeDeltaRsi: {
+    rsi: Array<{ time: number; value: number }>;
+    deltaValues?: Array<{ time: number; delta: number }>;
+  } = { rsi: [] };
   const cacheExpiryMs = getVdRsiCacheExpiryMs(new Date());
   const firstBarTime = convertedBars[0]?.time ?? '';
   const lastBarTime = convertedBars[convertedBars.length - 1]?.time ?? '';
@@ -895,7 +943,10 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
 
 async function getOrBuildChartResult(
   params: ChartRequestParams,
-  deps: { chartDebugMetrics?: Record<string, unknown>; schedulePostLoadPrewarmSequence?: (opts: Record<string, unknown>) => void } = {},
+  deps: {
+    chartDebugMetrics?: Record<string, any>;
+    schedulePostLoadPrewarmSequence?: (opts: Record<string, any>) => void;
+  } = {},
 ) {
   const {
     ticker,
@@ -1042,7 +1093,10 @@ async function getOrBuildChartResult(
       // When returning stale data, no caller awaits buildPromise, so failures must
       // be caught here. Non-stale callers receive the rejection via their own await.
       if (cachedFinalResult.status === 'stale') {
-        console.error(`[SWR] Background chart refresh failed for ${requestKey}:`, err instanceof Error ? err.message : String(err));
+        console.error(
+          `[SWR] Background chart refresh failed for ${requestKey}:`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
     })
     .finally(() => {
@@ -1060,7 +1114,7 @@ async function getOrBuildChartResult(
 // Chart latest payload extraction
 // ---------------------------------------------------------------------------
 
-function findPointByTime(points: Array<{ time: number | string; [key: string]: unknown }> | undefined, timeValue: unknown) {
+function findPointByTime(points: Array<{ time: number | string; [key: string]: any }> | any, timeValue: unknown) {
   if (!Array.isArray(points) || points.length === 0 || timeValue == null) return null;
   const targetTime = Number(timeValue);
   for (let i = points.length - 1; i >= 0; i--) {
@@ -1089,7 +1143,7 @@ function extractLatestChartPayload(result: Record<string, unknown> | null) {
     timezone: result.timezone || 'America/Los_Angeles',
     latestBar,
     latestRsi: findPointByTime(result.rsi, barTime),
-    latestVolumeDeltaRsi: findPointByTime(result.volumeDeltaRsi?.rsi, barTime),
+    latestVolumeDeltaRsi: findPointByTime((result.volumeDeltaRsi as any)?.rsi, barTime),
     latestVolumeDelta: findPointByTime(result.volumeDelta, barTime),
   };
 }
@@ -1152,7 +1206,11 @@ function roundEtTo30MinEpochMs(dateTimeStr: unknown): number {
   return d.getTime();
 }
 
-function buildIntradayBreadthPoints(spyBars: Array<Record<string, unknown>>, compBars: Array<Record<string, unknown>>, days: number) {
+function buildIntradayBreadthPoints(
+  spyBars: Array<Record<string, unknown>>,
+  compBars: Array<Record<string, unknown>>,
+  days: number,
+) {
   const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const y = todayET.getFullYear();
   const mo = String(todayET.getMonth() + 1).padStart(2, '0');

@@ -63,7 +63,7 @@ export async function initDB(): Promise<void> {
 
     const persisted = await loadRunHistoryFromDb();
     if (persisted.length > 0) {
-      runMetricsHistory.push(...persisted);
+      runMetricsHistory.push(...(persisted as any[]));
       console.log(`Loaded ${persisted.length} persisted run history entries`);
     }
 
@@ -84,7 +84,10 @@ export async function initDB(): Promise<void> {
         console.log(`Restored VDF scan last-run date from DB: ${row.finished_at}`);
       }
     } catch (vdfErr: unknown) {
-      console.error('Failed to restore VDF scan date from DB:', vdfErr instanceof Error ? vdfErr.message : String(vdfErr));
+      console.error(
+        'Failed to restore VDF scan date from DB:',
+        vdfErr instanceof Error ? vdfErr.message : String(vdfErr),
+      );
     }
 
     console.log('Database initialized successfully');
@@ -285,9 +288,14 @@ export async function initDivergenceDB(): Promise<void> {
       if (restoredTradeDate) {
         setDivergenceLastFetchedTradeDateEt(maxEtDateString(divergenceLastFetchedTradeDateEt, restoredTradeDate));
         fetchDailyScan.setStatus({
-          lastPublishedTradeDate: maxEtDateString(fetchDailyScan.readStatus().lastPublishedTradeDate || '', restoredTradeDate),
+          lastPublishedTradeDate: maxEtDateString(
+            fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+            restoredTradeDate,
+          ),
         });
-        fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+        fetchDailyScan.setExtraStatus({
+          last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+        });
       }
       const weeklyResult = await divergencePool.query(
         `SELECT MAX(trade_date)::text AS trade_date FROM divergence_signals WHERE timeframe = '1w' AND source_interval = $1`,
@@ -296,9 +304,14 @@ export async function initDivergenceDB(): Promise<void> {
       const restoredWeeklyDate = String(weeklyResult.rows[0]?.trade_date || '').trim();
       if (restoredWeeklyDate) {
         fetchWeeklyScan.setStatus({
-          lastPublishedTradeDate: maxEtDateString(fetchWeeklyScan.readStatus().lastPublishedTradeDate || '', restoredWeeklyDate),
+          lastPublishedTradeDate: maxEtDateString(
+            fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+            restoredWeeklyDate,
+          ),
         });
-        fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
+        fetchWeeklyScan.setExtraStatus({
+          last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+        });
       }
       if (restoredTradeDate || restoredWeeklyDate) {
         console.log(
@@ -306,7 +319,10 @@ export async function initDivergenceDB(): Promise<void> {
         );
       }
     } catch (restoreErr: unknown) {
-      console.error('Failed to restore trade dates from DB:', restoreErr instanceof Error ? restoreErr.message : String(restoreErr));
+      console.error(
+        'Failed to restore trade dates from DB:',
+        restoreErr instanceof Error ? restoreErr.message : String(restoreErr),
+      );
     }
     console.log('Divergence database initialized successfully');
   } catch (err: unknown) {

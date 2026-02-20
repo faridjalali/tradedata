@@ -1,15 +1,23 @@
 import { divergencePool } from '../db.js';
 import {
-  DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
-  DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE, DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
-  DIVERGENCE_FETCH_MA_TIMEOUT_MS, DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS, DIVERGENCE_STALL_RETRY_BASE_MS,
-  DIVERGENCE_STALL_MAX_RETRIES, DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
+  DIVERGENCE_SOURCE_INTERVAL,
+  DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
+  DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
+  DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
+  DIVERGENCE_FETCH_MA_TIMEOUT_MS,
+  DIVERGENCE_STALL_TIMEOUT_MS,
+  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
+  DIVERGENCE_STALL_RETRY_BASE_MS,
+  DIVERGENCE_STALL_MAX_RETRIES,
+  DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
 } from '../config.js';
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
 import {
-  isAbortError, sleepWithAbort, createProgressStallWatchdog,
-  getStallRetryBackoffMs, runWithAbortAndTimeout,
+  isAbortError,
+  sleepWithAbort,
+  createProgressStallWatchdog,
+  getStallRetryBackoffMs,
+  runWithAbortAndTimeout,
   fetchDataApiMovingAverageStatesForTicker,
 } from '../services/dataApi.js';
 import { runRetryPasses } from '../lib/ScanState.js';
@@ -26,7 +34,11 @@ import {
   upsertDivergenceDailyBarsBatch,
   upsertDivergenceSummaryBatch,
 } from '../services/divergenceDbService.js';
-import { buildNeutralDivergenceStateMap, classifyDivergenceStateMapFromDailyRows, clearDivergenceSummaryCacheForSourceInterval } from '../services/divergenceStateService.js';
+import {
+  buildNeutralDivergenceStateMap,
+  classifyDivergenceStateMapFromDailyRows,
+  clearDivergenceSummaryCacheForSourceInterval,
+} from '../services/divergenceStateService.js';
 import { createRunMetricsTracker, runMetricsByType } from '../services/metricsService.js';
 import {
   divergenceLastFetchedTradeDateEt,
@@ -39,7 +51,6 @@ import {
   setDivergenceLastFetchedTradeDateEt,
 } from '../services/scanControlService.js';
 import { buildDivergenceDailyRowsForTicker } from '../services/tickerHistoryService.js';
-
 
 interface FetchDailyOptions {
   resume?: boolean;
@@ -86,7 +97,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
   }
 
   const resumeRequested = options.resume === true;
-  const resumeState = resumeRequested ? normalizeFetchDailyDataResumeState(fetchDailyScan.currentResumeState || {}) : null;
+  const resumeState = resumeRequested
+    ? normalizeFetchDailyDataResumeState(fetchDailyScan.currentResumeState || {})
+    : null;
   if (
     resumeRequested &&
     (!resumeState ||
@@ -116,7 +129,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
     finishedAt: null,
     lastPublishedTradeDate: lastPublishedTradeDate || fetchDailyScan.readStatus().lastPublishedTradeDate || '',
   });
-  fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+  fetchDailyScan.setExtraStatus({
+    last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+  });
 
   let tickers = resumeState?.tickers || [];
   let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
@@ -163,17 +178,19 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
     runMetricsTracker?.setTotals(totalTickers);
 
     const persistResumeState = (nextIdx: number) => {
-      fetchDailyScan.setResumeState(normalizeFetchDailyDataResumeState({
-        asOfTradeDate,
-        sourceInterval,
-        tickers,
-        totalTickers,
-        nextIndex: nextIdx,
-        processedTickers,
-        errorTickers,
-        lookbackDays: runLookbackDays,
-        lastPublishedTradeDate,
-      }));
+      fetchDailyScan.setResumeState(
+        normalizeFetchDailyDataResumeState({
+          asOfTradeDate,
+          sourceInterval,
+          tickers,
+          totalTickers,
+          nextIndex: nextIdx,
+          processedTickers,
+          errorTickers,
+          lookbackDays: runLookbackDays,
+          lastPublishedTradeDate,
+        }),
+      );
     };
 
     const markStopped = (nextIdx: number, options: { preserveResume?: boolean; rewind?: boolean } = {}) => {
@@ -201,7 +218,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || fetchDailyScan.readStatus().lastPublishedTradeDate || '',
       });
-      fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+      fetchDailyScan.setExtraStatus({
+        last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+      });
       return {
         status: 'stopped',
         totalTickers,
@@ -224,7 +243,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
       });
-      fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+      fetchDailyScan.setExtraStatus({
+        last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+      });
       return {
         status: 'completed',
         totalTickers: 0,
@@ -259,7 +280,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
         const batch = summaryRowsBuffer.splice(0, summaryRowsBuffer.length);
         flushedSummaryRows += batch.length;
         await upsertDivergenceSummaryBatch(batch, null);
-        await syncOneDaySignalsFromSummaryRows(batch, sourceInterval, null);
+        await syncOneDaySignalsFromSummaryRows(batch as unknown as Record<string, unknown>[], sourceInterval, null);
         flushedSignalRows += batch.length;
       }
       if (maSummaryRowsBuffer.length > 0) {
@@ -635,7 +656,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: lastPublishedTradeDate || fetchDailyScan.readStatus().lastPublishedTradeDate || '',
     });
-    fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+    fetchDailyScan.setExtraStatus({
+      last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+    });
     return {
       status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
@@ -653,7 +676,7 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       if (summaryRowsBuffer.length > 0) {
         const batch = summaryRowsBuffer.splice(0, summaryRowsBuffer.length);
         await upsertDivergenceSummaryBatch(batch, null);
-        await syncOneDaySignalsFromSummaryRows(batch, sourceInterval, null);
+        await syncOneDaySignalsFromSummaryRows(batch as unknown as Record<string, unknown>[], sourceInterval, null);
       }
       if (maSummaryRowsBuffer.length > 0) {
         const batch = maSummaryRowsBuffer.splice(0, maSummaryRowsBuffer.length);
@@ -670,17 +693,19 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       // Persist resume state on stop/abort — rewind by concurrency level
       // so in-flight aborted tickers are re-fetched on resume.
       const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
-      fetchDailyScan.setResumeState(normalizeFetchDailyDataResumeState({
-        asOfTradeDate,
-        sourceInterval,
-        tickers,
-        totalTickers,
-        nextIndex: safeNextIndex,
-        processedTickers: safeNextIndex,
-        errorTickers,
-        lookbackDays: runLookbackDays,
-        lastPublishedTradeDate,
-      }));
+      fetchDailyScan.setResumeState(
+        normalizeFetchDailyDataResumeState({
+          asOfTradeDate,
+          sourceInterval,
+          tickers,
+          totalTickers,
+          nextIndex: safeNextIndex,
+          processedTickers: safeNextIndex,
+          errorTickers,
+          lookbackDays: runLookbackDays,
+          lastPublishedTradeDate,
+        }),
+      );
       fetchDailyScan.setStopRequested(false);
       fetchDailyScan.replaceStatus({
         running: false,
@@ -692,7 +717,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
         finishedAt: new Date().toISOString(),
         lastPublishedTradeDate: lastPublishedTradeDate || fetchDailyScan.readStatus().lastPublishedTradeDate || '',
       });
-      fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+      fetchDailyScan.setExtraStatus({
+        last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+      });
       return {
         status: 'stopped',
         totalTickers,
@@ -712,7 +739,9 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
     });
-    fetchDailyScan.setExtraStatus({ last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '' });
+    fetchDailyScan.setExtraStatus({
+      last_published_trade_date: fetchDailyScan.readStatus().lastPublishedTradeDate || '',
+    });
     throw err;
   } finally {
     if (runMetricsTracker) {

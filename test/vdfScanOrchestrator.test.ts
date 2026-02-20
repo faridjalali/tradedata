@@ -8,7 +8,7 @@ import { runVDFScan, vdfScan } from '../server/services/vdfService.js';
 // ---------------------------------------------------------------------------
 
 /** Baseline _deps: no real I/O, no DB writes (metrics suppressed). */
-function baseDeps(overrides: Parameters<typeof runVDFScan>[0]['_deps'] = {}) {
+function baseDeps(overrides: any = {}) {
   return {
     isConfigured: () => true,
     getTickers: async () => [] as string[],
@@ -69,7 +69,7 @@ test('runVDFScan processes all tickers and returns correct counts', async () => 
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker) => ({ is_detected: ticker === 'AAA' }),
+      detectTicker: async (ticker: string) => ({ is_detected: ticker === 'AAA' }),
     }),
   });
 
@@ -97,7 +97,7 @@ test('runVDFScan captures error tickers', async () => {
   const result = await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => tickers,
-      detectTicker: async (ticker) => {
+      detectTicker: async (ticker: string) => {
         if (ticker === 'FAIL') throw new Error('detect error');
         return { is_detected: false };
       },
@@ -126,10 +126,7 @@ test('runVDFScan status is completed (or variant) after full run', async () => {
   await runVDFScan({ _deps: baseDeps({ getTickers: async () => ['A', 'B'] }) });
 
   const { status } = vdfScan.getStatus();
-  assert.ok(
-    status === 'completed' || status === 'completed-with-errors',
-    `expected completed status, got ${status}`,
-  );
+  assert.ok(status === 'completed' || status === 'completed-with-errors', `expected completed status, got ${status}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -196,7 +193,9 @@ test('runVDFScan calls sweepCache at least once per run', async () => {
   await runVDFScan({
     _deps: baseDeps({
       getTickers: async () => ['A', 'B'],
-      sweepCache: () => { sweepCount++; },
+      sweepCache: () => {
+        sweepCount++;
+      },
     }),
   });
 
@@ -207,7 +206,10 @@ test('runVDFScan calls getTickers exactly once per fresh run', async () => {
   let fetchCount = 0;
   await runVDFScan({
     _deps: baseDeps({
-      getTickers: async () => { fetchCount++; return ['X']; },
+      getTickers: async () => {
+        fetchCount++;
+        return ['X'];
+      },
     }),
   });
 

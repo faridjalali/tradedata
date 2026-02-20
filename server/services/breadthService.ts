@@ -4,7 +4,8 @@
  * using Grouped Daily Bars from the data API.
  */
 
-import type { Pool } from 'pg';
+import { db } from '../db.js';
+import { sql } from 'kysely';
 import type { BreadthMAResponse } from '../../shared/api-types.js';
 import { fetchGroupedDailyBars, dataApiDaily } from './dataApi.js';
 import {
@@ -76,10 +77,7 @@ interface BreadthPcts {
  * Given a map of ticker→chronological close array and a constituent list,
  * compute % above each SMA window.
  */
-function computeBreadthForIndex(
-  allCloses: Map<string, number[]>,
-  constituents: string[],
-): BreadthPcts {
+function computeBreadthForIndex(allCloses: Map<string, number[]>, constituents: string[]): BreadthPcts {
   const counts = { ma21: 0, ma50: 0, ma100: 0, ma200: 0 };
   const totals = { ma21: 0, ma50: 0, ma100: 0, ma200: 0 };
 
@@ -111,10 +109,7 @@ function computeBreadthForIndex(
 // Daily computation (runs after market close)
 // ---------------------------------------------------------------------------
 
-export async function runBreadthComputation(
-  dbPool: Pool,
-  tradeDate: string,
-): Promise<void> {
+export async function runBreadthComputation(tradeDate: string): Promise<void> {
   console.log(`[breadth] Computing breadth for ${tradeDate}...`);
   const t0 = Date.now();
 
@@ -127,21 +122,20 @@ export async function runBreadthComputation(
   console.log(`[breadth] Got ${grouped.size} tickers from grouped bars.`);
 
   // 2. Store closes
-  await upsertDailyCloses(dbPool, tradeDate, grouped);
+  await upsertDailyCloses(tradeDate, grouped);
 
   // 3. Load historical closes for all breadth tickers (need up to 200 days)
   const allTickers = [...ALL_BREADTH_TICKERS];
-  const allCloses = await getClosesForTickers(dbPool, allTickers, 200);
+  const allCloses = await getClosesForTickers(allTickers, 200);
 
   // 4. Compute breadth for each index
   for (const index of ALL_BREADTH_INDICES) {
     const constituents = getConstituentsForIndex(index);
     const pcts = computeBreadthForIndex(allCloses, constituents);
-    await upsertBreadthSnapshot(
-      dbPool, tradeDate, index,
-      pcts.ma21, pcts.ma50, pcts.ma100, pcts.ma200, pcts.total,
+    await upsertBreadthSnapshot(tradeDate, index, pcts.ma21, pcts.ma50, pcts.ma100, pcts.ma200, pcts.total);
+    console.log(
+      `[breadth] ${index}: 21MA=${pcts.ma21}% 50MA=${pcts.ma50}% 100MA=${pcts.ma100}% 200MA=${pcts.ma200}% (${pcts.total} tickers)`,
     );
-    console.log(`[breadth] ${index}: 21MA=${pcts.ma21}% 50MA=${pcts.ma50}% 100MA=${pcts.ma100}% 200MA=${pcts.ma200}% (${pcts.total} tickers)`);
   }
 
   console.log(`[breadth] Computation done in ${Date.now() - t0}ms.`);
@@ -152,7 +146,6 @@ export async function runBreadthComputation(
 // ---------------------------------------------------------------------------
 
 export async function bootstrapBreadthHistory(
-  dbPool: Pool,
   numDays: number = 220,
   onProgress?: (msg: string) => void,
   shouldStop?: () => boolean,
@@ -161,7 +154,9 @@ export async function bootstrapBreadthHistory(
   // Without this buffer, early dates would have <200 closes and 200 MA would be 0.
   const MA200_BUFFER = 200;
   const totalFetchDays = numDays + MA200_BUFFER;
-  console.log(`[breadth] Bootstrapping ${numDays} days of history (fetching ${totalFetchDays} days of closes for 200 MA buffer)...`);
+  console.log(
+    `[breadth] Bootstrapping ${numDays} days of history (fetching ${totalFetchDays} days of closes for 200 MA buffer)...`,
+  );
   const t0 = Date.now();
 
   // Generate list of recent trading dates going backwards
@@ -191,7 +186,7 @@ export async function bootstrapBreadthHistory(
     try {
       const grouped = await fetchGroupedDailyBars(date, ALL_BREADTH_TICKERS);
       if (grouped.size > 0) {
-        await upsertDailyCloses(dbPool, date, grouped);
+        await upsertDailyCloses(date, grouped);
         fetchedDays++;
       }
       if (fetchedDays % 20 === 0) {
@@ -200,7 +195,9 @@ export async function bootstrapBreadthHistory(
         onProgress?.(msg);
       }
     } catch (err: unknown) {
-      console.error(`[breadth] Failed to fetch grouped bars for ${date}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `[breadth] Failed to fetch grouped bars for ${date}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -210,19 +207,25 @@ export async function bootstrapBreadthHistory(
   // Load set of dates that already have complete, non-zero snapshots for all indices.
   let alreadyComputed = new Set<string>();
   try {
-    const { rows: doneRows } = await dbPool.query(
-      `SELECT trade_date::text AS d FROM breadth_snapshots
-       WHERE pct_above_ma200 > 0
-       GROUP BY trade_date
-       HAVING COUNT(DISTINCT index_name) >= $1`,
-      [ALL_BREADTH_INDICES.length],
-    );
-    alreadyComputed = new Set(doneRows.map((r: { d: string }) => r.d));
+    const rows = await db
+      .selectFrom('breadth_snapshots')
+      .select((eb) => [
+        sql<string>`trade_date::text`.as('d'),
+        eb.fn.count<number>('index_name').distinct().as('idx_count'),
+      ])
+      .where('pct_above_ma200', '>', 0)
+      .groupBy('trade_date')
+      .having((eb) => eb.fn.count('index_name').distinct(), '>=', ALL_BREADTH_INDICES.length)
+      .execute();
+
+    alreadyComputed = new Set(rows.map((r) => r.d));
     if (alreadyComputed.size > 0) {
       console.log(`[breadth] Skipping ${alreadyComputed.size} already-computed dates.`);
     }
   } catch (err: unknown) {
-    console.warn(`[breadth] Could not load existing snapshot dates — will recompute all: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(
+      `[breadth] Could not load existing snapshot dates — will recompute all: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // Compute snapshots — each date now has ≥200 prior closes in the DB for 200 MA
@@ -241,14 +244,11 @@ export async function bootstrapBreadthHistory(
       continue;
     }
     try {
-      const allCloses = await getClosesForTickers(dbPool, allTickers, 200, date);
+      const allCloses = await getClosesForTickers(allTickers, 200, date);
       for (const index of ALL_BREADTH_INDICES) {
         const constituents = getConstituentsForIndex(index);
         const pcts = computeBreadthForIndex(allCloses, constituents);
-        await upsertBreadthSnapshot(
-          dbPool, date, index,
-          pcts.ma21, pcts.ma50, pcts.ma100, pcts.ma200, pcts.total,
-        );
+        await upsertBreadthSnapshot(date, index, pcts.ma21, pcts.ma50, pcts.ma100, pcts.ma200, pcts.total);
       }
       computedDays++;
       if (computedDays % 10 === 0) {
@@ -257,12 +257,16 @@ export async function bootstrapBreadthHistory(
         onProgress?.(msg);
       }
     } catch (err: unknown) {
-      console.error(`[breadth] Failed to compute breadth for ${date}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(
+        `[breadth] Failed to compute breadth for ${date}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
   if (skippedDays > 0) console.log(`[breadth] Skipped ${skippedDays} already-complete dates.`);
 
-  console.log(`[breadth] Bootstrap done in ${Math.round((Date.now() - t0) / 1000)}s: fetched=${fetchedDays}, computed=${computedDays}`);
+  console.log(
+    `[breadth] Bootstrap done in ${Math.round((Date.now() - t0) / 1000)}s: fetched=${fetchedDays}, computed=${computedDays}`,
+  );
   return { fetchedDays, computedDays };
 }
 
@@ -270,11 +274,8 @@ export async function bootstrapBreadthHistory(
 // API query
 // ---------------------------------------------------------------------------
 
-export async function getLatestBreadthData(
-  dbPool: Pool,
-  historyDays: number = 60,
-): Promise<BreadthMAResponse> {
-  const snapshots = await getLatestBreadthSnapshots(dbPool);
+export async function getLatestBreadthData(historyDays: number = 60): Promise<BreadthMAResponse> {
+  const snapshots = await getLatestBreadthSnapshots();
 
   // Fetch index ETF prices in parallel (cached up to 1 hour) for the normalized comparison chart
   const indexTickers = ALL_BREADTH_INDICES as string[];
@@ -285,9 +286,12 @@ export async function getLatestBreadthData(
     priceByIndex[indexTickers[i]] = r.status === 'fulfilled' ? r.value : new Map();
   }
 
-  const history: Record<string, Array<{ date: string; ma21: number; ma50: number; ma100: number; ma200: number; close: number | undefined }>> = {};
+  const history: Record<
+    string,
+    Array<{ date: string; ma21: number; ma50: number; ma100: number; ma200: number; close: number | undefined }>
+  > = {};
   for (const index of ALL_BREADTH_INDICES) {
-    const raw = await getBreadthHistory(dbPool, index, historyDays);
+    const raw = await getBreadthHistory(index, historyDays);
     const closeMap = priceByIndex[index];
     history[index] = raw.map((h) => ({
       ...h,
@@ -301,8 +305,8 @@ export async function getLatestBreadthData(
 // Cleanup
 // ---------------------------------------------------------------------------
 
-export async function cleanupBreadthData(dbPool: Pool): Promise<void> {
-  const deleted = await cleanupOldCloses(dbPool, 250);
+export async function cleanupBreadthData(): Promise<void> {
+  const deleted = await cleanupOldCloses(250);
   if (deleted > 0) {
     console.log(`[breadth] Cleaned up ${deleted} old close rows.`);
   }

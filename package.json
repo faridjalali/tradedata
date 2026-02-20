@@ -3,6 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.ts",
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write",
+      "bash -c 'tsc --noEmit'",
+      "bash -c 'tsc --noEmit --project tsconfig.server.json'"
+    ],
+    "*.{mjs,json,md,html,css}": [
+      "prettier --write"
+    ]
+  },
   "scripts": {
     "start": "tsx index.ts",
     "dev": "vite",
@@ -15,7 +26,8 @@
     "format:check": "prettier --check .",
     "test": "tsx --test test/*.test.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.1",
@@ -24,24 +36,46 @@
     "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^9.0.0",
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@opentelemetry/auto-instrumentations-node": "^0.70.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
+    "@opentelemetry/sdk-node": "^0.212.0",
     "dotenv": "^16.3.1",
     "fastify": "^5.7.4",
+    "fastify-type-provider-zod": "^6.1.0",
+    "ioredis": "^5.9.3",
+    "kysely": "^0.28.11",
     "lightweight-charts": "^4.2.1",
     "lru-cache": "^11.2.6",
+    "lucide-react": "^0.575.0",
     "pg": "^8.11.3",
     "pino": "^10.3.1",
+    "prom-client": "^15.1.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.0",
     "undici": "^7.22.0",
-    "zod": "^4.3.6"
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
     "@types/node": "^25.2.3",
     "@types/pg": "^8.16.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
+    "@vitejs/plugin-react": "^5.1.4",
     "chart.js": "^4.5.1",
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

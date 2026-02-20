@@ -43,7 +43,8 @@ test('buildManualScanRequest returns validation error for invalid runDateEt', ()
 test('fetchLatestDivergenceScanStatus returns fallback scanned trade date and running state', async () => {
   const status = await fetchLatestDivergenceScanStatus({
     divergencePool: {
-      query: async (sql: string) => {
+      query: async (...args: unknown[]) => {
+        const sql = typeof args[0] === 'string' ? args[0] : '';
         if (sql.includes('FROM divergence_scan_jobs')) {
           return { rows: [{ id: 5, scanned_trade_date: null }] };
         }

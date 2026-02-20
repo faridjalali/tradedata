@@ -8,7 +8,6 @@ import { runDivergenceTableBuild } from '../orchestrators/tableBuildOrchestrator
 import { divergenceSchedulerTimer, setDivergenceSchedulerTimer } from './scanControlService.js';
 import { runBreadthComputation, cleanupBreadthData } from './breadthService.js';
 
-
 export function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const candidate = new Date(nowEt);
@@ -26,7 +25,6 @@ export function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
 
   return easternLocalToUtcMs(candidate.getFullYear(), candidate.getMonth() + 1, candidate.getDate(), 16, 20);
 }
-
 
 export async function runScheduledDivergencePipeline() {
   const scanSummary = await runDailyDivergenceScan({ trigger: 'scheduler' });
@@ -50,7 +48,6 @@ export async function runScheduledDivergencePipeline() {
   return scanSummary;
 }
 
-
 export function scheduleNextDivergenceScan() {
   if (!isDivergenceConfigured() || !DIVERGENCE_SCANNER_ENABLED) return;
   if (divergenceSchedulerTimer) clearTimeout(divergenceSchedulerTimer);
@@ -72,7 +69,6 @@ export function scheduleNextDivergenceScan() {
   }
   console.log(`Next divergence scan scheduled in ${Math.round(delayMs / 1000)}s`);
 }
-
 
 // ---------------------------------------------------------------------------
 // Breadth MA scheduling (runs at 16:30 ET, 10 min after divergence scan)
@@ -111,8 +107,8 @@ export function scheduleNextBreadthComputation() {
       const m = String(nowEt.getMonth() + 1).padStart(2, '0');
       const d = String(nowEt.getDate()).padStart(2, '0');
       const tradeDate = `${y}-${m}-${d}`;
-      await runBreadthComputation(divergencePool!, tradeDate);
-      await cleanupBreadthData(divergencePool!);
+      await runBreadthComputation(tradeDate as any);
+      await cleanupBreadthData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Scheduled breadth computation failed: ${message}`);

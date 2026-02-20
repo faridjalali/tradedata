@@ -1,16 +1,24 @@
 import { divergencePool } from '../db.js';
 import {
-  DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS,
-  DIVERGENCE_TABLE_BUILD_CONCURRENCY, DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
-  DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE, DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE,
-  DIVERGENCE_FETCH_TICKER_TIMEOUT_MS, DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS, DIVERGENCE_STALL_RETRY_BASE_MS,
+  DIVERGENCE_SOURCE_INTERVAL,
+  DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS,
+  DIVERGENCE_TABLE_BUILD_CONCURRENCY,
+  DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
+  DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE,
+  DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE,
+  DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
+  DIVERGENCE_STALL_TIMEOUT_MS,
+  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
+  DIVERGENCE_STALL_RETRY_BASE_MS,
   DIVERGENCE_STALL_MAX_RETRIES,
 } from '../config.js';
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
 import {
-  isAbortError, sleepWithAbort, createProgressStallWatchdog,
-  getStallRetryBackoffMs, runWithAbortAndTimeout,
+  isAbortError,
+  sleepWithAbort,
+  createProgressStallWatchdog,
+  getStallRetryBackoffMs,
+  runWithAbortAndTimeout,
 } from '../services/dataApi.js';
 import { runRetryPasses } from '../lib/ScanState.js';
 import { mapWithConcurrency, resolveAdaptiveFetchConcurrency } from '../lib/mapWithConcurrency.js';
@@ -58,7 +66,6 @@ import {
 } from '../services/tickerHistoryService.js';
 import { createRunMetricsTracker } from '../services/metricsService.js';
 
-
 interface TableBuildOptions {
   resume?: boolean;
   sourceInterval?: string;
@@ -78,7 +85,7 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
 
   const resumeRequested = options.resume === true;
   const resumeState = resumeRequested
-    ? normalizeDivergenceTableResumeState(divergenceTableBuildResumeState || {})
+    ? normalizeDivergenceTableResumeState((divergenceTableBuildResumeState as unknown as Record<string, unknown>) || {})
     : null;
   if (resumeRequested && (!resumeState || resumeState.tickers.length === 0)) {
     return { status: 'no-resume' };
@@ -177,19 +184,21 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
     let phase = resumeState?.phase || (backfillTickers.length > 0 ? 'backfilling' : 'summarizing');
 
     const persistResumeState = () => {
-      setDivergenceTableBuildResumeState(normalizeDivergenceTableResumeState({
-        sourceInterval,
-        asOfTradeDate,
-        requestedLookbackDays,
-        tickers,
-        totalTickers,
-        backfillTickers,
-        backfillOffset,
-        summarizeOffset,
-        errorTickers,
-        phase,
-        lastPublishedTradeDate,
-      }));
+      setDivergenceTableBuildResumeState(
+        normalizeDivergenceTableResumeState({
+          sourceInterval,
+          asOfTradeDate,
+          requestedLookbackDays,
+          tickers,
+          totalTickers,
+          backfillTickers,
+          backfillOffset,
+          summarizeOffset,
+          errorTickers,
+          phase,
+          lastPublishedTradeDate,
+        }),
+      );
     };
     persistResumeState();
 
@@ -479,23 +488,25 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
       lastPublishedTradeDate: divergenceTableBuildStatus.lastPublishedTradeDate || '',
     });
     if (!divergenceTableBuildResumeState) {
-      setDivergenceTableBuildResumeState(normalizeDivergenceTableResumeState({
-        sourceInterval:
-          String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL,
-        asOfTradeDate: latestCompletedPacificTradeDateKey(new Date()) || currentEtDateString(),
-        requestedLookbackDays: Math.max(
-          45,
-          Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS),
-        ),
-        tickers: [],
-        totalTickers,
-        backfillTickers: [],
-        backfillOffset: 0,
-        summarizeOffset: processedTickers,
-        errorTickers,
-        phase: 'summarizing',
-        lastPublishedTradeDate,
-      }));
+      setDivergenceTableBuildResumeState(
+        normalizeDivergenceTableResumeState({
+          sourceInterval:
+            String(options.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL,
+          asOfTradeDate: latestCompletedPacificTradeDateKey(new Date()) || currentEtDateString(),
+          requestedLookbackDays: Math.max(
+            45,
+            Math.floor(Number(options.lookbackDays) || DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS),
+          ),
+          tickers: [],
+          totalTickers,
+          backfillTickers: [],
+          backfillOffset: 0,
+          summarizeOffset: processedTickers,
+          errorTickers,
+          phase: 'summarizing',
+          lastPublishedTradeDate,
+        }),
+      );
     }
     throw err;
   } finally {

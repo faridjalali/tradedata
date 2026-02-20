@@ -20,7 +20,9 @@ import { dataApiLatestQuote } from './dataApi.js';
 import * as chartPrewarm from './chartPrewarm.js';
 import { isValidTickerSymbol } from '../middleware.js';
 
-interface HttpError extends Error { httpStatus: number; }
+interface HttpError extends Error {
+  httpStatus: number;
+}
 
 export function parseChartRequestParams(req: { query: Record<string, unknown> }) {
   const ticker = (req.query.ticker || 'SPY').toString().toUpperCase();
@@ -52,8 +54,10 @@ export function parseChartRequestParams(req: { query: Record<string, unknown> })
   };
 }
 
-
-export function findPointByTime(points: Array<{ time: number | string; [key: string]: unknown }> | undefined, timeValue: unknown) {
+export function findPointByTime(
+  points: Array<{ time: number | string; [key: string]: any }> | any,
+  timeValue: unknown,
+) {
   if (!Array.isArray(points) || points.length === 0) return null;
   const key = String(timeValue);
   for (let i = points.length - 1; i >= 0; i--) {
@@ -64,13 +68,13 @@ export function findPointByTime(points: Array<{ time: number | string; [key: str
   return null;
 }
 
-
 export function extractLatestChartPayload(result: Record<string, unknown>) {
   const bars = Array.isArray(result?.bars) ? result.bars : [];
   const latestBar = bars.length ? bars[bars.length - 1] : null;
   const latestTime = latestBar ? latestBar.time : null;
   const latestRsi = latestTime === null ? null : findPointByTime(result?.rsi, latestTime);
-  const latestVolumeDeltaRsi = latestTime === null ? null : findPointByTime(result?.volumeDeltaRsi?.rsi, latestTime);
+  const latestVolumeDeltaRsi =
+    latestTime === null ? null : findPointByTime((result?.volumeDeltaRsi as any)?.rsi, latestTime);
   const latestVolumeDelta = latestTime === null ? null : findPointByTime(result?.volumeDelta, latestTime);
 
   return {

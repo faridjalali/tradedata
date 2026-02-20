@@ -16,7 +16,6 @@ import { createRunMetricsTracker, runMetricsByType } from './metricsService.js';
 const vdfRunningTickers = new Set<string>();
 export const vdfScan = new ScanState('vdfScan', { metricsKey: 'vdfScan' });
 
-
 export async function getStoredVDFResult(ticker: string, tradeDate: string) {
   if (!isDivergenceConfigured()) return null;
   try {
@@ -57,15 +56,14 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
   }
 }
 
-
 export async function upsertVDFResult(ticker: string, tradeDate: string, result: Record<string, unknown>) {
   if (!isDivergenceConfigured()) return;
   try {
     const bestScore = result.bestScore || result.score || 0;
-    const proxScore = result.proximity?.compositeScore || 0;
-    const proxLevel = result.proximity?.level || 'none';
-    const numZones = result.zones?.length || 0;
-    const hasDist = (result.distribution?.length || 0) > 0;
+    const proxScore = (result.proximity as any)?.compositeScore || 0;
+    const proxLevel = (result.proximity as any)?.level || 'none';
+    const numZones = (result.zones as any)?.length || 0;
+    const hasDist = ((result.distribution as any)?.length || 0) > 0;
     const resultJson = JSON.stringify({
       zones: result.zones || [],
       distribution: result.distribution || [],
@@ -111,8 +109,10 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
   }
 }
 
-
-export async function getVDFStatus(ticker: string, options: { force?: boolean; signal?: AbortSignal | null; noCache?: boolean; mode?: string } = {}) {
+export async function getVDFStatus(
+  ticker: string,
+  options: { force?: boolean; signal?: AbortSignal | null; noCache?: boolean; mode?: string } = {},
+) {
   const force = options.force === true;
   const signal = options.signal || null;
   const noCache = options.noCache === true;
@@ -148,7 +148,8 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
 
   try {
     const fetcher = noCache
-      ? (sym: string, intv: string, days: number, opts: Record<string, unknown> = {}) => dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
+      ? (sym: string, intv: string, days: number, opts: Record<string, unknown> = {}) =>
+          dataApiIntradayChartHistory(sym, intv, days, { ...opts, noCache: true })
       : dataApiIntradayChartHistory;
     const result = await detectVDF(ticker, {
       dataApiFetcher: fetcher,
@@ -182,7 +183,6 @@ export async function getVDFStatus(ticker: string, options: { force?: boolean; s
   }
 }
 
-
 /**
  * Injectable I/O dependencies for runVDFScan.
  * All fields are optional; production code uses the real implementations.
@@ -211,8 +211,9 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
   const { _deps = {} } = options;
   const resolveIsConfigured = _deps.isConfigured ?? isDivergenceConfigured;
   const resolveGetTickers = _deps.getTickers ?? getStoredDivergenceSymbolTickers;
-  const resolveDetectTicker = _deps.detectTicker ?? ((ticker: string, signal: AbortSignal) =>
-    getVDFStatus(ticker, { force: true, noCache: true, signal }));
+  const resolveDetectTicker =
+    _deps.detectTicker ??
+    ((ticker: string, signal: AbortSignal) => getVDFStatus(ticker, { force: true, noCache: true, signal }));
   const resolveSweepCache = _deps.sweepCache ?? (() => sweepExpiredTimedCache(CHART_DATA_CACHE));
   const resolveCreateMetricsTracker = _deps.createMetricsTracker ?? createRunMetricsTracker;
 
@@ -241,7 +242,7 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
   let totalTickers = Math.max(0, Number(rs?.totalTickers || 0));
   const startedAtIso = new Date().toISOString();
   const failedTickers: string[] = [];
-  let tickers: string[] = (rs && Array.isArray(rs.tickers)) ? (rs.tickers as string[]) : [];
+  let tickers: string[] = rs && Array.isArray(rs.tickers) ? (rs.tickers as string[]) : [];
   let startIndex = Math.max(0, Number(rs?.nextIndex || 0));
 
   vdfScan.setStatus({
@@ -342,7 +343,12 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
       );
       vdfScan.markStopped(buildStatusFields(safe));
       syncExtra();
-      runMetricsTracker?.finish('stopped', { totalTickers, processedTickers: safe, errorTickers, meta: { failedTickers } });
+      runMetricsTracker?.finish('stopped', {
+        totalTickers,
+        processedTickers: safe,
+        errorTickers,
+        meta: { failedTickers },
+      });
       return { status: 'stopped', processedTickers: safe, errorTickers, detectedTickers };
     }
 
@@ -381,7 +387,12 @@ export async function runVDFScan(options: { resume?: boolean; _deps?: VdfScanDep
       );
       vdfScan.markStopped(buildStatusFields(safe));
       syncExtra();
-      runMetricsTracker?.finish('stopped', { totalTickers, processedTickers: safe, errorTickers, meta: { failedTickers } });
+      runMetricsTracker?.finish('stopped', {
+        totalTickers,
+        processedTickers: safe,
+        errorTickers,
+        meta: { failedTickers },
+      });
       return { status: 'stopped', processedTickers: safe, errorTickers, detectedTickers };
     }
 
