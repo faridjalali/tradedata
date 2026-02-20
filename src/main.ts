@@ -3,6 +3,8 @@ import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import { setChartNavigationCallbacks } from './chartNavigation';
 import { render, h } from 'preact';
 import { AdminView } from './components/AdminView';
+import { pushHash, onRouteChange, installHashListener, getInitialRoute } from './router';
+import type { ViewName, Route } from './router';
 
 // --- Lazy-loaded view modules (code splitting) ---
 // Admin view — now Preact-managed
@@ -29,66 +31,29 @@ import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOpti
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
 
-let currentView: 'admin' | 'divergence' | 'breadth' = 'divergence';
+let currentView: ViewName = 'divergence';
 let divergenceDashboardScrollY = 0;
 let tickerOriginView = 'divergence' as const;
 let tickerListContext: TickerListContext = null;
 let appInitialized = false;
-
 // ---------------------------------------------------------------------------
-// Hash Router — maps URL hash to views so browser back/forward works and
-// deep-linking is possible (e.g. #/ticker/AAPL, #/logs).
+// Route handler — called by the router on hashchange
 // ---------------------------------------------------------------------------
 
-type ViewName = 'admin' | 'divergence' | 'breadth';
-
-/** Suppress pushHash when we're already responding to a hashchange. */
-let hashNavInProgress = false;
-
-function pushHash(hash: string): void {
-  if (hashNavInProgress) return;
-  const target = hash.startsWith('#') ? hash : `#${hash}`;
-  if (window.location.hash !== target) {
-    history.pushState(null, '', target);
-  }
-}
-
-function parseHash(hash: string): { view: ViewName } | { ticker: string } | null {
-  const raw = (hash || '').replace(/^#\/?/, '').trim();
-  if (!raw) return null;
-  // #/ticker/AAPL  or  #/ticker/AAPL/
-  const tickerMatch = raw.match(/^ticker\/([A-Za-z0-9._-]+)\/?$/);
-  if (tickerMatch) return { ticker: tickerMatch[1].toUpperCase() };
-  // #/divergence, #/admin, #/breadth (#/logs → admin for backward compat)
-  const viewName = raw.replace(/\/$/, '').toLowerCase();
-  if (viewName === 'logs') return { view: 'admin' as ViewName };
-  if (viewName === 'divergence' || viewName === 'admin' || viewName === 'breadth') {
-    return { view: viewName };
-  }
-  return null;
-}
-
-function handleHashRoute(): void {
+function handleRoute(route: Route): void {
   if (!appInitialized) return;
-  const parsed = parseHash(window.location.hash);
-  if (!parsed) return;
-  hashNavInProgress = true;
-  try {
-    if ('ticker' in parsed) {
-      window.showTickerView(parsed.ticker);
-    } else {
-      // If we're in a ticker sub-view, close it first
-      const tickerView = document.getElementById('ticker-view');
-      if (tickerView && !tickerView.classList.contains('hidden')) {
-        cancelChartLoading();
-        delete tickerView.dataset.ticker;
-        tickerView.classList.add('hidden');
-        document.getElementById('view-divergence')?.classList.remove('hidden');
-      }
-      switchView(parsed.view);
+  if (route.kind === 'ticker') {
+    window.showTickerView(route.ticker);
+  } else {
+    // If we're in a ticker sub-view, close it first
+    const tickerView = document.getElementById('ticker-view');
+    if (tickerView && !tickerView.classList.contains('hidden')) {
+      cancelChartLoading();
+      delete tickerView.dataset.ticker;
+      tickerView.classList.add('hidden');
+      document.getElementById('view-divergence')?.classList.remove('hidden');
     }
-  } finally {
-    hashNavInProgress = false;
+    switchView(route.view);
   }
 }
 
@@ -143,7 +108,7 @@ window.showOverview = function () {
   window.scrollTo(0, divergenceDashboardScrollY);
 };
 
-function switchView(view: 'admin' | 'divergence' | 'breadth') {
+function switchView(view: ViewName) {
   currentView = view;
   pushHash(`/${view}`);
   setActiveNavTab(view);
@@ -195,7 +160,7 @@ function closeAllHeaderDropdowns(): void {
   document.getElementById('header-nav-dropdown')?.classList.remove('open');
 }
 
-function setActiveNavTab(view: 'admin' | 'live' | 'divergence' | 'breadth'): void {
+function setActiveNavTab(view: ViewName | 'live'): void {
   document.querySelectorAll('.header-nav-item').forEach((b) => b.classList.remove('active'));
   document.querySelector(`.header-nav-item[data-view="${view}"]`)?.classList.add('active');
 }
@@ -616,18 +581,17 @@ function bootstrapApplication(): void {
   syncDivergenceScanUiState().catch(() => {});
 
   // Hash router: restore view from URL hash, or default to divergence
-  const initialRoute = parseHash(window.location.hash);
-  if (initialRoute && 'ticker' in initialRoute) {
+  const initialRoute = getInitialRoute();
+  if (initialRoute.kind === 'ticker') {
     switchView('divergence');
     window.showTickerView(initialRoute.ticker);
-  } else if (initialRoute && 'view' in initialRoute) {
-    switchView(initialRoute.view);
   } else {
-    switchView('divergence');
+    switchView(initialRoute.view);
   }
 
-  // Listen for browser back/forward
-  window.addEventListener('hashchange', () => handleHashRoute());
+  // Listen for browser back/forward via router module
+  onRouteChange(handleRoute);
+  installHashListener();
 
   // Global timezone change handler (must be registered at bootstrap, not lazily)
   onAppTimeZoneChange(() => {
