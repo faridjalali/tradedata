@@ -207,7 +207,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
             SELECT id, ticker, signal_type, price, trade_date, timestamp, timeframe, volume_delta, is_favorite,
               ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY trade_date DESC, timestamp DESC) AS timeframe_rank
             FROM divergence_signals
-            WHERE trade_date >= ${startDate}::date AND trade_date <= ${endDate}::date AND timeframe = ANY(${sql`$3::text[]`})
+            WHERE trade_date >= ${startDate}::date AND trade_date <= ${endDate}::date AND timeframe = ANY(${allowedTimeframes}::text[])
               AND (${publishedTradeDate || null}::date IS NULL OR trade_date <= ${publishedTradeDate || null}::date)
           )
           SELECT id, ticker, signal_type, price, trade_date::text AS signal_trade_date, timestamp, timeframe,
@@ -225,7 +225,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
             SELECT id, ticker, signal_type, price, trade_date, timestamp, timeframe, volume_delta, is_favorite,
               ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY trade_date DESC, timestamp DESC) AS timeframe_rank
             FROM divergence_signals
-            WHERE trade_date >= ${startTradeDate}::date AND trade_date <= ${endTradeDate}::date AND timeframe = ANY(${sql`$3::text[]`})
+            WHERE trade_date >= ${startTradeDate}::date AND trade_date <= ${endTradeDate}::date AND timeframe = ANY(${allowedTimeframes}::text[])
               AND (${publishedTradeDate || null}::date IS NULL OR trade_date <= ${publishedTradeDate || null}::date)
           )
           SELECT id, ticker, signal_type, price, trade_date::text AS signal_trade_date, timestamp, timeframe,
@@ -240,7 +240,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
             SELECT id, ticker, signal_type, price, trade_date, timestamp, timeframe, volume_delta, is_favorite,
               ROW_NUMBER() OVER (PARTITION BY timeframe ORDER BY trade_date DESC, timestamp DESC) AS timeframe_rank
             FROM divergence_signals
-            WHERE timeframe = ANY(${sql`$3::text[]`}) AND (${publishedTradeDate || null}::date IS NULL OR trade_date <= ${publishedTradeDate || null}::date)
+            WHERE timeframe = ANY(${allowedTimeframes}::text[]) AND (${publishedTradeDate || null}::date IS NULL OR trade_date <= ${publishedTradeDate || null}::date)
           )
           SELECT id, ticker, signal_type, price, trade_date::text AS signal_trade_date, timestamp, timeframe,
             CASE WHEN signal_type = 'bullish' THEN 1 ELSE -1 END AS signal_direction,

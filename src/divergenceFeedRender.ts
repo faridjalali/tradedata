@@ -4,18 +4,10 @@
  */
 
 import { getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
-import {
-  fetchDivergenceSignalsFromApi,
-} from './divergenceApi';
-import {
-  setDivergenceSignalsByTimeframe,
-  getDivergenceSignals,
-} from './divergenceState';
+import { fetchDivergenceSignalsFromApi } from './divergenceApi';
+import { setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
-import {
-  primeDivergenceSummaryCacheFromAlerts,
-  renderAlertCardDivergenceTablesFromCache,
-} from './divergenceTable';
+import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import {
   prefetchMiniChartBars,
   renderInlineMinicharts,
@@ -23,12 +15,11 @@ import {
   reattachInlineMinichartWrappers,
 } from './divergenceMinichart';
 import { SortMode, Alert } from './types';
+import { divergenceStore } from './store/divergenceStore';
+import type { ColumnKey, ColumnFeedMode } from './store/divergenceStore';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type ColumnFeedMode = '1' | '5' | '30' | 'custom';
+// Re-export for backward compatibility (consumers import from here)
+export type { ColumnFeedMode, ColumnKey } from './store/divergenceStore';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -37,60 +28,38 @@ export type ColumnFeedMode = '1' | '5' | '30' | 'custom';
 const ALERTS_PAGE_SIZE = 100;
 
 // ---------------------------------------------------------------------------
-// Module-level state — keyed by column ('daily' | 'weekly')
+// Column state accessors (now delegate to Zustand store)
 // ---------------------------------------------------------------------------
 
-type ColumnKey = 'daily' | 'weekly';
-
-interface ColumnState {
-  feedMode: ColumnFeedMode;
-  customFrom: string;
-  customTo: string;
-  sortMode: SortMode;
-  sortDirection: 'asc' | 'desc';
-  /** Sort state to restore when favorite filter is toggled off. */
-  preFavSortMode: SortMode | null;
-  preFavSortDirection: 'asc' | 'desc';
-  visibleCount: number;
-}
-
-const COLUMN_DEFAULTS: ColumnState = {
-  feedMode: '1',
-  customFrom: '',
-  customTo: '',
-  sortMode: 'score',
-  sortDirection: 'desc',
-  preFavSortMode: null,
-  preFavSortDirection: 'desc',
-  visibleCount: ALERTS_PAGE_SIZE,
-};
-
-const col: Record<ColumnKey, ColumnState> = {
-  daily: { ...COLUMN_DEFAULTS },
-  weekly: { ...COLUMN_DEFAULTS },
-};
-
 // Backward-compatible exports for event delegation module
-export function getDailyVisibleCount(): number { return col.daily.visibleCount; }
-export function getWeeklyVisibleCount(): number { return col.weekly.visibleCount; }
-export function incrementDailyVisibleCount(): void { col.daily.visibleCount += ALERTS_PAGE_SIZE; }
-export function incrementWeeklyVisibleCount(): void { col.weekly.visibleCount += ALERTS_PAGE_SIZE; }
+export function getDailyVisibleCount(): number {
+  return divergenceStore.getState().getColumn('daily').visibleCount;
+}
+export function getWeeklyVisibleCount(): number {
+  return divergenceStore.getState().getColumn('weekly').visibleCount;
+}
+export function incrementDailyVisibleCount(): void {
+  divergenceStore.getState().incrementColumnVisibleCount('daily');
+}
+export function incrementWeeklyVisibleCount(): void {
+  divergenceStore.getState().incrementColumnVisibleCount('weekly');
+}
 
 // ---------------------------------------------------------------------------
 // Column feed configuration
 // ---------------------------------------------------------------------------
 
 export function getColumnFeedMode(column: ColumnKey): ColumnFeedMode {
-  return col[column].feedMode;
+  return divergenceStore.getState().getColumn(column).feedMode;
 }
 
 export function setColumnCustomDates(column: ColumnKey, from: string, to: string): void {
-  col[column].customFrom = from;
-  col[column].customTo = to;
+  divergenceStore.getState().setColumnCustomDates(column, from, to);
 }
 
 export function getColumnCustomDates(column: ColumnKey): { from: string; to: string } {
-  return { from: col[column].customFrom, to: col[column].customTo };
+  const c = divergenceStore.getState().getColumn(column);
+  return { from: c.customFrom, to: c.customTo };
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +94,11 @@ function applyColumnDateFilter(alerts: Alert[], mode: ColumnFeedMode): Alert[] {
 // ---------------------------------------------------------------------------
 
 export function initializeDivergenceSortDefaults(): void {
-  col.daily = { ...COLUMN_DEFAULTS };
-  col.weekly = { ...COLUMN_DEFAULTS };
-  updateSortButtonUi('#view-divergence .divergence-daily-sort', col.daily.sortMode, col.daily.sortDirection);
-  updateSortButtonUi('#view-divergence .divergence-weekly-sort', col.weekly.sortMode, col.weekly.sortDirection);
+  divergenceStore.getState().resetColumnDefaults();
+  const d = divergenceStore.getState().getColumn('daily');
+  const w = divergenceStore.getState().getColumn('weekly');
+  updateSortButtonUi('#view-divergence .divergence-daily-sort', d.sortMode, d.sortDirection);
+  updateSortButtonUi('#view-divergence .divergence-weekly-sort', w.sortMode, w.sortDirection);
 }
 
 // ---------------------------------------------------------------------------
@@ -136,33 +106,45 @@ export function initializeDivergenceSortDefaults(): void {
 // ---------------------------------------------------------------------------
 
 function setDivergenceSort(column: ColumnKey, mode: SortMode): void {
-  const s = col[column];
+  const store = divergenceStore.getState();
+  const s = store.getColumn(column);
+  let newSort = s.sortMode;
+  let newDir = s.sortDirection;
+  let newPreFav = s.preFavSortMode;
+  let newPreFavDir = s.preFavSortDirection;
+
   if (mode === 'favorite' && s.sortMode === 'favorite') {
-    // Toggle off: restore previous sort state
-    s.sortMode = s.preFavSortMode ?? 'score';
-    s.sortDirection = s.preFavSortDirection;
-    s.preFavSortMode = null;
+    newSort = s.preFavSortMode ?? 'score';
+    newDir = s.preFavSortDirection;
+    newPreFav = null;
   } else if (mode === 'favorite') {
-    // Entering favorite filter: save current state
-    s.preFavSortMode = s.sortMode;
-    s.preFavSortDirection = s.sortDirection;
-    s.sortMode = 'favorite';
-    s.sortDirection = 'desc';
+    newPreFav = s.sortMode;
+    newPreFavDir = s.sortDirection;
+    newSort = 'favorite';
+    newDir = 'desc';
   } else if (mode === s.sortMode) {
-    s.sortDirection = s.sortDirection === 'desc' ? 'asc' : 'desc';
+    newDir = s.sortDirection === 'desc' ? 'asc' : 'desc';
   } else {
-    s.sortMode = mode;
-    s.sortDirection = 'desc';
-    s.preFavSortMode = null;
+    newSort = mode;
+    newDir = 'desc';
+    newPreFav = null;
   }
-  s.visibleCount = ALERTS_PAGE_SIZE;
+
+  store.setColumnSort(column, newSort, newDir);
+  store.setColumnPreFavSort(column, newPreFav, newPreFavDir);
+  store.setColumnVisibleCount(column, ALERTS_PAGE_SIZE);
+
   const uiSelector = column === 'daily' ? '.divergence-daily-sort' : '.divergence-weekly-sort';
-  updateSortButtonUi(`#view-divergence ${uiSelector}`, s.sortMode, s.sortDirection);
+  updateSortButtonUi(`#view-divergence ${uiSelector}`, newSort, newDir);
   renderDivergenceContainer(column === 'daily' ? '1d' : '1w');
 }
 
-export function setDivergenceDailySort(mode: SortMode): void { setDivergenceSort('daily', mode); }
-export function setDivergenceWeeklySort(mode: SortMode): void { setDivergenceSort('weekly', mode); }
+export function setDivergenceDailySort(mode: SortMode): void {
+  setDivergenceSort('daily', mode);
+}
+export function setDivergenceWeeklySort(mode: SortMode): void {
+  setDivergenceSort('weekly', mode);
+}
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -223,8 +205,11 @@ function showMoreButtonHtml(shown: number, total: number, timeframe: '1d' | '1w'
 export function renderDivergenceOverview(): void {
   const allSignals = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allSignals);
-  col.daily.visibleCount = ALERTS_PAGE_SIZE;
-  col.weekly.visibleCount = ALERTS_PAGE_SIZE;
+  const store = divergenceStore.getState();
+  store.setColumnVisibleCount('daily', ALERTS_PAGE_SIZE);
+  store.setColumnVisibleCount('weekly', ALERTS_PAGE_SIZE);
+  const d = store.getColumn('daily');
+  const w = store.getColumn('weekly');
   const dailyContainer = document.getElementById('divergence-daily-container');
   const weeklyContainer = document.getElementById('divergence-weekly-container');
   if (!dailyContainer || !weeklyContainer) return;
@@ -233,21 +218,21 @@ export function renderDivergenceOverview(): void {
   let weekly = allSignals.filter((a) => (a.timeframe || '').trim() === '1w');
 
   // Apply per-column date filter (last N fetch days)
-  daily = applyColumnDateFilter(daily, col.daily.feedMode);
-  weekly = applyColumnDateFilter(weekly, col.weekly.feedMode);
+  daily = applyColumnDateFilter(daily, d.feedMode);
+  weekly = applyColumnDateFilter(weekly, w.feedMode);
 
-  if (col.daily.sortMode === 'favorite') {
+  if (d.sortMode === 'favorite') {
     daily = daily.filter((a) => a.is_favorite);
   }
-  if (col.weekly.sortMode === 'favorite') {
+  if (w.sortMode === 'favorite') {
     weekly = weekly.filter((a) => a.is_favorite);
   }
 
-  daily.sort(createAlertSortFn(col.daily.sortMode === 'favorite' ? 'time' : col.daily.sortMode, col.daily.sortDirection));
-  weekly.sort(createAlertSortFn(col.weekly.sortMode === 'favorite' ? 'time' : col.weekly.sortMode, col.weekly.sortDirection));
+  daily.sort(createAlertSortFn(d.sortMode === 'favorite' ? 'time' : d.sortMode, d.sortDirection));
+  weekly.sort(createAlertSortFn(w.sortMode === 'favorite' ? 'time' : w.sortMode, w.sortDirection));
 
-  const dailySlice = daily.slice(0, col.daily.visibleCount);
-  const weeklySlice = weekly.slice(0, col.weekly.visibleCount);
+  const dailySlice = daily.slice(0, d.visibleCount);
+  const weeklySlice = weekly.slice(0, w.visibleCount);
 
   // Detach existing inline minichart wrappers before innerHTML replacement to
   // preserve chart instances — same pattern as renderDivergenceContainer.
@@ -285,7 +270,7 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
   if (!container) return;
 
   const column: ColumnKey = timeframe === '1d' ? 'daily' : 'weekly';
-  const s = col[column];
+  const s = divergenceStore.getState().getColumn(column);
   let signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
 
   // Apply per-column date filter (last N fetch days)
@@ -329,7 +314,7 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
  * Updates the dropdown UI and optionally re-fetches + re-renders that column.
  */
 export function setColumnFeedMode(column: ColumnKey, mode: ColumnFeedMode, fetchData = true): void {
-  col[column].feedMode = mode;
+  divergenceStore.getState().setColumnFeedMode(column, mode);
 
   // Update button active state for all instances of this column
   document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach((controls) => {
