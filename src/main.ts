@@ -1,7 +1,7 @@
 import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './ticker';
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import { setChartNavigationCallbacks } from './chartNavigation';
-import { createRefreshSvgIcon, setRefreshButtonLoading } from './chartVDF';
+
 
 // --- Lazy-loaded view modules (code splitting) ---
 
@@ -177,10 +177,6 @@ function switchView(view: 'admin' | 'divergence' | 'breadth') {
     syncDivergenceScanUiState();
   } else if (view === 'breadth') {
     document.getElementById('view-breadth')?.classList.remove('hidden');
-    const refreshBtn = document.getElementById('breadth-refresh-btn');
-    if (refreshBtn && refreshBtn.childElementCount === 0) {
-      refreshBtn.appendChild(createRefreshSvgIcon());
-    }
     loadBreadth().then((m) => { m.initBreadth(); m.initBreadthThemeListener(); }).catch(() => {});
   }
 }
@@ -612,15 +608,6 @@ function bootstrapApplication(): void {
       document.querySelectorAll('#breadth-bars-ma-btns .pane-btn').forEach((b) =>
         b.classList.toggle('active', b === btn));
       loadBreadth().then((m) => m.setBreadthBarsMA(ma)).catch(() => {});
-    });
-  });
-
-  // Breadth: Refresh all data
-  document.getElementById('breadth-refresh-btn')?.addEventListener('click', () => {
-    const btn = document.getElementById('breadth-refresh-btn');
-    if (btn) setRefreshButtonLoading(btn, true);
-    loadBreadth().then((m) => m.refreshBreadth()).catch(() => {}).finally(() => {
-      if (btn) setRefreshButtonLoading(btn, false);
     });
   });
 

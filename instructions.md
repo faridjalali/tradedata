@@ -797,11 +797,6 @@ with cross-sync to admin page preferences and vice versa.
   exit compare mode, restore ticker A solo chart. No separate second-ETF button row.
   Dual chart has inline ticker labels at the right end of lines via `dualLineLabels` plugin
   (one label per ticker, drawn at the last visible data point of the first unhidden dataset).
-- **Refresh button** (`#breadth-refresh-btn`): Top-right of the breadth container, same
-  `.pane-btn.refresh-btn` pattern as chart view. Calls `refreshBreadth()` which first POSTs
-  to `/api/breadth/ma/recompute` (triggers server-side re-fetch from data API + recompute
-  for today's date), then reloads all charts. The recompute endpoint is session-protected
-  (no secret needed). Spinner via `setRefreshButtonLoading()`.
 - **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for all admin page
   operation buttons (Fetch Daily, Fetch Weekly, Analyze, Breadth). Each button is registered via
   `registerFetchButton({ key, dom, label, start, stop, statusSource, autoRefresh? })` in
