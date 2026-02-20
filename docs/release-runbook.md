@@ -19,6 +19,9 @@ This project is not enterprise-grade, but releases should still follow a consist
    - `BASE_URL=https://catvue.com npm run release:smoke`
 4. Verify market-session context correctness:
    - `curl -sS https://catvue.com/api/trading-calendar/context | jq '.isTodayTradingDay, .isTodayEarlyClose, .isRegularHoursEt, .closeTimeEt'`
+5. Verify admin-operations status endpoints:
+   - `curl -sS https://catvue.com/api/admin/operations/status | jq '.scheduler, .warmup, .breadthConstituents'`
+   - `curl -sS https://catvue.com/api/breadth/constituents/status | jq '.sourceUrlConfigured, .totalTickers'`
 
 ## Deployment Steps
 
@@ -28,6 +31,8 @@ This project is not enterprise-grade, but releases should still follow a consist
    - `BASE_URL=https://catvue.com npm run release:smoke`
 4. Re-check trading-calendar context payload:
    - `curl -sS https://catvue.com/api/trading-calendar/context | jq '.isRegularHoursEt, .nextRegularOpenEt'`
+5. Verify scheduler state and constituent coverage post-release:
+   - `curl -sS https://catvue.com/api/admin/operations/status | jq '.scheduler.enabled, .breadthConstituents.totalTickers'`
 
 ## Rollback Checklist
 

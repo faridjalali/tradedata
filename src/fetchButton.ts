@@ -76,6 +76,8 @@ export class FetchButton {
   private _running = false;
   private _allowAutoRefresh = false;
   private _lastProcessedTickers = -1;
+  private _onBeforeStart: (() => void) | null = null;
+  private _onAfterStart: (() => void) | null = null;
 
   constructor(config: FetchButtonConfig) {
     this.key = config.key;
@@ -85,21 +87,21 @@ export class FetchButton {
   // --- DOM accessors (lazy, cached) ---
 
   private get runBtn(): HTMLButtonElement | null {
-    if (this._runBtn === undefined) {
+    if (this._runBtn === null || this._runBtn === undefined || !document.body.contains(this._runBtn)) {
       this._runBtn = document.getElementById(this.config.dom.runButtonId) as HTMLButtonElement | null;
     }
     return this._runBtn;
   }
 
   private get stopBtn(): HTMLButtonElement | null {
-    if (this._stopBtn === undefined) {
+    if (this._stopBtn === null || this._stopBtn === undefined || !document.body.contains(this._stopBtn)) {
       this._stopBtn = document.getElementById(this.config.dom.stopButtonId) as HTMLButtonElement | null;
     }
     return this._stopBtn;
   }
 
   private get statusEl(): HTMLElement | null {
-    if (this._statusEl === undefined) {
+    if (this._statusEl === null || this._statusEl === undefined || !document.body.contains(this._statusEl)) {
       this._statusEl = document.getElementById(this.config.dom.statusId);
     }
     return this._statusEl;
@@ -146,22 +148,23 @@ export class FetchButton {
 
   // --- Click handler wiring ---
 
-  wireClickHandlers(
-    onBeforeStart: () => void,
-    onAfterStart: () => void,
-  ): void {
-    this.runBtn?.addEventListener('click', () => {
-      void this.handleRun(onBeforeStart, onAfterStart);
-    });
-    this.stopBtn?.addEventListener('click', () => {
-      void this.handleStop();
-    });
+  wireClickHandlers(onBeforeStart: () => void, onAfterStart: () => void): void {
+    this._onBeforeStart = onBeforeStart;
+    this._onAfterStart = onAfterStart;
+    if (this.runBtn) {
+      this.runBtn.onclick = () => {
+        if (!this._onBeforeStart || !this._onAfterStart) return;
+        void this.handleRun(this._onBeforeStart, this._onAfterStart);
+      };
+    }
+    if (this.stopBtn) {
+      this.stopBtn.onclick = () => {
+        void this.handleStop();
+      };
+    }
   }
 
-  private async handleRun(
-    onBeforeStart: () => void,
-    onAfterStart: () => void,
-  ): Promise<void> {
+  private async handleRun(onBeforeStart: () => void, onAfterStart: () => void): Promise<void> {
     this.setButtonState(true);
     this.setStatusText('Starting...');
     this.setStopButtonState(false);
@@ -295,9 +298,7 @@ export function getFetchButton(key: string): FetchButton | undefined {
 // Bulk operations (called by the polling loop in divergenceScanControl.ts)
 // ---------------------------------------------------------------------------
 
-export async function updateAllFetchButtons(
-  unifiedStatus: DivergenceScanStatus,
-): Promise<boolean> {
+export async function updateAllFetchButtons(unifiedStatus: DivergenceScanStatus): Promise<boolean> {
   let anyRunning = false;
   const standalonePromises: Promise<boolean>[] = [];
   for (const btn of fetchButtonRegistry) {
@@ -324,10 +325,7 @@ export function resetAllAutoRefresh(): void {
   }
 }
 
-export function wireAllFetchButtons(
-  ensurePolling: () => void,
-  pollNow: () => Promise<void>,
-): void {
+export function wireAllFetchButtons(ensurePolling: () => void, pollNow: () => Promise<void>): void {
   for (const btn of fetchButtonRegistry) {
     btn.wireClickHandlers(
       () => {

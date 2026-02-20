@@ -12,6 +12,7 @@ import { mapWithConcurrency, resolveAdaptiveFetchConcurrency } from '../lib/mapW
 import { isDivergenceConfigured } from '../db.js';
 import { DIVERGENCE_SUMMARY_BUILD_CONCURRENCY } from '../services/chartEngine.js';
 import { buildRequestAbortError } from '../services/dataApi.js';
+import { isValidTickerSymbol } from '../middleware.js';
 import {
   getStoredDivergenceSymbolTickers,
   publishDivergenceTradeDate,
@@ -40,6 +41,9 @@ interface FetchDailyOptions {
   resume?: boolean;
   sourceInterval?: string;
   lookbackDays?: number;
+  force?: boolean;
+  trigger?: string;
+  tickers?: string[];
 }
 
 interface DivergenceDailyRow {
@@ -150,7 +154,16 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
     runMetricsTracker.setPhase('core');
 
     if (!resumeRequested) {
-      tickers = await getStoredDivergenceSymbolTickers();
+      const requestedTickers = Array.isArray(options.tickers)
+        ? options.tickers
+            .map((t) =>
+              String(t || '')
+                .trim()
+                .toUpperCase(),
+            )
+            .filter((t) => t && isValidTickerSymbol(t))
+        : [];
+      tickers = requestedTickers.length > 0 ? [...new Set(requestedTickers)] : await getStoredDivergenceSymbolTickers();
       startIndex = 0;
       processedTickers = 0;
       errorTickers = 0;

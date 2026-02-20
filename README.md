@@ -137,7 +137,7 @@ server/
 
 src/                                  Frontend modules
   main.ts                             View switching, navigation, global state
-  admin.ts                            Admin page: health, operations, metrics, history, prefs
+  components/AdminView.tsx            Admin page: operations, health, metrics, history
   chart.ts                            Multi-pane chart rendering, tools, overlays
   divergenceFeed.ts                   Alert feed with filtering, sorting, pagination
   divergenceTable.ts                  Divergence summary badges
@@ -145,7 +145,7 @@ src/                                  Frontend modules
   divergenceScanStatusFormat.ts       Pure status text formatters (no DOM deps)
   vdfAnalysisPanel.ts                 VDF analysis panel with zone details
   breadth.ts                          Market breadth comparison chart
-  logs.ts                             Run metrics/history builders (reused by admin.ts)
+  logs.ts                             Run metrics/history builders
   ticker.ts                           Ticker detail view
   theme.ts                            4 themes (dark, light, beige, claude)
   timezone.ts                         5 timezone options
@@ -269,13 +269,24 @@ Market breadth analysis across 21 ETFs (SPY, QQQ, DIA, MDY, IWM, 11 sector ETFs,
 
 Unified administrative page consolidating system health, operations, metrics, and history. Accessed via `#/admin` hash route (`#/logs` redirects here for backward compatibility).
 
-**Section 1 — System Health:** 2×2 card grid showing Server (uptime, status), Database (pool stats), Circuit Breaker (state), and Scan Data (configured, last scan, warnings). Auto-refreshes on 10-second polling.
+**Section 1 — Operations:** Fetch/Analyze/Breadth run controls plus admin actions:
 
-**Section 2 — Operations:** Four FetchButton rows (Fetch Daily, Fetch Weekly, Analyze, Breadth) with run/stop buttons and status text. Same `FetchButton` abstraction as before.
+- Fetch Daily / Fetch Weekly / Analyze / Breadth (run + stop + live status)
+- Health Check
+- Clear Caches
+- Warm Chart Cache
+- Retry Failed Daily / Weekly tickers (from latest run metrics)
+- Stop All Jobs
+- Rebuild Trading Calendar
+- Scheduler Toggle (enable/disable runtime scheduling)
+- Rebuild Breadth Constituents (reload from DB/static or `BREADTH_CONSTITUENTS_URL` source)
+- Export Diagnostics (downloads composed admin diagnostics JSON)
 
-**Section 3 — Run Metrics:** Latest Fetch Daily, Fetch Weekly, VDF Scan, and Runtime Config cards. Same data as the previous Logs view.
+**Section 2 — System Health:** 2×2 card grid showing Server (uptime, status), Database (pool stats), Circuit Breaker (state), and Scan Data (configured, last scan, warnings). Auto-refreshes on 10-second polling.
 
-**Section 4 — Recent Runs:** Paginated history of completed runs with expandable failed/recovered ticker details.
+**Section 3 — Run Metrics:** Latest Fetch Daily, Fetch Weekly, VDF Scan, and Runtime Config cards.
+
+**Section 4 — Run History:** Paginated history of completed runs with expandable failed/recovered ticker details.
 
 **Activity dot:** Pulsing indicator on the Admin nav item when any background operation is running.
 
@@ -457,14 +468,17 @@ Scan control endpoints accept either:
 
 ### Breadth Endpoints
 
-| Endpoint                           | Method | Auth    | Description                                                                                                                                   |
-| ---------------------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/api/breadth`                     | GET    | Session | SPY vs comparison ticker (intraday or daily)                                                                                                  |
-| `/api/breadth/ma`                  | GET    | Session | MA % history + snapshots for all indices                                                                                                      |
-| `/api/breadth/ma/bootstrap`        | POST   | Secret  | Start breadth bootstrap (fire-and-forget)                                                                                                     |
-| `/api/breadth/ma/recompute`        | POST   | Session | Full breadth bootstrap — re-fetches ALL history from data API (5-10 min). Returns `{ status: 'started' }` or `{ status: 'already_running' }`. |
-| `/api/breadth/ma/recompute/status` | GET    | Session | Poll bootstrap progress: `{ running: boolean, status: string }`                                                                               |
-| `/api/breadth/ma/refresh`          | POST   | Secret  | Recompute today's breadth snapshot only                                                                                                       |
+| Endpoint                            | Method | Auth    | Description                                                                                                                                   |
+| ----------------------------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/breadth`                      | GET    | Session | SPY vs comparison ticker (intraday or daily)                                                                                                  |
+| `/api/breadth/ma`                   | GET    | Session | MA % history + snapshots for all indices                                                                                                      |
+| `/api/breadth/ma/bootstrap`         | POST   | Secret  | Start breadth bootstrap (fire-and-forget)                                                                                                     |
+| `/api/breadth/ma/recompute`         | POST   | Session | Full breadth bootstrap — re-fetches ALL history from data API (5-10 min). Returns `{ status: 'started' }` or `{ status: 'already_running' }`. |
+| `/api/breadth/ma/recompute/status`  | GET    | Session | Poll bootstrap progress: `{ running: boolean, status: string }`                                                                               |
+| `/api/breadth/ma/recompute/stop`    | POST   | Session | Stop running breadth recompute                                                                                                                |
+| `/api/breadth/ma/refresh`           | POST   | Secret  | Recompute today's breadth snapshot only                                                                                                       |
+| `/api/breadth/constituents/status`  | GET    | Session | Runtime breadth constituent coverage summary                                                                                                  |
+| `/api/breadth/constituents/rebuild` | POST   | Session | Rebuild runtime constituent mappings (uses `BREADTH_CONSTITUENTS_URL` when configured)                                                        |
 
 ### Utility Endpoints
 
@@ -472,6 +486,8 @@ Scan control endpoints accept either:
 | ------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
 | `/api/logs/run-metrics`         | GET    | Run metrics history                                                                                                  |
 | `/api/trading-calendar/context` | GET    | Current trading-calendar context (`isTodayTradingDay`, `isTodayEarlyClose`, `closeTimeEt`, `isRegularHoursEt`, etc.) |
+| `/api/admin/operations/status`  | GET    | Admin operations runtime status (scheduler, warm-cache job, breadth constituents)                                    |
+| `/api/admin/operations/*`       | POST   | Admin actions: healthcheck, cache clear, warm cache, retry failed, stop all, calendar rebuild, scheduler toggle      |
 
 ### Health Endpoints
 
@@ -1113,6 +1129,8 @@ All steps must pass before merge.
 The project runs as a single Node.js process. No separate worker processes.
 
 **Required environment variables:** `DIVERGENCE_DATABASE_URL`, `DATA_API_KEY`
+
+**Optional operations variables:** `BREADTH_CONSTITUENTS_URL` (JSON map source for manual constituents rebuild), `DIVERGENCE_SCANNER_ENABLED`
 
 **Build command:** `npm ci && npm run build`
 

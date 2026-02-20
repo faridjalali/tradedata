@@ -8,7 +8,7 @@ import { db } from '../db.js';
 import { sql } from 'kysely';
 import type { BreadthMAResponse } from '../../shared/api-types.js';
 import { fetchGroupedDailyBars, dataApiDaily } from './dataApi.js';
-import { ALL_BREADTH_TICKERS, ALL_BREADTH_INDICES, getConstituentsForIndex } from '../data/etfConstituents.js';
+import { ALL_BREADTH_INDICES, getAllBreadthTickers, getConstituentsForIndex } from '../data/etfConstituents.js';
 import {
   upsertDailyCloses,
   getClosesForTickers,
@@ -30,6 +30,12 @@ interface IndexPriceEntry {
   fetchedAt: number;
 }
 const indexPriceCache = new Map<string, IndexPriceEntry>();
+
+export function clearBreadthIndexPriceCache(): number {
+  const count = indexPriceCache.size;
+  indexPriceCache.clear();
+  return count;
+}
 
 async function getCachedIndexPrices(ticker: string): Promise<Map<string, number>> {
   const cached = indexPriceCache.get(ticker);
@@ -108,7 +114,7 @@ export async function runBreadthComputation(tradeDate: string): Promise<void> {
   const t0 = Date.now();
 
   // 1. Fetch grouped bars for the date
-  const grouped = await fetchGroupedDailyBars(tradeDate, ALL_BREADTH_TICKERS);
+  const grouped = await fetchGroupedDailyBars(tradeDate, getAllBreadthTickers());
   if (grouped.size === 0) {
     console.log(`[breadth] No grouped bars returned for ${tradeDate}, skipping.`);
     return;
@@ -119,7 +125,7 @@ export async function runBreadthComputation(tradeDate: string): Promise<void> {
   await upsertDailyCloses(tradeDate, grouped);
 
   // 3. Load historical closes for all breadth tickers (need up to 200 days)
-  const allTickers = [...ALL_BREADTH_TICKERS];
+  const allTickers = [...getAllBreadthTickers()];
   const allCloses = await getClosesForTickers(allTickers, 200);
 
   // 4. Compute breadth for each index
@@ -178,7 +184,7 @@ export async function bootstrapBreadthHistory(
       break;
     }
     try {
-      const grouped = await fetchGroupedDailyBars(date, ALL_BREADTH_TICKERS);
+      const grouped = await fetchGroupedDailyBars(date, getAllBreadthTickers());
       if (grouped.size > 0) {
         await upsertDailyCloses(date, grouped);
         fetchedDays++;
@@ -225,7 +231,7 @@ export async function bootstrapBreadthHistory(
   // Compute snapshots — each date now has ≥200 prior closes in the DB for 200 MA
   let computedDays = 0;
   let skippedDays = 0;
-  const allTickers = [...ALL_BREADTH_TICKERS];
+  const allTickers = [...getAllBreadthTickers()];
 
   for (const date of snapshotDates) {
     if (shouldStop?.()) {

@@ -9,7 +9,6 @@ import {
 import {
   DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
   DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
-  DIVERGENCE_SCANNER_ENABLED,
   DIVERGENCE_TABLE_BUILD_CONCURRENCY,
 } from '../config.js';
 import {
@@ -18,6 +17,7 @@ import {
   getDivergenceScanControlStatus,
   getDivergenceTableBuildStatus,
 } from './scanControlService.js';
+import { getSchedulerState } from './schedulerService.js';
 import { vdfScan } from './vdfService.js';
 
 const RUN_METRICS_DB_LIMIT = 200;
@@ -554,9 +554,10 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
 }
 
 export function getLogsRunMetricsPayload() {
+  const schedulerState = getSchedulerState();
   return {
     generatedAt: new Date().toISOString(),
-    schedulerEnabled: Boolean(DIVERGENCE_SCANNER_ENABLED),
+    schedulerEnabled: schedulerState.enabled,
     config: {
       divergenceSourceInterval: DIVERGENCE_SOURCE_INTERVAL,
       divergenceLookbackDays: DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,

@@ -29,7 +29,11 @@ This repository uses explicit boundaries to keep coupling low and reduce archite
 - `index.ts` may host lightweight operational/context routes that compose existing
   services without introducing new route-module coupling (for example
   `/api/trading-calendar/context` based on `server/services/tradingCalendar.ts`).
-- Keep these handlers thin, side-effect free, and dependency-direction compliant.
+- Controlled admin-operation handlers are also allowed in `index.ts` when they need
+  direct access to top-level runtime state (for example chart-cache warmup, scheduler
+  toggles, global stop-all).
+- Keep these handlers thin and dependency-direction compliant; extract reusable logic
+  into `server/services/**`.
 
 ## Dead Code Policy
 

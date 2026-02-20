@@ -6,7 +6,7 @@
 import { sql } from 'kysely';
 import { db } from '../db.js';
 import type { BreadthMASnapshot, BreadthMAHistory } from '../../shared/api-types.js';
-import { ALL_BREADTH_INDICES } from './etfConstituents.js';
+import { ALL_BREADTH_INDICES, type BreadthIndex } from './etfConstituents.js';
 
 // ---------------------------------------------------------------------------
 // Schema initialisation
@@ -35,6 +35,15 @@ export async function initBreadthTables(): Promise<void> {
       PRIMARY KEY (trade_date, index_name)
     );
     CREATE INDEX IF NOT EXISTS idx_bs_index_date ON breadth_snapshots (index_name, trade_date DESC);
+
+    CREATE TABLE IF NOT EXISTS breadth_constituent_overrides (
+      index_name VARCHAR(10) NOT NULL,
+      ticker VARCHAR(20) NOT NULL,
+      source VARCHAR(120) NOT NULL DEFAULT 'manual',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (index_name, ticker)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bco_index ON breadth_constituent_overrides (index_name);
   `.execute(db);
 }
 
@@ -230,4 +239,61 @@ export async function cleanupOldCloses(keepDays: number): Promise<number> {
   const result = await db.deleteFrom('breadth_daily_closes').where('trade_date', '<', dateSubquery).executeTakeFirst();
 
   return Number(result.numDeletedRows ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Constituents overrides
+// ---------------------------------------------------------------------------
+
+export async function loadBreadthConstituentOverrides(): Promise<Partial<Record<BreadthIndex, string[]>>> {
+  const rows = await db
+    .selectFrom('breadth_constituent_overrides')
+    .select(['index_name', 'ticker'])
+    .orderBy('index_name', 'asc')
+    .orderBy('ticker', 'asc')
+    .execute();
+
+  const out: Partial<Record<BreadthIndex, string[]>> = {};
+  for (const row of rows) {
+    const indexName = String(row.index_name || '').toUpperCase();
+    const ticker = String(row.ticker || '')
+      .trim()
+      .toUpperCase();
+    if (!indexName || !ticker) continue;
+    const idx = indexName as BreadthIndex;
+    if (!ALL_BREADTH_INDICES.includes(idx)) continue;
+    if (!Array.isArray(out[idx])) out[idx] = [];
+    if (!out[idx]!.includes(ticker)) out[idx]!.push(ticker);
+  }
+  return out;
+}
+
+export async function replaceBreadthConstituentOverrides(
+  overrides: Partial<Record<BreadthIndex, string[]>>,
+  source: string,
+): Promise<{ rows: number; indices: number }> {
+  const rowsToInsert: Array<{ index_name: string; ticker: string; source: string }> = [];
+  const entries = Object.entries(overrides || {}) as Array<[BreadthIndex, string[]]>;
+  for (const [index, tickers] of entries) {
+    if (!ALL_BREADTH_INDICES.includes(index)) continue;
+    for (const rawTicker of Array.isArray(tickers) ? tickers : []) {
+      const ticker = String(rawTicker || '')
+        .trim()
+        .toUpperCase();
+      if (!ticker) continue;
+      rowsToInsert.push({ index_name: index, ticker, source: String(source || 'manual') });
+    }
+  }
+
+  await db.transaction().execute(async (trx) => {
+    await trx.deleteFrom('breadth_constituent_overrides').execute();
+    if (rowsToInsert.length > 0) {
+      await trx.insertInto('breadth_constituent_overrides').values(rowsToInsert).execute();
+    }
+  });
+
+  return {
+    rows: rowsToInsert.length,
+    indices: new Set(rowsToInsert.map((r) => r.index_name)).size,
+  };
 }

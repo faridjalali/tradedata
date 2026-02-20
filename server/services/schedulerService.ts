@@ -8,6 +8,10 @@ import { runDivergenceTableBuild } from '../orchestrators/tableBuildOrchestrator
 import { divergenceSchedulerTimer, setDivergenceSchedulerTimer } from './scanControlService.js';
 import { runBreadthComputation, cleanupBreadthData } from './breadthService.js';
 
+const SCHEDULER_ENABLED_BY_CONFIG = Boolean(DIVERGENCE_SCANNER_ENABLED);
+let schedulerEnabledRuntime = SCHEDULER_ENABLED_BY_CONFIG;
+let nextDivergenceRunUtcMs: number | null = null;
+
 export function getNextDivergenceScanUtcMs(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const candidate = new Date(nowEt);
@@ -49,9 +53,13 @@ export async function runScheduledDivergencePipeline() {
 }
 
 export function scheduleNextDivergenceScan() {
-  if (!isDivergenceConfigured() || !DIVERGENCE_SCANNER_ENABLED) return;
+  if (!isDivergenceConfigured() || !schedulerEnabledRuntime) {
+    nextDivergenceRunUtcMs = null;
+    return;
+  }
   if (divergenceSchedulerTimer) clearTimeout(divergenceSchedulerTimer);
   const nextRunMs = getNextDivergenceScanUtcMs(new Date());
+  nextDivergenceRunUtcMs = nextRunMs;
   const delayMs = Math.max(1000, nextRunMs - Date.now());
   const timer = setTimeout(async () => {
     try {
@@ -60,6 +68,7 @@ export function scheduleNextDivergenceScan() {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Scheduled divergence scan failed: ${message}`);
     } finally {
+      nextDivergenceRunUtcMs = null;
       scheduleNextDivergenceScan();
     }
   }, delayMs);
@@ -75,6 +84,7 @@ export function scheduleNextDivergenceScan() {
 // ---------------------------------------------------------------------------
 
 let breadthSchedulerTimer: ReturnType<typeof setTimeout> | null = null;
+let nextBreadthRunUtcMs: number | null = null;
 
 function getNextBreadthRunUtcMs(nowUtc = new Date()): number {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -95,9 +105,13 @@ function getNextBreadthRunUtcMs(nowUtc = new Date()): number {
 }
 
 export function scheduleNextBreadthComputation() {
-  if (!divergencePool) return; // breadth uses divergence DB
+  if (!divergencePool || !schedulerEnabledRuntime) {
+    nextBreadthRunUtcMs = null;
+    return;
+  } // breadth uses divergence DB
   if (breadthSchedulerTimer) clearTimeout(breadthSchedulerTimer);
   const nextRunMs = getNextBreadthRunUtcMs(new Date());
+  nextBreadthRunUtcMs = nextRunMs;
   const delayMs = Math.max(1000, nextRunMs - Date.now());
   breadthSchedulerTimer = setTimeout(async () => {
     try {
@@ -113,6 +127,7 @@ export function scheduleNextBreadthComputation() {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Scheduled breadth computation failed: ${message}`);
     } finally {
+      nextBreadthRunUtcMs = null;
       scheduleNextBreadthComputation();
     }
   }, delayMs);
@@ -120,4 +135,55 @@ export function scheduleNextBreadthComputation() {
     breadthSchedulerTimer.unref();
   }
   console.log(`Next breadth computation scheduled in ${Math.round(delayMs / 1000)}s`);
+}
+
+function clearDivergenceSchedulerTimer(): void {
+  if (divergenceSchedulerTimer) clearTimeout(divergenceSchedulerTimer);
+  setDivergenceSchedulerTimer(null);
+  nextDivergenceRunUtcMs = null;
+}
+
+function clearBreadthSchedulerTimer(): void {
+  if (breadthSchedulerTimer) clearTimeout(breadthSchedulerTimer);
+  breadthSchedulerTimer = null;
+  nextBreadthRunUtcMs = null;
+}
+
+export function getSchedulerState(): {
+  enabledByConfig: boolean;
+  enabled: boolean;
+  nextDivergenceRunUtc: string | null;
+  nextBreadthRunUtc: string | null;
+} {
+  return {
+    enabledByConfig: SCHEDULER_ENABLED_BY_CONFIG,
+    enabled: schedulerEnabledRuntime,
+    nextDivergenceRunUtc: nextDivergenceRunUtcMs ? new Date(nextDivergenceRunUtcMs).toISOString() : null,
+    nextBreadthRunUtc: nextBreadthRunUtcMs ? new Date(nextBreadthRunUtcMs).toISOString() : null,
+  };
+}
+
+export function setSchedulerEnabled(enabled: boolean): {
+  enabledByConfig: boolean;
+  enabled: boolean;
+  nextDivergenceRunUtc: string | null;
+  nextBreadthRunUtc: string | null;
+} {
+  if (!SCHEDULER_ENABLED_BY_CONFIG && enabled) {
+    schedulerEnabledRuntime = false;
+    clearDivergenceSchedulerTimer();
+    clearBreadthSchedulerTimer();
+    return getSchedulerState();
+  }
+
+  schedulerEnabledRuntime = Boolean(enabled);
+  if (!schedulerEnabledRuntime) {
+    clearDivergenceSchedulerTimer();
+    clearBreadthSchedulerTimer();
+    return getSchedulerState();
+  }
+
+  scheduleNextDivergenceScan();
+  scheduleNextBreadthComputation();
+  return getSchedulerState();
 }

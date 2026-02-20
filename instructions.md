@@ -168,12 +168,12 @@ server/
     apiSchemas.ts                   # Zod schemas for external API response validation
 src/                                # Frontend TypeScript (compiled by Vite)
   main.ts                           # View router, global event handlers, scan control wiring
-  admin.ts                          # Admin page: health cards, operations, metrics, history
+  components/AdminView.tsx          # Admin page: operations, health, metrics, history
   fetchButton.ts                    # FetchButton class + registry (operation buttons)
   chart.ts                          # Lightweight Charts integration, indicator rendering
   breadth.ts                        # Breadth analysis charts (Chart.js), comparison view
   divergenceFeed.ts                 # Alert feed polling, VDF status display
-  logs.ts                           # Run metrics/history builders (reused by admin.ts)
+  logs.ts                           # Run metrics/history builders
   utils.ts                          # DOM helpers, fetch wrappers
   theme.ts                          # Dark/light theme switching
   components.ts                     # Shared UI elements (refresh buttons, gauges)
@@ -751,26 +751,29 @@ and first 200 chars of SQL (sanitized).
 
 ### Pages / Views
 
-All views are in `index.html` — shown/hidden by CSS class toggling (`.hidden`). No routing
-library. `main.ts` owns the view-switching logic.
+App routing is handled by `preact-router` in `main.ts` (`hashHistory` + `parseAppRoutePath`).
+Each view mounts/unmounts its Preact root as routes change.
 
-| View             | Key Module          | Hash Route     | Description                                                      |
-| ---------------- | ------------------- | -------------- | ---------------------------------------------------------------- |
-| Alerts (default) | `divergenceFeed.ts` | `#/divergence` | Auto-polling alert list, VDF status panel                        |
-| Breadth          | `breadth.ts`        | `#/breadth`    | MA breadth gauges + history + normalized compare (Chart.js)      |
-| Admin            | `admin.ts`          | `#/admin`      | System health, operations, run metrics, history, preferences     |
-| Chart (sub-view) | `chart.ts`          | —              | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
+| View             | Key Module                 | Hash Route     | Description                                                      |
+| ---------------- | -------------------------- | -------------- | ---------------------------------------------------------------- |
+| Alerts (default) | `divergenceFeed.ts`        | `#/divergence` | Auto-polling alert list, VDF status panel                        |
+| Breadth          | `breadth.ts`               | `#/breadth`    | MA breadth gauges + history + normalized compare (Chart.js)      |
+| Admin            | `components/AdminView.tsx` | `#/admin`      | Operations, system health, run metrics, run history              |
+| Chart (sub-view) | `chart.ts`                 | —              | Lightweight Charts, multi-pane (OHLCV + RSI + Volume), VDF zones |
 
-### Admin View (`src/admin.ts`)
+### Admin View (`src/components/AdminView.tsx`)
 
-Lazy-loaded module for the unified admin page (`#/admin`). Four sections:
+Preact-managed admin page (`#/admin`) with 4 sections:
 
-1. **System Health**: 2×2 card grid showing Server, Database, Circuit Breaker, Scan Data status.
+1. **Operations**:
+   - Fetch controls (Fetch Daily/Weekly, Analyze, Breadth) with run/stop/status rows.
+   - Admin actions: Health Check, Clear Caches, Warm Chart Cache, Retry Failed (daily/weekly),
+     Stop All Jobs, Rebuild Trading Calendar, Scheduler Toggle, Rebuild Constituents,
+     Export Diagnostics.
+2. **System Health**: 2×2 card grid showing Server, Database, Circuit Breaker, Scan Data status.
    Data from `GET /api/admin/status`. Auto-refreshes on 10s polling interval.
-2. **Operations**: The 4 FetchButton rows (Fetch Daily, Fetch Weekly, Analyze, Breadth).
-   Same DOM element IDs as before — `FetchButton` class finds elements by `getElementById()`.
-3. **Run Metrics**: Reuses `buildRunCardHtml()` and `buildConfigCardHtml()` from `logs.ts`.
-4. **Recent Runs**: Reuses `buildHistoryEntryHtml()` from `logs.ts` with own pagination state.
+3. **Run Metrics**: Fetch Daily, Fetch Weekly, VDF Scan, and Runtime Config cards.
+4. **Run History**: Paginated run history with failed/recovered ticker details.
 
 Activity dot (`#admin-activity-dot`) on the Admin nav item pulses when any scan is running.
 Toggled by `divergenceScanControl.ts` polling loop.
@@ -815,14 +818,12 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
   exit compare mode, restore ticker A solo chart. No separate second-ETF button row.
   Dual chart has inline ticker labels at the right end of lines via `dualLineLabels` plugin
   (one label per ticker, drawn at the last visible data point of the first unhidden dataset).
-- **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for all admin page
-  operation buttons (Fetch Daily, Fetch Weekly, Analyze, Breadth). Each button is registered via
-  `registerFetchButton({ key, dom, label, start, stop, statusSource, autoRefresh? })` in
-  `divergenceScanControl.ts`. The class manages DOM state, click handlers, status polling
-  integration, and auto-refresh tracking. Two status patterns: `kind: 'unified'` (extract from
-  shared `DivergenceScanStatus`) and `kind: 'standalone'` (fetch own endpoint). Adding a new
-  button requires only a `registerFetchButton()` call + matching HTML row. Click handlers are
-  auto-wired by `initFetchButtons()` called from `main.ts`.
+- **FetchButton abstraction** (`src/fetchButton.ts`): Shared module for admin Fetch/Analyze/Breadth
+  run rows. Buttons are registered in `divergenceScanControl.ts` via
+  `registerFetchButton({ key, dom, label, start, stop, statusSource, autoRefresh? })`.
+  The class handles click wiring, polling updates, and auto-refresh state. DOM element lookup is
+  remount-safe (`AdminView` is Preact-mounted/unmounted), so handlers rebind correctly after route
+  transitions.
   The `onProgress` callback in `bootstrapBreadthHistory` updates the status string during both
   fetch and compute phases. The `shouldStop` callback enables the stop button to cancel mid-run.
 - **VDF scan date seeding on startup**: `initDB()` in `server/db/initDb.ts` queries
@@ -846,7 +847,8 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
   list. `populateBreadthIndexButtons()` generates buttons into `#breadth-ma-index-btns` and
   `#breadth-compare-index-btns` containers (index.html has empty placeholder divs). Called from
   `initBreadth()` before wiring click handlers. To add a new ETF: append to `BREADTH_INDEXES`,
-  add constituent list in `server/data/etfConstituents.ts`, run bootstrap.
+  add constituent list in `server/data/etfConstituents.ts` (or update remote JSON source),
+  then run constituents rebuild + breadth bootstrap.
 - **setActiveInGroup(containerSelector, dataAttr, value)**: DOM helper that toggles `.active`
   class on buttons within a container by matching a data attribute. Replaces scattered
   `querySelectorAll...forEach...classList.toggle` patterns throughout breadth.ts.
@@ -854,8 +856,9 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
   (scales, legend, tooltip, annotation plugin). Per-chart customization via `BreadthChartOverrides`
   (`yTickCallback`, `tooltipCallback`, `legendOnClick`, `annotation50`, `extraPlugins`, etc.).
 - **ETF constituents** live in `server/data/etfConstituents.ts`. `BreadthIndex` is the union of
-  all supported tickers. SLY was replaced by IWM (iShares Russell 2000). After adding a new ETF,
-  run the bootstrap endpoint to populate history.
+  all supported tickers. Runtime overrides can be loaded from DB/remote JSON source via
+  `POST /api/breadth/constituents/rebuild` (`BREADTH_CONSTITUENTS_URL`), then used immediately by
+  breadth computations and bootstrap jobs.
 - **Snapshot queries** (`getLatestBreadthSnapshots` in `server/data/breadthStore.ts`) filter by
   `ALL_BREADTH_INDICES` so retired index names (e.g. SLY) in the DB are never returned to the frontend.
 - **Bootstrap 200 MA buffer**: `bootstrapBreadthHistory` fetches `numDays + 200` trading days of

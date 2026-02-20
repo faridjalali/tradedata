@@ -1046,6 +1046,8 @@ Exports:
 - Live updates are applied only during U.S. regular trading hours.
 - Session gating is calendar-aware (holidays + early closes) via `GET /api/trading-calendar/context`, not just weekday/time heuristics.
 - Outside regular trading hours, the chart does not request `/api/chart/latest`.
+- Admin operations expose runtime controls for healthcheck, cache clear/warm, scheduler enable/disable, and stop-all.
+- Breadth computations use runtime constituent mappings (static defaults + optional DB/remote overrides via constituents rebuild endpoint).
 
 ---
 

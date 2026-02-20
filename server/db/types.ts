@@ -93,6 +93,13 @@ export interface BreadthHistory {
   created_at: Generated<Timestamp>;
 }
 
+export interface BreadthConstituentOverrides {
+  index_name: string;
+  ticker: string;
+  source: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export type Generated<T> =
   T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
 
@@ -104,5 +111,6 @@ export interface Database {
   breadth_daily_closes: BreadthDailyCloses;
   breadth_snapshots: BreadthSnapshots;
   breadth_history: BreadthHistory;
+  breadth_constituent_overrides: BreadthConstituentOverrides;
   vdf_results: VdfResults;
 }

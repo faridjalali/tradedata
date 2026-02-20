@@ -86,16 +86,27 @@ import {
 } from './server/services/scanControlService.js';
 import { vdfScan, getVDFStatus, runVDFScan } from './server/services/vdfService.js';
 import { getDivergenceSummaryForTickers } from './server/services/tickerHistoryService.js';
+import { getStoredDivergenceSymbolTickers } from './server/services/divergenceDbService.js';
 import { runDivergenceTableBuild } from './server/orchestrators/tableBuildOrchestrator.js';
 import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOrchestrator.js';
 import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeeklyOrchestrator.js';
 import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestrator.js';
-import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
+import {
+  scheduleNextDivergenceScan,
+  scheduleNextBreadthComputation,
+  getSchedulerState,
+  setSchedulerEnabled,
+} from './server/services/schedulerService.js';
 import { initBreadthTables, getLatestBreadthSnapshots, isBreadthMa200Valid } from './server/data/breadthStore.js';
-import { bootstrapBreadthHistory } from './server/services/breadthService.js';
+import { bootstrapBreadthHistory, clearBreadthIndexPriceCache } from './server/services/breadthService.js';
 import { startAlertRetentionScheduler } from './server/services/alertRetentionService.js';
 import { scheduleBreadthAutoBootstrap } from './server/services/breadthBootstrapService.js';
 import { ALL_BREADTH_INDICES } from './server/data/etfConstituents.js';
+import {
+  initializeBreadthConstituentsFromDb,
+  getBreadthConstituentRuntimeSummary,
+} from './server/services/breadthConstituentService.js';
+import { getBreadthRouteServiceInstance } from './server/services/breadthRouteServiceRegistry.js';
 
 import { currentEtDateString } from './server/lib/dateUtils.js';
 import {
@@ -184,6 +195,30 @@ let isShuttingDown = false;
 const startedAtMs = Date.now();
 let stopAlertRetentionScheduler: (() => void) | null = null;
 let cancelBreadthBootstrap: (() => void) | null = null;
+
+const DEFAULT_ADMIN_WARM_INTERVALS = ['1day', '4hour', '1week'] as const;
+let adminChartWarmupJob: {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  tickers: string[];
+  intervals: string[];
+  completed: number;
+  total: number;
+  errors: number;
+  lastError: string | null;
+} = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  tickers: [],
+  intervals: [],
+  completed: 0,
+  total: 0,
+  errors: 0,
+  lastError: null,
+};
+let adminChartWarmupStopRequested = false;
 
 validateStartupEnvironment();
 
@@ -717,6 +752,117 @@ async function getReadyPayload() {
   });
 }
 
+function getAdminWarmupState() {
+  return { ...adminChartWarmupJob };
+}
+
+async function getDefaultWarmupTickers(limit = 10): Promise<string[]> {
+  if (!divergencePool) return ['SPY', 'QQQ', 'IWM', 'AAPL', 'MSFT'];
+  try {
+    const tickerList = await getStoredDivergenceSymbolTickers();
+    const max = Math.max(1, Math.min(40, Number(limit) || 10));
+    const tickers = tickerList.filter((t) => t && isValidTickerSymbol(t)).slice(0, max);
+    if (tickers.length > 0) return tickers;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Failed to load default warmup tickers: ${message}`);
+  }
+  return ['SPY', 'QQQ', 'IWM', 'AAPL', 'MSFT'];
+}
+
+function normalizeWarmupIntervals(values: unknown): string[] {
+  const allow = new Set<string>(VALID_CHART_INTERVALS as readonly string[]);
+  const raw = Array.isArray(values) ? values : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const interval = String(item || '').trim();
+    if (!interval || seen.has(interval) || !allow.has(interval)) continue;
+    seen.add(interval);
+    out.push(interval);
+  }
+  if (out.length > 0) return out;
+  return [...DEFAULT_ADMIN_WARM_INTERVALS];
+}
+
+async function startAdminChartWarmup(options: {
+  tickers?: string[];
+  intervals?: string[];
+  lookbackDays?: number;
+}): Promise<{
+  status: 'started' | 'running';
+  job: ReturnType<typeof getAdminWarmupState>;
+}> {
+  if (adminChartWarmupJob.running) {
+    return { status: 'running', job: getAdminWarmupState() };
+  }
+
+  const inputTickers = Array.isArray(options.tickers) ? options.tickers : [];
+  const normalizedTickers = inputTickers
+    .map((t) =>
+      String(t || '')
+        .trim()
+        .toUpperCase(),
+    )
+    .filter((t) => t && isValidTickerSymbol(t));
+  const tickers = normalizedTickers.length > 0 ? [...new Set(normalizedTickers)] : await getDefaultWarmupTickers(10);
+  const intervals = normalizeWarmupIntervals(options.intervals);
+  const lookbackDays = Math.max(5, Math.min(365, Math.floor(Number(options.lookbackDays) || 35)));
+
+  adminChartWarmupStopRequested = false;
+  adminChartWarmupJob = {
+    running: true,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    tickers,
+    intervals,
+    completed: 0,
+    total: tickers.length * intervals.length,
+    errors: 0,
+    lastError: null,
+  };
+
+  void (async () => {
+    for (const ticker of tickers) {
+      for (const interval of intervals) {
+        if (adminChartWarmupStopRequested) break;
+        try {
+          const vdSourceInterval = toVolumeDeltaSourceInterval('1min', '1min');
+          const requestKey = buildChartRequestKey({
+            ticker,
+            interval,
+            vdRsiLength: 14,
+            vdSourceInterval,
+            vdRsiSourceInterval: vdSourceInterval,
+            lookbackDays,
+          });
+          await getOrBuildChartResult({
+            ticker,
+            interval,
+            vdRsiLength: 14,
+            vdSourceInterval,
+            vdRsiSourceInterval: vdSourceInterval,
+            lookbackDays,
+            requestKey,
+            skipFollowUpPrewarm: true,
+          });
+        } catch (err: unknown) {
+          adminChartWarmupJob.errors += 1;
+          adminChartWarmupJob.lastError = err instanceof Error ? err.message : String(err);
+        } finally {
+          adminChartWarmupJob.completed += 1;
+        }
+      }
+      if (adminChartWarmupStopRequested) break;
+    }
+    adminChartWarmupJob.running = false;
+    adminChartWarmupJob.finishedAt = new Date().toISOString();
+    adminChartWarmupStopRequested = false;
+  })();
+
+  return { status: 'started', job: getAdminWarmupState() };
+}
+
 registerHealthRoutes({
   app,
   debugMetricsSecret: DEBUG_METRICS_SECRET,
@@ -730,6 +876,181 @@ app.post('/api/admin/circuit-breaker/reset', (request, reply) => {
   if (rejectUnauthorized(request, reply, DEBUG_METRICS_SECRET)) return;
   resetDataApiCircuitBreaker();
   return reply.code(200).send({ ok: true, circuitBreaker: getDataApiCircuitBreakerInfo() });
+});
+
+app.get('/api/admin/operations/status', async (_request, reply) => {
+  return reply.send({
+    scheduler: getSchedulerState(),
+    warmup: getAdminWarmupState(),
+    breadthConstituents: getBreadthConstituentRuntimeSummary(),
+  });
+});
+
+app.post('/api/admin/operations/healthcheck', async (_request, reply) => {
+  const startedMs = Date.now();
+  const health = getHealthPayload();
+  const ready = await getReadyPayload();
+  const durationMs = Date.now() - startedMs;
+  return reply.send({
+    status: ready.statusCode === 200 ? 'ok' : 'degraded',
+    durationMs,
+    health,
+    ready: ready.body,
+  });
+});
+
+app.post('/api/admin/operations/cache/clear', async (_request, reply) => {
+  const before = {
+    lowerTf: VD_RSI_LOWER_TF_CACHE.size,
+    vdRsiResults: VD_RSI_RESULT_CACHE.size,
+    chartData: CHART_DATA_CACHE.size,
+    quotes: CHART_QUOTE_CACHE.size,
+    finalResults: CHART_FINAL_RESULT_CACHE.size,
+    miniBars: miniBarsCacheByTicker.size,
+    inFlight: CHART_IN_FLIGHT_REQUESTS.size,
+    breadthIndexPrice: 0,
+  };
+
+  VD_RSI_LOWER_TF_CACHE.clear();
+  VD_RSI_RESULT_CACHE.clear();
+  CHART_DATA_CACHE.clear();
+  CHART_QUOTE_CACHE.clear();
+  CHART_FINAL_RESULT_CACHE.clear();
+  miniBarsCacheByTicker.clear();
+  before.breadthIndexPrice = clearBreadthIndexPriceCache();
+
+  const after = {
+    lowerTf: VD_RSI_LOWER_TF_CACHE.size,
+    vdRsiResults: VD_RSI_RESULT_CACHE.size,
+    chartData: CHART_DATA_CACHE.size,
+    quotes: CHART_QUOTE_CACHE.size,
+    finalResults: CHART_FINAL_RESULT_CACHE.size,
+    miniBars: miniBarsCacheByTicker.size,
+    inFlight: CHART_IN_FLIGHT_REQUESTS.size,
+    breadthIndexPrice: 0,
+  };
+
+  return reply.send({
+    status: 'ok',
+    message: 'Server caches cleared',
+    before,
+    after,
+  });
+});
+
+app.post('/api/admin/operations/chart/warm', async (request, reply) => {
+  const body = ((request.body as Record<string, unknown> | null) || {}) as {
+    tickers?: string[];
+    intervals?: string[];
+    lookbackDays?: number;
+  };
+  const result = await startAdminChartWarmup(body);
+  return reply.send(result);
+});
+
+app.get('/api/admin/operations/chart/warm/status', async (_request, reply) => {
+  return reply.send(getAdminWarmupState());
+});
+
+app.post('/api/admin/operations/retry-failed', async (request, reply) => {
+  const body = ((request.body as Record<string, unknown> | null) || {}) as { runType?: unknown };
+  const runType = String(body.runType || 'fetchDaily').trim() === 'fetchWeekly' ? 'fetchWeekly' : 'fetchDaily';
+  const payload = getLogsRunMetricsPayload();
+  const runSnapshot = runType === 'fetchWeekly' ? payload.runs?.fetchWeekly : payload.runs?.fetchDaily;
+  const failedTickers = Array.isArray(runSnapshot?.failedTickers)
+    ? runSnapshot.failedTickers
+        .map((t) =>
+          String(t || '')
+            .trim()
+            .toUpperCase(),
+        )
+        .filter((t) => t && isValidTickerSymbol(t))
+    : [];
+
+  if (failedTickers.length === 0) {
+    return reply.send({ status: 'no-failed', runType, failedTickers: 0 });
+  }
+
+  const startResult =
+    runType === 'fetchWeekly'
+      ? await runDivergenceFetchWeeklyData({
+          trigger: 'admin-retry-failed',
+          force: true,
+          tickers: failedTickers,
+        })
+      : await runDivergenceFetchDailyData({
+          trigger: 'admin-retry-failed',
+          force: true,
+          tickers: failedTickers,
+        });
+
+  return reply.send({
+    status: String((startResult as { status?: unknown })?.status || 'started'),
+    runType,
+    failedTickers: failedTickers.length,
+  });
+});
+
+app.post('/api/admin/operations/stop-all', async (_request, reply) => {
+  adminChartWarmupStopRequested = true;
+  const breadthService = getBreadthRouteServiceInstance();
+  const result = {
+    scan: requestStopDivergenceScan(),
+    table: requestStopDivergenceTableBuild(),
+    fetchDaily: fetchDailyScan.requestStop(),
+    fetchWeekly: fetchWeeklyScan.requestStop(),
+    vdfScan: vdfScan.requestStop(),
+    breadthRecompute: breadthService ? breadthService.requestBootstrapStop() : false,
+    chartWarmup: adminChartWarmupJob.running,
+  };
+  return reply.send({
+    status: 'ok',
+    message: 'Stop requested for all running operations',
+    result,
+  });
+});
+
+app.post('/api/admin/operations/trading-calendar/rebuild', async (_request, reply) => {
+  await tradingCalendar
+    .init({
+      fetchDataApiJson,
+      buildDataApiUrl,
+      formatDateUTC,
+      log: (msg: string) => console.log(`[TradingCalendar] ${msg}`),
+    })
+    .catch((err) => {
+      throw new Error(err instanceof Error ? err.message : String(err));
+    });
+  return reply.send({
+    status: 'ok',
+    calendar: tradingCalendar.getStatus(),
+  });
+});
+
+app.post('/api/admin/operations/scheduler', async (request, reply) => {
+  const body = ((request.body as Record<string, unknown> | null) || {}) as { enabled?: unknown };
+  const enabled = Boolean(body.enabled);
+  const state = setSchedulerEnabled(enabled);
+  return reply.send({
+    status: 'ok',
+    scheduler: state,
+  });
+});
+
+app.get('/api/admin/operations/diagnostics', async (_request, reply) => {
+  const ready = await getReadyPayload();
+  const metricsPayload = getLogsRunMetricsPayload();
+  return reply.send({
+    generatedAt: new Date().toISOString(),
+    health: getHealthPayload(),
+    ready: ready.body,
+    adminStatus: { ...getHealthPayload(), ...ready.body },
+    runMetrics: metricsPayload,
+    debugMetrics: getDebugMetricsPayload(),
+    scheduler: getSchedulerState(),
+    warmup: getAdminWarmupState(),
+    breadthConstituents: getBreadthConstituentRuntimeSummary(),
+  });
 });
 
 // SPA fallback — serve index.html for non-API, non-file routes
@@ -746,7 +1067,10 @@ app.setNotFoundHandler(async (request, reply) => {
 try {
   await initDB();
   await initDivergenceDB();
-  if (divergencePool) await initBreadthTables();
+  if (divergencePool) {
+    await initBreadthTables();
+    await initializeBreadthConstituentsFromDb();
+  }
 } catch (err: unknown) {
   console.error('Fatal: database initialization failed, exiting.', err);
   process.exit(1);

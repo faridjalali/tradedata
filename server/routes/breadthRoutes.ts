@@ -5,11 +5,13 @@ import { rejectUnauthorized } from '../routeGuards.js';
 import { z } from 'zod';
 import { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { BreadthRouteService } from '../services/BreadthRouteService.js';
+import { setBreadthRouteServiceInstance } from '../services/breadthRouteServiceRegistry.js';
 
 export function registerBreadthRoutes(app: FastifyInstance): void {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
   // DI: Instantiate the service using the database dependency
   const breadthService = new BreadthRouteService(divergenceDb);
+  setBreadthRouteServiceInstance(breadthService);
 
   typedApp.get(
     '/api/breadth',
@@ -186,6 +188,66 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
       } catch (err: unknown) {
         console.error('Breadth refresh error:', err);
         return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  );
+
+  typedApp.get(
+    '/api/breadth/constituents/status',
+    {
+      schema: {
+        tags: ['Breadth'],
+        summary: 'Breadth Constituents Status',
+        description: 'Get runtime breadth constituent coverage and source metadata',
+        response: {
+          200: z.object({
+            sourceUrlConfigured: z.boolean(),
+            totalTickers: z.number(),
+            counts: z.record(z.string(), z.number()),
+          }),
+        },
+      },
+    },
+    async (_request, reply) => {
+      return reply.send(breadthService.getConstituentSummary());
+    },
+  );
+
+  typedApp.post(
+    '/api/breadth/constituents/rebuild',
+    {
+      schema: {
+        tags: ['Breadth'],
+        summary: 'Rebuild Breadth Constituents',
+        description:
+          'Rebuild runtime breadth ETF constituent mappings. Uses BREADTH_CONSTITUENTS_URL JSON source if configured, otherwise reloads current DB/static mappings.',
+        body: z
+          .object({
+            sourceUrl: z.string().url().optional(),
+          })
+          .optional(),
+        response: {
+          200: z.object({
+            status: z.string(),
+            source: z.string(),
+            indexCount: z.number(),
+            tickerCount: z.number(),
+            counts: z.record(z.string(), z.number()),
+            updatedAt: z.string(),
+          }),
+          500: z.object({ error: z.string() }),
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = (request.body || {}) as { sourceUrl?: string };
+        const result = await breadthService.rebuildConstituents(body.sourceUrl);
+        return reply.send(result);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('Breadth constituents rebuild error:', message);
+        return reply.code(500).send({ error: message });
       }
     },
   );

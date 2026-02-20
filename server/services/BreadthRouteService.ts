@@ -6,6 +6,7 @@ import {
   cleanupBreadthData,
   getLatestBreadthData,
 } from './breadthService.js';
+import { getBreadthConstituentRuntimeSummary, rebuildBreadthConstituents } from './breadthConstituentService.js';
 import { getSpyDaily, getSpyIntraday, dataApiIntradayChartHistory, buildIntradayBreadthPoints } from './chartEngine.js';
 import { dataApiDaily } from './dataApi.js';
 
@@ -124,5 +125,13 @@ export class BreadthRouteService {
     if (!this.isConfigured()) throw new Error('Breadth not configured');
     await runBreadthComputation(tradeDate);
     await cleanupBreadthData();
+  }
+
+  public getConstituentSummary() {
+    return getBreadthConstituentRuntimeSummary();
+  }
+
+  public async rebuildConstituents(sourceUrl?: string) {
+    return rebuildBreadthConstituents({ sourceUrl });
   }
 }
