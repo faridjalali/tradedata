@@ -16,7 +16,7 @@ import {
 } from '../services/dataApi.js';
 import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
 import { isDivergenceConfigured } from '../db.js';
-import { latestCompletedPacificTradeDateKey, nextPacificDivergenceRefreshUtcMs } from '../services/chartEngine.js';
+import { latestCompletedPacificTradeDateKey } from '../services/chartEngine.js';
 import { linkAbortSignalToController } from '../services/dataApi.js';
 import {
   publishDivergenceTradeDate,
@@ -27,8 +27,6 @@ import {
 import {
   buildNeutralDivergenceStateMap,
   classifyDivergenceStateMapFromDailyRows,
-  clearDivergenceSummaryCacheForSourceInterval,
-  setDivergenceSummaryCacheEntry,
 } from '../services/divergenceStateService.js';
 import {
   divergenceLastFetchedTradeDateEt,
@@ -382,21 +380,6 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
       if (summaryRows.length === 0) return;
       const batch = summaryRows.splice(0, summaryRows.length);
       await upsertDivergenceSummaryBatch(batch, null);
-      const nowMs = Date.now();
-      const expiresAtMs = nextPacificDivergenceRefreshUtcMs(new Date(nowMs));
-      for (const row of batch) {
-        const ticker = String(row?.ticker || '').toUpperCase();
-        const tradeDate = String(row?.trade_date || '').trim() || null;
-        if (!ticker || !tradeDate) continue;
-        setDivergenceSummaryCacheEntry({
-          ticker,
-          sourceInterval,
-          tradeDate,
-          states: row?.states || buildNeutralDivergenceStateMap(),
-          computedAtMs: nowMs,
-          expiresAtMs,
-        });
-      }
     };
 
     for (let idx = summarizeOffset; idx < tickers.length; idx++) {
@@ -447,7 +430,6 @@ export async function runDivergenceTableBuild(options: TableBuildOptions = {}) {
     setDivergenceTableBuildPauseRequested(false);
     setDivergenceTableBuildStopRequested(false);
     setDivergenceTableBuildResumeState(null);
-    clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
     setDivergenceTableBuildStatus({
       running: false,

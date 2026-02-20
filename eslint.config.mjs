@@ -65,6 +65,62 @@ export default [
     },
   },
   {
+    files: ['server/services/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../routes/*', '../routes/**'],
+              message: 'Services must not import routes. Keep business logic route-agnostic.',
+            },
+            {
+              group: ['../../src/*', '../../src/**'],
+              message: 'Server services must not import frontend modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['server/orchestrators/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../routes/*', '../routes/**'],
+              message: 'Orchestrators must not import routes. Keep orchestration independent of HTTP transport.',
+            },
+            {
+              group: ['../../src/*', '../../src/**'],
+              message: 'Orchestrators must not import frontend modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../server/*', '../server/**'],
+              message: 'Frontend code must not import server modules. Use shared contracts or API clients.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.js', '**/*.mjs'],
     languageOptions: {
       ecmaVersion: 'latest',

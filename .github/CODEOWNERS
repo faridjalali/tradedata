@@ -1,0 +1,14 @@
+# Default owner for all repository paths
+* @faridjalali
+
+# Backend ownership
+/server/ @faridjalali
+/index.ts @faridjalali
+
+# Frontend ownership
+/src/ @faridjalali
+
+# Shared contracts and infra
+/shared/ @faridjalali
+/.github/ @faridjalali
+/docs/ @faridjalali

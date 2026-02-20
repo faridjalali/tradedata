@@ -30,7 +30,7 @@ import {
   nextPacificDivergenceRefreshUtcMs,
   normalizeIntradayVolumesFromCumulativeIfNeeded,
 } from './chartEngine.js';
-import { buildNeutralDivergenceStateMap, setDivergenceSummaryCacheEntry } from './divergenceStateService.js';
+import { buildNeutralDivergenceStateMap } from './divergenceStateService.js';
 import { resolveLastClosedDailyCandleDate } from './scanControlService.js';
 
 export async function buildDailyDivergenceSummaryInput(
@@ -314,9 +314,6 @@ export async function rebuildStoredDivergenceSummariesForTickers(
 
   if (summaryRows.length > 0) {
     await upsertDivergenceSummaryBatch(summaryRows, null);
-    for (const entry of summaryByTicker.values()) {
-      setDivergenceSummaryCacheEntry(entry);
-    }
   }
   return summaryByTicker;
 }

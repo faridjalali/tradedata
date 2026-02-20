@@ -76,22 +76,6 @@ export function computeDivergenceSummaryStatesFromDailyResult(
   };
 }
 
-export function getDivergenceSummaryCacheKey(ticker: string, sourceInterval: string) {
-  return `${String(ticker || '').toUpperCase()}|${String(sourceInterval || '1min')}`;
-}
-
-export function getCachedDivergenceSummaryEntry(_ticker: string, _sourceInterval: string) {
-  return null;
-}
-
-export function setDivergenceSummaryCacheEntry(_entry: unknown) {
-  return;
-}
-
-export function clearDivergenceSummaryCacheForSourceInterval(_sourceInterval: string) {
-  return;
-}
-
 export function normalizeDivergenceState(value: unknown) {
   const normalized = String(value || '')
     .trim()
@@ -144,7 +128,6 @@ export function buildDivergenceSummaryEntryFromRow(
     computedAtMs: nowMs,
     expiresAtMs,
   };
-  setDivergenceSummaryCacheEntry(entry);
   return entry;
 }
 

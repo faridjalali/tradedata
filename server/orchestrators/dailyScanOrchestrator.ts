@@ -18,7 +18,6 @@ import {
   upsertDivergenceDailyBarsBatch,
   upsertDivergenceSignalsBatch,
 } from '../services/divergenceDbService.js';
-import { clearDivergenceSummaryCacheForSourceInterval } from '../services/divergenceStateService.js';
 import {
   divergenceLastScanDateEt,
   divergenceScanAbortController,
@@ -413,7 +412,6 @@ export async function runDailyDivergenceScan(
       tradeDate: asOfTradeDate,
       scanJobId,
     });
-    clearDivergenceSummaryCacheForSourceInterval(DIVERGENCE_SOURCE_INTERVAL);
 
     await updateDivergenceScanJob(scanJobId, {
       status: 'completed',

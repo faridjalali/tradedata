@@ -22,7 +22,6 @@ import {
 import {
   buildNeutralDivergenceStateMap,
   classifyDivergenceStateMapFromDailyRows,
-  clearDivergenceSummaryCacheForSourceInterval,
 } from '../services/divergenceStateService.js';
 import { createRunMetricsTracker, runMetricsByType } from '../services/metricsService.js';
 import {
@@ -623,7 +622,6 @@ export async function runDivergenceFetchDailyData(options: FetchDailyOptions = {
       });
       setDivergenceLastFetchedTradeDateEt(maxEtDateString(divergenceLastFetchedTradeDateEt, lastPublishedTradeDate));
     }
-    clearDivergenceSummaryCacheForSourceInterval(sourceInterval);
 
     // Completed successfully — clear resume state
     if (!lastPublishedTradeDate && asOfTradeDate) {
