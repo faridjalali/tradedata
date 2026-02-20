@@ -21,7 +21,7 @@ const {
 const fs = require('fs');
 
 // --- Config ---
-const DATA_API_KEY = 'pig0ix6gPImcxdqhUmvTCUnjVPKVmkC0';
+const DATA_API_KEY = process.env.DATA_API_KEY;
 const BASE = 'https://api.massive.com';
 const FROM_DATE = '2025-02-15';
 const TO_DATE = '2026-02-14';
@@ -49,6 +49,9 @@ const TICKERS = [
 
 // --- Fetch helpers ---
 async function fetchBars(symbol, mult, ts, from, to) {
+  if (!DATA_API_KEY) {
+    throw new Error('DATA_API_KEY is required (set it in environment variables).');
+  }
   const url = `${BASE}/v2/aggs/ticker/${symbol}/range/${mult}/${ts}/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${DATA_API_KEY}`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${symbol} ${from}→${to}`);

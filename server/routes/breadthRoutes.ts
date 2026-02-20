@@ -63,7 +63,9 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
           // When intraday data is available (market hours), use it
           if (spyBars && compBars) {
             const points = buildIntradayBreadthPoints(spyBars, compBars, days);
-            return reply.send({ intraday: true, points });
+            if (points.length > 0) {
+              return reply.send({ intraday: true, points });
+            }
           }
           // After hours / pre-market: fall through to daily data below
         }

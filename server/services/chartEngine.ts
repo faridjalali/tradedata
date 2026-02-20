@@ -1268,7 +1268,9 @@ function buildIntradayBreadthPoints(
   ).sort();
   let selectedDaySet;
   if (days === 1) {
-    selectedDaySet = new Set([todayStr]);
+    const latestCommonDay = commonDays.length > 0 ? commonDays[commonDays.length - 1] : null;
+    const selectedDay = commonDays.includes(todayStr) ? todayStr : latestCommonDay;
+    selectedDaySet = new Set(selectedDay ? [selectedDay] : []);
   } else {
     selectedDaySet = new Set(commonDays.slice(-days));
   }

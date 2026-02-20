@@ -9,9 +9,37 @@ import {
   buildChartRequestKey,
   parseDataApiDateTime,
   parseBarTimeToUnixSeconds,
+  buildIntradayBreadthPoints,
   VALID_CHART_INTERVALS,
   VOLUME_DELTA_SOURCE_INTERVALS,
 } from '../server/services/chartEngine.js';
+
+function etDateKeyFromDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const map: Record<string, string> = {};
+  for (const part of parts) map[part.type] = part.value;
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function etDateKeyDaysAgo(daysAgo: number): string {
+  return etDateKeyFromDate(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
+}
+
+function buildIntradayBars(dayKey: string, closes: [number, number]) {
+  return [
+    { datetime: `${dayKey} 10:00:00`, close: closes[0] },
+    { datetime: `${dayKey} 10:30:00`, close: closes[1] },
+  ];
+}
+
+function etDayFromIso(iso: string): string {
+  return etDateKeyFromDate(new Date(iso));
+}
 
 // ---------------------------------------------------------------------------
 // calculateRSI
@@ -231,4 +259,38 @@ test('VOLUME_DELTA_SOURCE_INTERVALS contains expected values', () => {
   assert.ok(VOLUME_DELTA_SOURCE_INTERVALS.includes('1min'));
   assert.ok(VOLUME_DELTA_SOURCE_INTERVALS.includes('5min'));
   assert.ok(VOLUME_DELTA_SOURCE_INTERVALS.includes('1hour'));
+});
+
+// ---------------------------------------------------------------------------
+// buildIntradayBreadthPoints
+// ---------------------------------------------------------------------------
+
+test('buildIntradayBreadthPoints uses today when today intraday bars exist for days=1', () => {
+  const today = etDateKeyDaysAgo(0);
+  const prior = etDateKeyDaysAgo(1);
+  const spyBars = [...buildIntradayBars(prior, [100, 101]), ...buildIntradayBars(today, [110, 111])];
+  const compBars = [...buildIntradayBars(prior, [50, 51]), ...buildIntradayBars(today, [60, 61])];
+
+  const points = buildIntradayBreadthPoints(spyBars, compBars, 1);
+
+  assert.equal(points.length, 2);
+  assert.deepEqual(
+    points.map((p) => etDayFromIso(p.date)),
+    [today, today],
+  );
+});
+
+test('buildIntradayBreadthPoints falls back to latest available day when today is missing for days=1', () => {
+  const latest = etDateKeyDaysAgo(1);
+  const older = etDateKeyDaysAgo(2);
+  const spyBars = [...buildIntradayBars(older, [90, 91]), ...buildIntradayBars(latest, [100, 101])];
+  const compBars = [...buildIntradayBars(older, [45, 46]), ...buildIntradayBars(latest, [55, 56])];
+
+  const points = buildIntradayBreadthPoints(spyBars, compBars, 1);
+
+  assert.equal(points.length, 2);
+  assert.deepEqual(
+    points.map((p) => etDayFromIso(p.date)),
+    [latest, latest],
+  );
 });
