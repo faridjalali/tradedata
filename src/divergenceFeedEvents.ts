@@ -141,7 +141,7 @@ export function setupDivergenceFeedDelegation(): void {
       return;
     }
 
-    const card = target.closest('.alert-card');
+    const card = target.closest('.alert-card') || target.closest('.inline-minichart');
     if (card) {
       const ticker = (card as HTMLElement).dataset.ticker;
       if (ticker && window.showTickerView) {

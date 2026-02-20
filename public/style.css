@@ -1763,6 +1763,10 @@ button:hover {
   overflow: hidden;
   border: 1px solid var(--border-color);
   background: var(--bg-color);
+  cursor: pointer;
+}
+.inline-minichart > * {
+  pointer-events: none;
 }
 
 /* Pane resize handles */
