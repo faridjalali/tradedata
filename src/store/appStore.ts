@@ -12,6 +12,7 @@ import type { TickerListContext } from '../types';
 export interface AppState {
   currentView: ViewName;
   adminMounted: boolean;
+  breadthMounted: boolean;
   appInitialized: boolean;
   divergenceDashboardScrollY: number;
   tickerOriginView: 'divergence';
@@ -21,6 +22,7 @@ export interface AppState {
 export interface AppActions {
   setCurrentView: (view: ViewName) => void;
   setAdminMounted: (v: boolean) => void;
+  setBreadthMounted: (v: boolean) => void;
   setAppInitialized: () => void;
   saveDivergenceScroll: () => void;
   restoreDivergenceScroll: () => void;
@@ -31,6 +33,7 @@ export interface AppActions {
 export const appStore = createStore<AppState & AppActions>()((set, get) => ({
   currentView: 'divergence',
   adminMounted: false,
+  breadthMounted: false,
   appInitialized: false,
   divergenceDashboardScrollY: 0,
   tickerOriginView: 'divergence',
@@ -38,6 +41,7 @@ export const appStore = createStore<AppState & AppActions>()((set, get) => ({
 
   setCurrentView: (view) => set({ currentView: view }),
   setAdminMounted: (v) => set({ adminMounted: v }),
+  setBreadthMounted: (v) => set({ breadthMounted: v }),
   setAppInitialized: () => set({ appInitialized: true }),
   saveDivergenceScroll: () => set({ divergenceDashboardScrollY: window.scrollY }),
   restoreDivergenceScroll: () => {

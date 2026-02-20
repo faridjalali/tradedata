@@ -249,6 +249,7 @@ let breadthChart: ChartInstance | null = null;
 let breadthMAChart: ChartInstance | null = null;
 let breadthCompareChart: ChartInstance | null = null;
 let breadthBarsChart: ChartInstance | null = null;
+let breadthThemeListenerBound = false;
 
 // Cached API response for MA data (not config state, just data cache).
 let breadthMAData: BreadthMAResponse | null = null;
@@ -982,6 +983,7 @@ function renderBreadthCompareDual(): void {
 /** Switch which MA window the bar chart ranks by. */
 export function setBreadthBarsMA(ma: string): void {
   breadthStore.getState().setBarsMA(ma);
+  setActiveInGroup('#breadth-bars-ma-btns', 'ma', ma);
   renderBreadthBarsChart();
 }
 
@@ -1117,6 +1119,8 @@ export async function refreshBreadth(): Promise<void> {
  * Keeping this out of module scope prevents side effects during testing.
  */
 export function initBreadthThemeListener(): void {
+  if (breadthThemeListenerBound) return;
+  breadthThemeListenerBound = true;
   window.addEventListener('themechange', () => {
     if (breadthChart) {
       loadBreadth();

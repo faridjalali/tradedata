@@ -3,9 +3,11 @@ import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import { setChartNavigationCallbacks } from './chartNavigation';
 import { render, h } from 'preact';
 import { AdminView } from './components/AdminView';
+import { BreadthView } from './components/BreadthView';
 import { pushHash, onRouteChange, installHashListener, getInitialRoute } from './router';
 import type { ViewName, Route } from './router';
 import { appStore } from './store/appStore';
+import type { BreadthMetric } from './store/breadthStore';
 
 // --- Lazy-loaded view modules (code splitting) ---
 let _breadthModule: typeof import('./breadth') | null = null;
@@ -99,6 +101,50 @@ window.showOverview = function () {
   appStore.getState().restoreDivergenceScroll();
 };
 
+function mountBreadthView(): void {
+  const breadthRoot = document.getElementById('breadth-root');
+  if (!breadthRoot || appStore.getState().breadthMounted) return;
+
+  render(
+    h(BreadthView, {
+      onSelectTimeframe: (days: number) => {
+        loadBreadth()
+          .then((m) => m.setBreadthTimeframe(days))
+          .catch(() => {});
+      },
+      onSelectMetric: (metric: BreadthMetric) => {
+        loadBreadth()
+          .then((m) => m.setBreadthMetric(metric))
+          .catch(() => {});
+      },
+      onSelectCompareTf: (days: number) => {
+        loadBreadth()
+          .then((m) => m.setBreadthCompareTf(days))
+          .catch(() => {});
+      },
+      onToggleCompareMode: () => {
+        loadBreadth()
+          .then((m) => m.toggleBreadthCompareMode())
+          .catch(() => {});
+      },
+      onSelectBarsMA: (ma: string) => {
+        loadBreadth()
+          .then((m) => m.setBreadthBarsMA(ma))
+          .catch(() => {});
+      },
+    }),
+    breadthRoot,
+  );
+  appStore.getState().setBreadthMounted(true);
+}
+
+function unmountBreadthView(): void {
+  if (!appStore.getState().breadthMounted) return;
+  const breadthRoot = document.getElementById('breadth-root');
+  if (breadthRoot) render(null, breadthRoot);
+  appStore.getState().setBreadthMounted(false);
+}
+
 function switchView(view: ViewName) {
   appStore.getState().setCurrentView(view);
   pushHash(`/${view}`);
@@ -119,6 +165,9 @@ function switchView(view: ViewName) {
     if (adminRoot) render(null, adminRoot);
     appStore.getState().setAdminMounted(false);
   }
+  if (view !== 'breadth') {
+    unmountBreadthView();
+  }
 
   // Close any open dropdowns
   closeAllHeaderDropdowns();
@@ -137,6 +186,7 @@ function switchView(view: ViewName) {
     syncDivergenceScanUiState();
   } else if (view === 'breadth') {
     document.getElementById('view-breadth')?.classList.remove('hidden');
+    mountBreadthView();
     loadBreadth()
       .then((m) => {
         m.initBreadth();
@@ -500,59 +550,6 @@ function bootstrapApplication(): void {
     btn.addEventListener('click', () => {
       const mode = (btn as HTMLElement).dataset.sort as SortMode;
       setTickerWeeklySort(mode);
-    });
-  });
-
-  // Breadth Controls (lazy-loaded)
-  document.querySelectorAll('#breadth-tf-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const days = Number((btn as HTMLElement).dataset.days);
-      loadBreadth()
-        .then((m) => m.setBreadthTimeframe(days))
-        .catch(() => {});
-    });
-  });
-
-  document.querySelectorAll('#breadth-metric-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const metric = (btn as HTMLElement).dataset.metric as 'SVIX' | 'RSP' | 'MAGS';
-      loadBreadth()
-        .then((m) => m.setBreadthMetric(metric))
-        .catch(() => {});
-    });
-  });
-
-  // Breadth MA + Compare index buttons: wired inside initBreadth()
-  // (buttons are now generated from BREADTH_INDEXES, not static HTML)
-
-  // Comparative Breadth: Timeframe buttons
-  document.querySelectorAll('#breadth-compare-tf-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const days = Number((btn as HTMLElement).dataset.days);
-      loadBreadth()
-        .then((m) => m.setBreadthCompareTf(days))
-        .catch(() => {});
-    });
-  });
-
-  // Comparative Breadth: Compare mode toggle
-  document.getElementById('breadth-compare-toggle')?.addEventListener('click', () => {
-    loadBreadth()
-      .then((m) => m.toggleBreadthCompareMode())
-      .catch(() => {});
-  });
-
-  // ETF Bar Rankings: MA window selector
-  document.querySelectorAll('#breadth-bars-ma-btns .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const ma = (btn as HTMLElement).dataset.ma;
-      if (!ma) return;
-      document
-        .querySelectorAll('#breadth-bars-ma-btns .pane-btn')
-        .forEach((b) => b.classList.toggle('active', b === btn));
-      loadBreadth()
-        .then((m) => m.setBreadthBarsMA(ma))
-        .catch(() => {});
     });
   });
 
