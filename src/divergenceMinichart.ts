@@ -7,7 +7,7 @@ import { createChart } from 'lightweight-charts';
 import type { IChartApi, CandlestickData } from 'lightweight-charts';
 import { getThemeColors } from './theme';
 import { detectBullFlag } from '../shared/bullFlagDetector';
-import { isMobileTouch } from './chart';
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -319,8 +319,8 @@ export function setMiniChartHoverTimer(timer: number | null): void {
 // Inline mini-charts — mobile
 // ---------------------------------------------------------------------------
 
-function isMobileMinichartEnabled(): boolean {
-  return isMobileTouch && localStorage.getItem('minichart_mobile') === 'on';
+function isMinichartEnabled(): boolean {
+  return localStorage.getItem('minichart_mobile') === 'on';
 }
 
 /** Load (or fetch-then-create) the inline chart for a wrapper already in/near the viewport. */
@@ -516,7 +516,7 @@ export function reattachInlineMinichartWrappers(
 }
 
 export function renderInlineMinicharts(container: HTMLElement): void {
-  if (!isMobileMinichartEnabled()) {
+  if (!isMinichartEnabled()) {
     removeInlineMinicharts(container);
     return;
   }

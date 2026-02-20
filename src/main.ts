@@ -28,7 +28,7 @@ import {
   ColumnFeedMode,
 } from './divergenceFeed';
 import { SortMode, TickerListContext } from './types';
-import { onAppTimeZoneChange } from './timezone';
+import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOptions } from './timezone';
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
 
@@ -337,6 +337,41 @@ function initGlobalSettingsPanel() {
       document.querySelectorAll('#admin-theme-btns .theme-swatch-btn').forEach((b) => {
         (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.theme === name);
       });
+    });
+  });
+
+  // Timezone select
+  const tzSelect = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
+  if (tzSelect) {
+    const tzOptions = getAppTimeZoneOptions();
+    tzSelect.innerHTML = tzOptions.map((o) => `<option value="${o.value}">${o.label}</option>`).join('');
+    tzSelect.value = getAppTimeZone();
+    tzSelect.addEventListener('change', () => {
+      setAppTimeZone(tzSelect.value);
+      // Sync admin page timezone select
+      const adminTz = document.getElementById('admin-timezone-select') as HTMLSelectElement | null;
+      if (adminTz) adminTz.value = tzSelect.value;
+    });
+  }
+
+  // Minichart toggle
+  const mcBtns = panel.querySelectorAll<HTMLElement>('[data-minichart]');
+  const storedMc = localStorage.getItem('minichart_mobile') || 'off';
+  mcBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.minichart === storedMc);
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.minichart || 'off';
+      mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichart === val));
+      // Sync admin page minichart buttons
+      document.querySelectorAll('#admin-minichart-btns [data-minichart]').forEach((b) => {
+        (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.minichart === val);
+      });
+      try {
+        localStorage.setItem('minichart_mobile', val);
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(new CustomEvent('minichartmobilechange', { detail: { value: val } }));
     });
   });
 }

@@ -764,7 +764,8 @@ Lazy-loaded module for the unified admin page (`#/admin`). Five sections:
 Activity dot (`#admin-activity-dot`) on the Admin nav item pulses when any scan is running.
 Toggled by `divergenceScanControl.ts` polling loop.
 
-The gear icon in the header retains a theme-only dropdown for quick access from any page.
+The gear icon in the header provides a user-centric settings dropdown (theme, timezone, minichart)
+with cross-sync to admin page preferences and vice versa.
 `#/logs` hash routes redirect to `#/admin` for backward compatibility.
 
 ### Chart View (`src/chart.ts`)

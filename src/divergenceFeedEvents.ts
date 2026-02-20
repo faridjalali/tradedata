@@ -307,7 +307,7 @@ export function setupDivergenceFeedDelegation(): void {
     );
   }
 
-  // --- Minichart on Mobile setting toggle ---
+  // --- Minichart setting toggle ---
   window.addEventListener('minichartmobilechange', () => {
     const daily = document.getElementById('divergence-daily-container');
     const weekly = document.getElementById('divergence-weekly-container');

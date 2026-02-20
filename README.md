@@ -263,14 +263,14 @@ Unified administrative page consolidating system health, operations, metrics, hi
 
 **Section 4 — Recent Runs:** Paginated history of completed runs with expandable failed/recovered ticker details.
 
-**Section 5 — Preferences:** Theme selector (4 themes), timezone dropdown (5 options), minichart-on-mobile toggle.
+**Section 5 — Preferences:** Theme selector (4 themes), timezone dropdown (5 options), minichart toggle (all browsers).
 
 **Activity dot:** Pulsing indicator on the Admin nav item when any background operation is running.
 
 ### Global Features
 
 - **Search bar:** Type-to-search ticker lookup
-- **Settings gear:** Quick theme switching from any page (theme-only dropdown)
+- **Settings gear:** User-centric settings dropdown (theme, timezone, minichart) cross-synced with Admin preferences
 - **Site lock:** Optional 8-digit passcode gate
 - **4 themes:** Dark (default), Light, Beige, Claude
 - **5 timezones:** Pacific, Mountain, Central, Eastern, UTC

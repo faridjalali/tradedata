@@ -208,19 +208,26 @@ function initAdminPreferences(): void {
     tzSelect.value = getAppTimeZone();
     tzSelect.addEventListener('change', () => {
       setAppTimeZone(tzSelect.value);
+      // Sync gear panel timezone select
+      const gearTz = document.getElementById('global-timezone-select') as HTMLSelectElement | null;
+      if (gearTz) gearTz.value = tzSelect.value;
     });
   }
 
-  // Minichart on Mobile toggle
+  // Minichart toggle
   const mcContainer = document.getElementById('admin-minichart-btns');
   if (mcContainer) {
-    const mcBtns = mcContainer.querySelectorAll<HTMLElement>('[data-minichart-mobile]');
+    const mcBtns = mcContainer.querySelectorAll<HTMLElement>('[data-minichart]');
     const storedMc = localStorage.getItem('minichart_mobile') || 'off';
     mcBtns.forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.minichartMobile === storedMc);
+      btn.classList.toggle('active', btn.dataset.minichart === storedMc);
       btn.addEventListener('click', () => {
-        const val = btn.dataset.minichartMobile || 'off';
-        mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichartMobile === val));
+        const val = btn.dataset.minichart || 'off';
+        mcBtns.forEach((b) => b.classList.toggle('active', b.dataset.minichart === val));
+        // Sync gear panel minichart buttons
+        document.querySelectorAll('#global-minichart-btns [data-minichart]').forEach((b) => {
+          (b as HTMLElement).classList.toggle('active', (b as HTMLElement).dataset.minichart === val);
+        });
         try {
           localStorage.setItem('minichart_mobile', val);
         } catch {

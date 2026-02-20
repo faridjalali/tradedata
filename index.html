@@ -105,6 +105,17 @@
                   <button class="theme-swatch-btn" data-theme="claude" title="Brown"></button>
                 </div>
               </div>
+              <div class="global-settings-row space-between">
+                <label class="global-settings-label">Timezone</label>
+                <select id="global-timezone-select" class="glass-input global-settings-select" aria-label="Timezone"></select>
+              </div>
+              <div class="global-settings-row space-between">
+                <label class="global-settings-label">Minichart</label>
+                <div id="global-minichart-btns" class="btn-group-inline">
+                  <button class="pane-btn active" data-minichart="off">Off</button>
+                  <button class="pane-btn" data-minichart="on">On</button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="search-container">
@@ -230,10 +241,10 @@
                 <select id="admin-timezone-select" class="glass-input global-settings-select" aria-label="Timezone"></select>
               </div>
               <div class="admin-pref-row">
-                <span class="admin-pref-label">Minichart on Mobile</span>
+                <span class="admin-pref-label">Minichart</span>
                 <div id="admin-minichart-btns" class="btn-group-inline">
-                  <button class="pane-btn active" data-minichart-mobile="off">Off</button>
-                  <button class="pane-btn" data-minichart-mobile="on">On</button>
+                  <button class="pane-btn active" data-minichart="off">Off</button>
+                  <button class="pane-btn" data-minichart="on">On</button>
                 </div>
               </div>
             </div>
