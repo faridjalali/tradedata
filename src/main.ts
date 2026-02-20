@@ -445,8 +445,8 @@ function initColumnTimeframeButtons(): void {
     }
   });
 
-  // Auto-format date inputs (mm/dd/yyyy) with auto-advance
-  document.addEventListener('input', handleDateAutoFormat);
+  // Auto-advance from "from" date to "to" date when a date is selected
+  document.addEventListener('change', handleDateAutoAdvance);
   document.addEventListener('keydown', handleDateKeydown);
 }
 
@@ -460,31 +460,14 @@ function parseDateInputValue(value: string): string | null {
   return `${m[3]}-${m[1]}-${m[2]}`;
 }
 
-function handleDateAutoFormat(e: Event): void {
+function handleDateAutoAdvance(e: Event): void {
   const input = e.target as HTMLInputElement;
-  if (!input || !(input.classList.contains('column-tf-from') || input.classList.contains('column-tf-to'))) return;
-
-  const raw = input.value;
-  let digits = raw.replace(/\D/g, '');
-  if (digits.length > 8) digits = digits.slice(0, 8);
-
-  let formatted = '';
-  if (digits.length <= 2) {
-    formatted = digits;
-  } else if (digits.length <= 4) {
-    formatted = digits.slice(0, 2) + '/' + digits.slice(2);
-  } else {
-    formatted = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
-  }
-
-  input.value = formatted;
-
-  if (formatted.length === 10 && input.classList.contains('column-tf-from')) {
-    const panel = input.closest('.column-tf-custom-panel');
-    const toInput = panel?.querySelector('.column-tf-to') as HTMLInputElement | null;
-    if (toInput && !toInput.value) {
-      toInput.focus();
-    }
+  if (!input || !input.classList.contains('column-tf-from')) return;
+  if (!input.value) return;
+  const panel = input.closest('.column-tf-custom-panel');
+  const toInput = panel?.querySelector('.column-tf-to') as HTMLInputElement | null;
+  if (toInput && !toInput.value) {
+    toInput.focus();
   }
 }
 
