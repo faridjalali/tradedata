@@ -1,5 +1,4 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { ConsoleSpanExporter, BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
@@ -12,13 +11,9 @@ const spanProcessor = new BatchSpanProcessor(exporter);
 const sdk = new NodeSDK({
   serviceName: 'tradingview-alerts-server',
   spanProcessor,
-  instrumentations: [
-    getNodeAutoInstrumentations({
-      // Disable noisy instrumentation if desired
-      '@opentelemetry/instrumentation-fs': { enabled: false },
-      '@opentelemetry/instrumentation-net': { enabled: false },
-    }),
-  ],
+  // Keep SDK bootstrapped without auto-instrumentation packages to avoid
+  // vulnerable transitive dependencies in production audit gates.
+  instrumentations: [],
 });
 
 sdk.start();
