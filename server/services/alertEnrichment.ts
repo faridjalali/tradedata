@@ -1,6 +1,5 @@
 import { db } from '../db.js';
 import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
-import { currentEtDateString } from '../lib/dateUtils.js';
 
 interface VdfEnrichment {
   score: number;
@@ -34,17 +33,20 @@ export async function enrichRowsWithDivergenceData(opts: {
 
   const neutralStates = buildNeutralDivergenceStateMap();
 
-  // 2. Fetch VDF results
+  // 2. Fetch VDF results (latest detected row per ticker).
+  // Do not pin to "today" because alert feeds can span earlier trade dates and
+  // scans may not have run yet for the current ET date.
   const vdfDataMap = new Map<string, VdfEnrichment>();
   try {
     if (tickers.length > 0) {
-      const vdfTradeDate = currentEtDateString();
       const vdfRes = await db
         .selectFrom('vdf_results')
         .select(['ticker', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
-        .where('trade_date', '=', vdfTradeDate)
+        .distinctOn(['ticker'])
         .where('is_detected', '=', true)
         .where('ticker', 'in', tickers)
+        .orderBy('ticker', 'asc')
+        .orderBy('trade_date', 'desc')
         .execute();
 
       for (const row of vdfRes) {
