@@ -102,9 +102,15 @@ export function getDateRangeForMode(
   const today = getCurrentDateISO(timeZone);
   if (!today) return { startDate: '', endDate: '' };
 
-  // Numeric modes: fetch a generous 30-day window; client-side filters to N most recent dates
-  if (mode === '1' || mode === '2' || mode === '5') {
+  // Numeric modes: fetch a generous server-side window; client-side filterToLatestNDates
+  // trims to the N most recent unique trade dates.
+  if (mode === '1' || mode === '5') {
     const startDate = shiftDateKey(today, -29);
+    return startDate ? { startDate, endDate: today } : { startDate: '', endDate: '' };
+  }
+  if (mode === '30') {
+    // 30 trading days ≈ 6 weeks; use 90 calendar days for safety margin
+    const startDate = shiftDateKey(today, -89);
     return startDate ? { startDate, endDate: today } : { startDate: '', endDate: '' };
   }
 
