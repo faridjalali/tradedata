@@ -110,7 +110,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         summary: 'Toggle Alert Favorite',
         description: 'Toggle the favorite status of a specific alert',
         params: z.object({ id: z.coerce.number().positive() }),
-        body: z.object({ isFavorite: z.boolean() }),
+        body: z.object({ isFavorite: z.boolean().optional() }).optional(),
         response: {
           200: z.object({ success: z.boolean(), is_favorite: z.boolean() }),
           404: z.object({ error: z.string() }),
@@ -121,19 +121,22 @@ export function registerAlertRoutes(app: FastifyInstance): void {
     async (request, reply) => {
       try {
         const { id } = request.params;
-        const { isFavorite } = request.body;
-
-        const result = await db
-          .updateTable('alerts')
-          .set({ is_favorite: isFavorite })
-          .where('id', '=', id)
-          .executeTakeFirst();
+        const isFavorite = request.body?.isFavorite;
+        const result =
+          typeof isFavorite === 'boolean'
+            ? await db.updateTable('alerts').set({ is_favorite: isFavorite }).where('id', '=', id).executeTakeFirst()
+            : await db
+                .updateTable('alerts')
+                .set((eb) => ({ is_favorite: eb.not('is_favorite') }))
+                .where('id', '=', id)
+                .executeTakeFirst();
 
         if (Number(result.numUpdatedRows) === 0) {
           return reply.code(404).send({ error: 'Alert not found' });
         }
 
-        return reply.send({ success: true, is_favorite: isFavorite });
+        const updated = await db.selectFrom('alerts').select('is_favorite').where('id', '=', id).executeTakeFirst();
+        return reply.send({ success: true, is_favorite: Boolean(updated?.is_favorite) });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Failed to update alert favorite status: ${message}`);

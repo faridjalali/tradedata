@@ -1106,7 +1106,11 @@ export function initBreadth(): void {
  */
 export async function refreshBreadth(): Promise<void> {
   try {
-    const res = await fetch('/api/breadth/ma/recompute', { method: 'POST' });
+    const res = await fetch('/api/breadth/ma/recompute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
     if (!res.ok) {
       console.error('[breadth] Recompute failed:', res.status);
     }

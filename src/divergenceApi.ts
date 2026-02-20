@@ -106,10 +106,11 @@ async function postDivergenceAction(
     on409?: 'return-status' | 'return-running';
   },
 ): Promise<{ status: string }> {
+  const bodyPayload = opts.body ?? {};
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
+    body: JSON.stringify(bodyPayload),
   });
   const payload = await response.json().catch(() => ({}) as { status?: string; error?: string });
   if (!response.ok) {

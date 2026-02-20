@@ -134,13 +134,21 @@ registerFetchButton({
   label: { idle: 'Breadth' },
   stopAriaLabel: 'Stop Breadth Bootstrap',
   start: async () => {
-    const res = await fetch('/api/breadth/ma/recompute', { method: 'POST' });
+    const res = await fetch('/api/breadth/ma/recompute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) throw new Error(String(body.error ?? `HTTP ${res.status}`));
     return { status: String(body.status || 'started') };
   },
   stop: async () => {
-    const res = await fetch('/api/breadth/ma/recompute/stop', { method: 'POST' });
+    const res = await fetch('/api/breadth/ma/recompute/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { status: String(body.status || 'stop-requested') };
   },
@@ -148,8 +156,7 @@ registerFetchButton({
     kind: 'standalone',
     statusUrl: '/api/breadth/ma/recompute/status',
     isRunning: (d) => Boolean(d.running),
-    formatStatus: (d) =>
-      summarizeBreadthStatus(d as { running: boolean; status: string; finished_at?: string | null }),
+    formatStatus: (d) => summarizeBreadthStatus(d as { running: boolean; status: string; finished_at?: string | null }),
   },
 });
 
@@ -355,13 +362,19 @@ function refreshDivergenceCardsWhileRunning(force = false, timeframe?: '1d' | '1
   }
   divergenceTableLastUiRefreshAtMs = nowMs;
   if (timeframe) {
-    void callbacks.fetchDivergenceSignalsByTimeframe(timeframe)
+    void callbacks
+      .fetchDivergenceSignalsByTimeframe(timeframe)
       .then(() => callbacks!.renderDivergenceContainer(timeframe))
-      .catch((err: unknown) => { console.warn(`[scan] Card refresh failed (${timeframe}):`, err); });
+      .catch((err: unknown) => {
+        console.warn(`[scan] Card refresh failed (${timeframe}):`, err);
+      });
   } else {
-    void callbacks.fetchDivergenceSignals()
+    void callbacks
+      .fetchDivergenceSignals()
       .then(callbacks.renderDivergenceOverview)
-      .catch((err: unknown) => { console.warn('[scan] Overview refresh failed:', err); });
+      .catch((err: unknown) => {
+        console.warn('[scan] Overview refresh failed:', err);
+      });
   }
 }
 
@@ -465,10 +478,7 @@ function ensureDivergenceScanPolling(refreshOnComplete: boolean): void {
 export function shouldAutoRefreshDivergenceFeed(): boolean {
   const daily = getFetchButton('fetchDaily');
   const weekly = getFetchButton('fetchWeekly');
-  return (
-    Boolean(daily?.running && daily?.allowAutoRefresh) ||
-    Boolean(weekly?.running && weekly?.allowAutoRefresh)
-  );
+  return Boolean(daily?.running && daily?.allowAutoRefresh) || Boolean(weekly?.running && weekly?.allowAutoRefresh);
 }
 
 /** Wire click handlers for all registered FetchButtons. Call once after DOM is ready. */
