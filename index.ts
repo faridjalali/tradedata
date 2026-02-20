@@ -101,7 +101,7 @@ import { runBreadthComputation, bootstrapBreadthHistory, getLatestBreadthData, c
 import { ALL_BREADTH_INDICES } from './server/data/etfConstituents.js';
 
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
-import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote, getDataApiCircuitBreakerInfo, resetDataApiCircuitBreaker } from './server/services/dataApi.js';
+import { buildDataApiUrl, fetchDataApiJson, dataApiDaily, dataApiLatestQuote, getDataApiCircuitBreakerInfo, resetDataApiCircuitBreaker, fetchTickerReference } from './server/services/dataApi.js';
 import {
   VD_RSI_LOWER_TF_CACHE,
   VD_RSI_RESULT_CACHE,
@@ -393,6 +393,7 @@ registerChartRoutes({
   onChartRequestMeasured: recordChartRequestTiming, isValidTickerSymbol, getDivergenceSummaryForTickers,
   barsToTuples, pointsToTuples, getMiniBarsCacheByTicker: () => miniBarsCacheByTicker,
   loadMiniChartBarsFromDb, loadMiniChartBarsFromDbBatch, fetchMiniChartBarsFromApi, getVDFStatus,
+  fetchTickerReference,
 });
 
 

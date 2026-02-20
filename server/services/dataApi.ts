@@ -905,6 +905,23 @@ async function fetchGroupedDailyBars(
 }
 
 // ---------------------------------------------------------------------------
+// Ticker reference info (v3/reference/tickers)
+// ---------------------------------------------------------------------------
+
+async function fetchTickerReference(
+  rawSymbol: unknown,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<Record<string, unknown> | null> {
+  const ticker = normalizeTickerSymbol(rawSymbol);
+  if (!ticker) return null;
+  const url = buildDataApiUrl(`/v3/reference/tickers/${encodeURIComponent(ticker)}`);
+  const raw = await fetchDataApiJson(url, `tickerRef:${ticker}`, options);
+  const payload = raw as Record<string, unknown>;
+  const results = payload.results as Record<string, unknown> | undefined;
+  return results ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -965,6 +982,9 @@ export {
 
   // Grouped daily
   fetchGroupedDailyBars,
+
+  // Ticker reference
+  fetchTickerReference,
 
   // Circuit breaker
   CircuitOpenError,

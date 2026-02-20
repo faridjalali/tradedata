@@ -133,7 +133,7 @@ server/
   logger.ts                         # Pino setup; redirects console.* to Pino
   chartMath.ts                      # Pure math: RSI, RMA, OHLCV aggregation, normalization
   routes/                           # HTTP route handlers — thin layer, no business logic
-    chartRoutes.ts                  # Chart data endpoints
+    chartRoutes.ts                  # Chart data endpoints + ticker info
     divergenceRoutes.ts             # Scan control + alert feed endpoints
     healthRoutes.ts                 # /healthz, /readyz, /api/admin/status, /api/debug/metrics
   services/                         # Domain logic, caching, external API calls
@@ -773,6 +773,12 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
 - `chartDataCache` (Map in module scope) caches fetched data; persisted to `sessionStorage`.
 - Refresh button: clears cache entry → re-fetches → re-renders.
 - Pre-warm triggered after render: loads adjacent intervals in background.
+- **Ticker badge tooltip**: Clicking the ticker badge in the chart shows an info tooltip
+  (name, SIC description, market cap, business description) fetched from
+  `GET /api/chart/ticker-info?ticker=X`. Tooltip auto-dismisses after 4 seconds.
+  Clicking the badge again while the tooltip is visible dismisses it and opens the
+  ticker's website (homepage_url from API, or Google Finance fallback) in a new tab.
+  Results are cached in-memory (`tickerInfoCache` Map) for the session.
 
 ### Breadth View (`src/breadth.ts`)
 
@@ -899,6 +905,7 @@ FIFO eviction via `Map.keys().next()` when cap is exceeded.
 | Mini-chart bars | `divergenceMinichart.ts` | 400 | 30 min | Map (TTL wrapper) |
 | Divergence summaries | `divergenceTable.ts` | 600 | Per-entry `expiresAtMs` | Map |
 | Chart prefetch dedup | `chart.ts` | Self-cleaning | Until settled | Map of Promises |
+| Ticker info | `chart.ts` | Unbounded (session) | None (session-scoped) | Map |
 
 **Chart pre-warming priority chain** (all share an AbortController — new navigation cancels in-flight):
 - **P0**: Active chart load (highest priority)

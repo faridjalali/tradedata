@@ -325,6 +325,17 @@ export interface VDFCacheEntry {
   };
 }
 
+// --- Ticker info types ---
+
+export interface TickerInfoPayload {
+  name?: string;
+  sic_description?: string;
+  market_cap?: number;
+  description?: string;
+  ticker?: string;
+  homepage_url?: string;
+}
+
 // --- Admin types ---
 
 export interface AdminStatusPayload {

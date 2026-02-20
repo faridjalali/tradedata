@@ -7,6 +7,7 @@ import {
   ChartInterval,
   CandleBar,
 } from './chartApi';
+import type { TickerInfoPayload } from '../shared/api-types';
 import { RSIChart } from './rsi';
 import {
   ensureVDFAnalysisPanel,
@@ -669,13 +670,122 @@ function layoutTopPaneBadges(container: HTMLElement): void {
   }
 }
 
-function openTickerOnTradingView(ticker: string): void {
-  const symbol = String(ticker || '')
-    .trim()
-    .toUpperCase();
+// ---------------------------------------------------------------------------
+// Ticker info tooltip (replaces TradingView link)
+// ---------------------------------------------------------------------------
+
+const tickerInfoCache = new Map<string, TickerInfoPayload | null>();
+let activeTickerTooltip: HTMLElement | null = null;
+let activeTooltipTimer: number | null = null;
+
+function formatMarketCap(cap: number | undefined | null): string {
+  if (!cap || !Number.isFinite(cap) || cap <= 0) return '';
+  if (cap >= 1e12) return `$${(cap / 1e12).toFixed(1)}T`;
+  if (cap >= 1e9) return `$${(cap / 1e9).toFixed(1)}B`;
+  if (cap >= 1e6) return `$${(cap / 1e6).toFixed(1)}M`;
+  return `$${cap.toLocaleString()}`;
+}
+
+function dismissTickerTooltip(): void {
+  if (activeTooltipTimer !== null) {
+    clearTimeout(activeTooltipTimer);
+    activeTooltipTimer = null;
+  }
+  if (activeTickerTooltip) {
+    activeTickerTooltip.remove();
+    activeTickerTooltip = null;
+  }
+}
+
+async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promise<void> {
+  const symbol = ticker.trim().toUpperCase();
   if (!symbol) return;
-  const url = `https://www.tradingview.com/symbols/${encodeURIComponent(symbol)}/`;
+
+  dismissTickerTooltip();
+
+  let info = tickerInfoCache.get(symbol);
+  if (info === undefined) {
+    try {
+      const res = await fetch(`/api/chart/ticker-info?ticker=${encodeURIComponent(symbol)}`);
+      if (res.ok) {
+        const data = (await res.json()) as Record<string, unknown>;
+        info = (data.results || null) as TickerInfoPayload | null;
+      } else {
+        info = null;
+      }
+    } catch {
+      info = null;
+    }
+    tickerInfoCache.set(symbol, info);
+  }
+
+  if (!info) return;
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'ticker-info-tooltip';
+
+  // Line 1: name · sic_description · market_cap
+  const parts: string[] = [];
+  if (info.name) parts.push(info.name);
+  if (info.sic_description) parts.push(info.sic_description);
+  const mcap = formatMarketCap(info.market_cap);
+  if (mcap) parts.push(mcap);
+  const line1 = document.createElement('div');
+  line1.className = 'ticker-info-line1';
+  line1.textContent = parts.join(' \u00b7 ');
+  tooltip.appendChild(line1);
+
+  // Line 2: description (truncated ~200 chars)
+  if (info.description) {
+    const desc = info.description.length > 200
+      ? info.description.slice(0, 200).trimEnd() + '...'
+      : info.description;
+    const line2 = document.createElement('div');
+    line2.className = 'ticker-info-line2';
+    line2.textContent = desc;
+    tooltip.appendChild(line2);
+  }
+
+  // Position below the anchor badge
+  const pane = anchor.closest('[id]') as HTMLElement | null;
+  tooltip.style.position = 'absolute';
+  tooltip.style.left = `${anchor.offsetLeft}px`;
+  tooltip.style.top = `${anchor.offsetTop + anchor.offsetHeight + 4}px`;
+  tooltip.style.zIndex = '50';
+
+  (pane || anchor.parentElement)?.appendChild(tooltip);
+  activeTickerTooltip = tooltip;
+
+  activeTooltipTimer = window.setTimeout(dismissTickerTooltip, 4000);
+
+  const onClickOutside = (e: MouseEvent): void => {
+    if (!tooltip.contains(e.target as Node)) {
+      dismissTickerTooltip();
+      document.removeEventListener('click', onClickOutside, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', onClickOutside, true), 0);
+}
+
+function openTickerWebsite(symbol: string): void {
+  const info = tickerInfoCache.get(symbol);
+  const url = info?.homepage_url
+    || `https://www.google.com/finance/quote/${encodeURIComponent(symbol)}:NASDAQ`;
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function handleTickerBadgeClick(ticker: string, anchor: HTMLElement): void {
+  const symbol = ticker.trim().toUpperCase();
+  if (!symbol) return;
+
+  // If tooltip is already showing for this ticker, open the website instead
+  if (activeTickerTooltip) {
+    dismissTickerTooltip();
+    openTickerWebsite(symbol);
+    return;
+  }
+
+  showTickerInfoTooltip(symbol, anchor).catch(() => {});
 }
 
 function syncTopPaneTickerLabel(): void {
@@ -736,19 +846,19 @@ function syncTopPaneTickerLabel(): void {
     label.style.pointerEvents = 'auto';
     label.style.cursor = 'pointer';
     label.removeAttribute('title');
-    label.setAttribute('role', 'link');
+    label.setAttribute('role', 'button');
     label.tabIndex = 0;
     if (!label.dataset.clickBound) {
       label.addEventListener('click', (event) => {
         event.stopPropagation();
         const el = event.currentTarget as HTMLElement;
-        openTickerOnTradingView(String(el.dataset.tickerSymbol || ''));
+        handleTickerBadgeClick(String(el.dataset.tickerSymbol || ''), el);
       });
       label.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         const el = event.currentTarget as HTMLElement;
-        openTickerOnTradingView(String(el.dataset.tickerSymbol || ''));
+        handleTickerBadgeClick(String(el.dataset.tickerSymbol || ''), el);
       });
       label.dataset.clickBound = '1';
     }

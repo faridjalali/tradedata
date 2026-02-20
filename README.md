@@ -94,7 +94,7 @@ server/
   db/
     initDb.ts                         Table creation (CREATE TABLE IF NOT EXISTS) for both pools
   routes/
-    chartRoutes.ts                    Chart data, mini-bars, VDF status, divergence summary
+    chartRoutes.ts                    Chart data, mini-bars, VDF status, divergence summary, ticker info
     divergenceRoutes.ts               Scan control, signal queries, table build triggers
     alertRoutes.ts                    Alert listing, favorite toggle
     breadthRoutes.ts                  Market breadth data endpoint
@@ -222,6 +222,7 @@ Opens when clicking an alert card. Shows:
 - Trendline drawing and eraser tools
 - Divergence plotting tool (mark divergence between price and indicators)
 - Per-pane settings: MA toggles, VD source interval, RSI length
+- Ticker badge tooltip: click shows company info (name, SIC, market cap, description), auto-dismisses after 4s; click again opens ticker's website
 
 **VDF Analysis Panel** (collapsible, appears when VDF data available):
 - Detection status, composite score, tier (Marginal/Weak/Moderate/Strong)
@@ -353,6 +354,18 @@ Same params as `/api/chart`. Returns only the most recent data point for each in
 **Response:** VDF analysis object with zones, proximity, score.
 
 **Cache:** `no-store`
+
+#### `GET /api/chart/ticker-info`
+
+Fetch company reference info for a ticker (name, description, SIC, market cap).
+
+| Param | Type | Description |
+|---|---|---|
+| `ticker` | string | Stock symbol (required) |
+
+**Response:** `{ results: { name, sic_description, market_cap, description, homepage_url, ticker, ... } }`
+
+**Errors:** 400 (missing/invalid ticker), 404 (not found), 502 (upstream failure)
 
 #### `GET /api/chart/divergence-summary`
 

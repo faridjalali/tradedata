@@ -84,6 +84,7 @@ interface ChartRoutesOptions {
   loadMiniChartBarsFromDbBatch?: (tickers: string[]) => Promise<Record<string, unknown[]>>;
   fetchMiniChartBarsFromApi?: (ticker: string) => Promise<unknown[]>;
   getVDFStatus?: (ticker: string, options: { force: boolean; mode: string }) => Promise<unknown>;
+  fetchTickerReference?: (ticker: unknown, options?: { signal?: AbortSignal | null }) => Promise<Record<string, unknown> | null>;
 }
 
 /**
@@ -108,6 +109,7 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
     loadMiniChartBarsFromDb,
     loadMiniChartBarsFromDbBatch,
     fetchMiniChartBarsFromApi,
+    fetchTickerReference,
   } = options;
 
   if (!app) {
@@ -414,6 +416,28 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
       return res.code(502).send({ error: 'Failed to fetch divergence summary' });
     }
   });
+  // -----------------------------------------------------------------------
+  // Ticker reference info
+  // -----------------------------------------------------------------------
+
+  if (fetchTickerReference) {
+    app.get('/api/chart/ticker-info', async (req: FastifyRequest, res: FastifyReply) => {
+      const ticker = String((req.query as Record<string, unknown>).ticker || '').trim().toUpperCase();
+      if (!ticker) return res.code(400).send({ error: 'ticker is required' });
+      if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
+        return res.code(400).send({ error: 'Invalid ticker symbol' });
+      }
+      try {
+        const info = await fetchTickerReference(ticker);
+        if (!info) return res.code(404).send({ error: 'Ticker not found' });
+        return res.send({ results: info });
+      } catch (err: unknown) {
+        const code = classifyChartError(err);
+        console.error('Ticker info API error:', err instanceof Error ? err.message : String(err));
+        return res.code(502).send({ error: 'Failed to fetch ticker info', code });
+      }
+    });
+  }
 }
 
 export { registerChartRoutes };
