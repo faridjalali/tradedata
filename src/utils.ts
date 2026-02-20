@@ -184,7 +184,7 @@ export function updateSortButtonUi(containerSelector: string, currentMode: SortM
       el.classList.add('active');
       // Set arrow indicator via CSS pseudo-element (positioned top-right by CSS)
       if (mode !== 'favorite') {
-        el.setAttribute('data-sort-dir', direction === 'asc' ? '↑' : '↓');
+        el.setAttribute('data-sort-dir', direction === 'asc' ? '▲' : '▼');
       }
     } else {
       el.classList.remove('active');

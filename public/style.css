@@ -1430,8 +1430,8 @@ button:hover {
   color: inherit;
   pointer-events: none;
 }
-.header-sort-controls .pane-btn[data-sort-dir="↑"]::after { top: 1px; }
-.header-sort-controls .pane-btn[data-sort-dir="↓"]::after { bottom: 1px; }
+.header-sort-controls .pane-btn[data-sort-dir="▲"]::after { top: 1px; }
+.header-sort-controls .pane-btn[data-sort-dir="▼"]::after { bottom: 1px; }
 
 /* ===== SINGLE-PAGE TEMPLATE (Breadth, future pages) ===== */
 .single-page-container {
