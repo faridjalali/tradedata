@@ -338,7 +338,7 @@ export function AdminView() {
   const pageItems = history.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
 
   return (
-    <div class="single-page-container admin-page">
+    <>
       {/* Section 1: System Health */}
       <div class="admin-section">
         <div class="admin-section-header">
@@ -361,42 +361,7 @@ export function AdminView() {
         </div>
       </div>
 
-      {/* Section 2: Operations — kept as static HTML, rendered by divergenceScanControl.ts */}
-      <div class="admin-section">
-        <div class="admin-section-header"><h2>Operations</h2></div>
-        <div class="admin-operations-grid">
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
-            <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-fetch-daily-stop-btn" aria-label="Stop Fetch Daily" disabled>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-            </button>
-            <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
-          </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
-            <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-fetch-weekly-stop-btn" aria-label="Stop Fetch Weekly" disabled>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-            </button>
-            <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
-          </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
-            <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="divergence-vdf-scan-stop-btn" aria-label="Stop VDF Scan" disabled>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-            </button>
-            <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
-          </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
-            <button class="pane-btn divergence-run-btn divergence-control-icon-btn" id="breadth-recompute-stop-btn" aria-label="Stop Breadth Bootstrap" disabled>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-            </button>
-            <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Section 3: Run Metrics */}
+      {/* Section 2: Run Metrics */}
       <div class="admin-section">
         <div class="admin-section-header">
           <h2>Run Metrics</h2>
@@ -418,7 +383,7 @@ export function AdminView() {
         </div>
       </div>
 
-      {/* Section 4: Recent Runs */}
+      {/* Section 3: Recent Runs */}
       <div class="admin-section">
         <div class="admin-section-header">
           <h2>Recent Runs</h2>
@@ -442,6 +407,6 @@ export function AdminView() {
           }
         </div>
       </div>
-    </div>
+    </>
   );
 }

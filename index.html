@@ -162,9 +162,74 @@
         </div>
       </header>
 
-      <!-- ADMIN VIEW (Preact-managed) -->
+      <!-- ADMIN VIEW -->
       <main id="view-admin" class="hidden">
-        <div id="admin-root"></div>
+        <div class="single-page-container admin-page">
+          <!-- Preact-managed sections (health cards, run metrics, history) -->
+          <div id="admin-root"></div>
+          <!-- Operations grid — static HTML for divergenceScanControl.ts event delegation -->
+          <div class="admin-section" id="admin-operations-section">
+            <div class="admin-section-header"><h2>Operations</h2></div>
+            <div class="admin-operations-grid">
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
+                <button
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                  id="divergence-fetch-daily-stop-btn"
+                  aria-label="Stop Fetch Daily"
+                  disabled
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+                <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
+                <button
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                  id="divergence-fetch-weekly-stop-btn"
+                  aria-label="Stop Fetch Weekly"
+                  disabled
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+                <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
+                <button
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                  id="divergence-vdf-scan-stop-btn"
+                  aria-label="Stop VDF Scan"
+                  disabled
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+                <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
+              </div>
+              <div class="admin-operation-row">
+                <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
+                <button
+                  class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                  id="breadth-recompute-stop-btn"
+                  aria-label="Stop Breadth Bootstrap"
+                  disabled
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                    <rect width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+                <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
 
       <!-- LIVE FEED VIEW -->
