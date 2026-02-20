@@ -876,6 +876,8 @@ with cross-sync to admin page preferences and vice versa.
 - **Keyed column state** (`src/divergenceFeedRender.ts`): `col['daily']` / `col['weekly']` record
   replaces 12 parallel module-level variables. `setDivergenceSort(column, mode)` replaces duplicate
   daily/weekly sort functions. Visible counts exported as getter functions.
+  Favorite sort is a toggle: first click enters favorite filter (saves previous sort state),
+  second click restores the prior sort mode + direction. Same pattern in `src/ticker.ts`.
 - **Status summarizers** (`src/divergenceScanStatusFormat.ts`): `summarizeFetchDataStatus()` is a
   shared private function parameterized on `fetchDailyData` vs `fetchWeeklyData`. Eliminates
   duplicate formatting logic.

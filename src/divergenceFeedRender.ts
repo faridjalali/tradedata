@@ -48,6 +48,9 @@ interface ColumnState {
   customTo: string;
   sortMode: SortMode;
   sortDirection: 'asc' | 'desc';
+  /** Sort state to restore when favorite filter is toggled off. */
+  preFavSortMode: SortMode | null;
+  preFavSortDirection: 'asc' | 'desc';
   visibleCount: number;
 }
 
@@ -57,6 +60,8 @@ const COLUMN_DEFAULTS: ColumnState = {
   customTo: '',
   sortMode: 'score',
   sortDirection: 'desc',
+  preFavSortMode: null,
+  preFavSortDirection: 'desc',
   visibleCount: ALERTS_PAGE_SIZE,
 };
 
@@ -132,11 +137,23 @@ export function initializeDivergenceSortDefaults(): void {
 
 function setDivergenceSort(column: ColumnKey, mode: SortMode): void {
   const s = col[column];
-  if (mode === s.sortMode && mode !== 'favorite') {
+  if (mode === 'favorite' && s.sortMode === 'favorite') {
+    // Toggle off: restore previous sort state
+    s.sortMode = s.preFavSortMode ?? 'score';
+    s.sortDirection = s.preFavSortDirection;
+    s.preFavSortMode = null;
+  } else if (mode === 'favorite') {
+    // Entering favorite filter: save current state
+    s.preFavSortMode = s.sortMode;
+    s.preFavSortDirection = s.sortDirection;
+    s.sortMode = 'favorite';
+    s.sortDirection = 'desc';
+  } else if (mode === s.sortMode) {
     s.sortDirection = s.sortDirection === 'desc' ? 'asc' : 'desc';
   } else {
     s.sortMode = mode;
     s.sortDirection = 'desc';
+    s.preFavSortMode = null;
   }
   s.visibleCount = ALERTS_PAGE_SIZE;
   const uiSelector = column === 'daily' ? '.divergence-daily-sort' : '.divergence-weekly-sort';

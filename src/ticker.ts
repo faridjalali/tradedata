@@ -11,17 +11,28 @@ let tickerDailySortMode: SortMode = 'score';
 let tickerWeeklySortMode: SortMode = 'score';
 let tickerDailySortDirection: 'asc' | 'desc' = 'desc';
 let tickerWeeklySortDirection: 'asc' | 'desc' = 'desc';
+let tickerDailyPreFavSort: { mode: SortMode; direction: 'asc' | 'desc' } | null = null;
+let tickerWeeklyPreFavSort: { mode: SortMode; direction: 'asc' | 'desc' } | null = null;
 
 interface RenderTickerViewOptions {
   refreshCharts?: boolean;
 }
 
 export function setTickerDailySort(mode: SortMode): void {
-  if (mode === tickerDailySortMode && mode !== 'favorite') {
+  if (mode === 'favorite' && tickerDailySortMode === 'favorite') {
+    tickerDailySortMode = tickerDailyPreFavSort?.mode ?? 'score';
+    tickerDailySortDirection = tickerDailyPreFavSort?.direction ?? 'desc';
+    tickerDailyPreFavSort = null;
+  } else if (mode === 'favorite') {
+    tickerDailyPreFavSort = { mode: tickerDailySortMode, direction: tickerDailySortDirection };
+    tickerDailySortMode = 'favorite';
+    tickerDailySortDirection = 'desc';
+  } else if (mode === tickerDailySortMode) {
     tickerDailySortDirection = tickerDailySortDirection === 'desc' ? 'asc' : 'desc';
   } else {
     tickerDailySortMode = mode;
     tickerDailySortDirection = 'desc';
+    tickerDailyPreFavSort = null;
   }
   updateSortButtonUi('.ticker-daily-sort', tickerDailySortMode, tickerDailySortDirection);
   const tickerContainer = document.getElementById('ticker-view');
@@ -31,11 +42,20 @@ export function setTickerDailySort(mode: SortMode): void {
 }
 
 export function setTickerWeeklySort(mode: SortMode): void {
-  if (mode === tickerWeeklySortMode && mode !== 'favorite') {
+  if (mode === 'favorite' && tickerWeeklySortMode === 'favorite') {
+    tickerWeeklySortMode = tickerWeeklyPreFavSort?.mode ?? 'score';
+    tickerWeeklySortDirection = tickerWeeklyPreFavSort?.direction ?? 'desc';
+    tickerWeeklyPreFavSort = null;
+  } else if (mode === 'favorite') {
+    tickerWeeklyPreFavSort = { mode: tickerWeeklySortMode, direction: tickerWeeklySortDirection };
+    tickerWeeklySortMode = 'favorite';
+    tickerWeeklySortDirection = 'desc';
+  } else if (mode === tickerWeeklySortMode) {
     tickerWeeklySortDirection = tickerWeeklySortDirection === 'desc' ? 'asc' : 'desc';
   } else {
     tickerWeeklySortMode = mode;
     tickerWeeklySortDirection = 'desc';
+    tickerWeeklyPreFavSort = null;
   }
   updateSortButtonUi('.ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
   const tickerContainer = document.getElementById('ticker-view');
