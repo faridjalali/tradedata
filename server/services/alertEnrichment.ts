@@ -1,6 +1,5 @@
 import { db } from '../db.js';
 import { getStoredDivergenceSummariesForTickers, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
-import { currentEtDateString } from '../lib/dateUtils.js';
 
 interface VdfEnrichment {
   score: number;
@@ -34,17 +33,18 @@ export async function enrichRowsWithDivergenceData(opts: {
 
   const neutralStates = buildNeutralDivergenceStateMap();
 
-  // 2. Fetch VDF results
+  // 2. Fetch VDF results: get the latest detected VDF state for each ticker.
   const vdfDataMap = new Map<string, VdfEnrichment>();
   try {
     if (tickers.length > 0) {
-      const vdfTradeDate = currentEtDateString();
+      // Use DISTINCT ON (ticker) to efficiently grab only the most recent trade_date per ticker.
       const vdfRes = await db
         .selectFrom('vdf_results')
         .select(['ticker', 'best_zone_score', 'proximity_level', 'num_zones', 'bull_flag_confidence'])
-        .where('trade_date', '=', vdfTradeDate)
+        .distinctOn(['ticker'])
         .where('is_detected', '=', true)
         .where('ticker', 'in', tickers)
+        .orderBy(['ticker', 'trade_date desc' as any])
         .execute();
 
       for (const row of vdfRes) {
@@ -56,8 +56,9 @@ export async function enrichRowsWithDivergenceData(opts: {
         });
       }
     }
-  } catch {
-    /* VDF enrichment is non-critical */
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to enrich with VDF data: ${message}`);
   }
 
   // 3. Map enriched rows

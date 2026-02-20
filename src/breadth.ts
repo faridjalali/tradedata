@@ -1,5 +1,6 @@
 import { getAppTimeZone } from './timezone';
 import { getThemeColors } from './theme';
+import { breadthStore } from './store/breadthStore';
 
 /**
  * Minimal interface for Chart.js instances.
@@ -49,7 +50,13 @@ interface ChartLegendHandle {
   };
 }
 
-import type { BreadthDataPoint, BreadthResponse, BreadthMASnapshot, BreadthMAHistory, BreadthMAResponse } from '../shared/api-types';
+import type {
+  BreadthDataPoint,
+  BreadthResponse,
+  BreadthMASnapshot,
+  BreadthMAHistory,
+  BreadthMAResponse,
+} from '../shared/api-types';
 
 /** Set the active button in a group by matching a data attribute. */
 function setActiveInGroup(containerSelector: string, dataAttr: string, value: string): void {
@@ -63,9 +70,28 @@ function setActiveInGroup(containerSelector: string, dataAttr: string, value: st
 // ---------------------------------------------------------------------------
 
 const BREADTH_INDEXES = [
-  'SPY', 'QQQ', 'DIA', 'MDY', 'IWM',
-  'XLK', 'XLF', 'XLV', 'XLY', 'XLC', 'XLI', 'XLP', 'XLE', 'XLU', 'XLB',
-  'SMH', 'XBI', 'XHB', 'XRT', 'XAR', 'KRE', 'XLRE',
+  'SPY',
+  'QQQ',
+  'DIA',
+  'MDY',
+  'IWM',
+  'XLK',
+  'XLF',
+  'XLV',
+  'XLY',
+  'XLC',
+  'XLI',
+  'XLP',
+  'XLE',
+  'XLU',
+  'XLB',
+  'SMH',
+  'XBI',
+  'XHB',
+  'XRT',
+  'XAR',
+  'KRE',
+  'XLRE',
 ];
 
 /** Populate both MA and Compare index button containers from the shared list. */
@@ -98,7 +124,9 @@ function getHiddenMAs(): Set<string> {
   try {
     const raw = localStorage.getItem(BREADTH_MA_HIDDEN_KEY);
     return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-  } catch { return new Set(); }
+  } catch {
+    return new Set();
+  }
 }
 
 function saveHiddenMAs(hidden: Set<string>): void {
@@ -121,7 +149,10 @@ interface BreadthChartOverrides {
   layoutPadding?: Record<string, number>;
 }
 
-function makeBreadthChartOptions(c: ReturnType<typeof getThemeColors>, ov: BreadthChartOverrides = {}): Record<string, unknown> {
+function makeBreadthChartOptions(
+  c: ReturnType<typeof getThemeColors>,
+  ov: BreadthChartOverrides = {},
+): Record<string, unknown> {
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -151,9 +182,12 @@ function makeBreadthChartOptions(c: ReturnType<typeof getThemeColors>, ov: Bread
             annotation: {
               annotations: {
                 line50: {
-                  type: 'line', yMin: 50, yMax: 50,
+                  type: 'line',
+                  yMin: 50,
+                  yMax: 50,
                   borderColor: c.textMuted || 'rgba(255,255,255,0.2)',
-                  borderWidth: 1, borderDash: [4, 4],
+                  borderWidth: 1,
+                  borderDash: [4, 4],
                 },
               },
             },
@@ -210,33 +244,21 @@ function syncHiddenMAs(chart: ChartInstance): void {
   saveHiddenMAs(hidden);
 }
 
+// Chart.js instances — heavy objects, stay module-level (not in Zustand).
 let breadthChart: ChartInstance | null = null;
-let currentTimeframeDays = 5;
-let currentMetric: 'SVIX' | 'RSP' | 'MAGS' = 'SVIX';
-
-// Breadth MA state
 let breadthMAChart: ChartInstance | null = null;
-let currentMAIndex: string = 'SPY';
+let breadthCompareChart: ChartInstance | null = null;
+let breadthBarsChart: ChartInstance | null = null;
+
+// Cached API response for MA data (not config state, just data cache).
 let breadthMAData: BreadthMAResponse | null = null;
 
-// Comparative Breadth state
-let breadthCompareChart: ChartInstance | null = null;
-let currentCompareIndex: string = 'SPY';
-let currentCompareTfDays: number = 20;
-let breadthCompareModeActive: boolean = false;
-let lockedCompareIndex: string | null = null;
-let currentCompareIndex2: string | null = null;
-
-// ETF Bar Rankings state
-let breadthBarsChart: ChartInstance | null = null;
-let currentBarsMA: string = '21';
-
 export function getCurrentBreadthTimeframe(): number {
-  return currentTimeframeDays;
+  return breadthStore.getState().timeframeDays;
 }
 
 export function getCurrentBreadthMetric(): string {
-  return currentMetric;
+  return breadthStore.getState().metric;
 }
 
 async function fetchBreadthData(ticker: string, days: number): Promise<BreadthResponse> {
@@ -361,7 +383,7 @@ async function loadBreadth(): Promise<void> {
   if (error) error.style.display = 'none';
 
   try {
-    const response = await fetchBreadthData(currentMetric, currentTimeframeDays);
+    const response = await fetchBreadthData(breadthStore.getState().metric, breadthStore.getState().timeframeDays);
 
     if (response.points.length === 0) {
       if (error) {
@@ -371,7 +393,7 @@ async function loadBreadth(): Promise<void> {
       return;
     }
 
-    renderBreadthChart(response.points, currentMetric, response.intraday);
+    renderBreadthChart(response.points, breadthStore.getState().metric, response.intraday);
   } catch (err) {
     console.error('Breadth load error:', err);
 
@@ -383,18 +405,14 @@ async function loadBreadth(): Promise<void> {
 }
 
 export function setBreadthTimeframe(days: number): void {
-  currentTimeframeDays = days;
-
+  breadthStore.getState().setTimeframeDays(days);
   setActiveInGroup('#breadth-tf-btns', 'days', String(days));
-
   loadBreadth();
 }
 
 export function setBreadthMetric(metric: 'SVIX' | 'RSP' | 'MAGS'): void {
-  currentMetric = metric;
-
+  breadthStore.getState().setMetric(metric);
   setActiveInGroup('#breadth-metric-btns', 'metric', metric);
-
   loadBreadth();
 }
 
@@ -409,9 +427,9 @@ async function fetchBreadthMA(days: number): Promise<BreadthMAResponse> {
 }
 
 function gaugeColor(pct: number): string {
-  if (pct < 30) return '#f85149';   // red
-  if (pct < 60) return '#d29922';   // yellow
-  return '#3fb950';                  // green
+  if (pct < 30) return '#f85149'; // red
+  if (pct < 60) return '#d29922'; // yellow
+  return '#3fb950'; // green
 }
 
 function renderBreadthGauges(snapshot: BreadthMASnapshot | undefined): void {
@@ -477,7 +495,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
 
   if (!history || history.length === 0) return;
 
-  const labels = history.map(h => {
+  const labels = history.map((h) => {
     const date = new Date(h.date + 'T00:00:00');
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
@@ -489,7 +507,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
       datasets: [
         {
           label: '21 MA',
-          data: history.map(h => h.ma21),
+          data: history.map((h) => h.ma21),
           borderColor: '#00d4ff',
           borderWidth: 2,
           pointRadius: 0,
@@ -499,7 +517,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         },
         {
           label: '50 MA',
-          data: history.map(h => h.ma50),
+          data: history.map((h) => h.ma50),
           borderColor: '#58a6ff',
           borderWidth: 2,
           pointRadius: 0,
@@ -509,7 +527,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         },
         {
           label: '100 MA',
-          data: history.map(h => h.ma100),
+          data: history.map((h) => h.ma100),
           borderColor: '#bc8cff',
           borderWidth: 2,
           pointRadius: 0,
@@ -519,7 +537,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         },
         {
           label: '200 MA',
-          data: history.map(h => h.ma200),
+          data: history.map((h) => h.ma200),
           borderColor: '#f0883e',
           borderWidth: 2,
           pointRadius: 0,
@@ -548,13 +566,13 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
 
 function renderBreadthMAForIndex(index: string): void {
   if (!breadthMAData) return;
-  const snapshot = breadthMAData.snapshots.find(s => s.index === index);
+  const snapshot = breadthMAData.snapshots.find((s) => s.index === index);
   renderBreadthGauges(snapshot);
   renderBreadthMAChart(breadthMAData.history[index] || []);
 }
 
 export function setBreadthMAIndex(index: string): void {
-  currentMAIndex = index;
+  breadthStore.getState().setMAIndex(index);
   setActiveInGroup('#breadth-ma-index-btns', 'index', index);
   renderBreadthMAForIndex(index);
 }
@@ -565,7 +583,7 @@ async function loadBreadthMA(): Promise<void> {
 
   try {
     breadthMAData = await fetchBreadthMA(BREADTH_MA_HISTORY_DAYS);
-    renderBreadthMAForIndex(currentMAIndex);
+    renderBreadthMAForIndex(breadthStore.getState().maIndex);
     renderBreadthCompareChart();
     renderBreadthBarsChart();
   } catch (err) {
@@ -598,10 +616,12 @@ function renderBreadthCompareChart(): void {
     breadthCompareChart = null;
   }
 
-  const history = (breadthMAData.history[currentCompareIndex] || []).slice(-currentCompareTfDays);
+  const history = (breadthMAData.history[breadthStore.getState().compareIndex] || []).slice(
+    -breadthStore.getState().compareTfDays,
+  );
   if (history.length === 0) return;
 
-  const labels = history.map(h => {
+  const labels = history.map((h) => {
     const date = new Date(h.date + 'T00:00:00');
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
@@ -609,22 +629,22 @@ function renderBreadthCompareChart(): void {
   const ptRadius = history.length > 20 ? 0 : 3;
 
   // Raw value arrays
-  const rawClose   = history.map(h => (h.close != null ? h.close : null));
-  const rawMa21    = history.map(h => h.ma21);
-  const rawMa50    = history.map(h => h.ma50);
-  const rawMa100   = history.map(h => h.ma100);
-  const rawMa200   = history.map(h => (h.ma200 > 0 ? h.ma200 : null));
+  const rawClose = history.map((h) => (h.close != null ? h.close : null));
+  const rawMa21 = history.map((h) => h.ma21);
+  const rawMa50 = history.map((h) => h.ma50);
+  const rawMa100 = history.map((h) => h.ma100);
+  const rawMa200 = history.map((h) => (h.ma200 > 0 ? h.ma200 : null));
 
   // Normalized to 100 at start
-  const normClose  = normalizeToBase100(rawClose);
-  const normMa21   = normalizeToBase100(rawMa21);
-  const normMa50   = normalizeToBase100(rawMa50);
-  const normMa100  = normalizeToBase100(rawMa100);
-  const normMa200  = normalizeToBase100(rawMa200);
+  const normClose = normalizeToBase100(rawClose);
+  const normMa21 = normalizeToBase100(rawMa21);
+  const normMa50 = normalizeToBase100(rawMa50);
+  const normMa100 = normalizeToBase100(rawMa100);
+  const normMa200 = normalizeToBase100(rawMa200);
 
   const datasets = [
     {
-      label: currentCompareIndex,
+      label: breadthStore.getState().compareIndex,
       data: normClose,
       rawValues: rawClose,
       rawSuffix: '',
@@ -713,9 +733,7 @@ function renderBreadthCompareChart(): void {
         const pct = norm - 100;
         const sign = pct >= 0 ? '+' : '';
         const raw = ds.rawValues?.[ctx.dataIndex];
-        const rawStr = raw != null
-          ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})`
-          : '';
+        const rawStr = raw != null ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})` : '';
         return `${ds.label}: ${sign}${pct.toFixed(1)}%${rawStr}`;
       },
       yTickCallback: (value) => `${Number(value).toFixed(0)}`,
@@ -726,14 +744,16 @@ function renderBreadthCompareChart(): void {
 }
 
 export function setBreadthCompareIndex(index: string): void {
-  if (breadthCompareModeActive && lockedCompareIndex) {
+  const st = breadthStore.getState();
+  if (st.compareModeActive && st.lockedCompareIndex) {
     // In compare mode — this click picks the 2nd ticker
-    if (index === lockedCompareIndex) return; // can't compare to self
-    currentCompareIndex2 = index;
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
+    if (index === st.lockedCompareIndex) return; // can't compare to self
+    st.setCompareIndex2(index);
+    const locked = st.lockedCompareIndex;
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
       const btnIndex = (btn as HTMLElement).dataset.index;
-      btn.classList.toggle('active', btnIndex === index || btnIndex === lockedCompareIndex);
-      btn.classList.toggle('locked', btnIndex === lockedCompareIndex);
+      btn.classList.toggle('active', btnIndex === index || btnIndex === locked);
+      btn.classList.toggle('locked', btnIndex === locked);
     });
     const gaugesEl = document.getElementById('breadth-compare-gauges');
     if (gaugesEl) gaugesEl.style.display = '';
@@ -741,41 +761,45 @@ export function setBreadthCompareIndex(index: string): void {
     return;
   }
   // Normal mode — just switch the single ticker
-  currentCompareIndex = index;
+  st.setCompareIndex(index);
   setActiveInGroup('#breadth-compare-index-btns', 'index', index);
   renderBreadthCompareChart();
 }
 
 export function setBreadthCompareTf(days: number): void {
-  currentCompareTfDays = days;
+  breadthStore.getState().setCompareTfDays(days);
   setActiveInGroup('#breadth-compare-tf-btns', 'days', String(days));
-  if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
+  const st = breadthStore.getState();
+  if (st.compareModeActive && st.compareIndex2) renderBreadthCompareDual();
   else renderBreadthCompareChart();
 }
 
 export function toggleBreadthCompareMode(): void {
-  breadthCompareModeActive = !breadthCompareModeActive;
+  const st = breadthStore.getState();
+  const newActive = !st.compareModeActive;
+  st.setCompareModeActive(newActive);
 
-  document.getElementById('breadth-compare-toggle')
-    ?.classList.toggle('active', breadthCompareModeActive);
+  document.getElementById('breadth-compare-toggle')?.classList.toggle('active', newActive);
 
-  if (breadthCompareModeActive) {
+  if (newActive) {
     // Lock the current ticker — user must now pick a 2nd
-    lockedCompareIndex = currentCompareIndex;
-    currentCompareIndex2 = null;
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => {
-      btn.classList.toggle('locked', (btn as HTMLElement).dataset.index === lockedCompareIndex);
+    st.setLockedCompareIndex(st.compareIndex);
+    st.setCompareIndex2(null);
+    const locked = st.compareIndex;
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
+      btn.classList.toggle('locked', (btn as HTMLElement).dataset.index === locked);
     });
     // Don't render dual chart yet — wait for 2nd pick
   } else {
     // Exit compare mode — restore single chart for the locked ticker
-    currentCompareIndex = lockedCompareIndex ?? currentCompareIndex;
-    lockedCompareIndex = null;
-    currentCompareIndex2 = null;
+    const restoreIndex = st.lockedCompareIndex ?? st.compareIndex;
+    st.setCompareIndex(restoreIndex);
+    st.setLockedCompareIndex(null);
+    st.setCompareIndex2(null);
     const gaugesEl = document.getElementById('breadth-compare-gauges');
     if (gaugesEl) gaugesEl.style.display = 'none';
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach(btn => btn.classList.remove('locked'));
-    setActiveInGroup('#breadth-compare-index-btns', 'index', currentCompareIndex);
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => btn.classList.remove('locked'));
+    setActiveInGroup('#breadth-compare-index-btns', 'index', restoreIndex);
     renderBreadthCompareChart();
   }
 }
@@ -795,9 +819,10 @@ function renderBreadthCompareDualSnapshot(
     { key: 'ma200', label: '200d' },
   ];
 
+  const _st = breadthStore.getState();
   for (const [snap, label] of [
-    [snap1, lockedCompareIndex ?? currentCompareIndex],
-    [snap2, currentCompareIndex2 ?? ''],
+    [snap1, _st.lockedCompareIndex ?? _st.compareIndex],
+    [snap2, _st.compareIndex2 ?? ''],
   ] as const) {
     const row = document.createElement('div');
     row.className = 'breadth-compare-snap-row';
@@ -836,18 +861,22 @@ function renderBreadthCompareDualSnapshot(
 
 function renderBreadthCompareDual(): void {
   const canvas = document.getElementById('breadth-compare-chart') as HTMLCanvasElement;
-  if (!canvas || !breadthMAData || !currentCompareIndex2) return;
+  const _cst = breadthStore.getState();
+  if (!canvas || !breadthMAData || !_cst.compareIndex2) return;
   const c = getThemeColors();
-  const idx1 = lockedCompareIndex ?? currentCompareIndex;
-  const idx2 = currentCompareIndex2;
+  const idx1 = _cst.lockedCompareIndex ?? _cst.compareIndex;
+  const idx2 = _cst.compareIndex2;
 
-  if (breadthCompareChart) { breadthCompareChart.destroy(); breadthCompareChart = null; }
+  if (breadthCompareChart) {
+    breadthCompareChart.destroy();
+    breadthCompareChart = null;
+  }
 
-  const h1 = (breadthMAData.history[idx1] || []).slice(-currentCompareTfDays);
-  const h2 = (breadthMAData.history[idx2] || []).slice(-currentCompareTfDays);
+  const h1 = (breadthMAData.history[idx1] || []).slice(-_cst.compareTfDays);
+  const h2 = (breadthMAData.history[idx2] || []).slice(-_cst.compareTfDays);
   if (h1.length === 0 && h2.length === 0) return;
 
-  const labels = h1.map(h =>
+  const labels = h1.map((h) =>
     new Date(h.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   );
   const ptRadius = h1.length > 20 ? 0 : 3;
@@ -856,12 +885,11 @@ function renderBreadthCompareDual(): void {
   const MA_KEYS: Array<keyof BreadthMAHistory> = ['ma21', 'ma50', 'ma100', 'ma200'];
   const MA_LABELS = ['21d', '50d', '100d', '200d'];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const datasets: any[] = []; // loaded from CDN Chart.js — no full type import
   MA_KEYS.forEach((key, i) => {
     datasets.push({
       label: `${idx1} ${MA_LABELS[i]}`,
-      data: h1.map(h => h[key]),
+      data: h1.map((h) => h[key]),
       borderColor: MA_COLORS[i],
       borderWidth: 2,
       borderDash: [],
@@ -872,7 +900,7 @@ function renderBreadthCompareDual(): void {
     });
     datasets.push({
       label: `${idx2} ${MA_LABELS[i]}`,
-      data: h2.map(h => h[key]),
+      data: h2.map((h) => h[key]),
       borderColor: MA_COLORS[i],
       borderWidth: 2,
       borderDash: [5, 4],
@@ -883,11 +911,10 @@ function renderBreadthCompareDual(): void {
     });
   });
 
-  const snap1 = breadthMAData.snapshots.find(s => s.index === idx1);
-  const snap2 = breadthMAData.snapshots.find(s => s.index === idx2);
+  const snap1 = breadthMAData.snapshots.find((s) => s.index === idx1);
+  const snap2 = breadthMAData.snapshots.find((s) => s.index === idx2);
   renderBreadthCompareDualSnapshot(snap1, snap2);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const Chart_: any = Chart; // loaded from CDN — need raw constructor for plugin array
 
   breadthCompareChart = new Chart_(canvas, {
@@ -911,35 +938,38 @@ function renderBreadthCompareDual(): void {
       yTickCallback: (value) => `${value}%`,
       yStepSize: 10,
     }),
-    plugins: [{
-      id: 'dualLineLabels',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      afterDatasetsDraw(chart: any) { // CDN chart instance with canvas ctx
-        const ctx = chart.ctx as CanvasRenderingContext2D;
-        ctx.font = 'bold 10px sans-serif';
-        ctx.textBaseline = 'middle';
-        // Draw ticker label at the right end of each visible dataset's last point.
-        // Datasets come in pairs: [idx1 21d, idx2 21d, idx1 50d, idx2 50d, ...].
-        // Only label the first visible dataset per ticker to avoid clutter.
-        const labeled = new Set<string>();
-        for (let i = 0; i < chart.data.datasets.length; i++) {
-          const meta = chart.getDatasetMeta(i);
-          if (meta.hidden) continue;
-          const ds = chart.data.datasets[i];
-          const label = (ds.label as string) ?? '';
-          const ticker = label.split(' ')[0]; // "SPY 21d" → "SPY"
-          if (labeled.has(ticker)) continue;
-          const pts = meta.data;
-          if (pts.length === 0) continue;
-          const last = pts[pts.length - 1];
-          if (last.x == null || last.y == null) continue;
-          ctx.fillStyle = ds.borderColor as string;
-          ctx.textAlign = 'left';
-          ctx.fillText(ticker, (last.x as number) + 6, last.y as number);
-          labeled.add(ticker);
-        }
+    plugins: [
+      {
+        id: 'dualLineLabels',
+
+        afterDatasetsDraw(chart: any) {
+          // CDN chart instance with canvas ctx
+          const ctx = chart.ctx as CanvasRenderingContext2D;
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textBaseline = 'middle';
+          // Draw ticker label at the right end of each visible dataset's last point.
+          // Datasets come in pairs: [idx1 21d, idx2 21d, idx1 50d, idx2 50d, ...].
+          // Only label the first visible dataset per ticker to avoid clutter.
+          const labeled = new Set<string>();
+          for (let i = 0; i < chart.data.datasets.length; i++) {
+            const meta = chart.getDatasetMeta(i);
+            if (meta.hidden) continue;
+            const ds = chart.data.datasets[i];
+            const label = (ds.label as string) ?? '';
+            const ticker = label.split(' ')[0]; // "SPY 21d" → "SPY"
+            if (labeled.has(ticker)) continue;
+            const pts = meta.data;
+            if (pts.length === 0) continue;
+            const last = pts[pts.length - 1];
+            if (last.x == null || last.y == null) continue;
+            ctx.fillStyle = ds.borderColor as string;
+            ctx.textAlign = 'left';
+            ctx.fillText(ticker, (last.x as number) + 6, last.y as number);
+            labeled.add(ticker);
+          }
+        },
       },
-    }],
+    ],
   }) as ChartInstance;
 
   applyHiddenMAs(breadthCompareChart);
@@ -951,7 +981,7 @@ function renderBreadthCompareDual(): void {
 
 /** Switch which MA window the bar chart ranks by. */
 export function setBreadthBarsMA(ma: string): void {
-  currentBarsMA = ma;
+  breadthStore.getState().setBarsMA(ma);
   renderBreadthBarsChart();
 }
 
@@ -966,7 +996,7 @@ function renderBreadthBarsChart(): void {
     breadthBarsChart = null;
   }
 
-  const maKey = `ma${currentBarsMA}` as keyof BreadthMASnapshot;
+  const maKey = `ma${breadthStore.getState().barsMA}` as keyof BreadthMASnapshot;
   const sorted = [...breadthMAData.snapshots]
     .filter((s) => typeof s[maKey] === 'number')
     .sort((a, b) => (b[maKey] as number) - (a[maKey] as number));
@@ -977,20 +1007,21 @@ function renderBreadthBarsChart(): void {
   const values = sorted.map((s) => s[maKey] as number);
   const colors = values.map((v) => gaugeColor(v));
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const Chart_: any = Chart; // loaded from CDN — need raw constructor for plugin array
 
   breadthBarsChart = new Chart_(canvas, {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        data: values,
-        backgroundColor: colors,
-        borderRadius: 4,
-        barPercentage: 0.75,
-        categoryPercentage: 0.85,
-      }],
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 4,
+          barPercentage: 0.75,
+          categoryPercentage: 0.85,
+        },
+      ],
     },
     options: {
       indexAxis: 'y',
@@ -1001,7 +1032,6 @@ function renderBreadthBarsChart(): void {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             label: (ctx: any) => `${(ctx.parsed.x as number).toFixed(1)}%`, // CDN callback
           },
         },
@@ -1019,23 +1049,26 @@ function renderBreadthBarsChart(): void {
         },
       },
     },
-    plugins: [{
-      id: 'barValueLabels',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      afterDatasetsDraw(chart: any) { // CDN chart instance with canvas ctx
-        const ctx = chart.ctx as CanvasRenderingContext2D;
-        const meta = chart.getDatasetMeta(0);
-        ctx.font = '11px sans-serif';
-        ctx.fillStyle = c.textSecondary;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        meta.data.forEach((bar: any, i: number) => {
-          const val = chart.data.datasets[0].data[i] as number;
-          ctx.fillText(`${val.toFixed(1)}%`, (bar.x as number) + 6, bar.y as number);
-        });
+    plugins: [
+      {
+        id: 'barValueLabels',
+
+        afterDatasetsDraw(chart: any) {
+          // CDN chart instance with canvas ctx
+          const ctx = chart.ctx as CanvasRenderingContext2D;
+          const meta = chart.getDatasetMeta(0);
+          ctx.font = '11px sans-serif';
+          ctx.fillStyle = c.textSecondary;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+
+          meta.data.forEach((bar: any, i: number) => {
+            const val = chart.data.datasets[0].data[i] as number;
+            ctx.fillText(`${val.toFixed(1)}%`, (bar.x as number) + 6, bar.y as number);
+          });
+        },
       },
-    }],
+    ],
   }) as ChartInstance;
 }
 
@@ -1089,10 +1122,11 @@ export function initBreadthThemeListener(): void {
       loadBreadth();
     }
     if (breadthMAData) {
-      renderBreadthMAForIndex(currentMAIndex);
+      renderBreadthMAForIndex(breadthStore.getState().maIndex);
     }
     if (breadthCompareChart) {
-      if (breadthCompareModeActive && currentCompareIndex2) renderBreadthCompareDual();
+      const _tst = breadthStore.getState();
+      if (_tst.compareModeActive && _tst.compareIndex2) renderBreadthCompareDual();
       else renderBreadthCompareChart();
     }
     if (breadthBarsChart) {
