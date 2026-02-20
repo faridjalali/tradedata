@@ -191,15 +191,44 @@ await app.register(
   CORS_ORIGIN ? { origin: CORS_ORIGIN.split(',').map((o: string) => o.trim()), credentials: true } : { origin: false },
 );
 
+import crypto from 'crypto';
+
+// Fastify reply decorator for nonces
+declare module 'fastify' {
+  interface FastifyReply {
+    cspNonce: { script: string; style: string };
+  }
+}
+
+app.addHook('onRequest', async (request, reply) => {
+  const nonce = crypto.randomBytes(16).toString('base64');
+  reply.cspNonce = { script: nonce, style: nonce };
+});
+
 await app.register(fastifyHelmet, {
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://unpkg.com'],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: [
+        "'self'",
+        (req: any, res: any) => {
+          const nonce = res.cspNonce?.script;
+          return nonce ? `'nonce-${nonce}'` : '';
+        },
+        'https://cdn.jsdelivr.net',
+        'https://unpkg.com',
+      ].filter(Boolean) as string[],
+      styleSrc: [
+        "'self'",
+        (req: any, res: any) => {
+          const nonce = res.cspNonce?.style;
+          return nonce ? `'nonce-${nonce}'` : '';
+        },
+        'https://fonts.googleapis.com',
+      ].filter(Boolean) as string[],
       imgSrc: ["'self'", 'data:'],
       connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       frameAncestors: ["'self'"],
     },
@@ -207,6 +236,19 @@ await app.register(fastifyHelmet, {
   hsts: { maxAge: 31536000, includeSubDomains: true },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   frameguard: { action: 'sameorigin' },
+});
+
+// Inject nonce into the statically served index.html
+app.addHook('onSend', async (request, reply, payload) => {
+  // fastify-static serves files as streams
+  if (reply.getHeader('content-type')?.toString().includes('text/html') && typeof payload === 'string') {
+    const nonce = reply.cspNonce?.script;
+    if (!nonce) return payload;
+    let modified = payload.replace(/<script /g, `<script nonce="${nonce}" `);
+    modified = modified.replace(/<style /g, `<style nonce="${nonce}" `);
+    return modified;
+  }
+  return payload;
 });
 
 await app.register(fastifyRateLimit, {

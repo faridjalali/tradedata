@@ -7,6 +7,7 @@ import type { RouterOnChangeArgs } from 'preact-router';
 import { AdminView } from './components/AdminView';
 import { BreadthView } from './components/BreadthView';
 import { TickerView } from './components/TickerView';
+import { DivergenceView } from './components/DivergenceView';
 import { hashHistory } from './hashHistory';
 import { parseAppRoutePath, tickerPath, viewPath } from './routes';
 import type { ViewName, AppRoute } from './routes';
@@ -70,6 +71,7 @@ function applyTickerRoute(ticker: string): void {
     appStore.getState().setAdminMounted(false);
   }
   unmountBreadthView();
+  unmountDivergenceView();
 
   document.getElementById('view-admin')?.classList.add('hidden');
   document.getElementById('view-breadth')?.classList.add('hidden');
@@ -118,6 +120,9 @@ function applyViewRoute(view: ViewName): void {
   if (view !== 'breadth') {
     unmountBreadthView();
   }
+  if (view !== 'divergence') {
+    unmountDivergenceView();
+  }
 
   closeAllHeaderDropdowns();
 
@@ -146,7 +151,8 @@ function applyViewRoute(view: ViewName): void {
   }
 
   document.getElementById('view-divergence')?.classList.remove('hidden');
-  fetchDivergenceSignals(true).then(renderDivergenceOverview);
+  mountDivergenceView();
+  fetchDivergenceSignals(true);
   syncDivergenceScanUiState();
   if (pendingDivergenceScrollRestore) {
     appStore.getState().restoreDivergenceScroll();
@@ -240,6 +246,20 @@ function unmountBreadthView(): void {
   const breadthRoot = document.getElementById('breadth-root');
   if (breadthRoot) render(null, breadthRoot);
   appStore.getState().setBreadthMounted(false);
+}
+
+function mountDivergenceView(): void {
+  const root = document.getElementById('divergence-root');
+  if (!root || appStore.getState().divergenceMounted) return;
+  render(h(DivergenceView, null), root);
+  appStore.getState().setDivergenceMounted(true);
+}
+
+function unmountDivergenceView(): void {
+  if (!appStore.getState().divergenceMounted) return;
+  const root = document.getElementById('divergence-root');
+  if (root) render(null, root);
+  appStore.getState().setDivergenceMounted(false);
 }
 
 function mountTickerView(): void {
