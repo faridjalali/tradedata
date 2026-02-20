@@ -6,7 +6,7 @@
 import { createChart } from 'lightweight-charts';
 import type { IChartApi, CandlestickData } from 'lightweight-charts';
 import { getThemeColors } from './theme';
-import { detectBullFlag } from '../shared/bullFlagDetector';
+
 
 
 // ---------------------------------------------------------------------------
@@ -22,9 +22,6 @@ export type OHLC = { time: string | number; open: number; high: number; low: num
 const MINI_CHART_CACHE_MAX = 400;
 /** Mini-chart bars are daily OHLCV — 30 min TTL is generous but ensures freshness during active sessions. */
 const MINI_CHART_CACHE_TTL_MS = 30 * 60 * 1000;
-
-/** Green flag/pennant icon SVG (24x24). Shown when a bull flag/pennant is detected. */
-const BULL_FLAG_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="2" x2="4" y2="22"/><path d="M4 2 L20 7 L4 12 Z" fill="#26a69a" fill-opacity="0.35" stroke="#26a69a"/></svg>`;
 
 // ---------------------------------------------------------------------------
 // Module-level state — hover overlay
@@ -280,16 +277,6 @@ export async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, is
   });
   candleSeries.setData(bars as unknown as CandlestickData[]);
   chart.timeScale().fitContent();
-
-  // Bull flag / pennant detection — show icon if pattern detected
-  const flagDetection = detectBullFlag(bars);
-  if (flagDetection) {
-    const icon = document.createElement('div');
-    icon.className = 'mini-chart-bull-flag-icon';
-    icon.innerHTML = BULL_FLAG_ICON_SVG;
-    icon.title = `Bull flag/pennant detected (confidence: ${flagDetection.confidence}%)`;
-    overlay.appendChild(icon);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +306,7 @@ export function setMiniChartHoverTimer(timer: number | null): void {
 // Inline mini-charts — mobile
 // ---------------------------------------------------------------------------
 
-function isMinichartEnabled(): boolean {
+export function isMinichartEnabled(): boolean {
   return localStorage.getItem('minichart_mobile') === 'on';
 }
 

@@ -21,6 +21,7 @@ import {
   getMiniChartHoverTimer,
   setMiniChartHoverTimer,
   renderInlineMinicharts,
+  isMinichartEnabled,
 } from './divergenceMinichart';
 import {
   setDivergenceDailySort,
@@ -179,7 +180,9 @@ export function setupDivergenceFeedDelegation(): void {
   view.addEventListener(
     'mouseenter',
     (e: Event) => {
-      // On mobile, never show hover overlay — inline minicharts replace it
+      // When inline minicharts are enabled, skip hover overlay
+      if (isMinichartEnabled()) return;
+      // On mobile, never show hover overlay
       if (isMobileTouch) return;
       // Suppress synthetic mouse events generated after touch interactions
       if (Date.now() - lastTouchEndMs < 1000) return;
@@ -243,6 +246,7 @@ export function setupDivergenceFeedDelegation(): void {
     view.addEventListener(
       'touchstart',
       (e: Event) => {
+        if (isMinichartEnabled()) return;
         const te = e as TouchEvent;
         if (te.touches.length !== 1) return;
         const target = te.target as HTMLElement;
