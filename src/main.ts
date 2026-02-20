@@ -4,6 +4,7 @@ import { setChartNavigationCallbacks } from './chartNavigation';
 import { render, h } from 'preact';
 import { AdminView } from './components/AdminView';
 import { BreadthView } from './components/BreadthView';
+import { TickerView } from './components/TickerView';
 import { pushHash, onRouteChange, installHashListener, getInitialRoute } from './router';
 import type { ViewName, Route } from './router';
 import { appStore } from './store/appStore';
@@ -143,6 +144,12 @@ function unmountBreadthView(): void {
   const breadthRoot = document.getElementById('breadth-root');
   if (breadthRoot) render(null, breadthRoot);
   appStore.getState().setBreadthMounted(false);
+}
+
+function mountTickerView(): void {
+  const tickerRoot = document.getElementById('ticker-root');
+  if (!tickerRoot) return;
+  render(h(TickerView, null), tickerRoot);
 }
 
 function switchView(view: ViewName) {
@@ -520,6 +527,10 @@ function closeAllColumnCustomPanels(): void {
 function bootstrapApplication(): void {
   if (appStore.getState().appInitialized) return;
   appStore.getState().setAppInitialized();
+
+  // Keep ticker/chart DOM preact-managed while legacy chart logic still binds
+  // to existing IDs/classes.
+  mountTickerView();
 
   // Prevent long-press text selection / callout on touch devices globally
   if (isMobileTouch) {
