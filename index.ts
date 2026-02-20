@@ -244,8 +244,8 @@ app.addHook('onSend', async (request, reply, payload) => {
   if (reply.getHeader('content-type')?.toString().includes('text/html') && typeof payload === 'string') {
     const nonce = reply.cspNonce?.script;
     if (!nonce) return payload;
-    let modified = payload.replace(/<script /g, `<script nonce="${nonce}" `);
-    modified = modified.replace(/<style /g, `<style nonce="${nonce}" `);
+    let modified = payload.replace(/<script(?=\s|>)/gi, `<script nonce="${nonce}"`);
+    modified = modified.replace(/<style(?=\s|>)/gi, `<style nonce="${nonce}"`);
     return modified;
   }
   return payload;
