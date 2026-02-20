@@ -1,4 +1,3 @@
-import { getAlerts } from './state';
 import { getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
@@ -6,6 +5,7 @@ import { SortMode } from './types';
 import { createAlertSortFn, updateSortButtonUi } from './utils';
 import { renderCustomChart } from './chart';
 import { getColumnFeedMode, filterToLatestNDates, ColumnFeedMode } from './divergenceFeed';
+import { appStore } from './store/appStore';
 
 let tickerDailySortMode: SortMode = 'score';
 let tickerWeeklySortMode: SortMode = 'score';
@@ -35,9 +35,7 @@ export function setTickerDailySort(mode: SortMode): void {
     tickerDailyPreFavSort = null;
   }
   updateSortButtonUi('.ticker-daily-sort', tickerDailySortMode, tickerDailySortDirection);
-  const tickerContainer = document.getElementById('ticker-view');
-  if (!tickerContainer) return;
-  const currentTicker = tickerContainer.dataset.ticker;
+  const currentTicker = appStore.getState().selectedTicker;
   if (currentTicker) renderTickerView(currentTicker, { refreshCharts: false });
 }
 
@@ -58,15 +56,13 @@ export function setTickerWeeklySort(mode: SortMode): void {
     tickerWeeklyPreFavSort = null;
   }
   updateSortButtonUi('.ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
-  const tickerContainer = document.getElementById('ticker-view');
-  if (!tickerContainer) return;
-  const currentTicker = tickerContainer.dataset.ticker;
+  const currentTicker = appStore.getState().selectedTicker;
   if (currentTicker) renderTickerView(currentTicker, { refreshCharts: false });
 }
 
 export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
   const refreshCharts = options.refreshCharts !== false;
-  const allAlerts = [...getAlerts(), ...getDivergenceSignals()];
+  const allAlerts = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allAlerts);
   const alerts = allAlerts.filter((a) => a.ticker === ticker);
 

@@ -2,11 +2,14 @@ import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from './tic
 import { initChartControls, cancelChartLoading, isMobileTouch } from './chart';
 import { setChartNavigationCallbacks } from './chartNavigation';
 import { render, h } from 'preact';
+import Router, { Route as RouterRoute } from 'preact-router';
+import type { RouterOnChangeArgs } from 'preact-router';
 import { AdminView } from './components/AdminView';
 import { BreadthView } from './components/BreadthView';
 import { TickerView } from './components/TickerView';
-import { pushHash, onRouteChange, installHashListener, getInitialRoute } from './router';
-import type { ViewName, Route } from './router';
+import { hashHistory } from './hashHistory';
+import { parseAppRoutePath, tickerPath, viewPath } from './routes';
+import type { ViewName, AppRoute } from './routes';
 import { appStore } from './store/appStore';
 import type { BreadthMetric } from './store/breadthStore';
 
@@ -32,24 +35,132 @@ import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOpti
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
 // ---------------------------------------------------------------------------
-// Route handler — called by the router on hashchange
+// Route handling
 // ---------------------------------------------------------------------------
 
-function handleRoute(route: Route): void {
+let pendingDivergenceScrollRestore = false;
+
+function navigateToPath(path: string): void {
+  const normalizedPath = String(path || '').trim();
+  if (!normalizedPath) return;
+  const currentPath = hashHistory.location.pathname;
+  if (currentPath === normalizedPath) {
+    handleRoute(parseAppRoutePath(normalizedPath));
+    return;
+  }
+  hashHistory.push(normalizedPath);
+}
+
+function applyTickerRoute(ticker: string): void {
+  const normalizedTicker = String(ticker || '')
+    .trim()
+    .toUpperCase();
+  if (!normalizedTicker) return;
+
+  const previousView = appStore.getState().currentView;
+  const previousTicker = appStore.getState().selectedTicker;
+  appStore.getState().setCurrentView('divergence');
+  appStore.getState().setSelectedTicker(normalizedTicker);
+  setActiveNavTab('divergence');
+  closeAllHeaderDropdowns();
+
+  if (appStore.getState().adminMounted) {
+    const adminRoot = document.getElementById('admin-root');
+    if (adminRoot) render(null, adminRoot);
+    appStore.getState().setAdminMounted(false);
+  }
+  unmountBreadthView();
+
+  document.getElementById('view-admin')?.classList.add('hidden');
+  document.getElementById('view-breadth')?.classList.add('hidden');
+  document.getElementById('view-divergence')?.classList.add('hidden');
+
+  const tickerView = document.getElementById('ticker-view');
+  if (!tickerView) return;
+
+  cancelChartLoading();
+  document.getElementById('dashboard-view')?.classList.add('hidden');
+  tickerView.classList.remove('hidden');
+
+  if (previousView !== 'divergence') {
+    fetchDivergenceSignals(true)
+      .then(() => {
+        if (appStore.getState().selectedTicker === normalizedTicker) {
+          renderTickerView(normalizedTicker, { refreshCharts: false });
+        }
+      })
+      .catch(() => {});
+    syncDivergenceScanUiState().catch(() => {});
+  }
+
+  if (previousTicker === normalizedTicker) {
+    renderTickerView(normalizedTicker);
+  }
+  window.scrollTo(0, 0);
+}
+
+function applyViewRoute(view: ViewName): void {
+  appStore.getState().setCurrentView(view);
+  appStore.getState().setSelectedTicker(null);
+  setActiveNavTab(view);
+
+  document.getElementById('view-admin')?.classList.add('hidden');
+  document.getElementById('view-divergence')?.classList.add('hidden');
+  document.getElementById('view-breadth')?.classList.add('hidden');
+  document.getElementById('ticker-view')?.classList.add('hidden');
+  cancelChartLoading();
+
+  if (appStore.getState().adminMounted && view !== 'admin') {
+    const adminRoot = document.getElementById('admin-root');
+    if (adminRoot) render(null, adminRoot);
+    appStore.getState().setAdminMounted(false);
+  }
+  if (view !== 'breadth') {
+    unmountBreadthView();
+  }
+
+  closeAllHeaderDropdowns();
+
+  if (view === 'admin') {
+    document.getElementById('view-admin')?.classList.remove('hidden');
+    const adminRoot = document.getElementById('admin-root');
+    if (adminRoot && !appStore.getState().adminMounted) {
+      render(h(AdminView, null), adminRoot);
+      appStore.getState().setAdminMounted(true);
+    }
+    pendingDivergenceScrollRestore = false;
+    return;
+  }
+
+  if (view === 'breadth') {
+    document.getElementById('view-breadth')?.classList.remove('hidden');
+    mountBreadthView();
+    loadBreadth()
+      .then((m) => {
+        m.initBreadth();
+        m.initBreadthThemeListener();
+      })
+      .catch(() => {});
+    pendingDivergenceScrollRestore = false;
+    return;
+  }
+
+  document.getElementById('view-divergence')?.classList.remove('hidden');
+  fetchDivergenceSignals(true).then(renderDivergenceOverview);
+  syncDivergenceScanUiState();
+  if (pendingDivergenceScrollRestore) {
+    appStore.getState().restoreDivergenceScroll();
+    pendingDivergenceScrollRestore = false;
+  }
+}
+
+function handleRoute(route: AppRoute): void {
   if (!appStore.getState().appInitialized) return;
   if (route.kind === 'ticker') {
-    window.showTickerView(route.ticker);
-  } else {
-    // If we're in a ticker sub-view, close it first
-    const tickerView = document.getElementById('ticker-view');
-    if (tickerView && !tickerView.classList.contains('hidden')) {
-      cancelChartLoading();
-      delete tickerView.dataset.ticker;
-      tickerView.classList.add('hidden');
-      document.getElementById('view-divergence')?.classList.remove('hidden');
-    }
-    switchView(route.view);
+    applyTickerRoute(route.ticker);
+    return;
   }
+  applyViewRoute(route.view);
 }
 
 // Expose globals for HTML onclick attributes
@@ -71,35 +182,20 @@ window.showTickerView = function (
   sourceView: 'divergence' = 'divergence',
   listContext: TickerListContext = null,
 ) {
+  const normalizedTicker = String(ticker || '')
+    .trim()
+    .toUpperCase();
+  if (!normalizedTicker) return;
+
   appStore.getState().setTickerOriginView(sourceView);
   appStore.getState().setTickerListContext(listContext);
   appStore.getState().saveDivergenceScroll();
-
-  if (appStore.getState().currentView !== 'divergence') {
-    switchView('divergence');
-  }
-  setActiveNavTab('divergence');
-
-  const tickerView = document.getElementById('ticker-view');
-  if (tickerView) {
-    cancelChartLoading();
-    tickerView.dataset.ticker = ticker;
-    document.getElementById('dashboard-view')?.classList.add('hidden');
-    document.getElementById('view-divergence')?.classList.add('hidden');
-    tickerView.classList.remove('hidden');
-    pushHash(`/ticker/${ticker}`);
-    renderTickerView(ticker);
-    window.scrollTo(0, 0);
-  }
+  navigateToPath(tickerPath(normalizedTicker));
 };
 
 window.showOverview = function () {
-  cancelChartLoading();
-  const tickerView = document.getElementById('ticker-view');
-  if (tickerView) delete tickerView.dataset.ticker;
-
-  switchView('divergence'); // pushes #/divergence
-  appStore.getState().restoreDivergenceScroll();
+  pendingDivergenceScrollRestore = true;
+  navigateToPath(viewPath('divergence'));
 };
 
 function mountBreadthView(): void {
@@ -152,55 +248,35 @@ function mountTickerView(): void {
   render(h(TickerView, null), tickerRoot);
 }
 
-function switchView(view: ViewName) {
-  appStore.getState().setCurrentView(view);
-  pushHash(`/${view}`);
-  setActiveNavTab(view);
+function RoutePlaceholder() {
+  return null;
+}
 
-  // Hide all views
-  document.getElementById('view-admin')?.classList.add('hidden');
-  document.getElementById('view-divergence')?.classList.add('hidden');
-  document.getElementById('view-breadth')?.classList.add('hidden');
+function mountAppRouter(): void {
+  const routerRoot = document.getElementById('router-root');
+  if (!routerRoot) return;
+  render(
+    h(
+      Router,
+      {
+        history: hashHistory,
+        onChange: (args: RouterOnChangeArgs) => {
+          handleRoute(parseAppRoutePath(args.url));
+        },
+      },
+      h(RouterRoute, { path: '/divergence', component: RoutePlaceholder }),
+      h(RouterRoute, { path: '/breadth', component: RoutePlaceholder }),
+      h(RouterRoute, { path: '/admin', component: RoutePlaceholder }),
+      h(RouterRoute, { path: '/logs', component: RoutePlaceholder }),
+      h(RouterRoute, { path: '/ticker/:ticker', component: RoutePlaceholder }),
+      h(RouterRoute, { default: true, component: RoutePlaceholder }),
+    ),
+    routerRoot,
+  );
+}
 
-  // Also hide ticker view when switching main views
-  document.getElementById('ticker-view')?.classList.add('hidden');
-  cancelChartLoading();
-
-  // Stop admin polling when leaving admin view
-  if (appStore.getState().adminMounted) {
-    const adminRoot = document.getElementById('admin-root');
-    if (adminRoot) render(null, adminRoot);
-    appStore.getState().setAdminMounted(false);
-  }
-  if (view !== 'breadth') {
-    unmountBreadthView();
-  }
-
-  // Close any open dropdowns
-  closeAllHeaderDropdowns();
-
-  // Show the selected view and controls
-  if (view === 'admin') {
-    document.getElementById('view-admin')?.classList.remove('hidden');
-    const adminRoot = document.getElementById('admin-root');
-    if (adminRoot && !appStore.getState().adminMounted) {
-      render(h(AdminView, null), adminRoot);
-      appStore.getState().setAdminMounted(true);
-    }
-  } else if (view === 'divergence') {
-    document.getElementById('view-divergence')?.classList.remove('hidden');
-    fetchDivergenceSignals(true).then(renderDivergenceOverview);
-    syncDivergenceScanUiState();
-  } else if (view === 'breadth') {
-    document.getElementById('view-breadth')?.classList.remove('hidden');
-    mountBreadthView();
-    loadBreadth()
-      .then((m) => {
-        m.initBreadth();
-        m.initBreadthThemeListener();
-      })
-      .catch(() => {});
-  }
+function switchView(view: ViewName): void {
+  navigateToPath(viewPath(view));
 }
 
 function closeAllHeaderDropdowns(): void {
@@ -548,22 +624,6 @@ function bootstrapApplication(): void {
   // Settings panel fetch buttons — auto-wired by FetchButton registry
   initFetchButtons();
 
-  // Ticker View Daily Sort Buttons
-  document.querySelectorAll('.ticker-daily-sort .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = (btn as HTMLElement).dataset.sort as SortMode;
-      setTickerDailySort(mode);
-    });
-  });
-
-  // Ticker View Weekly Sort Buttons
-  document.querySelectorAll('.ticker-weekly-sort .pane-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const mode = (btn as HTMLElement).dataset.sort as SortMode;
-      setTickerWeeklySort(mode);
-    });
-  });
-
   // Header navigation dropdown & column timeframe dropdowns
   initHeaderNavDropdown();
   initColumnTimeframeButtons();
@@ -580,18 +640,8 @@ function bootstrapApplication(): void {
   initializeDivergenceSortDefaults();
   syncDivergenceScanUiState().catch(() => {});
 
-  // Hash router: restore view from URL hash, or default to divergence
-  const initialRoute = getInitialRoute();
-  if (initialRoute.kind === 'ticker') {
-    switchView('divergence');
-    window.showTickerView(initialRoute.ticker);
-  } else {
-    switchView(initialRoute.view);
-  }
-
-  // Listen for browser back/forward via router module
-  onRouteChange(handleRoute);
-  installHashListener();
+  mountAppRouter();
+  handleRoute(parseAppRoutePath(hashHistory.location.pathname));
 
   // Global timezone change handler (must be registered at bootstrap, not lazily)
   onAppTimeZoneChange(() => {

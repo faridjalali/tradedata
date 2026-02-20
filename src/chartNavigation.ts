@@ -5,6 +5,7 @@
  */
 
 import { paneOrder, normalizePaneOrder } from './chartTypes';
+import { appStore } from './store/appStore';
 
 // ---------------------------------------------------------------------------
 // Callback injection (set by main.ts at init time)
@@ -15,10 +16,7 @@ type TickerListContext = string | null;
 let getTickerListContextCb: () => TickerListContext = () => null;
 let getTickerOriginViewCb: () => string = () => 'divergence';
 
-export function setChartNavigationCallbacks(
-  getContext: () => TickerListContext,
-  getOriginView: () => string,
-): void {
+export function setChartNavigationCallbacks(getContext: () => TickerListContext, getOriginView: () => string): void {
   getTickerListContextCb = getContext;
   getTickerOriginViewCb = getOriginView;
 }
@@ -30,7 +28,7 @@ export function setChartNavigationCallbacks(
 export function navigateChart(direction: -1 | 1): void {
   const context = getTickerListContextCb();
   const origin = getTickerOriginViewCb();
-  const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
+  const currentTicker = appStore.getState().selectedTicker;
 
   if (!context || !currentTicker) return;
 
@@ -63,7 +61,7 @@ export function navigateChart(direction: -1 | 1): void {
 export function getNeighborTicker(direction: -1 | 1): string | null {
   const context = getTickerListContextCb();
   const origin = getTickerOriginViewCb();
-  const currentTicker = document.getElementById('ticker-view')?.dataset.ticker;
+  const currentTicker = appStore.getState().selectedTicker;
 
   if (!context || !currentTicker) return null;
 

@@ -1,4 +1,29 @@
+import { useEffect, useState } from 'preact/hooks';
+import { appStore } from '../store/appStore';
+import { renderTickerView, setTickerDailySort, setTickerWeeklySort } from '../ticker';
+
+function useSelectedTicker(): string | null {
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(appStore.getState().selectedTicker);
+
+  useEffect(() => {
+    return appStore.subscribe((state, prevState) => {
+      if (state.selectedTicker !== prevState.selectedTicker) {
+        setSelectedTicker(state.selectedTicker);
+      }
+    });
+  }, []);
+
+  return selectedTicker;
+}
+
 export function TickerView() {
+  const selectedTicker = useSelectedTicker();
+
+  useEffect(() => {
+    if (!selectedTicker) return;
+    renderTickerView(selectedTicker);
+  }, [selectedTicker]);
+
   return (
     <div id="ticker-view" class="hidden">
       <div class="ticker-history-section">
@@ -31,7 +56,13 @@ export function TickerView() {
                 </div>
               </div>
               <div class="header-sort-controls ticker-daily-sort">
-                <button class="pane-btn" data-sort="favorite" title="Favorites only" type="button">
+                <button
+                  class="pane-btn"
+                  data-sort="favorite"
+                  title="Favorites only"
+                  type="button"
+                  onClick={() => setTickerDailySort('favorite')}
+                >
                   <svg
                     width="13"
                     height="13"
@@ -45,13 +76,25 @@ export function TickerView() {
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                   </svg>
                 </button>
-                <button class="pane-btn" data-sort="time" title="Sort by Date" type="button">
+                <button class="pane-btn" data-sort="time" title="Sort by Date" type="button" onClick={() => setTickerDailySort('time')}>
                   D
                 </button>
-                <button class="pane-btn" data-sort="volume" title="Sort by Volume" type="button">
+                <button
+                  class="pane-btn"
+                  data-sort="volume"
+                  title="Sort by Volume"
+                  type="button"
+                  onClick={() => setTickerDailySort('volume')}
+                >
                   V
                 </button>
-                <button class="pane-btn active" data-sort="score" title="Sort by Score" type="button">
+                <button
+                  class="pane-btn active"
+                  data-sort="score"
+                  title="Sort by Score"
+                  type="button"
+                  onClick={() => setTickerDailySort('score')}
+                >
                   S
                 </button>
               </div>
@@ -89,7 +132,13 @@ export function TickerView() {
                 </div>
               </div>
               <div class="header-sort-controls ticker-weekly-sort">
-                <button class="pane-btn" data-sort="favorite" title="Favorites only" type="button">
+                <button
+                  class="pane-btn"
+                  data-sort="favorite"
+                  title="Favorites only"
+                  type="button"
+                  onClick={() => setTickerWeeklySort('favorite')}
+                >
                   <svg
                     width="13"
                     height="13"
@@ -103,13 +152,25 @@ export function TickerView() {
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                   </svg>
                 </button>
-                <button class="pane-btn" data-sort="time" title="Sort by Date" type="button">
+                <button class="pane-btn" data-sort="time" title="Sort by Date" type="button" onClick={() => setTickerWeeklySort('time')}>
                   D
                 </button>
-                <button class="pane-btn" data-sort="volume" title="Sort by Volume" type="button">
+                <button
+                  class="pane-btn"
+                  data-sort="volume"
+                  title="Sort by Volume"
+                  type="button"
+                  onClick={() => setTickerWeeklySort('volume')}
+                >
                   V
                 </button>
-                <button class="pane-btn active" data-sort="score" title="Sort by Score" type="button">
+                <button
+                  class="pane-btn active"
+                  data-sort="score"
+                  title="Sort by Score"
+                  type="button"
+                  onClick={() => setTickerWeeklySort('score')}
+                >
                   S
                 </button>
               </div>

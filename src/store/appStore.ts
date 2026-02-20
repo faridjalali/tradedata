@@ -6,7 +6,7 @@
  */
 
 import { createStore } from 'zustand/vanilla';
-import type { ViewName } from '../router';
+import type { ViewName } from '../routes';
 import type { TickerListContext } from '../types';
 
 export interface AppState {
@@ -17,6 +17,7 @@ export interface AppState {
   divergenceDashboardScrollY: number;
   tickerOriginView: 'divergence';
   tickerListContext: TickerListContext;
+  selectedTicker: string | null;
 }
 
 export interface AppActions {
@@ -28,6 +29,7 @@ export interface AppActions {
   restoreDivergenceScroll: () => void;
   setTickerOriginView: (view: 'divergence') => void;
   setTickerListContext: (ctx: TickerListContext) => void;
+  setSelectedTicker: (ticker: string | null) => void;
 }
 
 export const appStore = createStore<AppState & AppActions>()((set, get) => ({
@@ -38,6 +40,7 @@ export const appStore = createStore<AppState & AppActions>()((set, get) => ({
   divergenceDashboardScrollY: 0,
   tickerOriginView: 'divergence',
   tickerListContext: null,
+  selectedTicker: null,
 
   setCurrentView: (view) => set({ currentView: view }),
   setAdminMounted: (v) => set({ adminMounted: v }),
@@ -50,4 +53,5 @@ export const appStore = createStore<AppState & AppActions>()((set, get) => ({
   },
   setTickerOriginView: (view) => set({ tickerOriginView: view }),
   setTickerListContext: (ctx) => set({ tickerListContext: ctx }),
+  setSelectedTicker: (ticker) => set({ selectedTicker: ticker }),
 }));
