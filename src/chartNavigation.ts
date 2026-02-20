@@ -21,6 +21,65 @@ export function setChartNavigationCallbacks(getContext: () => TickerListContext,
   getTickerOriginViewCb = getOriginView;
 }
 
+function inferContextFromContainerId(containerId: string): 'daily' | 'weekly' | null {
+  if (containerId.includes('daily')) return 'daily';
+  if (containerId.includes('weekly')) return 'weekly';
+  return null;
+}
+
+function resolveNavigationList(
+  currentTicker: string,
+  context: TickerListContext,
+  origin: string,
+): { cards: HTMLElement[]; currentIndex: number; inferredContext: 'daily' | 'weekly' | null } | null {
+  const preferredIds: string[] = [];
+  const fallbackIds: string[] = [];
+
+  if (origin === 'divergence') {
+    if (context === 'daily')
+      preferredIds.push('divergence-daily-container', 'ticker-daily-container', 'daily-container');
+    if (context === 'weekly')
+      preferredIds.push('divergence-weekly-container', 'ticker-weekly-container', 'weekly-container');
+    fallbackIds.push(
+      'divergence-daily-container',
+      'divergence-weekly-container',
+      'ticker-daily-container',
+      'ticker-weekly-container',
+      'daily-container',
+      'weekly-container',
+    );
+  } else {
+    if (context === 'daily')
+      preferredIds.push('daily-container', 'ticker-daily-container', 'divergence-daily-container');
+    if (context === 'weekly')
+      preferredIds.push('weekly-container', 'ticker-weekly-container', 'divergence-weekly-container');
+    fallbackIds.push(
+      'daily-container',
+      'weekly-container',
+      'ticker-daily-container',
+      'ticker-weekly-container',
+      'divergence-daily-container',
+      'divergence-weekly-container',
+    );
+  }
+
+  const orderedContainerIds = Array.from(new Set([...preferredIds, ...fallbackIds]));
+  for (const containerId of orderedContainerIds) {
+    const container = document.getElementById(containerId);
+    if (!container) continue;
+    const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
+    if (!cards.length) continue;
+    const currentIndex = cards.findIndex((card) => String(card.dataset.ticker || '').toUpperCase() === currentTicker);
+    if (currentIndex === -1) continue;
+    return {
+      cards,
+      currentIndex,
+      inferredContext: inferContextFromContainerId(containerId),
+    };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
@@ -28,32 +87,22 @@ export function setChartNavigationCallbacks(getContext: () => TickerListContext,
 export function navigateChart(direction: -1 | 1): void {
   const context = getTickerListContextCb();
   const origin = getTickerOriginViewCb();
-  const currentTicker = appStore.getState().selectedTicker;
+  const currentTicker = String(appStore.getState().selectedTicker || '')
+    .trim()
+    .toUpperCase();
 
-  if (!context || !currentTicker) return;
+  if (!currentTicker) return;
 
-  let containerId = '';
-  if (origin === 'divergence') {
-    containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
-  } else {
-    containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
-  }
+  const list = resolveNavigationList(currentTicker, context, origin);
+  if (!list) return;
 
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
-  const currentIndex = cards.findIndex((c) => c.dataset.ticker === currentTicker);
-
-  if (currentIndex === -1) return;
-
-  const nextIndex = currentIndex + direction;
-  if (nextIndex >= 0 && nextIndex < cards.length) {
-    const nextCard = cards[nextIndex];
+  const nextIndex = list.currentIndex + direction;
+  if (nextIndex >= 0 && nextIndex < list.cards.length) {
+    const nextCard = list.cards[nextIndex];
     const nextTicker = nextCard.dataset.ticker;
     if (nextTicker && (window as any).showTickerView) {
-      // Keep the same context
-      (window as any).showTickerView(nextTicker, origin, context);
+      const nextContext = list.inferredContext || (context === 'daily' || context === 'weekly' ? context : null);
+      (window as any).showTickerView(nextTicker, origin, nextContext);
     }
   }
 }
@@ -61,28 +110,17 @@ export function navigateChart(direction: -1 | 1): void {
 export function getNeighborTicker(direction: -1 | 1): string | null {
   const context = getTickerListContextCb();
   const origin = getTickerOriginViewCb();
-  const currentTicker = appStore.getState().selectedTicker;
+  const currentTicker = String(appStore.getState().selectedTicker || '')
+    .trim()
+    .toUpperCase();
 
-  if (!context || !currentTicker) return null;
+  if (!currentTicker) return null;
+  const list = resolveNavigationList(currentTicker, context, origin);
+  if (!list) return null;
 
-  let containerId = '';
-  if (origin === 'divergence') {
-    containerId = context === 'daily' ? 'divergence-daily-container' : 'divergence-weekly-container';
-  } else {
-    containerId = context === 'daily' ? 'daily-container' : 'weekly-container';
-  }
-
-  const container = document.getElementById(containerId);
-  if (!container) return null;
-
-  const cards = Array.from(container.querySelectorAll('.alert-card')) as HTMLElement[];
-  const currentIndex = cards.findIndex((c) => c.dataset.ticker === currentTicker);
-
-  if (currentIndex === -1) return null;
-
-  const nextIndex = currentIndex + direction;
-  if (nextIndex >= 0 && nextIndex < cards.length) {
-    return cards[nextIndex].dataset.ticker || null;
+  const nextIndex = list.currentIndex + direction;
+  if (nextIndex >= 0 && nextIndex < list.cards.length) {
+    return list.cards[nextIndex].dataset.ticker || null;
   }
   return null;
 }
@@ -90,13 +128,15 @@ export function getNeighborTicker(direction: -1 | 1): string | null {
 export function initPaneAxisNavigation(): void {
   const container = document.getElementById('custom-chart-container');
   if (!container) return;
+  if (container.dataset.axisNavBound === '1') return;
+  container.dataset.axisNavBound = '1';
 
-  container.addEventListener('dblclick', (e) => {
+  const handleAxisNavigationTap = (clientX: number, clientY: number): boolean => {
     const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const x = clientX - rect.left;
 
     const isRightSide = x > rect.width - 60;
-    if (!isRightSide) return;
+    if (!isRightSide) return false;
 
     const currentOrder = normalizePaneOrder(paneOrder);
     const pane3Id = currentOrder[2];
@@ -109,15 +149,53 @@ export function initPaneAxisNavigation(): void {
     };
 
     const pane3Rect = getPaneRect(pane3Id);
-    if (pane3Rect && e.clientY >= pane3Rect.top && e.clientY <= pane3Rect.bottom) {
+    if (pane3Rect && clientY >= pane3Rect.top && clientY <= pane3Rect.bottom) {
       navigateChart(1);
-      return;
+      return true;
     }
 
     const pane4Rect = getPaneRect(pane4Id);
-    if (pane4Rect && e.clientY >= pane4Rect.top && e.clientY <= pane4Rect.bottom) {
+    if (pane4Rect && clientY >= pane4Rect.top && clientY <= pane4Rect.bottom) {
       navigateChart(-1);
-      return;
+      return true;
     }
+
+    return false;
+  };
+
+  container.addEventListener('dblclick', (e) => {
+    const handled = handleAxisNavigationTap(e.clientX, e.clientY);
+    if (!handled) return;
+    e.preventDefault();
   });
+
+  // Touch equivalent: double-tap on the right y-axis area of pane 3/4.
+  let lastTapTime = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+  container.addEventListener(
+    'touchend',
+    (e) => {
+      const touch = e.changedTouches?.[0];
+      if (!touch) return;
+
+      const now = Date.now();
+      const elapsed = now - lastTapTime;
+      const distance = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+      const isDoubleTap = elapsed > 0 && elapsed < 350 && distance < 28;
+
+      lastTapTime = now;
+      lastTapX = touch.clientX;
+      lastTapY = touch.clientY;
+
+      if (!isDoubleTap) return;
+      const handled = handleAxisNavigationTap(touch.clientX, touch.clientY);
+      if (!handled) return;
+
+      // Stop the chart-wide double-tap handler from toggling crosshair.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    { passive: false },
+  );
 }
