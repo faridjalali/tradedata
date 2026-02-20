@@ -16,11 +16,7 @@ function delay(ms: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 test('mapWithConcurrency processes all items and returns correct results', async () => {
-  const results = await mapWithConcurrency(
-    [1, 2, 3, 4, 5],
-    3,
-    async (n) => n * 2,
-  );
+  const results = await mapWithConcurrency([1, 2, 3, 4, 5], 3, async (n) => n * 2);
   assert.deepEqual(results, [2, 4, 6, 8, 10]);
 });
 
@@ -36,14 +32,10 @@ test('mapWithConcurrency returns empty array for non-array input', async () => {
 
 test('mapWithConcurrency preserves result order regardless of completion order', async () => {
   // Items with higher index finish faster (smaller delay)
-  const results = await mapWithConcurrency(
-    [50, 30, 10, 40, 20],
-    5,
-    async (ms, idx) => {
-      await delay(ms);
-      return idx;
-    },
-  );
+  const results = await mapWithConcurrency([50, 30, 10, 40, 20], 5, async (ms, idx) => {
+    await delay(ms);
+    return idx;
+  });
   // Results should be in original order: [0, 1, 2, 3, 4]
   assert.deepEqual(results, [0, 1, 2, 3, 4]);
 });
@@ -93,14 +85,10 @@ test('mapWithConcurrency clamps concurrency to list length', async () => {
 test('mapWithConcurrency with concurrency=1 processes items serially', async () => {
   const order: number[] = [];
 
-  await mapWithConcurrency(
-    [1, 2, 3],
-    1,
-    async (n) => {
-      order.push(n);
-      await delay(1);
-    },
-  );
+  await mapWithConcurrency([1, 2, 3], 1, async (n) => {
+    order.push(n);
+    await delay(1);
+  });
 
   assert.deepEqual(order, [1, 2, 3]);
 });
@@ -120,7 +108,10 @@ test('mapWithConcurrency calls onSettled for each item', async () => {
   );
 
   assert.equal(settled.length, 3);
-  assert.deepEqual(settled.sort((a, b) => a - b), [10, 20, 30]);
+  assert.deepEqual(
+    settled.sort((a, b) => a - b),
+    [10, 20, 30],
+  );
 });
 
 test('mapWithConcurrency onSettled receives index and item', async () => {
@@ -161,14 +152,10 @@ test('mapWithConcurrency error in onSettled does not abort processing', async ()
 // ---------------------------------------------------------------------------
 
 test('mapWithConcurrency captures worker exceptions as { error } results', async () => {
-  const results = await mapWithConcurrency(
-    [1, 2, 3],
-    2,
-    async (n) => {
-      if (n === 2) throw new Error('boom');
-      return n * 10;
-    },
-  );
+  const results = await mapWithConcurrency([1, 2, 3], 2, async (n) => {
+    if (n === 2) throw new Error('boom');
+    return n * 10;
+  });
 
   assert.equal(results.length, 3);
   assert.equal(results[0], 10);
@@ -182,7 +169,7 @@ test('mapWithConcurrency captures worker exceptions as { error } results', async
 
 test('mapWithConcurrency stops when shouldStop returns true', async () => {
   let processedCount = 0;
-  let stopAfter = 3;
+  const stopAfter = 3;
 
   await mapWithConcurrency(
     Array.from({ length: 10 }, (_, i) => i),
@@ -227,7 +214,9 @@ test('mapWithConcurrency shouldStop error does not abort processing', async () =
       return n;
     },
     undefined,
-    () => { throw new Error('shouldStop error'); },
+    () => {
+      throw new Error('shouldStop error');
+    },
   );
 
   assert.equal(processedCount, 3);
@@ -257,7 +246,10 @@ test('mapWithConcurrency stops on AbortError when shouldStop returns true', asyn
       return _n;
     },
     undefined,
-    () => { stopped = controller.signal.aborted; return stopped; },
+    () => {
+      stopped = controller.signal.aborted;
+      return stopped;
+    },
   );
 
   assert.ok(processedCount <= 2, `should stop early, got processedCount=${processedCount}`);

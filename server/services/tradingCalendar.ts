@@ -34,8 +34,6 @@ interface CalendarDeps {
   log?: Function;
 }
 
-let savedDeps: Partial<CalendarDeps> = {};
-
 // ---------------------------------------------------------------------------
 // Date helpers (self-contained, no external deps)
 // ---------------------------------------------------------------------------
@@ -178,7 +176,14 @@ function getTradingDaysBetween(start: string, end: string): string[] {
 /**
  * Get the current calendar status for diagnostics.
  */
-function getStatus(): { initialized: boolean; tradingDaysCount: number; earlyClosesCount: number; rangeStart: string; rangeEnd: string; lastRefreshedAt: string } {
+function getStatus(): {
+  initialized: boolean;
+  tradingDaysCount: number;
+  earlyClosesCount: number;
+  rangeStart: string;
+  rangeEnd: string;
+  lastRefreshedAt: string;
+} {
   return {
     initialized,
     tradingDaysCount: tradingDays.size,
@@ -361,7 +366,6 @@ async function refreshCalendar(deps: CalendarDeps): Promise<void> {
  */
 async function init(deps: CalendarDeps): Promise<void> {
   const log = deps.log || defaultLog;
-  savedDeps = deps;
 
   if (!deps.fetchDataApiJson || !deps.buildDataApiUrl || !deps.formatDateUTC) {
     log('Missing dependencies; staying in weekday-only mode');

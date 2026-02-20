@@ -155,7 +155,7 @@ export function parseCookieValue(req: { headers: { cookie?: string } }): string 
   }
 }
 
-export function setSessionCookie(reply: { header: (name: string, value: string) => any }, token: string): void {
+export function setSessionCookie(reply: { header: (name: string, value: string) => unknown }, token: string): void {
   const encodedToken = encodeURIComponent(token);
   const secureSegment = SESSION_COOKIE_SECURE ? '; Secure' : '';
   reply.header(
@@ -164,7 +164,7 @@ export function setSessionCookie(reply: { header: (name: string, value: string) 
   );
 }
 
-export function clearSessionCookie(reply: { header: (name: string, value: string) => any }): void {
+export function clearSessionCookie(reply: { header: (name: string, value: string) => unknown }): void {
   const secureSegment = SESSION_COOKIE_SECURE ? '; Secure' : '';
   reply.header(
     'Set-Cookie',

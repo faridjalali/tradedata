@@ -1,14 +1,15 @@
 import { divergencePool } from '../db.js';
-import { classifyDivergenceSignal } from '../chartMath.js';
 import { DIVERGENCE_LOOKBACK_DAYS, buildNeutralDivergenceStates } from '../../shared/constants.js';
 export { buildNeutralDivergenceStates };
 import { pacificDateStringFromUnixSeconds } from '../lib/dateUtils.js';
 import { isValidTickerSymbol } from '../middleware.js';
 import { nextPacificDivergenceRefreshUtcMs } from './chartEngine.js';
 
-
 export function computeDivergenceSummaryStatesFromDailyResult(
-  result: { bars?: Array<{ time?: number; close?: number }>; volumeDelta?: Array<{ time?: number; delta?: number }> } | null,
+  result: {
+    bars?: Array<{ time?: number; close?: number }>;
+    volumeDelta?: Array<{ time?: number; delta?: number }>;
+  } | null,
   options: { maxTradeDateKey?: string } = {},
 ) {
   const bars = Array.isArray(result?.bars) ? result.bars : [];
@@ -75,26 +76,21 @@ export function computeDivergenceSummaryStatesFromDailyResult(
   };
 }
 
-
 export function getDivergenceSummaryCacheKey(ticker: string, sourceInterval: string) {
   return `${String(ticker || '').toUpperCase()}|${String(sourceInterval || '1min')}`;
 }
 
-
-export function getCachedDivergenceSummaryEntry(ticker: string, sourceInterval: string) {
+export function getCachedDivergenceSummaryEntry(_ticker: string, _sourceInterval: string) {
   return null;
 }
 
-
-export function setDivergenceSummaryCacheEntry(entry: unknown) {
+export function setDivergenceSummaryCacheEntry(_entry: unknown) {
   return;
 }
 
-
-export function clearDivergenceSummaryCacheForSourceInterval(sourceInterval: string) {
+export function clearDivergenceSummaryCacheForSourceInterval(_sourceInterval: string) {
   return;
 }
-
 
 export function normalizeDivergenceState(value: unknown) {
   const normalized = String(value || '')
@@ -103,7 +99,6 @@ export function normalizeDivergenceState(value: unknown) {
   if (normalized === 'bullish' || normalized === 'bearish') return normalized;
   return 'neutral';
 }
-
 
 export function normalizeSummaryMaState(value: unknown) {
   if (value === true) return true;
@@ -121,8 +116,12 @@ export function normalizeSummaryMaState(value: unknown) {
   return false;
 }
 
-
-export function buildDivergenceSummaryEntryFromRow(row: Record<string, unknown>, sourceInterval: string, nowMs: number, expiresAtMs: number) {
+export function buildDivergenceSummaryEntryFromRow(
+  row: Record<string, unknown>,
+  sourceInterval: string,
+  nowMs: number,
+  expiresAtMs: number,
+) {
   const ticker = String(row?.ticker || '').toUpperCase();
   if (!ticker) return null;
   const entry = {
@@ -149,8 +148,11 @@ export function buildDivergenceSummaryEntryFromRow(row: Record<string, unknown>,
   return entry;
 }
 
-
-export async function getStoredDivergenceSummariesForTickers(tickers: string[], sourceInterval: string, options: { includeLatestFallbackForMissing?: boolean } = {}) {
+export async function getStoredDivergenceSummariesForTickers(
+  tickers: string[],
+  sourceInterval: string,
+  options: { includeLatestFallbackForMissing?: boolean } = {},
+) {
   const map = new Map();
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) {
     return map;
@@ -206,10 +208,8 @@ export async function getStoredDivergenceSummariesForTickers(tickers: string[], 
   return map;
 }
 
-
 /** @deprecated Use buildNeutralDivergenceStates() — kept as alias for existing callers. */
 export const buildNeutralDivergenceStateMap = buildNeutralDivergenceStates;
-
 
 export function classifyDivergenceStateMapFromDailyRows(rows: Array<{ close: number; volume_delta: number }>) {
   const safeRows = Array.isArray(rows) ? rows : [];

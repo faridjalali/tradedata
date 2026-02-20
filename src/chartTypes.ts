@@ -27,7 +27,7 @@ export interface MASetting {
   length: number;
   color: string;
   // LightweightCharts CDN — no bundled declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   series: any | null;
   values: Array<number | null>;
 }
@@ -263,7 +263,11 @@ export const priceChartSettings: PriceChartSettings = {
 };
 
 export let paneOrder: PaneId[] = [...DEFAULT_PANE_ORDER];
-export function setPaneOrder(order: PaneId[]) { paneOrder = order; }
+export function setPaneOrder(order: PaneId[]) {
+  paneOrder = order;
+}
 
 export let paneHeights: Record<string, number> = {};
-export function setPaneHeights(heights: Record<string, number>) { paneHeights = heights; }
+export function setPaneHeights(heights: Record<string, number>) {
+  paneHeights = heights;
+}

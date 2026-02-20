@@ -1,34 +1,18 @@
-import { db, pool, divergencePool, isDivergenceConfigured } from '../db.js';
+import { db, divergencePool } from '../db.js';
 import {
   DIVERGENCE_SOURCE_INTERVAL,
   DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
   DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
 } from '../config.js';
-import {
-  currentEtDateString,
-  maxEtDateString,
-  etDateStringFromUnixSeconds,
-  dateKeyDaysAgo,
-  addUtcDays,
-} from '../lib/dateUtils.js';
+import { etDateStringFromUnixSeconds, dateKeyDaysAgo } from '../lib/dateUtils.js';
 import {
   dataApiIntradayChartHistory,
   computeVolumeDeltaByParentBars,
-  dataApiIntraday,
-  calculateVolumeDeltaRsiSeries,
-  DIVERGENCE_LOOKBACK_DAYS,
   toVolumeDeltaSourceInterval,
-  DIVERGENCE_SUMMARY_BUILD_CONCURRENCY,
-  DIVERGENCE_ON_DEMAND_REFRESH_COOLDOWN_MS,
   convertToLATime,
 } from './chartEngine.js';
-import { classifyDivergenceSignal } from '../chartMath.js';
-import { normalizeTickerSymbol, fetchDataApiMovingAverageStatesForTicker, dataApiDailySingle } from './dataApi.js';
 import {
-  computeDivergenceSummaryStatesFromDailyResult,
   getStoredDivergenceSummariesForTickers,
-  buildDivergenceSummaryEntryFromRow,
-  buildNeutralDivergenceStates,
   classifyDivergenceStateMapFromDailyRows,
 } from './divergenceStateService.js';
 import {

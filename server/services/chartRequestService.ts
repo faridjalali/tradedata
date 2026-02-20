@@ -1,23 +1,4 @@
-import * as schemas from '../schemas.js';
-import {
-  VALID_CHART_INTERVALS,
-  CHART_FINAL_RESULT_CACHE,
-  CHART_IN_FLIGHT_REQUESTS,
-  CHART_IN_FLIGHT_MAX,
-  toVolumeDeltaSourceInterval,
-  buildChartRequestKey,
-  getTimedCacheValue,
-  setTimedCacheValue,
-  getChartResultCacheExpiryMs,
-  getIntradayLookbackDays,
-  dataApiIntradayChartHistory,
-  buildChartResultFromRows,
-  patchLatestBarCloseWithQuote,
-  createChartStageTimer,
-  CHART_TIMING_LOG_ENABLED,
-} from './chartEngine.js';
-import { dataApiLatestQuote } from './dataApi.js';
-import * as chartPrewarm from './chartPrewarm.js';
+import { toVolumeDeltaSourceInterval, buildChartRequestKey, getIntradayLookbackDays } from './chartEngine.js';
 import { isValidTickerSymbol } from '../middleware.js';
 
 interface HttpError extends Error {
@@ -55,7 +36,7 @@ export function parseChartRequestParams(req: { query: Record<string, unknown> })
 }
 
 export function findPointByTime(
-  points: Array<{ time: number | string; [key: string]: any }> | any,
+  points: Array<{ time: number | string; [key: string]: unknown }> | unknown,
   timeValue: unknown,
 ) {
   if (!Array.isArray(points) || points.length === 0) return null;
@@ -74,7 +55,12 @@ export function extractLatestChartPayload(result: Record<string, unknown>) {
   const latestTime = latestBar ? latestBar.time : null;
   const latestRsi = latestTime === null ? null : findPointByTime(result?.rsi, latestTime);
   const latestVolumeDeltaRsi =
-    latestTime === null ? null : findPointByTime((result?.volumeDeltaRsi as any)?.rsi, latestTime);
+    latestTime === null
+      ? null
+      : findPointByTime(
+          (result?.volumeDeltaRsi as { rsi?: Array<{ time: number | string; [k: string]: unknown }> })?.rsi,
+          latestTime,
+        );
   const latestVolumeDelta = latestTime === null ? null : findPointByTime(result?.volumeDelta, latestTime);
 
   return {

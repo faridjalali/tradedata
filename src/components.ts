@@ -96,7 +96,9 @@ export function createAlertCard(alert: Alert): string {
                       ? '<span class="vdf-tag">VDF</span>'
                       : '<span class="vdf-score-placeholder"></span>'
                 }${
-                  alert.bull_flag_confidence != null && alert.bull_flag_confidence >= 50
+                  alert.bull_flag_confidence !== null &&
+                  alert.bull_flag_confidence !== undefined &&
+                  alert.bull_flag_confidence >= 50
                     ? `<span class="bull-flag-badge" title="Bull flag (${alert.bull_flag_confidence}%)">B</span>`
                     : '<span class="bull-flag-placeholder"></span>'
                 }

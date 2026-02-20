@@ -12,7 +12,7 @@ import type { CandleBar } from '../shared/api-types';
 import type { TrendToolPane } from './chartTypes';
 
 // Chart.js CDN — no bundled declarations for this version
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 declare const Chart: any;
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ export interface DivergencePlotCallbacks {
   getVolumeDeltaDivergenceToolActive: () => boolean;
   deactivateVolumeDeltaDivergenceTool: () => void;
   // LightweightCharts CDN — no bundled declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getRsiChart: () => any;
   setPaneTrendlineToolActive: (pane: TrendToolPane, active: boolean) => void;
   setPaneToolButtonActive: (pane: TrendToolPane, action: 'trend' | 'divergence', active: boolean) => void;
@@ -43,9 +43,9 @@ export interface DivergencePlotCallbacks {
 let rsiDivergenceOverlayEl: HTMLDivElement | null = null;
 let volumeDeltaRsiDivergenceOverlayEl: HTMLDivElement | null = null;
 // LightweightCharts (Chart.js) CDN — no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let rsiDivergenceOverlayChart: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaRsiDivergenceOverlayChart: any = null;
 let rsiDivergencePlotToolActive = false;
 let volumeDeltaRsiDivergencePlotToolActive = false;
@@ -155,12 +155,10 @@ export function ensureDivergenceOverlay(container: HTMLElement, pane: TrendToolP
   return overlay;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getDivergenceOverlayChart(pane: TrendToolPane): any {
   return pane === 'rsi' ? rsiDivergenceOverlayChart : volumeDeltaRsiDivergenceOverlayChart;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function setDivergenceOverlayChart(pane: TrendToolPane, chart: any | null): void {
   if (pane === 'rsi') {
     rsiDivergenceOverlayChart = chart;

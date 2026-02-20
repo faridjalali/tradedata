@@ -1,10 +1,9 @@
 import { divergencePool } from '../db.js';
-import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
 import { currentEtDateString } from '../lib/dateUtils.js';
 import { detectVDF } from './vdfDetector.js';
 import { dataApiIntradayChartHistory } from './chartEngine.js';
 import { ScanState } from '../lib/ScanState.js';
-import { isAbortError, sleepWithAbort } from './dataApi.js';
+import { isAbortError } from './dataApi.js';
 import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
 import { isDivergenceConfigured } from '../db.js';
 import { runRetryPasses } from '../lib/ScanState.js';
@@ -15,6 +14,21 @@ import { createRunMetricsTracker, runMetricsByType } from './metricsService.js';
 
 const vdfRunningTickers = new Set<string>();
 export const vdfScan = new ScanState('vdfScan', { metricsKey: 'vdfScan' });
+
+interface VdfUpsertPayload {
+  bestScore?: unknown;
+  score?: unknown;
+  proximity?: { compositeScore?: unknown; level?: unknown } | null;
+  zones?: unknown[];
+  distribution?: unknown[];
+  metrics?: unknown;
+  reason?: unknown;
+  detected?: unknown;
+  status?: unknown;
+  bestZoneWeeks?: unknown;
+  weeks?: unknown;
+  bull_flag_confidence?: unknown;
+}
 
 export async function getStoredVDFResult(ticker: string, tradeDate: string) {
   if (!isDivergenceConfigured()) return null;
@@ -44,7 +58,10 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
       proximity_level: row.proximity_level || 'none',
       num_zones: Number(row.num_zones) || 0,
       has_distribution: row.has_distribution || false,
-      bull_flag_confidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
+      bull_flag_confidence:
+        row.bull_flag_confidence === null || row.bull_flag_confidence === undefined
+          ? null
+          : Number(row.bull_flag_confidence),
       zones: parsed.zones || [],
       distribution: parsed.distribution || [],
       proximity: parsed.proximity || { compositeScore: 0, level: 'none', signals: [] },
@@ -59,17 +76,21 @@ export async function getStoredVDFResult(ticker: string, tradeDate: string) {
 export async function upsertVDFResult(ticker: string, tradeDate: string, result: Record<string, unknown>) {
   if (!isDivergenceConfigured()) return;
   try {
-    const bestScore = result.bestScore || result.score || 0;
-    const proxScore = (result.proximity as any)?.compositeScore || 0;
-    const proxLevel = (result.proximity as any)?.level || 'none';
-    const numZones = (result.zones as any)?.length || 0;
-    const hasDist = ((result.distribution as any)?.length || 0) > 0;
+    const safeResult = (result || {}) as VdfUpsertPayload;
+    const bestScore = Number(safeResult.bestScore ?? safeResult.score ?? 0) || 0;
+    const proximity = safeResult.proximity && typeof safeResult.proximity === 'object' ? safeResult.proximity : {};
+    const proxScore = Number(proximity.compositeScore ?? 0) || 0;
+    const proxLevel = String(proximity.level ?? 'none') || 'none';
+    const zones = Array.isArray(safeResult.zones) ? safeResult.zones : [];
+    const distribution = Array.isArray(safeResult.distribution) ? safeResult.distribution : [];
+    const numZones = zones.length;
+    const hasDist = distribution.length > 0;
     const resultJson = JSON.stringify({
-      zones: result.zones || [],
-      distribution: result.distribution || [],
-      proximity: result.proximity || { compositeScore: 0, level: 'none', signals: [] },
-      metrics: result.metrics || null,
-      reason: result.reason || '',
+      zones,
+      distribution,
+      proximity: safeResult.proximity || { compositeScore: 0, level: 'none', signals: [] },
+      metrics: safeResult.metrics || null,
+      reason: safeResult.reason || '',
     });
     await divergencePool!.query(
       `INSERT INTO vdf_results (ticker, trade_date, is_detected, composite_score, status, weeks, result_json,
@@ -91,17 +112,17 @@ export async function upsertVDFResult(ticker: string, tradeDate: string, result:
       [
         ticker,
         tradeDate,
-        result.detected || false,
+        Boolean(safeResult.detected),
         bestScore,
-        result.status || '',
-        result.bestZoneWeeks || result.weeks || 0,
+        String(safeResult.status || ''),
+        Number(safeResult.bestZoneWeeks ?? safeResult.weeks ?? 0) || 0,
         resultJson,
         bestScore,
         proxScore,
         proxLevel,
         numZones,
         hasDist,
-        result.bull_flag_confidence ?? null,
+        safeResult.bull_flag_confidence ?? null,
       ],
     );
   } catch (err: unknown) {

@@ -16,7 +16,7 @@ export function unixSecondsFromTimeValue(time: string | number | null | undefine
 }
 
 // LightweightCharts CDN — no bundled declarations; Time type varies by series config
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export function toDateFromScaleTime(time: any): Date | null {
   if (typeof time === 'number' && Number.isFinite(time)) {
     return new Date(time * 1000);
@@ -37,7 +37,6 @@ export function toDateFromScaleTime(time: any): Date | null {
   return null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function formatTimeScaleTickMark(time: any, tickMarkType: number): string {
   const date = toDateFromScaleTime(time);
   if (!date) return '';

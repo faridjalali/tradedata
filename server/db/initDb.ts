@@ -1,6 +1,6 @@
 import { pool, divergencePool } from '../db.js';
 import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
-import { loadRunHistoryFromDb, runMetricsHistory } from '../services/metricsService.js';
+import { loadRunHistoryFromDb, runMetricsHistory, type RunMetricsSummary } from '../services/metricsService.js';
 import {
   fetchDailyScan,
   fetchWeeklyScan,
@@ -63,7 +63,7 @@ export async function initDB(): Promise<void> {
 
     const persisted = await loadRunHistoryFromDb();
     if (persisted.length > 0) {
-      runMetricsHistory.push(...(persisted as any[]));
+      runMetricsHistory.push(...(persisted as unknown as RunMetricsSummary[]));
       console.log(`Loaded ${persisted.length} persisted run history entries`);
     }
 

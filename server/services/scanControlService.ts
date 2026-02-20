@@ -1,12 +1,6 @@
 import { ScanState } from '../lib/ScanState.js';
-import {
-  DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS, DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
-  DIVERGENCE_SCAN_LOOKBACK_DAYS,
-} from '../config.js';
-import {
-  currentEtDateString, parseDateKeyToUtcMs, dateKeyDaysAgo,
-  easternLocalToUtcMs, dateKeyFromYmdParts, pacificDateTimeParts,
-} from '../lib/dateUtils.js';
+import { DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS, DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS } from '../config.js';
+import { currentEtDateString } from '../lib/dateUtils.js';
 import * as tradingCalendar from './tradingCalendar.js';
 import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
 import { isValidTickerSymbol } from '../middleware.js';
@@ -78,7 +72,6 @@ export let divergenceTableBuildStatus: TableBuildStatus = {
 export const fetchDailyScan = new ScanState('fetchDaily', { metricsKey: 'fetchDaily' });
 export const fetchWeeklyScan = new ScanState('fetchWeekly', { metricsKey: 'fetchWeekly' });
 
-
 export function getDivergenceTableBuildStatus() {
   return {
     running: Boolean(divergenceTableBuildRunning),
@@ -95,7 +88,6 @@ export function getDivergenceTableBuildStatus() {
   };
 }
 
-
 export function getDivergenceScanControlStatus() {
   return {
     running: Boolean(divergenceScanRunning),
@@ -104,7 +96,6 @@ export function getDivergenceScanControlStatus() {
     can_resume: !divergenceScanRunning && Boolean(divergenceScanResumeState),
   };
 }
-
 
 export function requestPauseDivergenceScan() {
   if (!divergenceScanRunning) return false;
@@ -118,7 +109,6 @@ export function requestPauseDivergenceScan() {
   }
   return true;
 }
-
 
 export function requestStopDivergenceScan() {
   if (!divergenceScanRunning) return false;
@@ -134,18 +124,15 @@ export function requestStopDivergenceScan() {
   return true;
 }
 
-
 export function canResumeDivergenceScan() {
   return !divergenceScanRunning && Boolean(divergenceScanResumeState);
 }
-
 
 export function requestPauseDivergenceTableBuild() {
   if (!divergenceTableBuildRunning) return false;
   divergenceTableBuildPauseRequested = true;
   return true;
 }
-
 
 export function requestStopDivergenceTableBuild() {
   if (!divergenceTableBuildRunning) {
@@ -175,7 +162,6 @@ export function requestStopDivergenceTableBuild() {
   }
   return true;
 }
-
 
 export function canResumeDivergenceTableBuild() {
   return !divergenceTableBuildRunning && Boolean(divergenceTableBuildResumeState);
@@ -208,7 +194,6 @@ export function normalizeFetchDailyDataResumeState(state: Record<string, unknown
   };
 }
 
-
 export function normalizeFetchWeeklyDataResumeState(state: Record<string, unknown> = {}) {
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
   const weeklyTradeDate = String(state.weeklyTradeDate || '').trim();
@@ -238,7 +223,6 @@ export function normalizeFetchWeeklyDataResumeState(state: Record<string, unknow
   };
 }
 
-
 // Wire normalizers and validators now that both the ScanState instances and
 // the normalizer functions are defined in this module.
 fetchDailyScan.setNormalizeResume(normalizeFetchDailyDataResumeState);
@@ -251,7 +235,6 @@ fetchWeeklyScan.setCanResumeValidator((rs) => {
   const n = normalizeFetchWeeklyDataResumeState(rs);
   return Boolean(n.asOfTradeDate) && Boolean(n.weeklyTradeDate) && n.totalTickers > 0 && n.nextIndex < n.totalTickers;
 });
-
 
 export function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -271,7 +254,6 @@ export function resolveLastClosedDailyCandleDate(nowUtc = new Date()) {
   // Not a trading day or before threshold — return previous trading day
   return tradingCalendar.previousTradingDay(todayStr);
 }
-
 
 export function resolveLastClosedWeeklyCandleDate(nowUtc = new Date()) {
   const nowEt = new Date(nowUtc.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -306,7 +288,6 @@ export function resolveLastClosedWeeklyCandleDate(nowUtc = new Date()) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-
 export function normalizeDivergenceScanResumeState(state: Record<string, unknown> = {}): DivergenceScanResumeState {
   const runDateEt = String(state.runDateEt || '').trim();
   const trigger = String(state.trigger || 'manual').trim() || 'manual';
@@ -338,8 +319,9 @@ export function normalizeDivergenceScanResumeState(state: Record<string, unknown
   };
 }
 
-
-export function normalizeDivergenceTableResumeState(state: Record<string, unknown> = {}): DivergenceTableBuildResumeState {
+export function normalizeDivergenceTableResumeState(
+  state: Record<string, unknown> = {},
+): DivergenceTableBuildResumeState {
   const sourceInterval =
     String(state.sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;
   const asOfTradeDate = String(state.asOfTradeDate || '').trim();
@@ -384,17 +366,45 @@ export function normalizeDivergenceTableResumeState(state: Record<string, unknow
 }
 
 // --- Setter functions for mutable state (required for ES module cross-file assignment) ---
-export function setDivergenceScanRunning(v: boolean) { divergenceScanRunning = v; }
-export function setDivergenceSchedulerTimer(v: ReturnType<typeof setTimeout> | null) { divergenceSchedulerTimer = v; }
-export function setDivergenceLastScanDateEt(v: string) { divergenceLastScanDateEt = v; }
-export function setDivergenceLastFetchedTradeDateEt(v: string) { divergenceLastFetchedTradeDateEt = v; }
-export function setDivergenceScanPauseRequested(v: boolean) { divergenceScanPauseRequested = v; }
-export function setDivergenceScanStopRequested(v: boolean) { divergenceScanStopRequested = v; }
-export function setDivergenceScanResumeState(v: DivergenceScanResumeState | null) { divergenceScanResumeState = v; }
-export function setDivergenceScanAbortController(v: AbortController | null) { divergenceScanAbortController = v; }
-export function setDivergenceTableBuildRunning(v: boolean) { divergenceTableBuildRunning = v; }
-export function setDivergenceTableBuildPauseRequested(v: boolean) { divergenceTableBuildPauseRequested = v; }
-export function setDivergenceTableBuildStopRequested(v: boolean) { divergenceTableBuildStopRequested = v; }
-export function setDivergenceTableBuildResumeState(v: DivergenceTableBuildResumeState | null) { divergenceTableBuildResumeState = v; }
-export function setDivergenceTableBuildAbortController(v: AbortController | null) { divergenceTableBuildAbortController = v; }
-export function setDivergenceTableBuildStatus(v: TableBuildStatus) { divergenceTableBuildStatus = v; }
+export function setDivergenceScanRunning(v: boolean) {
+  divergenceScanRunning = v;
+}
+export function setDivergenceSchedulerTimer(v: ReturnType<typeof setTimeout> | null) {
+  divergenceSchedulerTimer = v;
+}
+export function setDivergenceLastScanDateEt(v: string) {
+  divergenceLastScanDateEt = v;
+}
+export function setDivergenceLastFetchedTradeDateEt(v: string) {
+  divergenceLastFetchedTradeDateEt = v;
+}
+export function setDivergenceScanPauseRequested(v: boolean) {
+  divergenceScanPauseRequested = v;
+}
+export function setDivergenceScanStopRequested(v: boolean) {
+  divergenceScanStopRequested = v;
+}
+export function setDivergenceScanResumeState(v: DivergenceScanResumeState | null) {
+  divergenceScanResumeState = v;
+}
+export function setDivergenceScanAbortController(v: AbortController | null) {
+  divergenceScanAbortController = v;
+}
+export function setDivergenceTableBuildRunning(v: boolean) {
+  divergenceTableBuildRunning = v;
+}
+export function setDivergenceTableBuildPauseRequested(v: boolean) {
+  divergenceTableBuildPauseRequested = v;
+}
+export function setDivergenceTableBuildStopRequested(v: boolean) {
+  divergenceTableBuildStopRequested = v;
+}
+export function setDivergenceTableBuildResumeState(v: DivergenceTableBuildResumeState | null) {
+  divergenceTableBuildResumeState = v;
+}
+export function setDivergenceTableBuildAbortController(v: AbortController | null) {
+  divergenceTableBuildAbortController = v;
+}
+export function setDivergenceTableBuildStatus(v: TableBuildStatus) {
+  divergenceTableBuildStatus = v;
+}

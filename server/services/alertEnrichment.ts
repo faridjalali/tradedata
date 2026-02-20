@@ -26,7 +26,7 @@ function toBoolean(value: unknown): boolean {
 }
 
 function normalizeVdfScore(score: number | null): number {
-  if (score == null) return 0;
+  if (score === null || score === undefined) return 0;
   if (score >= 0 && score <= 1) return Math.min(100, Math.round(score * 100));
   return Math.min(100, Math.max(0, Math.round(score)));
 }
@@ -82,7 +82,10 @@ export async function enrichRowsWithDivergenceData(opts: {
           score: normalizeVdfScore(normalizedScore),
           proximityLevel: row.proximity_level || 'none',
           numZones: Number(row.num_zones) || 0,
-          bullFlagConfidence: row.bull_flag_confidence != null ? Number(row.bull_flag_confidence) : null,
+          bullFlagConfidence:
+            row.bull_flag_confidence === null || row.bull_flag_confidence === undefined
+              ? null
+              : Number(row.bull_flag_confidence),
         });
       }
     }

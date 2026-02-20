@@ -14,21 +14,22 @@ import {
   buildTrendlineContextKey,
   loadPersistedTrendlinesForContext,
 } from './trendlineStorage';
-import {
-  DIVERGENCE_LOOKBACK_DAYS,
-  type DivergenceSummaryEntry,
-  getTickerDivergenceSummary,
-} from './divergenceTable';
+import { DIVERGENCE_LOOKBACK_DAYS, type DivergenceSummaryEntry, getTickerDivergenceSummary } from './divergenceTable';
 import { setRefreshButtonLoading } from './chartVDF';
 import {
   type RSIPersistedTrendline,
   type TrendToolPane,
   RSI_MIDLINE_VALUE,
-  VOLUME_DELTA_AXIS_MIN, VOLUME_DELTA_AXIS_MAX,
-  VOLUME_DELTA_DATA_MIN, VOLUME_DELTA_DATA_MAX,
+  VOLUME_DELTA_AXIS_MIN,
+  VOLUME_DELTA_AXIS_MAX,
+  VOLUME_DELTA_DATA_MIN,
+  VOLUME_DELTA_DATA_MAX,
   VOLUME_DELTA_MAX_HIGHLIGHT_POINTS,
-  DIVERGENCE_HIGHLIGHT_COLOR, TRENDLINE_COLOR,
-  SCALE_MIN_WIDTH_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
+  DIVERGENCE_HIGHLIGHT_COLOR,
+  TRENDLINE_COLOR,
+  SCALE_MIN_WIDTH_PX,
+  PANE_TOOL_BUTTON_SIZE_PX,
+  PANE_TOOL_BUTTON_GAP_PX,
   volumeDeltaSettings,
 } from './chartTypes';
 import type { RSIChart } from './rsi';
@@ -45,9 +46,9 @@ function tc() {
 
 export interface VDTrendlineCallbacks {
   // LightweightCharts CDN — no bundled declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getVDRsiChart: () => any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getVDRsiSeries: () => any;
   getCurrentTicker: () => string | null;
   getCurrentInterval: () => ChartInterval;
@@ -66,9 +67,9 @@ let cb: VDTrendlineCallbacks;
 let volumeDeltaRsiPoints: Array<{ time: string | number; value: number }> = [];
 let volumeDeltaIndexByTime = new Map<string, number>();
 // LightweightCharts CDN — no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaHighlightSeries: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaTrendLineSeriesList: any[] = [];
 let volumeDeltaTrendlineCrossLabels: Array<{
   element: HTMLDivElement;
@@ -76,7 +77,7 @@ let volumeDeltaTrendlineCrossLabels: Array<{
   anchorValue: number;
 }> = [];
 let volumeDeltaTrendlineDefinitions: RSIPersistedTrendline[] = [];
-let volumeDeltaDivergencePointTimeKeys = new Set<string>();
+const volumeDeltaDivergencePointTimeKeys = new Set<string>();
 let volumeDeltaFirstPoint: { time: string | number; rsi: number; price: number; index: number } | null = null;
 let volumeDeltaDivergenceToolActive = false;
 let volumeDeltaSuppressSync = false;
@@ -147,7 +148,7 @@ export function getVolumeDeltaTrendlineDefinitions(): RSIPersistedTrendline[] {
 // ---------------------------------------------------------------------------
 
 // LightweightCharts CDN — AutoscaleInfo type from CDN has no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export function fixedVolumeDeltaAutoscaleInfoProvider(): any {
   return {
     priceRange: {
@@ -242,7 +243,11 @@ function addVolumeDeltaTrendlineCrossLabel(anchorTime: string | number, anchorVa
 // Time projection helpers
 // ---------------------------------------------------------------------------
 
-export function projectFutureTradingUnixSeconds(lastTimeSeconds: number, futureBars: number, stepSeconds: number): number {
+export function projectFutureTradingUnixSeconds(
+  lastTimeSeconds: number,
+  futureBars: number,
+  stepSeconds: number,
+): number {
   // For daily/weekly intervals, skip weekends when projecting
   if (stepSeconds >= 86400) {
     const wholeBars = Math.floor(futureBars);

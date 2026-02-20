@@ -69,7 +69,7 @@ VDF_COMPONENTS.forEach((c) => {
 // ─── Module State ───────────────────────────────────────────────────────────
 
 let vdfAnalysisPanelEl: HTMLDivElement | null = null;
-let vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
+const vdfWeights: Record<string, number> = { ...VDF_DEFAULT_WEIGHTS };
 let lastRenderedVDFEntry: VDFCacheEntry | null = null;
 let lastRenderedVDFTicker = '';
 
@@ -179,20 +179,22 @@ function buildZoneHtml(zone: VDFZone, index: number, isBest: boolean): string {
 
   let metricsLine = '';
   const parts: string[] = [];
-  if (zone.overallPriceChange != null)
+  if (zone.overallPriceChange !== null && zone.overallPriceChange !== undefined)
     parts.push(`Price: ${zone.overallPriceChange >= 0 ? '+' : ''}${zone.overallPriceChange.toFixed(1)}%`);
-  if (zone.netDeltaPct != null)
+  if (zone.netDeltaPct !== null && zone.netDeltaPct !== undefined)
     parts.push(`Net Delta: ${zone.netDeltaPct >= 0 ? '+' : ''}${zone.netDeltaPct.toFixed(1)}%`);
-  if (zone.absorptionPct != null) parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
+  if (zone.absorptionPct !== null && zone.absorptionPct !== undefined)
+    parts.push(`Absorption: ${zone.absorptionPct.toFixed(1)}%`);
   if (parts.length)
     metricsLine = `<div style="margin:4px 0;color:${c.textSecondary};font-size:12px;">${parts.join(' &nbsp;|&nbsp; ')}</div>`;
 
   let detailLine = '';
   const dParts: string[] = [];
-  if (zone.accumWeeks != null && zone.weeks)
+  if (zone.accumWeeks !== null && zone.accumWeeks !== undefined && zone.weeks)
     dParts.push(`Accum weeks: ${zone.accumWeeks}/${zone.weeks} (${Math.round((zone.accumWeeks / zone.weeks) * 100)}%)`);
-  if (zone.durationMultiplier != null) dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
-  if (zone.concordancePenalty != null && zone.concordancePenalty < 1.0)
+  if (zone.durationMultiplier !== null && zone.durationMultiplier !== undefined)
+    dParts.push(`Duration: ${zone.durationMultiplier.toFixed(3)}x`);
+  if (zone.concordancePenalty !== null && zone.concordancePenalty !== undefined && zone.concordancePenalty < 1.0)
     dParts.push(`Concordance: ${zone.concordancePenalty.toFixed(3)}x`);
   if (dParts.length)
     detailLine = `<div style="margin:2px 0;color:${c.textSecondary};font-size:12px;">${dParts.join(' &nbsp;|&nbsp; ')}</div>`;
@@ -223,9 +225,10 @@ function buildDistributionHtml(dist: VDFDistribution, index: number): string {
   const c = getThemeColors();
   let detail = '';
   const parts: string[] = [];
-  if (dist.priceChangePct != null)
+  if (dist.priceChangePct !== null && dist.priceChangePct !== undefined)
     parts.push(`Price ${dist.priceChangePct >= 0 ? '+' : ''}${dist.priceChangePct.toFixed(1)}%`);
-  if (dist.netDeltaPct != null) parts.push(`Delta ${dist.netDeltaPct >= 0 ? '+' : ''}${dist.netDeltaPct.toFixed(1)}%`);
+  if (dist.netDeltaPct !== null && dist.netDeltaPct !== undefined)
+    parts.push(`Delta ${dist.netDeltaPct >= 0 ? '+' : ''}${dist.netDeltaPct.toFixed(1)}%`);
   if (parts.length) detail = parts.join(' while ') + ' \u2014 selling into strength.';
 
   return `<div style="background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:4px;padding:10px 12px;margin-bottom:8px;">

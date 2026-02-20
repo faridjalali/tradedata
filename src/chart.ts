@@ -1,121 +1,166 @@
 import { createChart, CrosshairMode } from 'lightweight-charts';
-import {
-  fetchChartData,
-  fetchChartLatestData,
-  ChartData,
-  ChartLatestData,
-  ChartInterval,
-  CandleBar,
-} from './chartApi';
+import { fetchChartData, fetchChartLatestData, ChartData, ChartLatestData, ChartInterval, CandleBar } from './chartApi';
 import type { TickerInfoPayload } from '../shared/api-types';
 import { RSIChart } from './rsi';
-import {
-  ensureVDFAnalysisPanel,
-  clearVDFAnalysisPanel,
-  renderVDFAnalysisPanel,
-} from './vdfAnalysisPanel';
+import { ensureVDFAnalysisPanel, clearVDFAnalysisPanel, renderVDFAnalysisPanel } from './vdfAnalysisPanel';
 import { getThemeColors } from './theme';
 import {
-  unixSecondsFromTimeValue, formatTimeScaleTickMark,
+  unixSecondsFromTimeValue,
+  formatTimeScaleTickMark,
   buildMonthBoundaryTimes,
-  timeKey, toUnixSeconds,
+  timeKey,
+  toUnixSeconds,
 } from './chartTimeUtils';
 import {
-  buildRSISeriesFromBars, normalizeValueSeries,
-  computeSMA, computeEMA, buildDailyMAValuesForBars, isRenderableMaValue,
+  buildRSISeriesFromBars,
+  normalizeValueSeries,
+  computeSMA,
+  computeEMA,
+  buildDailyMAValuesForBars,
+  isRenderableMaValue,
 } from './chartIndicators';
 import { recordChartFetchPerf, recordChartRenderPerf, exposeChartPerfMetrics } from './chartPerf';
 import {
-  buildChartDataCacheKey, getCachedChartData, setCachedChartData,
-  evictCachedChartData, getLastBarSignature, schedulePersistChartDataCacheToSession,
+  buildChartDataCacheKey,
+  getCachedChartData,
+  setCachedChartData,
+  evictCachedChartData,
+  getLastBarSignature,
+  schedulePersistChartDataCacheToSession,
 } from './chartDataCache';
 import { navigateChart, getNeighborTicker, initPaneAxisNavigation } from './chartNavigation';
 import {
-  initVDF, ensureVDFButton, ensureBullFlagButton, ensureVDFRefreshButton, ensureVDZoneOverlay,
-  renderVDFRefreshIcon, runVDFDetection, refreshVDZones, renderVDZones,
+  initVDF,
+  ensureVDFButton,
+  ensureBullFlagButton,
+  ensureVDFRefreshButton,
+  ensureVDZoneOverlay,
+  renderVDFRefreshIcon,
+  runVDFDetection,
+  refreshVDZones,
+  renderVDZones,
   setRefreshButtonLoading,
 } from './chartVDF';
 import {
-  initSettingsUI, persistSettingsToStorage, ensureSettingsLoadedFromStorage,
-  hideSettingsPanels, syncPriceSettingsPanelValues, syncRSISettingsPanelValues,
-  syncVolumeDeltaSettingsPanelValues, syncVolumeDeltaRSISettingsPanelValues,
-  createPriceSettingsPanel, createRSISettingsPanel,
-  createVolumeDeltaSettingsPanel, createVolumeDeltaRSISettingsPanel,
-  getPriceSettingsPanel, getRsiSettingsPanel,
-  getVolumeDeltaSettingsPanel, getVolumeDeltaRsiSettingsPanel,
+  initSettingsUI,
+  persistSettingsToStorage,
+  ensureSettingsLoadedFromStorage,
+  hideSettingsPanels,
+  syncPriceSettingsPanelValues,
+  syncRSISettingsPanelValues,
+  syncVolumeDeltaSettingsPanelValues,
+  syncVolumeDeltaRSISettingsPanelValues,
+  createPriceSettingsPanel,
+  createRSISettingsPanel,
+  createVolumeDeltaSettingsPanel,
+  createVolumeDeltaRSISettingsPanel,
+  getPriceSettingsPanel,
+  getRsiSettingsPanel,
+  getVolumeDeltaSettingsPanel,
+  getVolumeDeltaRsiSettingsPanel,
 } from './chartSettingsUI';
 import {
   initDivergencePlot,
-  isRsiDivergencePlotToolActive, isVolumeDeltaRsiDivergencePlotToolActive,
-  toggleRsiDivergencePlotTool, toggleVolumeDeltaRsiDivergencePlotTool,
-  deactivateRsiDivergencePlotTool, deactivateVolumeDeltaRsiDivergencePlotTool,
-  updateRsiDivergencePlotPoint, updateVolumeDeltaRsiDivergencePlotPoint,
-  refreshActiveDivergenceOverlays, deactivateInteractivePaneToolsFromEscape,
+  isRsiDivergencePlotToolActive,
+  isVolumeDeltaRsiDivergencePlotToolActive,
+  toggleRsiDivergencePlotTool,
+  toggleVolumeDeltaRsiDivergencePlotTool,
+  deactivateRsiDivergencePlotTool,
+  deactivateVolumeDeltaRsiDivergencePlotTool,
+  updateRsiDivergencePlotPoint,
+  updateVolumeDeltaRsiDivergencePlotPoint,
+  refreshActiveDivergenceOverlays,
+  deactivateInteractivePaneToolsFromEscape,
 } from './chartDivergencePlot';
-import {
-  showLoadingOverlay, showRetryOverlay, hideLoadingOverlay,
-  reapplyInlineThemeStyles,
-} from './chartOverlays';
+import { showLoadingOverlay, showRetryOverlay, hideLoadingOverlay, reapplyInlineThemeStyles } from './chartOverlays';
 import {
   initVDTrendlines,
-  setVDTrendlineData, resetVDTrendlineData, updateVDRsiLastPoint,
-  isVolumeDeltaDivergenceToolActive, isVolumeDeltaSyncSuppressed,
-  fixedVolumeDeltaAutoscaleInfoProvider, normalizeVolumeDeltaValue,
+  setVDTrendlineData,
+  resetVDTrendlineData,
+  updateVDRsiLastPoint,
+  isVolumeDeltaDivergenceToolActive,
+  isVolumeDeltaSyncSuppressed,
+  fixedVolumeDeltaAutoscaleInfoProvider,
+  normalizeVolumeDeltaValue,
   refreshVolumeDeltaTrendlineCrossLabels,
-  deactivateVolumeDeltaDivergenceTool, activateVolumeDeltaDivergenceTool,
+  deactivateVolumeDeltaDivergenceTool,
+  activateVolumeDeltaDivergenceTool,
   clearVolumeDeltaDivergence,
   detectAndHandleVolumeDeltaDivergenceClick,
   persistTrendlinesForCurrentContext,
   restorePersistedTrendlinesForCurrentContext,
-  clearVolumeDeltaDivergenceSummary, renderVolumeDeltaDivergenceSummary,
+  clearVolumeDeltaDivergenceSummary,
+  renderVolumeDeltaDivergenceSummary,
 } from './chartVDTrendlines';
 import {
   type MidlineStyle,
-  type PaneId, type TrendToolPane, type PaneControlType,
-  TREND_ICON, ERASE_ICON, DIVERGENCE_ICON, SETTINGS_ICON,
-  INTERVAL_SWITCH_DEBOUNCE_MS, CHART_LIVE_REFRESH_MS,
-  RIGHT_MARGIN_BARS, FUTURE_TIMELINE_TRADING_DAYS, SCALE_LABEL_CHARS, SCALE_MIN_WIDTH_PX,
+  type PaneId,
+  type TrendToolPane,
+  type PaneControlType,
+  TREND_ICON,
+  ERASE_ICON,
+  DIVERGENCE_ICON,
+  SETTINGS_ICON,
+  INTERVAL_SWITCH_DEBOUNCE_MS,
+  CHART_LIVE_REFRESH_MS,
+  RIGHT_MARGIN_BARS,
+  FUTURE_TIMELINE_TRADING_DAYS,
+  SCALE_LABEL_CHARS,
+  SCALE_MIN_WIDTH_PX,
   INVALID_SYMBOL_MESSAGE,
-  TOP_PANE_TICKER_LABEL_CLASS, TOP_PANE_BADGE_CLASS, TOP_PANE_BADGE_START_LEFT_PX, TOP_PANE_BADGE_GAP_PX,
-  PANE_SETTINGS_BUTTON_LEFT_PX, PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
+  TOP_PANE_TICKER_LABEL_CLASS,
+  TOP_PANE_BADGE_CLASS,
+  TOP_PANE_BADGE_START_LEFT_PX,
+  TOP_PANE_BADGE_GAP_PX,
+  PANE_SETTINGS_BUTTON_LEFT_PX,
+  PANE_TOOL_BUTTON_TOP_PX,
+  PANE_TOOL_BUTTON_SIZE_PX,
+  PANE_TOOL_BUTTON_GAP_PX,
   VOLUME_DELTA_MIDLINE,
-  VOLUME_DELTA_POSITIVE_COLOR, VOLUME_DELTA_NEGATIVE_COLOR,
+  VOLUME_DELTA_POSITIVE_COLOR,
+  VOLUME_DELTA_NEGATIVE_COLOR,
   PREFETCH_INTERVAL_TARGETS,
-  PANE_HEIGHT_MIN, PANE_HEIGHT_MAX, DEFAULT_PANE_ORDER, DEFAULT_PANE_HEIGHTS, normalizePaneOrder,
+  PANE_HEIGHT_MIN,
+  PANE_HEIGHT_MAX,
+  DEFAULT_PANE_ORDER,
+  DEFAULT_PANE_HEIGHTS,
+  normalizePaneOrder,
   DEFAULT_VOLUME_DELTA_SETTINGS,
-  rsiSettings, volumeDeltaRsiSettings, volumeDeltaSettings, priceChartSettings,
-  paneOrder, setPaneOrder, paneHeights,
+  rsiSettings,
+  volumeDeltaRsiSettings,
+  volumeDeltaSettings,
+  priceChartSettings,
+  paneOrder,
+  setPaneOrder,
+  paneHeights,
 } from './chartTypes';
 // Re-export isMobileTouch for consumers that import from chart.ts
 import { isMobileTouch } from './chartTypes';
 export { isMobileTouch } from './chartTypes';
 
-// LightweightCharts is loaded from CDN and has no npm package for this version; any is required.
-declare const Chart: any; // eslint-disable-line @typescript-eslint/no-explicit-any
-
 let currentChartTicker: string | null = null;
 let currentChartInterval: ChartInterval = '1day';
 // LightweightCharts objects — typed any because the CDN version has no bundled declarations.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let priceChart: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let candleSeries: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let priceTimelineSeries: any = null;
 let rsiChart: RSIChart | null = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaRsiChart: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaRsiSeries: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaRsiTimelineSeries: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaRsiMidlineLine: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaChart: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaHistogramSeries: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let volumeDeltaTimelineSeries: any = null;
 let rsiDivergenceToolActive = false;
 let chartResizeObserver: ResizeObserver | null = null;
@@ -142,7 +187,7 @@ let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
 let chartLayoutRefreshRafId: number | null = null;
-let chartPrefetchInFlight = new Map<string, Promise<void>>();
+const chartPrefetchInFlight = new Map<string, Promise<void>>();
 function tc() {
   return getThemeColors();
 }
@@ -228,8 +273,6 @@ function applyFutureTimelineSeriesData(bars: CandleBar[]): void {
     volumeDeltaTimelineSeries.setData(timelinePoints);
   }
 }
-
-
 
 async function prefetchRelatedIntervals(ticker: string, interval: ChartInterval): Promise<void> {
   const normalizedTicker = String(ticker || '')
@@ -322,14 +365,15 @@ initDivergencePlot({
   getRsiByTime: () => rsiByTime,
   getVolumeDeltaRsiByTime: () => volumeDeltaRsiByTime,
   getRsiDivergenceToolActive: () => rsiDivergenceToolActive,
-  setRsiDivergenceToolActive: (v: boolean) => { rsiDivergenceToolActive = v; },
+  setRsiDivergenceToolActive: (v: boolean) => {
+    rsiDivergenceToolActive = v;
+  },
   getVolumeDeltaDivergenceToolActive: () => isVolumeDeltaDivergenceToolActive(),
   deactivateVolumeDeltaDivergenceTool,
   getRsiChart: () => rsiChart,
   setPaneTrendlineToolActive,
   setPaneToolButtonActive,
 });
-
 
 function formatVolumeDeltaScaleLabel(value: number): string {
   if (!Number.isFinite(value)) return '';
@@ -343,7 +387,9 @@ function formatVolumeDeltaScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-function normalizeVolumeDeltaSeries(points: Array<{ time: string | number; delta: number }>): Array<{ time: string | number; delta: number }> {
+function normalizeVolumeDeltaSeries(
+  points: Array<{ time: string | number; delta: number }>,
+): Array<{ time: string | number; delta: number }> {
   if (!Array.isArray(points)) return [];
   return points
     .filter(
@@ -426,8 +472,6 @@ function formatVolumeDeltaHistogramScaleLabel(value: number): string {
 
   return sign ? `${sign}0`.padEnd(SCALE_LABEL_CHARS, ' ') : '0'.padEnd(SCALE_LABEL_CHARS, ' ');
 }
-
-
 
 function clearMovingAverageSeries(): void {
   for (const setting of priceChartSettings.ma) {
@@ -568,7 +612,7 @@ function clearMonthGridOverlay(overlayEl: HTMLDivElement | null): void {
 }
 
 // LightweightCharts CDN — IChartApi type has no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): void {
   if (!chart || !overlayEl) return;
 
@@ -625,7 +669,6 @@ function applyPriceGridOptions(): void {
   });
   scheduleChartLayoutRefresh();
 }
-
 
 function getTopPaneId(): PaneId {
   return normalizePaneOrder(paneOrder)[0];
@@ -737,9 +780,7 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
 
   // Line 2: description (truncated ~200 chars)
   if (info.description) {
-    const desc = info.description.length > 200
-      ? info.description.slice(0, 200).trimEnd() + '...'
-      : info.description;
+    const desc = info.description.length > 200 ? info.description.slice(0, 200).trimEnd() + '...' : info.description;
     const line2 = document.createElement('div');
     line2.className = 'ticker-info-line2';
     line2.textContent = desc;
@@ -769,8 +810,7 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
 
 function openTickerWebsite(symbol: string): void {
   const info = tickerInfoCache.get(symbol);
-  const url = info?.homepage_url
-    || `https://www.google.com/finance/quote/${encodeURIComponent(symbol)}:NASDAQ`;
+  const url = info?.homepage_url || `https://www.google.com/finance/quote/${encodeURIComponent(symbol)}:NASDAQ`;
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
@@ -932,7 +972,6 @@ function shouldShowPaneScale(paneId: PaneId): boolean {
   return index === 1 || index === 3;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyChartScaleVisibility(chart: any, show: boolean): void {
   if (!chart) return;
   chart.applyOptions({
@@ -1070,7 +1109,6 @@ function applyVolumeDeltaRSISettings(refetch: boolean): void {
   if (!currentChartTicker) return;
   renderCustomChart(currentChartTicker, currentChartInterval);
 }
-
 
 function createSettingsButton(container: HTMLElement, pane: PaneControlType): HTMLButtonElement {
   const existing = container.querySelector(`.pane-settings-btn[data-pane="${pane}"]`) as HTMLButtonElement | null;
@@ -1249,8 +1287,6 @@ function clearVolumeDeltaRSITrendlines(): void {
   persistTrendlinesForCurrentContext();
 }
 
-
-
 function ensureSettingsUI(
   chartContainer: HTMLElement,
   volumeDeltaRsiContainer: HTMLElement,
@@ -1292,7 +1328,10 @@ function ensureSettingsUI(
     }
     createRSISettingsPanel(rsiContainer);
   }
-  if (!getVolumeDeltaRsiSettingsPanel() || getVolumeDeltaRsiSettingsPanel()!.parentElement !== volumeDeltaRsiContainer) {
+  if (
+    !getVolumeDeltaRsiSettingsPanel() ||
+    getVolumeDeltaRsiSettingsPanel()!.parentElement !== volumeDeltaRsiContainer
+  ) {
     if (getVolumeDeltaRsiSettingsPanel()?.parentElement) {
       getVolumeDeltaRsiSettingsPanel()!.parentElement!.removeChild(getVolumeDeltaRsiSettingsPanel()!);
     }
@@ -1551,10 +1590,8 @@ function formatPriceScaleLabel(value: number): string {
   return label.length >= SCALE_LABEL_CHARS ? label : label.padEnd(SCALE_LABEL_CHARS, ' ');
 }
 
-
-
 // LightweightCharts CDN — LogicalRange type has no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function sameLogicalRange(a: any, b: any): boolean {
   if (!a || !b) return false;
   return Math.abs(Number(a.from) - Number(b.from)) < 1e-6 && Math.abs(Number(a.to) - Number(b.to)) < 1e-6;
@@ -1728,7 +1765,6 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     title: 'Midline',
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   chart.subscribeClick((param: any) => {
     if (!param || !param.time) return;
     if (isVolumeDeltaRsiDivergencePlotToolActive()) {
@@ -1873,7 +1909,6 @@ function setVolumeDeltaRsiData(
   refreshActiveDivergenceOverlays();
 }
 
-
 function setVolumeDeltaHistogramData(
   bars: CandleBar[],
   volumeDeltaValues: Array<{ time: string | number; delta: number }>,
@@ -1901,9 +1936,6 @@ function setVolumeDeltaHistogramData(
   volumeDeltaByTime = new Map(histogramData.map((point) => [timeKey(point.time), Number(point.value) || 0]));
   applyPricePaneDivergentBarColors();
 }
-
-
-
 
 function applyPricePaneDivergentBarColors(): void {
   if (!candleSeries) return;
@@ -2096,7 +2128,6 @@ function ensurePaneResizeHandles(
     });
   }
 }
-
 
 function scheduleIntervalChartRender(interval: ChartInterval): void {
   const scheduledTicker = currentChartTicker;
@@ -2748,11 +2779,10 @@ function setupChartSync() {
     });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const syncRangeFromOwner = (owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta', timeRange: any) => {
     if (!timeRange) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const targets: Array<{ owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta'; chart: any }> = [
+
+    const targets: Array<{ owner: 'price' | 'volumeDeltaRsi' | 'rsi' | 'volumeDelta'; chart: any }> = [
       { owner: 'price', chart: priceChart },
       { owner: 'volumeDeltaRsi', chart: volumeDeltaRsiChartInstance },
       { owner: 'rsi', chart: rsiChartInstance },
@@ -2768,7 +2798,6 @@ function setupChartSync() {
     scheduleChartLayoutRefresh();
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
     syncLock = 'price';
@@ -2779,7 +2808,6 @@ function setupChartSync() {
     }
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaRsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (isVolumeDeltaSyncSuppressed()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
@@ -2791,7 +2819,6 @@ function setupChartSync() {
     }
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (rsiChart?.isSyncSuppressed?.()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'volumeDelta') return;
@@ -2803,7 +2830,6 @@ function setupChartSync() {
     }
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi') return;
     syncLock = 'volumeDelta';
@@ -2867,7 +2893,6 @@ function setupChartSync() {
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   priceChart.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
@@ -2883,7 +2908,6 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaRsiChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2902,7 +2926,6 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2921,7 +2944,6 @@ function setupChartSync() {
     setCrosshairOnVolumeDelta(param.time);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   volumeDeltaChartInstance.subscribeCrosshairMove((param: any) => {
     if (!param || !param.time) {
       priceChart.clearCrosshairPosition();
@@ -2937,7 +2959,6 @@ function setupChartSync() {
     setCrosshairOnRsi(param.time);
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rsiChartInstance.subscribeClick((param: any) => {
     if (!param || !param.time) return;
     if (!isRsiDivergencePlotToolActive()) return;
@@ -3112,7 +3133,6 @@ function initChartFullscreen(): void {
   });
 }
 
-
 async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSignal): Promise<void> {
   const nextTicker = getNeighborTicker(1);
   const prevTicker = getNeighborTicker(-1);
@@ -3140,7 +3160,6 @@ async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSi
   if (nextTicker) await fetchForTicker(nextTicker);
   if (prevTicker) await fetchForTicker(prevTicker);
 }
-
 
 window.addEventListener('themechange', () => {
   const c = tc();

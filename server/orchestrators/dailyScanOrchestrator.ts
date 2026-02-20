@@ -1,29 +1,13 @@
 import { divergencePool } from '../db.js';
 import {
   DIVERGENCE_SOURCE_INTERVAL,
-  DIVERGENCE_SCAN_PARENT_INTERVAL,
-  DIVERGENCE_SCAN_LOOKBACK_DAYS,
   DIVERGENCE_SCAN_CONCURRENCY,
   DIVERGENCE_SCAN_PROGRESS_WRITE_EVERY,
   DIVERGENCE_SCAN_SPREAD_MINUTES,
-  DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
-  DIVERGENCE_STALL_RETRY_BASE_MS,
-  DIVERGENCE_STALL_MAX_RETRIES,
 } from '../config.js';
-import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
-import {
-  isAbortError,
-  sleepWithAbort,
-  createProgressStallWatchdog,
-  getStallRetryBackoffMs,
-  runWithAbortAndTimeout,
-} from '../services/dataApi.js';
-import { runRetryPasses } from '../lib/ScanState.js';
-import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
+import { currentEtDateString, maxEtDateString } from '../lib/dateUtils.js';
+import { isAbortError, sleepWithAbort, linkAbortSignalToController } from '../services/dataApi.js';
 import { isDivergenceConfigured } from '../db.js';
-import { ScanState } from '../lib/ScanState.js';
-import { linkAbortSignalToController } from '../services/dataApi.js';
 import {
   computeSymbolDivergenceSignals,
   getDivergenceUniverseTickers,
@@ -36,7 +20,6 @@ import {
 } from '../services/divergenceDbService.js';
 import { clearDivergenceSummaryCacheForSourceInterval } from '../services/divergenceStateService.js';
 import {
-  divergenceLastFetchedTradeDateEt,
   divergenceLastScanDateEt,
   divergenceScanAbortController,
   divergenceScanPauseRequested,

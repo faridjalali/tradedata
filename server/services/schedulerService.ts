@@ -1,5 +1,5 @@
 import { DIVERGENCE_SCANNER_ENABLED } from '../config.js';
-import { easternLocalToUtcMs, dateKeyFromYmdParts, pacificDateTimeParts } from '../lib/dateUtils.js';
+import { easternLocalToUtcMs } from '../lib/dateUtils.js';
 import * as tradingCalendar from './tradingCalendar.js';
 import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
 import { isDivergenceConfigured, divergencePool } from '../db.js';
@@ -107,7 +107,7 @@ export function scheduleNextBreadthComputation() {
       const m = String(nowEt.getMonth() + 1).padStart(2, '0');
       const d = String(nowEt.getDate()).padStart(2, '0');
       const tradeDate = `${y}-${m}-${d}`;
-      await runBreadthComputation(tradeDate as any);
+      await runBreadthComputation(tradeDate);
       await cleanupBreadthData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

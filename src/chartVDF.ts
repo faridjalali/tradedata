@@ -8,27 +8,27 @@ import { getThemeColors } from './theme';
 import type { CandleBar } from '../shared/api-types';
 import { unixSecondsFromTimeValue } from './chartTimeUtils';
 import {
-  PANE_TOOL_BUTTON_TOP_PX, PANE_TOOL_BUTTON_SIZE_PX, PANE_TOOL_BUTTON_GAP_PX,
-  SCALE_MIN_WIDTH_PX, VDF_CACHE_MAX_SIZE,
+  PANE_TOOL_BUTTON_TOP_PX,
+  PANE_TOOL_BUTTON_SIZE_PX,
+  PANE_TOOL_BUTTON_GAP_PX,
+  SCALE_MIN_WIDTH_PX,
+  VDF_CACHE_MAX_SIZE,
 } from './chartTypes';
-import {
-  VDFCacheEntry,
-  renderVDFAnalysisPanel,
-} from './vdfAnalysisPanel';
+import { VDFCacheEntry, renderVDFAnalysisPanel } from './vdfAnalysisPanel';
 
 // ---------------------------------------------------------------------------
 // Shared state callbacks (set by chart.ts at init time)
 // ---------------------------------------------------------------------------
 
 // LightweightCharts CDN — no bundled declarations
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let getPriceChart: () => any = () => null;
 let getCurrentBars: () => CandleBar[] = () => [];
 let getCurrentTicker: () => string | null = () => null;
 
 export function initVDF(callbacks: {
   // LightweightCharts CDN — no bundled declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getPriceChart: () => any;
   getCurrentBars: () => CandleBar[];
   getCurrentTicker: () => string | null;
@@ -109,7 +109,7 @@ let vdfRefreshButtonEl: HTMLButtonElement | null = null;
 let vdfToolbarEl: HTMLDivElement | null = null;
 let bullFlagButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
-let vdfResultCache = new Map<string, VDFCacheEntry>();
+const vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
 
 // ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ export function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement 
 export function updateBullFlagButton(entry: VDFCacheEntry): void {
   if (!bullFlagButtonEl) return;
   const confidence = entry.bull_flag_confidence;
-  if (confidence != null && confidence >= 50) {
+  if (confidence !== null && confidence !== undefined && confidence >= 50) {
     bullFlagButtonEl.textContent = 'B';
     bullFlagButtonEl.style.color = '#4caf50';
     bullFlagButtonEl.style.borderColor = '#4caf50';
@@ -321,7 +321,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
     for (const zone of overlayZones) {
       const x1 = dateToX(zone.startDate);
       const x2 = dateToX(zone.endDate);
-      if (x1 == null || x2 == null) continue;
+      if (x1 === null || x2 === null) continue;
       const left = Math.min(x1, x2);
       const width = Math.abs(x2 - x1);
       if (left > overlayWidth || left + width < 0) continue;
@@ -343,7 +343,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
     for (const dist of entry.distribution) {
       const x1 = dateToX(dist.startDate);
       const x2 = dateToX(dist.endDate);
-      if (x1 == null || x2 == null) continue;
+      if (x1 === null || x2 === null) continue;
       const left = Math.min(x1, x2);
       const width = Math.abs(x2 - x1);
       if (left > overlayWidth || left + width < 0) continue;
@@ -371,7 +371,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       for (const zone of overlayZones) {
         const x1 = dateToX(zone.startDate);
         const x2 = dateToX(zone.endDate);
-        if (x1 == null || x2 == null) continue;
+        if (x1 === null || x2 === null) continue;
         const left = Math.min(x1, x2);
         const width = Math.abs(x2 - x1);
         if (left > overlayWidth || left + width < 0) continue;
@@ -387,7 +387,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       for (const dist of entry.distribution) {
         const x1 = dateToX(dist.startDate);
         const x2 = dateToX(dist.endDate);
-        if (x1 == null || x2 == null) continue;
+        if (x1 === null || x2 === null) continue;
         const left = Math.min(x1, x2);
         const width = Math.abs(x2 - x1);
         if (left > overlayWidth || left + width < 0) continue;
@@ -404,7 +404,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
         if (absPct < 5) continue;
         const x1 = dateToX(zone.startDate);
         const x2 = dateToX(zone.endDate);
-        if (x1 == null || x2 == null) continue;
+        if (x1 === null || x2 === null) continue;
         const left = Math.min(x1, x2);
         const width = Math.abs(x2 - x1);
         if (left > overlayWidth || left + width < 0) continue;
@@ -421,12 +421,12 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
     for (const zone of overlayZones) {
       const xs = dateToX(zone.startDate);
       const xe = dateToX(zone.endDate);
-      if (xs != null && xs >= 0 && xs <= overlayWidth) {
+      if (xs !== null && xs >= 0 && xs <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
         vdZoneOverlayEl.appendChild(line);
       }
-      if (xe != null && xe >= 0 && xe <= overlayWidth) {
+      if (xe !== null && xe >= 0 && xe <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
         vdZoneOverlayEl.appendChild(line);
@@ -437,12 +437,12 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
     for (const dist of entry.distribution) {
       const xs = dateToX(dist.startDate);
       const xe = dateToX(dist.endDate);
-      if (xs != null && xs >= 0 && xs <= overlayWidth) {
+      if (xs !== null && xs >= 0 && xs <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
         vdZoneOverlayEl.appendChild(line);
       }
-      if (xe != null && xe >= 0 && xe <= overlayWidth) {
+      if (xe !== null && xe >= 0 && xe <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
         vdZoneOverlayEl.appendChild(line);
@@ -519,7 +519,10 @@ export async function runVDFDetection(ticker: string, force = false): Promise<vo
       composite_score: Number(result.composite_score) || 0,
       status: result.status || '',
       weeks: Number(result.weeks) || 0,
-      bull_flag_confidence: result.bull_flag_confidence != null ? Number(result.bull_flag_confidence) : null,
+      bull_flag_confidence:
+        result.bull_flag_confidence !== null && result.bull_flag_confidence !== undefined
+          ? Number(result.bull_flag_confidence)
+          : null,
       zones: Array.isArray(result.zones) ? result.zones : [],
       allZones: Array.isArray(result.allZones) ? result.allZones : Array.isArray(result.zones) ? result.zones : [],
       distribution: Array.isArray(result.distribution) ? result.distribution : [],

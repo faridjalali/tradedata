@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { db, divergencePool, divergenceDb, isDivergenceConfigured } from '../db.js';
+import { db, divergenceDb, isDivergenceConfigured } from '../db.js';
 import { z } from 'zod';
 import { DIVERGENCE_SOURCE_INTERVAL } from '../config.js';
 import { divergenceScanRunning } from '../services/scanControlService.js';
@@ -16,6 +16,7 @@ const isValidCalendarDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isN
 
 export function registerAlertRoutes(app: FastifyInstance): void {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
+  type SqlRowsResult = { rows: unknown[] };
 
   const querySchema = z.object({
     from: z.string().datetime().optional(),
@@ -44,22 +45,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
 
         // Execute queries
         try {
-          let rows: Array<{
-            id: number;
-            ticker: string;
-            signal_type: string;
-            trade_date: string;
-            price: number;
-            prev_close: number;
-            volume: number;
-            avg_volume: number;
-            rsi: number;
-            vdf_score: number;
-            vdf_proximity: string;
-            vdf_detected: boolean;
-            bull_flag_confidence: number;
-            timestamp: string;
-          }>;
+          let rows: Array<Record<string, unknown>>;
 
           if (safeQ.from || safeQ.to) {
             let baseQuery = db.selectFrom('alerts').selectAll();
@@ -75,14 +61,9 @@ export function registerAlertRoutes(app: FastifyInstance): void {
 
             // Add limit and sort to the query
             baseQuery = baseQuery.orderBy('timestamp', 'desc').limit(limitValue);
-            rows = (await baseQuery.execute()) as any;
+            rows = await baseQuery.execute();
           } else {
-            rows = (await db
-              .selectFrom('alerts')
-              .selectAll()
-              .orderBy('timestamp', 'desc')
-              .limit(limitValue)
-              .execute()) as any;
+            rows = await db.selectFrom('alerts').selectAll().orderBy('timestamp', 'desc').limit(limitValue).execute();
           }
 
           if (rows.length === 0) return reply.send([]);
@@ -197,7 +178,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
         if (!publishedTradeDate && divergenceScanRunning) return reply.send([]);
 
         const PER_TIMEFRAME_SIGNAL_LIMIT = 3029;
-        let queryResult: any;
+        let queryResult: SqlRowsResult;
 
         if (!divergenceDb) return reply.code(503).send({ error: 'Divergence database is not configured' });
 
@@ -250,12 +231,12 @@ export function registerAlertRoutes(app: FastifyInstance): void {
           );
         }
 
-        const rows = queryResult.rows;
+        const rows = queryResult.rows as Array<Record<string, unknown>>;
         const sourceInterval = toVolumeDeltaSourceInterval(q.vd_source_interval, DIVERGENCE_SOURCE_INTERVAL);
         const tickers = Array.from(
           new Set(
             rows
-              .map((row: any) =>
+              .map((row) =>
                 String(row?.ticker || '')
                   .trim()
                   .toUpperCase(),
@@ -301,7 +282,7 @@ export function registerAlertRoutes(app: FastifyInstance): void {
       const is_favorite = request.body.is_favorite;
       try {
         if (!divergenceDb) return reply.code(503).send({ error: 'Divergence database is not configured' });
-        let queryResult: any;
+        let queryResult: SqlRowsResult;
         if (typeof is_favorite === 'boolean') {
           queryResult = await sql`UPDATE divergence_signals SET is_favorite = ${is_favorite} WHERE id = ${id}
           RETURNING id, ticker, signal_type, price, timestamp, timeframe,

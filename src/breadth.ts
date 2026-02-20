@@ -602,9 +602,11 @@ async function loadBreadthMA(): Promise<void> {
 
 /** Normalize a series so the first non-null value = 100. Null/missing values stay null. */
 function normalizeToBase100(values: (number | null)[]): (number | null)[] {
-  const first = values.find((v) => v != null && !isNaN(v as number)) as number | undefined;
-  if (first == null || first === 0) return values.map(() => null);
-  return values.map((v) => (v == null || isNaN(v as number) ? null : ((v as number) / first) * 100));
+  const first = values.find((v) => v !== null && v !== undefined && !isNaN(v as number)) as number | undefined;
+  if (first === null || first === undefined || first === 0) return values.map(() => null);
+  return values.map((v) =>
+    v === null || v === undefined || isNaN(v as number) ? null : ((v as number) / first) * 100,
+  );
 }
 
 function renderBreadthCompareChart(): void {
@@ -630,7 +632,7 @@ function renderBreadthCompareChart(): void {
   const ptRadius = history.length > 20 ? 0 : 3;
 
   // Raw value arrays
-  const rawClose = history.map((h) => (h.close != null ? h.close : null));
+  const rawClose = history.map((h) => (h.close !== null && h.close !== undefined ? h.close : null));
   const rawMa21 = history.map((h) => h.ma21);
   const rawMa50 = history.map((h) => h.ma50);
   const rawMa100 = history.map((h) => h.ma100);
@@ -730,11 +732,12 @@ function renderBreadthCompareChart(): void {
       tooltipCallback: (ctx: ChartTooltipContext & { dataset: CompareChartDataset }) => {
         const ds = ctx.dataset;
         const norm = ctx.parsed.y;
-        if (norm == null) return;
+        if (norm === null || norm === undefined) return;
         const pct = norm - 100;
         const sign = pct >= 0 ? '+' : '';
         const raw = ds.rawValues?.[ctx.dataIndex];
-        const rawStr = raw != null ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})` : '';
+        const rawStr =
+          raw !== null && raw !== undefined ? ` (${Number(raw).toFixed(ds.rawDecimals)}${ds.rawSuffix})` : '';
         return `${ds.label}: ${sign}${pct.toFixed(1)}%${rawStr}`;
       },
       yTickCallback: (value) => `${Number(value).toFixed(0)}`,
@@ -847,8 +850,8 @@ function renderBreadthCompareDualSnapshot(
 
       const chipVal = document.createElement('span');
       chipVal.className = 'breadth-compare-snap-chip-value';
-      chipVal.style.color = val != null ? gaugeColor(val) : 'var(--text-secondary)';
-      chipVal.textContent = val != null ? `${val.toFixed(1)}%` : '—';
+      chipVal.style.color = val !== null && val !== undefined ? gaugeColor(val) : 'var(--text-secondary)';
+      chipVal.textContent = val !== null && val !== undefined ? `${val.toFixed(1)}%` : '—';
 
       chip.appendChild(chipLabel);
       chip.appendChild(chipVal);
@@ -933,7 +936,7 @@ function renderBreadthCompareDual(): void {
       tooltipPadding: 10,
       tooltipCallback: (ctx) => {
         const v = ctx.parsed.y;
-        return `${ctx.dataset.label ?? ''}: ${v != null ? v.toFixed(1) + '%' : '—'}`;
+        return `${ctx.dataset.label ?? ''}: ${v !== null && v !== undefined ? v.toFixed(1) + '%' : '—'}`;
       },
       annotation50: true,
       yTickCallback: (value) => `${value}%`,
@@ -962,7 +965,7 @@ function renderBreadthCompareDual(): void {
             const pts = meta.data;
             if (pts.length === 0) continue;
             const last = pts[pts.length - 1];
-            if (last.x == null || last.y == null) continue;
+            if (last.x === null || last.x === undefined || last.y === null || last.y === undefined) continue;
             ctx.fillStyle = ds.borderColor as string;
             ctx.textAlign = 'left';
             ctx.fillText(ticker, (last.x as number) + 6, last.y as number);

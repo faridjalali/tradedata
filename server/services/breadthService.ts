@@ -8,19 +8,13 @@ import { db } from '../db.js';
 import { sql } from 'kysely';
 import type { BreadthMAResponse } from '../../shared/api-types.js';
 import { fetchGroupedDailyBars, dataApiDaily } from './dataApi.js';
-import {
-  ALL_BREADTH_TICKERS,
-  ALL_BREADTH_INDICES,
-  getConstituentsForIndex,
-  type BreadthIndex,
-} from '../data/etfConstituents.js';
+import { ALL_BREADTH_TICKERS, ALL_BREADTH_INDICES, getConstituentsForIndex } from '../data/etfConstituents.js';
 import {
   upsertDailyCloses,
   getClosesForTickers,
   upsertBreadthSnapshot,
   getLatestBreadthSnapshots,
   getBreadthHistory,
-  isBreadthMa200Valid,
   cleanupOldCloses,
 } from '../data/breadthStore.js';
 import * as tradingCalendar from './tradingCalendar.js';

@@ -57,8 +57,6 @@ import {
   chartDebugMetrics,
   httpDebugMetrics,
   recordChartRequestTiming,
-  loadRunHistoryFromDb,
-  runMetricsHistory,
   getLogsRunMetricsPayload,
 } from './server/services/metricsService.js';
 import {
@@ -69,14 +67,9 @@ import {
 } from './server/services/miniBarService.js';
 import { parseChartRequestParams, extractLatestChartPayload } from './server/services/chartRequestService.js';
 import {
-  getStoredDivergenceSummariesForTickers,
-  buildNeutralDivergenceStateMap,
-} from './server/services/divergenceStateService.js';
-import { getPublishedTradeDateForSourceInterval } from './server/services/divergenceDbService.js';
-import {
+  divergenceLastFetchedTradeDateEt,
   canResumeDivergenceScan,
   canResumeDivergenceTableBuild,
-  divergenceLastFetchedTradeDateEt,
   divergenceLastScanDateEt,
   divergenceScanRunning,
   divergenceSchedulerTimer,
@@ -89,7 +82,6 @@ import {
   requestPauseDivergenceTableBuild,
   requestStopDivergenceScan,
   requestStopDivergenceTableBuild,
-  setDivergenceLastFetchedTradeDateEt,
   setDivergenceSchedulerTimer,
 } from './server/services/scanControlService.js';
 import { vdfScan, getVDFStatus, runVDFScan } from './server/services/vdfService.js';
@@ -100,19 +92,13 @@ import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeekly
 import { runDailyDivergenceScan } from './server/orchestrators/dailyScanOrchestrator.js';
 import { scheduleNextDivergenceScan, scheduleNextBreadthComputation } from './server/services/schedulerService.js';
 import { initBreadthTables, getLatestBreadthSnapshots, isBreadthMa200Valid } from './server/data/breadthStore.js';
-import {
-  runBreadthComputation,
-  bootstrapBreadthHistory,
-  getLatestBreadthData,
-  cleanupBreadthData,
-} from './server/services/breadthService.js';
+import { bootstrapBreadthHistory } from './server/services/breadthService.js';
 import { ALL_BREADTH_INDICES } from './server/data/etfConstituents.js';
 
-import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from './server/lib/dateUtils.js';
+import { currentEtDateString } from './server/lib/dateUtils.js';
 import {
   buildDataApiUrl,
   fetchDataApiJson,
-  dataApiDaily,
   dataApiLatestQuote,
   getDataApiCircuitBreakerInfo,
   resetDataApiCircuitBreaker,
@@ -140,9 +126,6 @@ import {
   createChartStageTimer,
   sendChartJsonResponse,
   buildChartResultFromRows,
-  getSpyDaily,
-  getSpyIntraday,
-  buildIntradayBreadthPoints,
 } from './server/services/chartEngine.js';
 
 // Extend FastifyRequest with per-request tracing fields.

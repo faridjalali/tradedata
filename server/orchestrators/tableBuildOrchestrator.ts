@@ -1,4 +1,3 @@
-import { divergencePool } from '../db.js';
 import {
   DIVERGENCE_SOURCE_INTERVAL,
   DIVERGENCE_TABLE_RUN_LOOKBACK_DAYS,
@@ -6,10 +5,6 @@ import {
   DIVERGENCE_TABLE_MIN_COVERAGE_DAYS,
   DIVERGENCE_TABLE_SUMMARY_FLUSH_SIZE,
   DIVERGENCE_TABLE_BACKFILL_CHUNK_SIZE,
-  DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
-  DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
-  DIVERGENCE_STALL_RETRY_BASE_MS,
   DIVERGENCE_STALL_MAX_RETRIES,
 } from '../config.js';
 import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
@@ -18,12 +13,9 @@ import {
   sleepWithAbort,
   createProgressStallWatchdog,
   getStallRetryBackoffMs,
-  runWithAbortAndTimeout,
 } from '../services/dataApi.js';
-import { runRetryPasses } from '../lib/ScanState.js';
-import { mapWithConcurrency, resolveAdaptiveFetchConcurrency } from '../lib/mapWithConcurrency.js';
+import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
 import { isDivergenceConfigured } from '../db.js';
-import { ScanState } from '../lib/ScanState.js';
 import { latestCompletedPacificTradeDateKey, nextPacificDivergenceRefreshUtcMs } from '../services/chartEngine.js';
 import { linkAbortSignalToController } from '../services/dataApi.js';
 import {

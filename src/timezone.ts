@@ -25,7 +25,7 @@ function isSupportedTimeZone(value: string): boolean {
   if (!value) return false;
   try {
     // Throws when the runtime does not support the given time zone.
-    // eslint-disable-next-line no-new
+
     new Intl.DateTimeFormat('en-US', { timeZone: value });
     return true;
   } catch {

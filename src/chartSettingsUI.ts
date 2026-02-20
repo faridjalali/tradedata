@@ -3,15 +3,28 @@ import type { CandleBar } from '../shared/api-types';
 import type { ChartInterval } from './chartApi';
 import {
   type PersistedChartSettings,
-  SETTINGS_STORAGE_KEY, PANE_HEIGHT_MIN, PANE_HEIGHT_MAX,
+  SETTINGS_STORAGE_KEY,
+  PANE_HEIGHT_MIN,
+  PANE_HEIGHT_MAX,
   VOLUME_DELTA_SOURCE_OPTIONS,
-  DEFAULT_PANE_ORDER, DEFAULT_PRICE_SETTINGS, DEFAULT_RSI_SETTINGS,
-  DEFAULT_VOLUME_DELTA_SETTINGS, DEFAULT_VOLUME_DELTA_RSI_SETTINGS,
-  rsiSettings, volumeDeltaRsiSettings, volumeDeltaSettings, priceChartSettings,
-  paneOrder, setPaneOrder, paneHeights, normalizePaneOrder,
+  DEFAULT_PANE_ORDER,
+  DEFAULT_PRICE_SETTINGS,
+  DEFAULT_RSI_SETTINGS,
+  DEFAULT_VOLUME_DELTA_SETTINGS,
+  DEFAULT_VOLUME_DELTA_RSI_SETTINGS,
+  rsiSettings,
+  volumeDeltaRsiSettings,
+  volumeDeltaSettings,
+  priceChartSettings,
+  paneOrder,
+  setPaneOrder,
+  paneHeights,
+  normalizePaneOrder,
 } from './chartTypes';
 
-function tc() { return getThemeColors(); }
+function tc() {
+  return getThemeColors();
+}
 
 // ---------------------------------------------------------------------------
 // Callback interface – chart.ts provides these via initSettingsUI()
@@ -33,7 +46,7 @@ interface SettingsUICallbacks {
   getCurrentBars: () => CandleBar[];
   getVolumeDeltaPaneContainer: () => HTMLElement | null;
   // LightweightCharts CDN — no bundled declarations
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   getRsiChart: () => any;
 }
 
@@ -60,10 +73,18 @@ export function initSettingsUI(cb: SettingsUICallbacks): void {
 // Panel element getters
 // ---------------------------------------------------------------------------
 
-export function getPriceSettingsPanel(): HTMLDivElement | null { return priceSettingsPanelEl; }
-export function getRsiSettingsPanel(): HTMLDivElement | null { return rsiSettingsPanelEl; }
-export function getVolumeDeltaSettingsPanel(): HTMLDivElement | null { return volumeDeltaSettingsPanelEl; }
-export function getVolumeDeltaRsiSettingsPanel(): HTMLDivElement | null { return volumeDeltaRsiSettingsPanelEl; }
+export function getPriceSettingsPanel(): HTMLDivElement | null {
+  return priceSettingsPanelEl;
+}
+export function getRsiSettingsPanel(): HTMLDivElement | null {
+  return rsiSettingsPanelEl;
+}
+export function getVolumeDeltaSettingsPanel(): HTMLDivElement | null {
+  return volumeDeltaSettingsPanelEl;
+}
+export function getVolumeDeltaRsiSettingsPanel(): HTMLDivElement | null {
+  return volumeDeltaRsiSettingsPanelEl;
+}
 
 // ---------------------------------------------------------------------------
 // persistSettingsToStorage

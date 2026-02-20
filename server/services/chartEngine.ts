@@ -89,7 +89,6 @@ const CHART_RESPONSE_MAX_AGE_SECONDS = Math.max(0, Number(process.env.CHART_RESP
 const CHART_RESPONSE_SWR_SECONDS = Math.max(0, Number(process.env.CHART_RESPONSE_SWR_SECONDS) || 45);
 const CHART_RESPONSE_COMPRESS_MIN_BYTES = Math.max(0, Number(process.env.CHART_RESPONSE_COMPRESS_MIN_BYTES) || 1024);
 const CHART_TIMING_LOG_ENABLED = String(process.env.CHART_TIMING_LOG || '').toLowerCase() === 'true';
-const CHART_QUOTE_CACHE_MS = Math.max(1000, Number(process.env.CHART_QUOTE_CACHE_MS) || 300_000);
 const VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_LOWER_TF_CACHE_MAX_ENTRIES) || 6000);
 const VD_RSI_RESULT_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.VD_RSI_RESULT_CACHE_MAX_ENTRIES) || 6000);
 const CHART_DATA_CACHE_MAX_ENTRIES = Math.max(1, Number(process.env.CHART_DATA_CACHE_MAX_ENTRIES) || 6000);
@@ -941,11 +940,19 @@ function buildChartResultFromRows(options: ChartBuildOptions = {}) {
 // getOrBuildChartResult (the main chart entry point)
 // ---------------------------------------------------------------------------
 
+interface ChartDebugMetricsDependency {
+  cacheHit?: number;
+  cacheMiss?: number;
+  buildStarted?: number;
+  dedupeJoin?: number;
+  prewarmRequested?: Record<string, number>;
+}
+
 async function getOrBuildChartResult(
   params: ChartRequestParams,
   deps: {
-    chartDebugMetrics?: Record<string, any>;
-    schedulePostLoadPrewarmSequence?: (opts: Record<string, any>) => void;
+    chartDebugMetrics?: ChartDebugMetricsDependency;
+    schedulePostLoadPrewarmSequence?: (opts: Record<string, unknown>) => void;
   } = {},
 ) {
   const {
@@ -1114,8 +1121,11 @@ async function getOrBuildChartResult(
 // Chart latest payload extraction
 // ---------------------------------------------------------------------------
 
-function findPointByTime(points: Array<{ time: number | string; [key: string]: any }> | any, timeValue: unknown) {
-  if (!Array.isArray(points) || points.length === 0 || timeValue == null) return null;
+function findPointByTime(
+  points: Array<{ time: number | string; [key: string]: unknown }> | unknown,
+  timeValue: unknown,
+) {
+  if (!Array.isArray(points) || points.length === 0 || timeValue === null || timeValue === undefined) return null;
   const targetTime = Number(timeValue);
   for (let i = points.length - 1; i >= 0; i--) {
     if (Number(points[i]?.time) === targetTime) return points[i];
@@ -1137,13 +1147,17 @@ function extractLatestChartPayload(result: Record<string, unknown> | null) {
 
   const latestBar = result.bars[result.bars.length - 1] || null;
   const barTime = latestBar?.time ?? null;
+  const volumeDeltaRsiPoints =
+    result.volumeDeltaRsi && typeof result.volumeDeltaRsi === 'object'
+      ? (result.volumeDeltaRsi as { rsi?: unknown }).rsi
+      : null;
 
   return {
     interval: result.interval,
     timezone: result.timezone || 'America/Los_Angeles',
     latestBar,
     latestRsi: findPointByTime(result.rsi, barTime),
-    latestVolumeDeltaRsi: findPointByTime((result.volumeDeltaRsi as any)?.rsi, barTime),
+    latestVolumeDeltaRsi: findPointByTime(volumeDeltaRsiPoints, barTime),
     latestVolumeDelta: findPointByTime(result.volumeDelta, barTime),
   };
 }

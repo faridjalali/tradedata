@@ -5,22 +5,15 @@ import {
   DIVERGENCE_SCAN_LOOKBACK_DAYS,
   DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
 } from '../config.js';
-import { currentEtDateString, maxEtDateString, parseDateKeyToUtcMs, dateKeyDaysAgo } from '../lib/dateUtils.js';
-import {
-  buildDataApiUrl,
-  fetchDataApiJson,
-  normalizeTickerSymbol,
-  dataApiDailySingle,
-  isAbortError,
-} from './dataApi.js';
+import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
+import { buildDataApiUrl, fetchDataApiJson, normalizeTickerSymbol } from './dataApi.js';
 import { classifyDivergenceSignal } from '../chartMath.js';
 import {
   dataApiIntradayChartHistory,
   computeVolumeDeltaByParentBars,
   DIVERGENCE_LOOKBACK_DAYS,
-  toVolumeDeltaSourceInterval,
 } from './chartEngine.js';
-import { classifyDivergenceStateMapFromDailyRows, buildNeutralDivergenceStateMap } from './divergenceStateService.js';
+import { classifyDivergenceStateMapFromDailyRows } from './divergenceStateService.js';
 import { DIVERGENCE_SCAN_PARENT_INTERVAL } from '../config.js';
 import { etDateStringFromUnixSeconds } from '../lib/dateUtils.js';
 import { mapWithConcurrency } from '../lib/mapWithConcurrency.js';
@@ -438,7 +431,9 @@ export async function syncOneDaySignalsFromSummaryRows(
   for (const row of summaryRows) {
     const ticker = String(row?.ticker || '').toUpperCase();
     const tradeDate = String(row?.trade_date || '').trim();
-    const signalType = normalizeOneDaySignalTypeFromState((row?.states as any)?.['1']);
+    const states = row?.states;
+    const oneDayState = states && typeof states === 'object' ? (states as Record<string, unknown>)['1'] : undefined;
+    const signalType = normalizeOneDaySignalTypeFromState(oneDayState);
     if (!ticker || !tradeDate) continue;
     if (!signalType) {
       neutralTickers.push(ticker);

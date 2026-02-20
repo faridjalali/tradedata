@@ -1,30 +1,15 @@
-import { divergencePool } from '../db.js';
 import {
   DIVERGENCE_SOURCE_INTERVAL,
   DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
   DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
   DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
   DIVERGENCE_FETCH_MA_TIMEOUT_MS,
-  DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS,
-  DIVERGENCE_STALL_RETRY_BASE_MS,
-  DIVERGENCE_STALL_MAX_RETRIES,
   DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE,
 } from '../config.js';
-import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
-import {
-  isAbortError,
-  sleepWithAbort,
-  createProgressStallWatchdog,
-  getStallRetryBackoffMs,
-  runWithAbortAndTimeout,
-  fetchDataApiMovingAverageStatesForTicker,
-} from '../services/dataApi.js';
-import { runRetryPasses } from '../lib/ScanState.js';
+import { maxEtDateString } from '../lib/dateUtils.js';
+import { isAbortError, runWithAbortAndTimeout, fetchDataApiMovingAverageStatesForTicker } from '../services/dataApi.js';
 import { mapWithConcurrency, resolveAdaptiveFetchConcurrency } from '../lib/mapWithConcurrency.js';
-import { toVolumeDeltaSourceInterval } from '../services/chartEngine.js';
 import { isDivergenceConfigured } from '../db.js';
-import { ScanState } from '../lib/ScanState.js';
 import { DIVERGENCE_SUMMARY_BUILD_CONCURRENCY } from '../services/chartEngine.js';
 import { buildRequestAbortError } from '../services/dataApi.js';
 import {

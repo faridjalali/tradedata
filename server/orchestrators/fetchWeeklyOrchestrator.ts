@@ -1,23 +1,17 @@
 import { divergencePool } from '../db.js';
 import {
-  DIVERGENCE_SOURCE_INTERVAL, DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
-  DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE, DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
-  DIVERGENCE_FETCH_MA_TIMEOUT_MS, DIVERGENCE_STALL_TIMEOUT_MS,
-  DIVERGENCE_STALL_CHECK_INTERVAL_MS, DIVERGENCE_STALL_RETRY_BASE_MS,
-  DIVERGENCE_STALL_MAX_RETRIES,
+  DIVERGENCE_SOURCE_INTERVAL,
+  DIVERGENCE_FETCH_ALL_LOOKBACK_DAYS,
+  DIVERGENCE_FETCH_RUN_SUMMARY_FLUSH_SIZE,
+  DIVERGENCE_FETCH_TICKER_TIMEOUT_MS,
+  DIVERGENCE_FETCH_MA_TIMEOUT_MS,
 } from '../config.js';
-import { currentEtDateString, maxEtDateString, dateKeyDaysAgo } from '../lib/dateUtils.js';
-import {
-  isAbortError, sleepWithAbort, createProgressStallWatchdog,
-  getStallRetryBackoffMs, runWithAbortAndTimeout,
-} from '../services/dataApi.js';
-import { runRetryPasses } from '../lib/ScanState.js';
+import { maxEtDateString } from '../lib/dateUtils.js';
+import { isAbortError, runWithAbortAndTimeout } from '../services/dataApi.js';
 import { mapWithConcurrency, resolveAdaptiveFetchConcurrency } from '../lib/mapWithConcurrency.js';
-import { toVolumeDeltaSourceInterval } from '../services/chartEngine.js';
 import { classifyDivergenceSignal } from '../chartMath.js';
 import { DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE } from '../config.js';
 import { isDivergenceConfigured } from '../db.js';
-import { ScanState } from '../lib/ScanState.js';
 import { DIVERGENCE_SUMMARY_BUILD_CONCURRENCY, dataApiIntradayChartHistory } from '../services/chartEngine.js';
 import { buildRequestAbortError, fetchDataApiMovingAverageStatesForTicker } from '../services/dataApi.js';
 import {
@@ -28,7 +22,11 @@ import {
   upsertDivergenceSignalsBatch,
   upsertDivergenceSummaryBatch,
 } from '../services/divergenceDbService.js';
-import { buildNeutralDivergenceStateMap, classifyDivergenceStateMapFromDailyRows, clearDivergenceSummaryCacheForSourceInterval } from '../services/divergenceStateService.js';
+import {
+  buildNeutralDivergenceStateMap,
+  classifyDivergenceStateMapFromDailyRows,
+  clearDivergenceSummaryCacheForSourceInterval,
+} from '../services/divergenceStateService.js';
 import { createRunMetricsTracker, runMetricsByType } from '../services/metricsService.js';
 import {
   divergenceLastFetchedTradeDateEt,
@@ -41,10 +39,14 @@ import {
   resolveLastClosedWeeklyCandleDate,
   setDivergenceLastFetchedTradeDateEt,
 } from '../services/scanControlService.js';
-import { buildDivergenceDailyRowsForTicker, buildLatestWeeklyBarSnapshotForTicker } from '../services/tickerHistoryService.js';
+import {
+  buildDivergenceDailyRowsForTicker,
+  buildLatestWeeklyBarSnapshotForTicker,
+} from '../services/tickerHistoryService.js';
 
-
-export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; sourceInterval?: string; lookbackDays?: number; force?: boolean; trigger?: string } = {}) {
+export async function runDivergenceFetchWeeklyData(
+  options: { resume?: boolean; sourceInterval?: string; lookbackDays?: number; force?: boolean; trigger?: string } = {},
+) {
   if (!isDivergenceConfigured()) {
     return { status: 'disabled', reason: 'Divergence database is not configured' };
   }
@@ -53,7 +55,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
   }
 
   const resumeRequested = options.resume === true;
-  const resumeState = resumeRequested ? normalizeFetchWeeklyDataResumeState(fetchWeeklyScan.currentResumeState || {}) : null;
+  const resumeState = resumeRequested
+    ? normalizeFetchWeeklyDataResumeState(fetchWeeklyScan.currentResumeState || {})
+    : null;
   if (
     resumeRequested &&
     (!resumeState ||
@@ -85,7 +89,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     finishedAt: null,
     lastPublishedTradeDate: lastPublishedTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
   });
-  fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
+  fetchWeeklyScan.setExtraStatus({
+    last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+  });
 
   let tickers = resumeState?.tickers || [];
   let startIndex = Math.max(0, Number(resumeState?.nextIndex || 0));
@@ -97,10 +103,45 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
   let weeklyTradeDate = '';
   let runMetricsTracker: ReturnType<typeof createRunMetricsTracker> | null = null;
   const dailyRowsBuffer: Array<Record<string, unknown>> = [];
-  const summaryRowsBuffer: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; ma_states?: Record<string, boolean> | null; latest_close?: number; latest_prev_close?: number; latest_volume_delta?: number }> = [];
-  const maSummaryRowsBuffer: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; ma_states?: Record<string, boolean> | null; latest_close?: number; latest_prev_close?: number; latest_volume_delta?: number }> = [];
-  const maSeedRows: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }> = [];
-  const weeklySignalRowsBuffer: Array<{ ticker: string; signal_type: string; trade_date: string; price: number; prev_close: number; volume_delta: number; timeframe: string; source_interval: string }> = [];
+  const summaryRowsBuffer: Array<{
+    ticker: string;
+    source_interval: string;
+    trade_date: string;
+    states: Record<string, string>;
+    ma_states?: Record<string, boolean> | null;
+    latest_close?: number;
+    latest_prev_close?: number;
+    latest_volume_delta?: number;
+  }> = [];
+  const maSummaryRowsBuffer: Array<{
+    ticker: string;
+    source_interval: string;
+    trade_date: string;
+    states: Record<string, string>;
+    ma_states?: Record<string, boolean> | null;
+    latest_close?: number;
+    latest_prev_close?: number;
+    latest_volume_delta?: number;
+  }> = [];
+  const maSeedRows: Array<{
+    ticker: string;
+    source_interval: string;
+    trade_date: string;
+    states: Record<string, string>;
+    latest_close: number;
+    latest_prev_close: number;
+    latest_volume_delta: number;
+  }> = [];
+  const weeklySignalRowsBuffer: Array<{
+    ticker: string;
+    signal_type: string;
+    trade_date: string;
+    price: number;
+    prev_close: number;
+    volume_delta: number;
+    timeframe: string;
+    source_interval: string;
+  }> = [];
   const weeklyNeutralTickerBuffer: Array<{ ticker: string; trade_date: string }> = [];
   const failedTickers: string[] = [];
 
@@ -160,18 +201,20 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
     runMetricsTracker?.setTotals(totalTickers);
 
     const persistResumeState = (nextIdx: number) => {
-      fetchWeeklyScan.setResumeState(normalizeFetchWeeklyDataResumeState({
-        asOfTradeDate,
-        weeklyTradeDate,
-        sourceInterval,
-        tickers,
-        totalTickers,
-        nextIndex: nextIdx,
-        processedTickers,
-        errorTickers,
-        lookbackDays: runLookbackDays,
-        lastPublishedTradeDate,
-      }));
+      fetchWeeklyScan.setResumeState(
+        normalizeFetchWeeklyDataResumeState({
+          asOfTradeDate,
+          weeklyTradeDate,
+          sourceInterval,
+          tickers,
+          totalTickers,
+          nextIndex: nextIdx,
+          processedTickers,
+          errorTickers,
+          lookbackDays: runLookbackDays,
+          lastPublishedTradeDate,
+        }),
+      );
     };
 
     const markStopped = (nextIdx: number, options: { preserveResume?: boolean; rewind?: boolean } = {}) => {
@@ -552,9 +595,25 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       runMetricsTracker?.setPhase('ma-enrichment');
       fetchWeeklyScan.setStatus({ status: 'running-ma' });
       const maConcurrency = Math.max(1, Math.min(runConcurrency, DIVERGENCE_SUMMARY_BUILD_CONCURRENCY));
-      const failedMaSeeds: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }> = [];
+      const failedMaSeeds: Array<{
+        ticker: string;
+        source_interval: string;
+        trade_date: string;
+        states: Record<string, string>;
+        latest_close: number;
+        latest_prev_close: number;
+        latest_volume_delta: number;
+      }> = [];
 
-      const fetchWeeklyMaWorker = async (seed: { ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }) => {
+      const fetchWeeklyMaWorker = async (seed: {
+        ticker: string;
+        source_interval: string;
+        trade_date: string;
+        states: Record<string, string>;
+        latest_close: number;
+        latest_prev_close: number;
+        latest_volume_delta: number;
+      }) => {
         return runWithAbortAndTimeout(
           async (tickerSignal) => {
             const maStates = await fetchDataApiMovingAverageStatesForTicker(seed.ticker, Number(seed.latest_close), {
@@ -614,7 +673,15 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
         console.log(`Fetch-weekly: retrying ${maRetryCount} failed MA ticker(s)...`);
         fetchWeeklyScan.setStatus({ status: 'running-ma-retry' });
         let maRetryRecovered = 0;
-        const stillFailedMaSeeds: Array<{ ticker: string; source_interval: string; trade_date: string; states: Record<string, string>; latest_close: number; latest_prev_close: number; latest_volume_delta: number }> = [];
+        const stillFailedMaSeeds: Array<{
+          ticker: string;
+          source_interval: string;
+          trade_date: string;
+          states: Record<string, string>;
+          latest_close: number;
+          latest_prev_close: number;
+          latest_volume_delta: number;
+        }> = [];
         await mapWithConcurrency(
           failedMaSeeds,
           Math.max(1, Math.floor(maConcurrency / 2)),
@@ -688,7 +755,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: weeklyTradeDate || fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
     });
-    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
+    fetchWeeklyScan.setExtraStatus({
+      last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+    });
     return {
       status: errorTickers > 0 ? 'completed-with-errors' : 'completed',
       totalTickers,
@@ -747,18 +816,20 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
 
     if (fetchWeeklyScan.isStopping || isAbortError(err)) {
       const safeNextIndex = Math.max(0, processedTickers - runConcurrency);
-      fetchWeeklyScan.setResumeState(normalizeFetchWeeklyDataResumeState({
-        asOfTradeDate,
-        weeklyTradeDate,
-        sourceInterval,
-        tickers,
-        totalTickers,
-        nextIndex: safeNextIndex,
-        processedTickers: safeNextIndex,
-        errorTickers,
-        lookbackDays: runLookbackDays,
-        lastPublishedTradeDate,
-      }));
+      fetchWeeklyScan.setResumeState(
+        normalizeFetchWeeklyDataResumeState({
+          asOfTradeDate,
+          weeklyTradeDate,
+          sourceInterval,
+          tickers,
+          totalTickers,
+          nextIndex: safeNextIndex,
+          processedTickers: safeNextIndex,
+          errorTickers,
+          lookbackDays: runLookbackDays,
+          lastPublishedTradeDate,
+        }),
+      );
       fetchWeeklyScan.setStopRequested(false);
       fetchWeeklyScan.replaceStatus({
         running: false,
@@ -792,7 +863,9 @@ export async function runDivergenceFetchWeeklyData(options: { resume?: boolean; 
       finishedAt: new Date().toISOString(),
       lastPublishedTradeDate: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
     });
-    fetchWeeklyScan.setExtraStatus({ last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '' });
+    fetchWeeklyScan.setExtraStatus({
+      last_published_trade_date: fetchWeeklyScan.readStatus().lastPublishedTradeDate || '',
+    });
     throw err;
   } finally {
     if (runMetricsTracker) {

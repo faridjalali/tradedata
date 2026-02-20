@@ -5,9 +5,13 @@
 
 import type { ChartData, ChartInterval } from './chartApi';
 import {
-  CHART_CLIENT_CACHE_TTL_MS, CHART_CLIENT_CACHE_MAX_ENTRIES,
-  CHART_SESSION_CACHE_KEY, CHART_SESSION_CACHE_MAX_ENTRIES, CHART_SESSION_CACHE_MAX_BYTES,
-  volumeDeltaRsiSettings, volumeDeltaSettings,
+  CHART_CLIENT_CACHE_TTL_MS,
+  CHART_CLIENT_CACHE_MAX_ENTRIES,
+  CHART_SESSION_CACHE_KEY,
+  CHART_SESSION_CACHE_MAX_ENTRIES,
+  CHART_SESSION_CACHE_MAX_BYTES,
+  volumeDeltaRsiSettings,
+  volumeDeltaSettings,
 } from './chartTypes';
 import { timeKey } from './chartTimeUtils';
 
@@ -15,7 +19,7 @@ import { timeKey } from './chartTimeUtils';
 // Internal state
 // ---------------------------------------------------------------------------
 
-let chartDataCache = new Map<string, { data: ChartData; updatedAt: number }>();
+const chartDataCache = new Map<string, { data: ChartData; updatedAt: number }>();
 let chartCacheHydratedFromSession = false;
 let chartCachePersistTimer: number | null = null;
 
