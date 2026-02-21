@@ -25,6 +25,12 @@ interface TickerAlertChartMetrics {
   priceChangePct: number | null;
 }
 
+interface DailyMetricPoint {
+  dateKey: string;
+  close: number;
+  volumeDelta: number | null;
+}
+
 function formatAlertCardDate(rawDate: string | null | undefined): string {
   const value = String(rawDate || '').trim();
   if (!value) return '';
@@ -116,18 +122,21 @@ function buildVolumeDeltaLookupKeys(time: string | number): string[] {
   return keys;
 }
 
-function getChartMetricsByDateForTicker(ticker: string): Map<string, TickerAlertChartMetrics> {
+function buildMetricsFromChartData(data: unknown): {
+  byDate: Map<string, TickerAlertChartMetrics>;
+  dailyPoints: DailyMetricPoint[];
+} {
   const result = new Map<string, TickerAlertChartMetrics>();
-  const cacheKey = buildChartDataCacheKey(ticker, '1day');
-  const data = getCachedChartData(cacheKey);
-  if (!data) return result;
+  const dailyPoints: DailyMetricPoint[] = [];
+  if (!data || typeof data !== 'object') return { byDate: result, dailyPoints };
 
-  const bars = Array.isArray(data.bars) ? (data.bars as CandleBar[]) : [];
+  const dataLike = data as { bars?: CandleBar[]; volumeDelta?: Array<{ time: string | number; delta: number }> };
+  const bars = Array.isArray(dataLike.bars) ? (dataLike.bars as CandleBar[]) : [];
   const priceByDate = new Map<string, number>();
   const volumeByDate = new Map<string, number>();
 
   const volumeDeltaLookup = new Map<string, number>();
-  const volumeDeltaSeries = Array.isArray(data.volumeDelta) ? data.volumeDelta : [];
+  const volumeDeltaSeries = Array.isArray(dataLike.volumeDelta) ? dataLike.volumeDelta : [];
   for (const point of volumeDeltaSeries) {
     const delta = Number(point?.delta);
     if (!Number.isFinite(delta)) continue;
@@ -149,6 +158,14 @@ function getChartMetricsByDateForTicker(ticker: string): Map<string, TickerAlert
     if (!dateKey) continue;
     const delta = resolveVolumeDeltaForBar(bar.time);
     if (delta !== null) volumeByDate.set(dateKey, delta);
+    const close = Number(bar.close);
+    if (Number.isFinite(close)) {
+      dailyPoints.push({
+        dateKey,
+        close: Number(close),
+        volumeDelta: delta,
+      });
+    }
   }
 
   if (bars.length >= 2) {
@@ -170,7 +187,82 @@ function getChartMetricsByDateForTicker(ticker: string): Map<string, TickerAlert
     });
   }
 
-  return result;
+  return { byDate: result, dailyPoints };
+}
+
+function weekStartUtcFromDateKey(dateKey: string): string | null {
+  const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const dt = new Date(`${dateKey}T12:00:00Z`);
+  if (!Number.isFinite(dt.getTime())) return null;
+  const dow = dt.getUTCDay();
+  const monday = new Date(dt);
+  monday.setUTCDate(monday.getUTCDate() - (dow === 0 ? 6 : dow - 1));
+  return monday.toISOString().slice(0, 10);
+}
+
+function buildWeeklyMetricsFromDailyPoints(points: DailyMetricPoint[]): Map<string, TickerAlertChartMetrics> {
+  const out = new Map<string, TickerAlertChartMetrics>();
+  if (!Array.isArray(points) || points.length === 0) return out;
+
+  const sorted = [...points].sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  const weeks = new Map<string, DailyMetricPoint[]>();
+  for (const point of sorted) {
+    const wk = weekStartUtcFromDateKey(point.dateKey);
+    if (!wk) continue;
+    if (!weeks.has(wk)) weeks.set(wk, []);
+    weeks.get(wk)!.push(point);
+  }
+
+  const orderedWeeks = [...weeks.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let prevWeekClose: number | null = null;
+  for (const [, weekPoints] of orderedWeeks) {
+    if (!weekPoints.length) continue;
+    const last = weekPoints[weekPoints.length - 1];
+    const weekClose = Number(last.close);
+    const priceChangePct =
+      Number.isFinite(prevWeekClose) && prevWeekClose !== 0 && Number.isFinite(weekClose)
+        ? ((weekClose - Number(prevWeekClose)) / Number(prevWeekClose)) * 100
+        : null;
+
+    const deltas = weekPoints
+      .map((p) => Number(p.volumeDelta))
+      .filter((v) => Number.isFinite(v))
+      .map((v) => Number(v));
+    const volumeDelta = deltas.length ? deltas.reduce((sum, v) => sum + v, 0) : null;
+
+    for (const point of weekPoints) {
+      out.set(point.dateKey, {
+        volumeDelta,
+        priceChangePct,
+      });
+    }
+
+    prevWeekClose = Number.isFinite(weekClose) ? weekClose : prevWeekClose;
+  }
+  return out;
+}
+
+function getChartMetricsByDateForTicker(ticker: string): {
+  dailyByDate: Map<string, TickerAlertChartMetrics>;
+  weeklyByDate: Map<string, TickerAlertChartMetrics>;
+} {
+  const dailyData = getCachedChartData(buildChartDataCacheKey(ticker, '1day'));
+  const weeklyData = getCachedChartData(buildChartDataCacheKey(ticker, '1week'));
+
+  const dailyBundle = buildMetricsFromChartData(dailyData);
+  const weeklyBundle = buildMetricsFromChartData(weeklyData);
+  const weeklyFromDaily = buildWeeklyMetricsFromDailyPoints(dailyBundle.dailyPoints);
+
+  const weeklyByDate = new Map<string, TickerAlertChartMetrics>(weeklyFromDaily);
+  for (const [date, metrics] of weeklyBundle.byDate.entries()) {
+    weeklyByDate.set(date, metrics);
+  }
+
+  return {
+    dailyByDate: dailyBundle.byDate,
+    weeklyByDate,
+  };
 }
 
 function createTickerAlertCard(alert: Alert, metricsByDate: Map<string, TickerAlertChartMetrics>): string {
@@ -266,7 +358,7 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
   updateSortButtonUi('#ticker-view .ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
   const allAlerts = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allAlerts);
-  const chartMetricsByDate = getChartMetricsByDateForTicker(ticker);
+  const { dailyByDate, weeklyByDate } = getChartMetricsByDateForTicker(ticker);
   const alerts = allAlerts.filter((a) => a.ticker === ticker);
 
   let daily = alerts.filter((a) => (a.timeframe || '').trim() === '1d');
@@ -300,12 +392,12 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
 
   const dailyContainer = document.getElementById('ticker-daily-container');
   if (dailyContainer) {
-    dailyContainer.innerHTML = daily.map((alert) => createTickerAlertCard(alert, chartMetricsByDate)).join('');
+    dailyContainer.innerHTML = daily.map((alert) => createTickerAlertCard(alert, dailyByDate)).join('');
   }
 
   const weeklyContainer = document.getElementById('ticker-weekly-container');
   if (weeklyContainer) {
-    weeklyContainer.innerHTML = weekly.map((alert) => createTickerAlertCard(alert, chartMetricsByDate)).join('');
+    weeklyContainer.innerHTML = weekly.map((alert) => createTickerAlertCard(alert, weeklyByDate)).join('');
   }
 
   if (refreshCharts) {
