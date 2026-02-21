@@ -661,7 +661,7 @@ function renderBreadthCompareChart(): void {
       fill: false,
     },
     {
-      label: '% > 21d',
+      label: '21 MA',
       data: normMa21,
       rawValues: rawMa21,
       rawSuffix: '%',
@@ -676,7 +676,7 @@ function renderBreadthCompareChart(): void {
       fill: false,
     },
     {
-      label: '% > 50d',
+      label: '50 MA',
       data: normMa50,
       rawValues: rawMa50,
       rawSuffix: '%',
@@ -690,7 +690,7 @@ function renderBreadthCompareChart(): void {
       fill: false,
     },
     {
-      label: '% > 100d',
+      label: '100 MA',
       data: normMa100,
       rawValues: rawMa100,
       rawSuffix: '%',
@@ -704,7 +704,7 @@ function renderBreadthCompareChart(): void {
       fill: false,
     },
     {
-      label: '% > 200d',
+      label: '200 MA',
       data: normMa200,
       rawValues: rawMa200,
       rawSuffix: '%',

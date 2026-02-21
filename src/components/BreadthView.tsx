@@ -21,7 +21,7 @@ export function BreadthView({
         <div class="single-page-controls">
           <div id="breadth-tf-btns" class="feed-controls-group">
             <button class="pane-btn" data-days="1" type="button" onClick={() => onSelectTimeframe(1)}>
-              T
+              1
             </button>
             <button class="pane-btn active" data-days="5" type="button" onClick={() => onSelectTimeframe(5)}>
               5
@@ -71,27 +71,29 @@ export function BreadthView({
         <div class="single-page-header">
           <div class="single-page-controls">
             <div id="breadth-compare-index-btns" class="feed-controls-group feed-controls-group--wrap"></div>
-            <button
-              id="breadth-compare-toggle"
-              class="pane-btn breadth-compare-toggle-btn"
-              type="button"
-              onClick={() => onToggleCompareMode()}
-            >
-              Compare
-            </button>
-            <div id="breadth-compare-tf-btns" class="feed-controls-group">
-              <button class="pane-btn" data-days="5" type="button" onClick={() => onSelectCompareTf(5)}>
-                5d
+            <div class="breadth-compare-controls-row">
+              <button
+                id="breadth-compare-toggle"
+                class="pane-btn breadth-compare-toggle-btn"
+                type="button"
+                onClick={() => onToggleCompareMode()}
+              >
+                Compare
               </button>
-              <button class="pane-btn" data-days="10" type="button" onClick={() => onSelectCompareTf(10)}>
-                10d
-              </button>
-              <button class="pane-btn active" data-days="20" type="button" onClick={() => onSelectCompareTf(20)}>
-                20d
-              </button>
-              <button class="pane-btn" data-days="30" type="button" onClick={() => onSelectCompareTf(30)}>
-                30d
-              </button>
+              <div id="breadth-compare-tf-btns" class="feed-controls-group">
+                <button class="pane-btn" data-days="5" type="button" onClick={() => onSelectCompareTf(5)}>
+                  5
+                </button>
+                <button class="pane-btn" data-days="10" type="button" onClick={() => onSelectCompareTf(10)}>
+                  10
+                </button>
+                <button class="pane-btn active" data-days="20" type="button" onClick={() => onSelectCompareTf(20)}>
+                  20
+                </button>
+                <button class="pane-btn" data-days="30" type="button" onClick={() => onSelectCompareTf(30)}>
+                  30
+                </button>
+              </div>
             </div>
           </div>
         </div>

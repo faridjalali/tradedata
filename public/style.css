@@ -440,7 +440,15 @@ h2 {
 
 /* Compare toggle button — slight left gap to separate from the index row */
 .breadth-compare-toggle-btn {
-  margin-left: 8px;
+  margin-left: 0;
+}
+
+.breadth-compare-controls-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 /* Locked ticker in compare mode — visual ring */
