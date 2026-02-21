@@ -1877,8 +1877,8 @@ button:hover {
   top: 0;
   right: 0;
   z-index: 31;
-  width: 22px;
-  height: 22px;
+  width: 11px;
+  height: 11px;
   border: none;
   border-radius: 0;
   background: linear-gradient(135deg, var(--border-color) 0%, var(--highlight) 100%);

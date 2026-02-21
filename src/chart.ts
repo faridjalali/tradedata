@@ -728,6 +728,8 @@ function layoutTopPaneBadges(container: HTMLElement): void {
 const tickerInfoCache = new Map<string, TickerInfoPayload | null>();
 let activeTickerTooltip: HTMLElement | null = null;
 let activeTooltipTimer: number | null = null;
+let activeTooltipOutsideClickHandler: ((event: MouseEvent) => void) | null = null;
+const TICKER_TOOLTIP_AUTO_DISMISS_MS = 4000;
 
 function formatMarketCap(cap: number | undefined | null): string {
   if (!cap || !Number.isFinite(cap) || cap <= 0) return '';
@@ -741,6 +743,10 @@ function dismissTickerTooltip(): void {
   if (activeTooltipTimer !== null) {
     clearTimeout(activeTooltipTimer);
     activeTooltipTimer = null;
+  }
+  if (activeTooltipOutsideClickHandler) {
+    document.removeEventListener('click', activeTooltipOutsideClickHandler, true);
+    activeTooltipOutsideClickHandler = null;
   }
   if (activeTickerTooltip) {
     activeTickerTooltip.remove();
@@ -810,20 +816,24 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
   (pane || anchor.parentElement)?.appendChild(tooltip);
   activeTickerTooltip = tooltip;
 
-  activeTooltipTimer = window.setTimeout(dismissTickerTooltip, 4000);
+  activeTooltipTimer = window.setTimeout(dismissTickerTooltip, TICKER_TOOLTIP_AUTO_DISMISS_MS);
 
-  const onClickOutside = (e: MouseEvent): void => {
-    const target = e.target as Node | null;
+  const onClickOutside = (event: MouseEvent): void => {
+    const target = event.target as Node | null;
     if (!target) return;
     // Ignore clicks on the anchor badge itself so the second click can trigger
     // the "open website" behavior in handleTickerBadgeClick().
     if (anchor.contains(target)) return;
     if (!tooltip.contains(target)) {
       dismissTickerTooltip();
-      document.removeEventListener('click', onClickOutside, true);
     }
   };
-  setTimeout(() => document.addEventListener('click', onClickOutside, true), 0);
+  activeTooltipOutsideClickHandler = onClickOutside;
+  setTimeout(() => {
+    if (activeTooltipOutsideClickHandler === onClickOutside && activeTickerTooltip === tooltip) {
+      document.addEventListener('click', onClickOutside, true);
+    }
+  }, 0);
 }
 
 function openTickerWebsite(symbol: string): void {
