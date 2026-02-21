@@ -6,6 +6,8 @@
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import type { CandleBar } from '../shared/api-types';
 
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export function unixSecondsFromTimeValue(time: string | number | null | undefined): number | null {
   if (typeof time === 'number' && Number.isFinite(time)) return time;
   if (typeof time === 'string' && time.trim()) {
@@ -37,27 +39,63 @@ export function toDateFromScaleTime(time: any): Date | null {
   return null;
 }
 
+function extractCalendarParts(time: any): { year: number; monthIndex: number; day: number } | null {
+  if (
+    time &&
+    typeof time === 'object' &&
+    Number.isFinite(time.year) &&
+    Number.isFinite(time.month) &&
+    Number.isFinite(time.day)
+  ) {
+    return {
+      year: Number(time.year),
+      monthIndex: Math.max(0, Math.min(11, Number(time.month) - 1)),
+      day: Number(time.day),
+    };
+  }
+
+  if (typeof time === 'string') {
+    const directDate = time.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (directDate) {
+      return {
+        year: Number(directDate[1]),
+        monthIndex: Math.max(0, Math.min(11, Number(directDate[2]) - 1)),
+        day: Number(directDate[3]),
+      };
+    }
+  }
+
+  const date = toDateFromScaleTime(time);
+  if (!date) return null;
+  return {
+    year: date.getUTCFullYear(),
+    monthIndex: date.getUTCMonth(),
+    day: date.getUTCDate(),
+  };
+}
+
 export function formatTimeScaleTickMark(time: any, tickMarkType: number): string {
   const date = toDateFromScaleTime(time);
   if (!date) return '';
-  const appTimeZone = getAppTimeZone();
+  const calendar = extractCalendarParts(time);
 
   if (tickMarkType === 0) {
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      timeZone: appTimeZone,
-    });
+    return calendar ? String(calendar.year) : date.getUTCFullYear().toString();
   }
   if (tickMarkType === 1) {
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      timeZone: appTimeZone,
+    if (calendar) return MONTH_NAMES_SHORT[calendar.monthIndex] || '';
+    return MONTH_NAMES_SHORT[date.getUTCMonth()] || '';
+  }
+  if (tickMarkType === 3 || tickMarkType === 4) {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: getAppTimeZone(),
     });
   }
-  return date.toLocaleDateString('en-US', {
-    day: 'numeric',
-    timeZone: appTimeZone,
-  });
+  if (calendar) return String(calendar.day);
+  return String(date.getUTCDate());
 }
 
 export function monthKeyInAppTimeZone(unixSeconds: number): string {

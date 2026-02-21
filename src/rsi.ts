@@ -1,9 +1,10 @@
 // RSI Chart configuration and management
 
 import { RSIPoint, RSIDisplayMode } from './chartApi';
-import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
+import { getAppTimeZoneFormatter } from './timezone';
 import { isMobileTouch } from './chart';
 import { getThemeColors } from './theme';
+import { formatTimeScaleTickMark } from './chartTimeUtils';
 import { FONT_DATA_STACK, FONT_SIZE_AXIS_PX } from './chartTypes';
 
 // Declare Lightweight Charts global
@@ -230,31 +231,6 @@ export class RSIChart {
     }
   }
 
-  private toDateFromScaleTime(time: any): Date | null {
-    if (typeof time === 'number' && Number.isFinite(time)) {
-      return new Date(time * 1000);
-    }
-
-    if (typeof time === 'string' && time.trim()) {
-      const normalized = time.includes('T') ? time : `${time.replace(' ', 'T')}Z`;
-      const parsed = new Date(normalized);
-      return Number.isFinite(parsed.getTime()) ? parsed : null;
-    }
-
-    if (
-      time &&
-      typeof time === 'object' &&
-      Number.isFinite(time.year) &&
-      Number.isFinite(time.month) &&
-      Number.isFinite(time.day)
-    ) {
-      // BusinessDay-like object
-      return new Date(Date.UTC(Number(time.year), Number(time.month) - 1, Number(time.day), 0, 0, 0));
-    }
-
-    return null;
-  }
-
   private toUnixSeconds(time: string | number | null | undefined): number | null {
     if (typeof time === 'number' && Number.isFinite(time)) {
       return time;
@@ -270,30 +246,7 @@ export class RSIChart {
   }
 
   private formatTickMark(time: any, tickMarkType: number): string {
-    const date = this.toDateFromScaleTime(time);
-    if (!date) return '';
-
-    // TickMarkType enum in lightweight-charts:
-    // 0 Year, 1 Month, 2 DayOfMonth, 3 Time, 4 TimeWithSeconds
-    if (tickMarkType === 0) {
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        timeZone: getAppTimeZone(),
-      });
-    }
-
-    if (tickMarkType === 1) {
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        timeZone: getAppTimeZone(),
-      });
-    }
-
-    // Zoomed in (day/time): show day-of-month only.
-    return date.toLocaleDateString('en-US', {
-      day: 'numeric',
-      timeZone: getAppTimeZone(),
-    });
+    return formatTimeScaleTickMark(time, tickMarkType);
   }
 
   private midlineStyleToLineStyle(style: 'dotted' | 'solid'): number {
