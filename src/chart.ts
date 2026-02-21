@@ -1607,7 +1607,34 @@ function ensureVolumeDeltaCumulativeEl(container: HTMLElement): HTMLDivElement {
   return cumulativeEl;
 }
 
-function positionVolumeDeltaCumulativeEl(container: HTMLElement, cumulativeEl: HTMLElement): void {
+function ensureVolumeDeltaCumulativePriceChangeEl(container: HTMLElement): HTMLDivElement {
+  let changeEl = container.querySelector('.volume-delta-cumulative-price-change') as HTMLDivElement | null;
+  if (changeEl) return changeEl;
+
+  changeEl = document.createElement('div');
+  changeEl.className = 'pane-btn pane-overlay label volume-delta-cumulative-price-change';
+  changeEl.style.position = 'absolute';
+  changeEl.style.zIndex = '30';
+  changeEl.style.minHeight = '24px';
+  changeEl.style.display = 'inline-flex';
+  changeEl.style.alignItems = 'center';
+  changeEl.style.padding = '0 8px';
+  changeEl.style.borderRadius = '4px';
+  changeEl.style.border = `1px solid ${tc().borderColor}`;
+  changeEl.style.background = tc().cardBg;
+  changeEl.style.color = tc().textSecondary;
+  changeEl.style.pointerEvents = 'none';
+  changeEl.title = 'Price Change';
+  changeEl.textContent = '--';
+  container.appendChild(changeEl);
+  return changeEl;
+}
+
+function positionVolumeDeltaCumulativeBadges(
+  container: HTMLElement,
+  cumulativeEl: HTMLElement,
+  cumulativePriceChangeEl: HTMLElement,
+): void {
   const vdBadge = container.querySelector('.pane-name-badge[data-pane="volumeDelta"]') as HTMLElement | null;
   const fallbackLeft = getPaneBadgeStartLeft(container);
   const top =
@@ -1615,10 +1642,14 @@ function positionVolumeDeltaCumulativeEl(container: HTMLElement, cumulativeEl: H
       ? vdBadge.offsetTop
       : PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX;
   const left = vdBadge ? vdBadge.offsetLeft + vdBadge.offsetWidth + TOP_PANE_BADGE_GAP_PX : fallbackLeft;
+  const cumulativeWidth = Math.ceil(cumulativeEl.getBoundingClientRect().width || cumulativeEl.offsetWidth || 0);
+  const changeLeft = left + cumulativeWidth + TOP_PANE_BADGE_GAP_PX;
 
   cumulativeEl.style.left = `${left}px`;
   cumulativeEl.style.top = `${top}px`;
-  cumulativeEl.style.maxWidth = `calc(100% - ${left + 30}px)`;
+  cumulativePriceChangeEl.style.left = `${changeLeft}px`;
+  cumulativePriceChangeEl.style.top = `${top}px`;
+  cumulativePriceChangeEl.style.maxWidth = `calc(100% - ${changeLeft + 30}px)`;
 }
 
 function formatSignedCompactVolumeDelta(value: number): string {
@@ -1647,28 +1678,58 @@ function rebuildVolumeDeltaCumulativeMap(): void {
 
 function setVolumeDeltaCumulativeBadge(container: HTMLElement, time?: string | number | null): void {
   const cumulativeEl = ensureVolumeDeltaCumulativeEl(container);
-  positionVolumeDeltaCumulativeEl(container, cumulativeEl);
+  const cumulativePriceChangeEl = ensureVolumeDeltaCumulativePriceChangeEl(container);
   cumulativeEl.style.border = `1px solid ${tc().borderColor}`;
   cumulativeEl.style.background = tc().cardBg;
+  cumulativePriceChangeEl.style.border = `1px solid ${tc().borderColor}`;
+  cumulativePriceChangeEl.style.background = tc().cardBg;
 
   if (!Array.isArray(currentBars) || currentBars.length === 0 || volumeDeltaCumulativeByTime.size === 0) {
     cumulativeEl.textContent = '--';
     cumulativeEl.style.color = tc().textSecondary;
+    cumulativePriceChangeEl.textContent = '--';
+    cumulativePriceChangeEl.style.color = tc().textSecondary;
+    positionVolumeDeltaCumulativeBadges(container, cumulativeEl, cumulativePriceChangeEl);
     return;
   }
 
   const fallbackTime = currentBars[currentBars.length - 1]?.time;
   const targetTime = time !== null && time !== undefined ? time : fallbackTime;
   const entry = getNearestMappedEntryAtOrBefore(targetTime, volumeDeltaCumulativeByTime);
+  if (!entry) {
+    cumulativeEl.textContent = '--';
+    cumulativeEl.style.color = tc().textSecondary;
+    cumulativePriceChangeEl.textContent = '--';
+    cumulativePriceChangeEl.style.color = tc().textSecondary;
+    positionVolumeDeltaCumulativeBadges(container, cumulativeEl, cumulativePriceChangeEl);
+    return;
+  }
   const cumulative = Number(entry?.value);
   if (!Number.isFinite(cumulative)) {
     cumulativeEl.textContent = '--';
     cumulativeEl.style.color = tc().textSecondary;
+    cumulativePriceChangeEl.textContent = '--';
+    cumulativePriceChangeEl.style.color = tc().textSecondary;
+    positionVolumeDeltaCumulativeBadges(container, cumulativeEl, cumulativePriceChangeEl);
     return;
   }
 
   cumulativeEl.textContent = formatSignedCompactVolumeDelta(cumulative);
   cumulativeEl.style.color = cumulative > 0 ? '#26a69a' : cumulative < 0 ? '#ef5350' : tc().textPrimary;
+  const startPrice = Number(priceByTime.get(timeKey(entry.time)));
+  const latestClose = Number(currentBars[currentBars.length - 1]?.close);
+  if (!Number.isFinite(startPrice) || !Number.isFinite(latestClose) || startPrice === 0) {
+    cumulativePriceChangeEl.textContent = '--';
+    cumulativePriceChangeEl.style.color = tc().textSecondary;
+    positionVolumeDeltaCumulativeBadges(container, cumulativeEl, cumulativePriceChangeEl);
+    return;
+  }
+  const percentChange = ((latestClose - startPrice) / startPrice) * 100;
+  const sign = percentChange > 0 ? '+' : '';
+  cumulativePriceChangeEl.textContent = `${sign}${percentChange.toFixed(2)}%`;
+  cumulativePriceChangeEl.style.color =
+    percentChange > 0 ? '#26a69a' : percentChange < 0 ? '#ef5350' : tc().textPrimary;
+  positionVolumeDeltaCumulativeBadges(container, cumulativeEl, cumulativePriceChangeEl);
 }
 
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
