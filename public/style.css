@@ -331,6 +331,19 @@ h2 {
   position: absolute;
   z-index: 30;
 }
+.pane-settings-btn,
+.pane-trendline-btn {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.pane-name-badge {
+  min-height: 24px;
+  padding: 0 6px;
+  line-height: 24px;
+  white-space: nowrap;
+}
 @keyframes refresh-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -1487,6 +1500,32 @@ button:hover {
   #rsi-chart-container { height: 300px; overflow: hidden; }
   #vd-chart-container { height: 220px; }
   .chart-controls-bar { gap: 5px; margin-bottom: 14px; }
+  #chart-controls .pane-btn {
+    height: 30px;
+    min-width: 30px;
+    padding: 0 9px;
+  }
+  #chart-controls .pane-btn.chart-action-btn {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+  }
+  #chart-controls .pane-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  .pane-settings-btn,
+  .pane-trendline-btn {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0;
+  }
+  .pane-name-badge {
+    min-height: 24px;
+    padding: 0 6px;
+    line-height: 24px;
+  }
 
   /* Touch-friendly pane resize handle */
   .pane-resize-handle { height: 12px; }
@@ -1598,8 +1637,8 @@ button:hover {
 .header-sort-controls .pane-btn[data-sort-dir]::after {
   content: attr(data-sort-dir);
   position: absolute;
-  right: 2px;
-  font-size: 0.5rem;
+  right: 0px;
+  font-size: 0.42rem;
   line-height: 1;
   color: inherit;
   pointer-events: none;
@@ -1739,6 +1778,22 @@ button:hover {
   margin-bottom: 20px;
   flex-wrap: wrap;
   align-items: center;
+}
+#chart-controls .pane-btn {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  line-height: 1;
+}
+#chart-controls .pane-btn.chart-action-btn {
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+}
+#chart-controls .pane-btn svg {
+  display: block;
+  width: 13px;
+  height: 13px;
 }
 
 .chart-navigation-group {

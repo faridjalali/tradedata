@@ -219,8 +219,13 @@ export function TickerView() {
               </button>
             </div>
             <div class="chart-navigation-group">
-              <button id="chart-refresh-btn" class="pane-btn refresh-btn" type="button" title="Refresh Chart"></button>
-              <button id="chart-nav-prev" class="pane-btn" title="Previous Ticker" type="button">
+              <button
+                id="chart-refresh-btn"
+                class="pane-btn refresh-btn chart-action-btn"
+                type="button"
+                title="Refresh Chart"
+              ></button>
+              <button id="chart-nav-prev" class="pane-btn chart-action-btn" title="Previous Ticker" type="button">
                 <svg
                   width="13"
                   height="13"
@@ -234,7 +239,7 @@ export function TickerView() {
                   <polyline points="18 15 12 9 6 15"></polyline>
                 </svg>
               </button>
-              <button id="chart-nav-next" class="pane-btn" title="Next Ticker" type="button">
+              <button id="chart-nav-next" class="pane-btn chart-action-btn" title="Next Ticker" type="button">
                 <svg
                   width="13"
                   height="13"
@@ -249,7 +254,7 @@ export function TickerView() {
                 </svg>
               </button>
             </div>
-            <button id="chart-fullscreen-btn" class="pane-btn" type="button" title="Fullscreen">
+            <button id="chart-fullscreen-btn" class="pane-btn chart-action-btn" type="button" title="Fullscreen">
               <svg
                 width="13"
                 height="13"
@@ -266,7 +271,7 @@ export function TickerView() {
                 <polyline points="5.5 15 1 15 1 10.5" />
               </svg>
             </button>
-            <button id="ticker-back-btn" class="pane-btn" type="button" title="Back">
+            <button id="ticker-back-btn" class="pane-btn chart-action-btn" type="button" title="Back">
               <svg
                 width="13"
                 height="13"
