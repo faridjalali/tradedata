@@ -381,7 +381,7 @@ export function hideSettingsPanels(): void {
 // ---------------------------------------------------------------------------
 
 export function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
-  panel.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  panel.style.fontFamily = 'var(--font-sans)';
   panel.style.fontSize = '12px';
   panel.style.fontWeight = '500';
   panel.style.lineHeight = '1.2';
