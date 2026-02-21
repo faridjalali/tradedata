@@ -313,6 +313,9 @@ h2 {
   color: var(--highlight-text);
   border-color: var(--highlight);
 }
+.pane-settings-panel .pane-settings-reset-btn {
+  margin-left: auto;
+}
 .pane-btn.label {
   padding: 0 6px;
   cursor: default;

@@ -499,9 +499,9 @@ export function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Chart</div>
-      <button type="button" data-price-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" class="pane-btn active pane-settings-reset-btn" data-price-setting="reset">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Vertical gridlines</span>
@@ -615,9 +615,9 @@ export function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">RSI</div>
-      <button type="button" data-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" class="pane-btn active pane-settings-reset-btn" data-rsi-setting="reset">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Length</span>
@@ -706,9 +706,9 @@ export function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivE
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Volume Delta</div>
-      <button type="button" data-vd-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" class="pane-btn active pane-settings-reset-btn" data-vd-setting="reset">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Source</span>
@@ -835,9 +835,9 @@ export function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLD
   panel.style.backdropFilter = 'blur(6px)';
 
   panel.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; min-height:26px; margin-bottom:8px;">
+    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
       <div style="font-weight:600;">Volume Delta RSI</div>
-      <button type="button" data-vd-rsi-setting="reset" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Reset</button>
+      <button type="button" class="pane-btn active pane-settings-reset-btn" data-vd-rsi-setting="reset">Reset</button>
     </div>
     <label style="margin-bottom:6px;">
       <span>Length</span>
