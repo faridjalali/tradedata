@@ -65,11 +65,27 @@ export function scoreSubwindow(dailySlice: DailyAggregate[], preDaily: DailyAggr
     concordantFrac = totalPosDelta > 0 ? concordantUpDelta / totalPosDelta : 0;
 
     if (concordantFrac > 0.65) {
-      return { score: 0, detected: false, reason: 'concordant_dominated', netDeltaPct, overallPriceChange, intraRally, concordantFrac };
+      return {
+        score: 0,
+        detected: false,
+        reason: 'concordant_dominated',
+        netDeltaPct,
+        overallPriceChange,
+        intraRally,
+        concordantFrac,
+      };
     }
 
     if (overallPriceChange > 0 && concordantFrac > 0.6) {
-      return { score: 0, detected: false, reason: 'concordant_flat_market', netDeltaPct, overallPriceChange, intraRally, concordantFrac };
+      return {
+        score: 0,
+        detected: false,
+        reason: 'concordant_flat_market',
+        netDeltaPct,
+        overallPriceChange,
+        intraRally,
+        concordantFrac,
+      };
     }
   }
 
@@ -149,7 +165,16 @@ export function scoreSubwindow(dailySlice: DailyAggregate[], preDaily: DailyAggr
   const rawScore = s1 * 0.15 + s2 * 0.1 + s3 * 0.05 + s4 * 0.05 + s5 * 0.03 + s6 * 0.25 + s7 * 0.02 + s8 * 0.35;
 
   if (s8 < 0.05 && concordantFrac > 0.55) {
-    return { score: 0, detected: false, reason: 'no_divergence', netDeltaPct, overallPriceChange, concordantFrac, s8, components: { s1, s2, s3, s4, s5, s6, s7, s8 } };
+    return {
+      score: 0,
+      detected: false,
+      reason: 'no_divergence',
+      netDeltaPct,
+      overallPriceChange,
+      concordantFrac,
+      s8,
+      components: { s1, s2, s3, s4, s5, s6, s7, s8 },
+    };
   }
 
   let concordancePenalty = 1.0;

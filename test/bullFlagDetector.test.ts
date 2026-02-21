@@ -39,8 +39,8 @@ function generateFlag(startPrice: number, bars: number, driftPerBar: number, noi
 function generateFlat(price: number, bars: number, noise: number): Bar[] {
   const result: Bar[] = [];
   for (let i = 0; i < bars; i++) {
-    const open = price + (Math.sin(i) * noise * 0.5);
-    const close = price + (Math.cos(i) * noise * 0.5);
+    const open = price + Math.sin(i) * noise * 0.5;
+    const close = price + Math.cos(i) * noise * 0.5;
     const high = Math.max(open, close) + noise * 0.3;
     const low = Math.min(open, close) - noise * 0.3;
     result.push({ time: 1700000000 + i * 86400, open, high, low, close });
@@ -70,12 +70,7 @@ function generateDowntrend(startPrice: number, bars: number, dropPerBar: number)
  * @param initialSpread Distance from center to high/low at start
  * @param convergenceRate How much the spread shrinks per bar
  */
-function generatePennant(
-  startPrice: number,
-  bars: number,
-  initialSpread: number,
-  convergenceRate: number,
-): Bar[] {
+function generatePennant(startPrice: number, bars: number, initialSpread: number, convergenceRate: number): Bar[] {
   const result: Bar[] = [];
   for (let i = 0; i < bars; i++) {
     const spread = initialSpread - convergenceRate * i;
@@ -244,9 +239,6 @@ test('rejects pennant with diverging trendlines', () => {
   // should NOT get a high confidence pennant score
   if (detected) {
     // If something is detected, it should be modest confidence at best
-    assert.ok(
-      detected.confidence < 80,
-      `diverging formation should not score highly (got ${detected.confidence})`,
-    );
+    assert.ok(detected.confidence < 80, `diverging formation should not score highly (got ${detected.confidence})`);
   }
 });

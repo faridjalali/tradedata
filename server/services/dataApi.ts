@@ -72,7 +72,11 @@ function isInfrastructureError(err: unknown): boolean {
   if (Number(status) >= 500 || (err as Record<string, unknown>).isTaskTimeout) return true;
   // Network errors (ECONNREFUSED, ETIMEDOUT, etc.)
   const code = (err as Record<string, unknown>).code;
-  if (typeof code === 'string' && /^(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)) return true;
+  if (
+    typeof code === 'string' &&
+    /^(ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)
+  )
+    return true;
   // Timeout in message
   const msg = String((err as Record<string, unknown>).message || '');
   if (/timed?\s*out/i.test(msg)) return true;
@@ -119,7 +123,10 @@ const DIVERGENCE_STALL_RETRY_BASE_MS = Math.max(1_000, Number(process.env.DIVERG
 // URL building
 // ---------------------------------------------------------------------------
 
-function buildDataApiUrl(path: string, params: Record<string, string | number | boolean | undefined | null> = {}): string {
+function buildDataApiUrl(
+  path: string,
+  params: Record<string, string | number | boolean | undefined | null> = {},
+): string {
   const normalizedBase = DATA_API_BASE.replace(/\/+$/, '');
   const normalizedPath = String(path || '').replace(/^\/+/, '');
   const url = new URL(`${normalizedBase}/${normalizedPath}`);
@@ -258,7 +265,8 @@ function isDataApiRateLimitedError(err: unknown): boolean {
   const message = String(e.message || err || '');
   return (
     /(?:^|[^0-9])429(?:[^0-9]|$)|Limit Reach|Too Many Requests|rate limit/i.test(message) ||
-    (e.isDataApiRateLimited === true || Number(e.httpStatus) === 429)
+    e.isDataApiRateLimited === true ||
+    Number(e.httpStatus) === 429
   );
 }
 
@@ -448,7 +456,10 @@ const FETCH_RATE_LIMIT_BASE_BACKOFF_MS = 1_500;
 async function fetchDataApiJson(
   url: string,
   label: string,
-  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<unknown> {
   assertDataApiKey();
   if (isDataApiRequestsPaused()) {
@@ -461,13 +472,11 @@ async function fetchDataApiJson(
     } catch (err) {
       attempt++;
       const signal = options && options.signal ? options.signal : null;
-      if (
-        isDataApiRateLimitedError(err) &&
-        attempt <= FETCH_RATE_LIMIT_MAX_RETRIES &&
-        !(signal && signal.aborted)
-      ) {
+      if (isDataApiRateLimitedError(err) && attempt <= FETCH_RATE_LIMIT_MAX_RETRIES && !(signal && signal.aborted)) {
         const backoffMs = Math.min(30_000, FETCH_RATE_LIMIT_BASE_BACKOFF_MS * 2 ** (attempt - 1));
-        console.warn(`[dataApi] ${label} rate-limited (attempt ${attempt}/${FETCH_RATE_LIMIT_MAX_RETRIES}), retrying in ${backoffMs}ms`);
+        console.warn(
+          `[dataApi] ${label} rate-limited (attempt ${attempt}/${FETCH_RATE_LIMIT_MAX_RETRIES}), retrying in ${backoffMs}ms`,
+        );
         await sleepWithAbort(backoffMs, signal);
         continue;
       }
@@ -479,9 +488,11 @@ async function fetchDataApiJson(
 async function fetchDataApiJsonOnce(
   url: string,
   label: string,
-  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<unknown> {
-
   // Circuit breaker — reject immediately when API is confirmed down.
   return dataApiCircuitBreaker.call(async () => {
     const externalSignal = options && options.signal ? options.signal : null;
@@ -561,33 +572,36 @@ async function fetchDataApiJsonOnce(
           subscriptionRestricted: isDataApiSubscriptionRestrictedError(err),
         });
       }
-    if (isAbortError(err)) {
-      if (externalSignal && externalSignal.aborted) {
-        const abortError = new Error(`${label} request aborted`) as DataApiError;
-        abortError.name = 'AbortError';
-        abortError.httpStatus = 499;
-        throw abortError;
+      if (isAbortError(err)) {
+        if (externalSignal && externalSignal.aborted) {
+          const abortError = new Error(`${label} request aborted`) as DataApiError;
+          abortError.name = 'AbortError';
+          abortError.httpStatus = 499;
+          throw abortError;
+        }
+        if (timedOut) {
+          const timeoutError = new Error(`${label} request timed out after ${DATA_API_TIMEOUT_MS}ms`) as DataApiError;
+          timeoutError.httpStatus = 504;
+          throw timeoutError;
+        }
       }
-      if (timedOut) {
-        const timeoutError = new Error(`${label} request timed out after ${DATA_API_TIMEOUT_MS}ms`) as DataApiError;
-        timeoutError.httpStatus = 504;
-        throw timeoutError;
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', forwardAbort);
       }
     }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-    if (externalSignal) {
-      externalSignal.removeEventListener('abort', forwardAbort);
-    }
-  }
   }); // end circuit breaker call
 }
 
 async function fetchDataApiArrayWithFallback(
   label: string,
   urls: string[],
-  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<unknown[]> {
   assertDataApiKey();
   let lastError: unknown = null;
@@ -693,7 +707,9 @@ function normalizeQuoteTimestamp(value: unknown): number | null {
 // Daily bars
 // ---------------------------------------------------------------------------
 
-async function dataApiDailySingle(symbol: string): Promise<Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> | null> {
+async function dataApiDailySingle(
+  symbol: string,
+): Promise<Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> | null> {
   const end = new Date();
   const start = addUtcDays(end, -400);
   const url = buildDataApiAggregateRangeUrl(symbol, '1day', {
@@ -720,11 +736,15 @@ async function dataApiDailySingle(symbol: string): Promise<Array<{ date: string;
       const boundedLow = Math.min(low, open, close);
       return { date, open, high: boundedHigh, low: boundedLow, close, volume };
     })
-    .filter((r): r is { date: string; open: number; high: number; low: number; close: number; volume: number } => r !== null);
+    .filter(
+      (r): r is { date: string; open: number; high: number; low: number; close: number; volume: number } => r !== null,
+    );
   return normalized.length ? normalized : null;
 }
 
-async function dataApiDaily(symbol: string): Promise<Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> | null> {
+async function dataApiDaily(
+  symbol: string,
+): Promise<Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> | null> {
   const candidates = getDataApiSymbolCandidates(symbol);
   let lastError: unknown = null;
 
@@ -768,11 +788,7 @@ function extractLatestIndicatorValue(payload: unknown): number | null {
   }
   const resultsObj = obj.results as Record<string, unknown> | undefined;
   const values =
-    resultsObj && Array.isArray(resultsObj.values)
-      ? resultsObj.values
-      : Array.isArray(obj.values)
-        ? obj.values
-        : [];
+    resultsObj && Array.isArray(resultsObj.values) ? resultsObj.values : Array.isArray(obj.values) ? obj.values : [];
   if (values.length > 0) {
     const first = (values[0] || {}) as Record<string, unknown>;
     const nestedValue = toNumberOrNull(first.value ?? first.v ?? first.close ?? first.c);
@@ -785,7 +801,10 @@ async function fetchDataApiIndicatorLatestValue(
   symbol: string,
   indicatorType: string,
   windowLength: number,
-  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<number> {
   const ticker = normalizeTickerSymbol(symbol);
   const type = String(indicatorType || '')
@@ -831,7 +850,10 @@ async function fetchDataApiIndicatorLatestValue(
 async function fetchDataApiMovingAverageStatesForTicker(
   ticker: string,
   latestClose: number,
-  options: { signal?: AbortSignal | null; metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null } = {},
+  options: {
+    signal?: AbortSignal | null;
+    metricsTracker?: { recordApiCall: (details: Record<string, unknown>) => void } | null;
+  } = {},
 ): Promise<{ ema8: boolean; ema21: boolean; sma50: boolean; sma200: boolean } | null> {
   const close = Number(latestClose);
   if (!Number.isFinite(close) || close <= 0) {
@@ -880,10 +902,7 @@ async function dataApiLatestQuote(symbol: string): Promise<unknown> {
 // Grouped Daily Bars (all US stocks for a single date)
 // ---------------------------------------------------------------------------
 
-async function fetchGroupedDailyBars(
-  date: string,
-  tickerFilter?: Set<string>,
-): Promise<Map<string, number>> {
+async function fetchGroupedDailyBars(date: string, tickerFilter?: Set<string>): Promise<Map<string, number>> {
   const url = buildDataApiUrl(`/v2/aggs/grouped/locale/us/market/stocks/${date}`, {
     adjusted: 'true',
   });

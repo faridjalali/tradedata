@@ -12,13 +12,30 @@ async function unlockSite(page: Page) {
 
 test.describe('Alerts / Live Feed View', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('minichart_mobile', 'off');
+    });
+
     // Universal auth mock
     await page.route('**/api/auth/check', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"authenticated": true}' });
     });
     // Universal fallback
     await page.route('**/api/**', async (route) => {
-      if (route.request().url().includes('/divergence/signals')) {
+      const url = route.request().url();
+      if (url.includes('/chart/mini-bars')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            bars: [
+              { time: 1700000000, open: 100, high: 102, low: 99, close: 101 },
+              { time: 1700086400, open: 101, high: 104, low: 100, close: 103 },
+              { time: 1700172800, open: 103, high: 105, low: 101, close: 104 },
+            ],
+          }),
+        });
+      } else if (url.includes('/divergence/signals')) {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -91,5 +108,18 @@ test.describe('Alerts / Live Feed View', () => {
     // The ticker view should now be visible
     await expect(page.locator('#ticker-view')).toBeVisible();
     await expect(page.url()).toContain(`#/ticker/${ticker}`);
+  });
+
+  test('should remove mini-chart overlay when navigating from alerts to ticker view', async ({ page }) => {
+    const firstAlert = page.locator('.alert-card').first();
+    await expect(firstAlert).toBeVisible();
+
+    await firstAlert.hover();
+    await page.waitForTimeout(1200);
+    await expect(page.locator('.mini-chart-overlay')).toHaveCount(1);
+
+    await firstAlert.locator('h3').click();
+    await expect(page.locator('#ticker-view')).toBeVisible();
+    await expect(page.locator('.mini-chart-overlay')).toHaveCount(0);
   });
 });

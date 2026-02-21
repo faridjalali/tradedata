@@ -35,7 +35,13 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     status,
     zones: [] as FormattedZone[],
     allZones: [] as FormattedZone[],
-    distribution: [] as { startDate: string; endDate: string; spanDays: number; priceChangePct: number; netDeltaPct: number }[],
+    distribution: [] as {
+      startDate: string;
+      endDate: string;
+      spanDays: number;
+      priceChangePct: number;
+      netDeltaPct: number;
+    }[],
     proximity: { compositeScore: 0, level: 'none', signals: [] as ProximitySignal[] },
     metrics: {} as Record<string, unknown>,
     bull_flag_confidence: null as number | null,
@@ -95,7 +101,8 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
     if (detected) {
       status = `VD Accumulation detected: ${scoringZones.length} zone${scoringZones.length > 1 ? 's' : ''}, best ${bestScore.toFixed(2)} (${bestZoneWeeks}wk)`;
       if (proximity.level !== 'none') status += ` | Proximity: ${proximity.level} (${proximity.compositeScore}pts)`;
-      if (distClusters.length > 0) status += ` | ${distClusters.length} distribution cluster${distClusters.length > 1 ? 's' : ''}`;
+      if (distClusters.length > 0)
+        status += ` | ${distClusters.length} distribution cluster${distClusters.length > 1 ? 's' : ''}`;
     } else {
       status = 'No accumulation zones detected';
     }
@@ -130,7 +137,7 @@ async function detectVDF(ticker: string, options: DetectVDFOptions) {
       distribution: distClusters.map((c) => ({
         startDate: c.startDate,
         endDate: c.endDate,
-        spanDays: c.spanDays ?? (c.end - c.start + 1),
+        spanDays: c.spanDays ?? c.end - c.start + 1,
         priceChangePct: c.priceChangePct ?? c.maxPriceChg,
         netDeltaPct: c.netDeltaPct ?? c.minDeltaPct,
       })),

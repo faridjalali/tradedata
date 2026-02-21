@@ -196,11 +196,7 @@ function isoWeekKeyFromEtUnixSeconds(unixSeconds: number): string {
  * @param close - Current close price
  * @param prevClose - Previous close price
  */
-function classifyDivergenceSignal(
-  volumeDelta: number,
-  close: number,
-  prevClose: number,
-): 'bullish' | 'bearish' | null {
+function classifyDivergenceSignal(volumeDelta: number, close: number, prevClose: number): 'bullish' | 'bearish' | null {
   if (!Number.isFinite(volumeDelta) || !Number.isFinite(close) || !Number.isFinite(prevClose)) return null;
   if (volumeDelta > 0 && close < prevClose) return 'bullish';
   if (volumeDelta < 0 && close > prevClose) return 'bearish';

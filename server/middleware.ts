@@ -2,16 +2,12 @@ import crypto from 'crypto';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import logger from './logger.js';
 import * as schemas from './schemas.js';
-import {
-  BASIC_AUTH_ENABLED, BASIC_AUTH_USERNAME, BASIC_AUTH_PASSWORD, BASIC_AUTH_REALM,
-} from './config.js';
-
+import { BASIC_AUTH_ENABLED, BASIC_AUTH_USERNAME, BASIC_AUTH_PASSWORD, BASIC_AUTH_REALM } from './config.js';
 
 export function logStructured(level: string, event: string, fields: Record<string, unknown> = {}) {
   const pinoLevel = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
   logger[pinoLevel]({ event, ...fields });
 }
-
 
 export function createRequestId() {
   if (typeof crypto.randomUUID === 'function') {
@@ -20,13 +16,11 @@ export function createRequestId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-
 export function shouldLogRequestPath(pathname: string) {
   const path = String(pathname || '');
   if (path.startsWith('/api/')) return true;
   return path === '/healthz' || path === '/readyz';
 }
-
 
 export function extractSafeRequestMeta(req: FastifyRequest) {
   const path = String(req.url?.split('?')[0] || '');
@@ -45,11 +39,9 @@ export function extractSafeRequestMeta(req: FastifyRequest) {
   return meta;
 }
 
-
 export function isValidTickerSymbol(value: unknown) {
   return schemas.tickerSymbol.safeParse(value).success;
 }
-
 
 export function parseEtDateInput(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
@@ -57,13 +49,11 @@ export function parseEtDateInput(value: unknown) {
   return result.success ? result.data : null;
 }
 
-
 export function parseBooleanInput(value: unknown, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
   const result = schemas.booleanInput.safeParse(value);
   return result.success ? result.data : fallback;
 }
-
 
 export function validateChartPayloadShape(payload: unknown) {
   const result = schemas.chartPayload.safeParse(payload);
@@ -72,7 +62,6 @@ export function validateChartPayloadShape(payload: unknown) {
   return { ok: false as const, error: firstIssue ? firstIssue.message : 'Invalid chart payload shape' };
 }
 
-
 export function validateChartLatestPayloadShape(payload: unknown) {
   const result = schemas.chartLatestPayload.safeParse(payload);
   if (result.success) return { ok: true as const };
@@ -80,14 +69,12 @@ export function validateChartLatestPayloadShape(payload: unknown) {
   return { ok: false as const, error: firstIssue ? firstIssue.message : 'Invalid latest payload shape' };
 }
 
-
 export function timingSafeStringEqual(left: string, right: string) {
   const leftBuffer = Buffer.from(String(left));
   const rightBuffer = Buffer.from(String(right));
   if (leftBuffer.length !== rightBuffer.length) return false;
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
-
 
 export async function basicAuthMiddleware(request: FastifyRequest, reply: FastifyReply) {
   if (!BASIC_AUTH_ENABLED || request.method === 'OPTIONS') {

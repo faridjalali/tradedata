@@ -19,8 +19,10 @@ export function trimMiniChartBars<T>(bars: T[]): T[] {
 }
 const trimBars = trimMiniChartBars;
 
-
-export async function persistMiniChartBars(ticker: string, bars: Array<{ time: number; open: number; high: number; low: number; close: number }>) {
+export async function persistMiniChartBars(
+  ticker: string,
+  bars: Array<{ time: number; open: number; high: number; low: number; close: number }>,
+) {
   if (!divergencePool || !ticker || !Array.isArray(bars) || bars.length === 0) return;
   try {
     const values: unknown[] = [];
@@ -53,7 +55,6 @@ export async function persistMiniChartBars(ticker: string, bars: Array<{ time: n
   }
 }
 
-
 export async function loadMiniChartBarsFromDb(ticker: string): Promise<MiniBar[]> {
   if (!divergencePool || !ticker) return [];
   const result = await divergencePool.query(
@@ -78,7 +79,6 @@ export async function loadMiniChartBarsFromDb(ticker: string): Promise<MiniBar[]
     }))
     .reverse();
 }
-
 
 export async function loadMiniChartBarsFromDbBatch(tickers: string[]): Promise<Record<string, MiniBar[]>> {
   if (!divergencePool || !Array.isArray(tickers) || tickers.length === 0) return {};
@@ -112,7 +112,6 @@ export async function loadMiniChartBarsFromDbBatch(tickers: string[]): Promise<R
   }
   return grouped;
 }
-
 
 export async function fetchMiniChartBarsFromApi(ticker: string): Promise<MiniBar[]> {
   if (!ticker) return [];

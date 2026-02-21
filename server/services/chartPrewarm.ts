@@ -46,7 +46,14 @@ interface PrewarmDeps {
   getOrBuildChartResult: (params: Record<string, unknown>) => Promise<unknown>;
   toVolumeDeltaSourceInterval: (value: unknown, fallback: string) => string;
   getIntradayLookbackDays: (interval: string) => number;
-  buildChartRequestKey: (params: { ticker: string; interval: string; vdRsiLength: number; vdSourceInterval: string; vdRsiSourceInterval: string; lookbackDays: number }) => string;
+  buildChartRequestKey: (params: {
+    ticker: string;
+    interval: string;
+    vdRsiLength: number;
+    vdSourceInterval: string;
+    vdRsiSourceInterval: string;
+    lookbackDays: number;
+  }) => string;
   CHART_FINAL_RESULT_CACHE: LRUCache<string, TimedCacheEntry>;
   CHART_IN_FLIGHT_REQUESTS: Map<string, Promise<unknown>>;
   getTimedCacheValue: (cache: LRUCache<string, TimedCacheEntry>, key: string) => { status: string; value: unknown };
@@ -120,7 +127,10 @@ async function prewarmChartResult(options: PrewarmOptions, deps: PrewarmDeps): P
  * Schedule the full prewarm sequence for `interval`.
  * Each target is built sequentially to avoid resource spikes.
  */
-function schedulePostLoadPrewarmSequence(options: PrewarmOptions & { sourceInterval?: string; targetInterval?: string }, deps: PrewarmDeps): void {
+function schedulePostLoadPrewarmSequence(
+  options: PrewarmOptions & { sourceInterval?: string; targetInterval?: string },
+  deps: PrewarmDeps,
+): void {
   const { toVolumeDeltaSourceInterval, getIntradayLookbackDays } = deps;
 
   const ticker = String(options.ticker || '').toUpperCase();

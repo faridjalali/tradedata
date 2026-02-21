@@ -47,8 +47,7 @@ export class CircuitBreaker {
 
   getInfo(): { state: CircuitState; consecutiveFailures: number; cooldownRemainingMs: number } {
     this.evaluateState();
-    const remaining =
-      this.state === 'OPEN' ? Math.max(0, this.cooldownMs - (Date.now() - this.lastFailureMs)) : 0;
+    const remaining = this.state === 'OPEN' ? Math.max(0, this.cooldownMs - (Date.now() - this.lastFailureMs)) : 0;
     return {
       state: this.state,
       consecutiveFailures: this.consecutiveFailures,

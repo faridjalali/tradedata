@@ -33,7 +33,11 @@ function fmtStatus(value: unknown): string {
 
 function fmtIsoToLocal(value: unknown): string {
   if (!value) return '--';
-  try { return new Date(String(value)).toLocaleString(); } catch { return '--'; }
+  try {
+    return new Date(String(value)).toLocaleString();
+  } catch {
+    return '--';
+  }
 }
 
 function statusClass(ok: boolean | null | undefined): string {
@@ -53,8 +57,16 @@ function statusLabel(ok: boolean | null | undefined): string {
 // ---------------------------------------------------------------------------
 function RefreshIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
       <polyline points="23 4 23 10 17 10" />
       <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
     </svg>
@@ -86,8 +98,11 @@ function ServerCard({ data }: { data: AdminStatusPayload }) {
       <div class="log-run-metrics">
         <MetricRow label="Uptime" value={uptime} />
         <MetricRow label="Ready" value={statusLabel(data.ready)} cls={statusClass(data.ready)} />
-        <MetricRow label="Degraded" value={data.degraded ? 'Yes' : 'No'}
-          cls={data.degraded ? 'admin-status-warn' : undefined} />
+        <MetricRow
+          label="Degraded"
+          value={data.degraded ? 'Yes' : 'No'}
+          cls={data.degraded ? 'admin-status-warn' : undefined}
+        />
       </div>
     </article>
   );
@@ -138,20 +153,28 @@ function ScanDataCard({ data }: { data: AdminStatusPayload }) {
     <article class="log-run-card">
       <div class="log-run-card-title">
         <span>Scan Data</span>
-        <span class={`log-run-card-status${running ? ' admin-status-warn' : ''}`}>
-          {running ? 'Running' : 'Idle'}
-        </span>
+        <span class={`log-run-card-status${running ? ' admin-status-warn' : ''}`}>{running ? 'Running' : 'Idle'}</span>
       </div>
       <div class="log-run-metrics">
-        <MetricRow label="Configured" value={configured ? 'Yes' : 'No'}
-          cls={configured ? 'admin-status-ok' : 'admin-status-error'} />
+        <MetricRow
+          label="Configured"
+          value={configured ? 'Yes' : 'No'}
+          cls={configured ? 'admin-status-ok' : 'admin-status-error'}
+        />
         <MetricRow label="Last scan" value={lastScan} />
-        <MetricRow label="Warnings" value={String(warnings.length || 0)}
-          cls={warnings.length > 0 ? 'admin-status-warn' : undefined} />
+        <MetricRow
+          label="Warnings"
+          value={String(warnings.length || 0)}
+          cls={warnings.length > 0 ? 'admin-status-warn' : undefined}
+        />
       </div>
       {warnings.length > 0 && (
         <div class="admin-warnings">
-          {warnings.map((w, i) => <div key={i} class="admin-warning-item">{w}</div>)}
+          {warnings.map((w, i) => (
+            <div key={i} class="admin-warning-item">
+              {w}
+            </div>
+          ))}
         </div>
       )}
     </article>
@@ -166,7 +189,9 @@ function FailedTickersSection({ failed, recovered }: { failed: string[]; recover
   const summary = [
     failed.length > 0 ? `${failed.length} failed` : '',
     recovered.length > 0 ? `${recovered.length} recovered via retry` : '',
-  ].filter(Boolean).join(', ');
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <details class="log-failed-details">
       <summary class="log-failed-summary">{summary}</summary>
@@ -175,7 +200,11 @@ function FailedTickersSection({ failed, recovered }: { failed: string[]; recover
           <>
             <div class="log-failed-label">Failed:</div>
             <div class="log-failed-list">
-              {failed.map((t) => <span key={t} class="log-failed-ticker">{t}</span>)}
+              {failed.map((t) => (
+                <span key={t} class="log-failed-ticker">
+                  {t}
+                </span>
+              ))}
             </div>
           </>
         )}
@@ -183,7 +212,11 @@ function FailedTickersSection({ failed, recovered }: { failed: string[]; recover
           <>
             <div class="log-recovered-label">Recovered:</div>
             <div class="log-failed-list">
-              {recovered.map((t) => <span key={t} class="log-recovered-ticker">{t}</span>)}
+              {recovered.map((t) => (
+                <span key={t} class="log-recovered-ticker">
+                  {t}
+                </span>
+              ))}
             </div>
           </>
         )}
@@ -192,7 +225,11 @@ function FailedTickersSection({ failed, recovered }: { failed: string[]; recover
   );
 }
 
-function RunCard({ title, run, statusFallback }: {
+function RunCard({
+  title,
+  run,
+  statusFallback,
+}: {
   title: string;
   run?: RunMetricsSnapshot | null;
   statusFallback?: { status?: string; running?: boolean; processed_tickers?: number; total_tickers?: number } | null;
@@ -270,10 +307,8 @@ function HistoryEntry({ run }: { run: RunMetricsSnapshot }) {
         <span>{fmtStatus(run?.status)}</span>
       </div>
       <div class="log-history-sub">
-        {fmtIsoToLocal(run?.startedAt)} |
-        tickers {processed}/{total}{errors > 0 ? ` (${errors} err)` : ''} |
-        api {calls} |
-        p95 {p95}ms
+        {fmtIsoToLocal(run?.startedAt)} | tickers {processed}/{total}
+        {errors > 0 ? ` (${errors} err)` : ''} | api {calls} | p95 {p95}ms
       </div>
       <FailedTickersSection failed={failed} recovered={recovered} />
     </article>
@@ -285,8 +320,16 @@ function HistoryEntry({ run }: { run: RunMetricsSnapshot }) {
 // ---------------------------------------------------------------------------
 function PrevIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
       <polyline points="15 18 9 12 15 6" />
     </svg>
   );
@@ -294,8 +337,16 @@ function PrevIcon() {
 
 function NextIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
@@ -349,12 +400,7 @@ function normalizeTickerInputList(raw: string): string[] {
   );
 }
 
-function OperationActionRow(props: {
-  label: string;
-  onClick: () => void;
-  status: string;
-  busy?: boolean;
-}) {
+function OperationActionRow(props: { label: string; onClick: () => void; status: string; busy?: boolean }) {
   return (
     <div class="admin-operation-row">
       <button class="pane-btn divergence-run-btn" disabled={Boolean(props.busy)} onClick={props.onClick}>
@@ -381,9 +427,15 @@ export function AdminView() {
     setRefreshing(true);
     try {
       const [status, metrics, ops] = await Promise.all([
-        fetch('/api/admin/status', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/logs/run-metrics', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/admin/operations/status', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/admin/status', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch('/api/logs/run-metrics', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch('/api/admin/operations/status', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
       ]);
       if (status) setStatusData(status);
       if (metrics) setMetricsData(metrics);
@@ -470,7 +522,9 @@ export function AdminView() {
         <div class="admin-operations-layout">
           <div class="admin-operations-column">
             <div class="admin-operation-row">
-              <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
+              <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">
+                Fetch Daily
+              </button>
               <button
                 class="pane-btn divergence-run-btn divergence-control-icon-btn"
                 id="divergence-fetch-daily-stop-btn"
@@ -481,10 +535,14 @@ export function AdminView() {
                   <rect width="10" height="10" rx="1" />
                 </svg>
               </button>
-              <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
+              <span id="divergence-fetch-daily-status" class="divergence-run-status">
+                Ran --
+              </span>
             </div>
             <div class="admin-operation-row">
-              <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
+              <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">
+                Fetch Weekly
+              </button>
               <button
                 class="pane-btn divergence-run-btn divergence-control-icon-btn"
                 id="divergence-fetch-weekly-stop-btn"
@@ -495,10 +553,14 @@ export function AdminView() {
                   <rect width="10" height="10" rx="1" />
                 </svg>
               </button>
-              <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+              <span id="divergence-fetch-weekly-status" class="divergence-run-status">
+                Ran --
+              </span>
             </div>
             <div class="admin-operation-row">
-              <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Fetch Analysis</button>
+              <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">
+                Fetch Analysis
+              </button>
               <button
                 class="pane-btn divergence-run-btn divergence-control-icon-btn"
                 id="divergence-vdf-scan-stop-btn"
@@ -509,10 +571,14 @@ export function AdminView() {
                   <rect width="10" height="10" rx="1" />
                 </svg>
               </button>
-              <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
+              <span id="divergence-vdf-scan-status" class="divergence-run-status">
+                Ran --
+              </span>
             </div>
             <div class="admin-operation-row">
-              <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Fetch Breadth</button>
+              <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">
+                Fetch Breadth
+              </button>
               <button
                 class="pane-btn divergence-run-btn divergence-control-icon-btn"
                 id="breadth-recompute-stop-btn"
@@ -523,7 +589,9 @@ export function AdminView() {
                   <rect width="10" height="10" rx="1" />
                 </svg>
               </button>
-              <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
+              <span id="breadth-recompute-status" class="divergence-run-status">
+                Ran --
+              </span>
             </div>
 
             <OperationActionRow
@@ -774,9 +842,21 @@ export function AdminView() {
         <div id="admin-run-cards" class="logs-grid">
           {metricsData ? (
             <>
-              <RunCard title="Fetch Daily" run={metricsData.runs?.fetchDaily} statusFallback={metricsData.statuses?.fetchDaily} />
-              <RunCard title="Fetch Weekly" run={metricsData.runs?.fetchWeekly} statusFallback={metricsData.statuses?.fetchWeekly} />
-              <RunCard title="VDF Scan" run={metricsData.runs?.vdfScan} statusFallback={metricsData.statuses?.vdfScan} />
+              <RunCard
+                title="Fetch Daily"
+                run={metricsData.runs?.fetchDaily}
+                statusFallback={metricsData.statuses?.fetchDaily}
+              />
+              <RunCard
+                title="Fetch Weekly"
+                run={metricsData.runs?.fetchWeekly}
+                statusFallback={metricsData.statuses?.fetchWeekly}
+              />
+              <RunCard
+                title="VDF Scan"
+                run={metricsData.runs?.vdfScan}
+                statusFallback={metricsData.statuses?.vdfScan}
+              />
               <ConfigCard payload={metricsData} />
             </>
           ) : (
@@ -791,22 +871,29 @@ export function AdminView() {
           <h2>Run History</h2>
           {totalPages > 1 && (
             <div class="log-history-pagination">
-              <button class={`pane-btn admin-history-prev${page === 0 ? ' disabled' : ''}`}
-                disabled={page === 0} onClick={() => setHistoryPage(Math.max(0, page - 1))}>
+              <button
+                class={`pane-btn admin-history-prev${page === 0 ? ' disabled' : ''}`}
+                disabled={page === 0}
+                onClick={() => setHistoryPage(Math.max(0, page - 1))}
+              >
                 <PrevIcon />
               </button>
-              <button class={`pane-btn admin-history-next${page >= totalPages - 1 ? ' disabled' : ''}`}
-                disabled={page >= totalPages - 1} onClick={() => setHistoryPage(page + 1)}>
+              <button
+                class={`pane-btn admin-history-next${page >= totalPages - 1 ? ' disabled' : ''}`}
+                disabled={page >= totalPages - 1}
+                onClick={() => setHistoryPage(page + 1)}
+              >
                 <NextIcon />
               </button>
             </div>
           )}
         </div>
         <div id="admin-history-container" class="alerts-list">
-          {pageItems.length > 0
-            ? pageItems.map((run, i) => <HistoryEntry key={i} run={run} />)
-            : <div class="log-history-placeholder" aria-hidden="true"></div>
-          }
+          {pageItems.length > 0 ? (
+            pageItems.map((run, i) => <HistoryEntry key={i} run={run} />)
+          ) : (
+            <div class="log-history-placeholder" aria-hidden="true"></div>
+          )}
         </div>
       </div>
     </>

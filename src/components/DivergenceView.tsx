@@ -60,7 +60,8 @@ function applyColumnDateFilter(alerts: Alert[], mode: ColumnFeedMode): Alert[] {
 // ---------------------------------------------------------------------------
 
 function AlertCard({ alert }: { alert: Alert }) {
-  const timeStr = formatFormatAlertCardDate(alert.signal_trade_date || alert.divergence_trade_date || alert.timestamp) || '--';
+  const timeStr =
+    formatFormatAlertCardDate(alert.signal_trade_date || alert.divergence_trade_date || alert.timestamp) || '--';
   const source = 'DataAPI';
   const maStates = alert.ma_states || {};
 
@@ -110,7 +111,11 @@ function AlertCard({ alert }: { alert: Alert }) {
         <h3>{alert.ticker}</h3>
       </div>
       <div className="card-group card-group-divvol">
-        <span className="div-dot-row" data-ticker={alert.ticker} title={`Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`}>
+        <span
+          className="div-dot-row"
+          data-ticker={alert.ticker}
+          title={`Divergence (${DIVERGENCE_LOOKBACK_DAYS.join(', ')}d)`}
+        >
           {DIVERGENCE_LOOKBACK_DAYS.map((days) => {
             const state = String(alert.divergence_states?.[days] || 'neutral').toLowerCase();
             const cls = state === 'bullish' ? 'is-bullish' : state === 'bearish' ? 'is-bearish' : 'is-neutral';
@@ -120,8 +125,8 @@ function AlertCard({ alert }: { alert: Alert }) {
       </div>
       <div className="card-group card-group-badges">
         {alert.vdf_detected && alert.vdf_score ? (
-          <span 
-            className={`vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}`} 
+          <span
+            className={`vdf-score-badge${alert.vdf_proximity === 'imminent' ? ' vdf-imminent' : alert.vdf_proximity === 'high' ? ' vdf-high' : ''}`}
             title="Score"
           >
             {alert.vdf_score}
@@ -131,8 +136,12 @@ function AlertCard({ alert }: { alert: Alert }) {
         ) : (
           <span className="vdf-score-placeholder" />
         )}
-        {alert.bull_flag_confidence !== null && alert.bull_flag_confidence !== undefined && alert.bull_flag_confidence >= 50 ? (
-          <span className="bull-flag-badge" title={`Bull flag (${alert.bull_flag_confidence}%)`}>B</span>
+        {alert.bull_flag_confidence !== null &&
+        alert.bull_flag_confidence !== undefined &&
+        alert.bull_flag_confidence >= 50 ? (
+          <span className="bull-flag-badge" title={`Bull flag (${alert.bull_flag_confidence}%)`}>
+            B
+          </span>
         ) : (
           <span className="bull-flag-placeholder" />
         )}
@@ -148,18 +157,28 @@ function AlertCard({ alert }: { alert: Alert }) {
   );
 }
 
-function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKey, title: string, timeframe: '1d' | '1w' }) {
+function DivergenceColumn({
+  columnKey,
+  title,
+  timeframe,
+}: {
+  columnKey: ColumnKey;
+  title: string;
+  timeframe: '1d' | '1w';
+}) {
   const columnState = useStore(divergenceStore, (s) => s.columns[columnKey]);
   const allSignals = useStore(divergenceStore, (s) => s.signals);
 
   let signals = allSignals.filter((a) => (a.timeframe || '').trim() === timeframe);
   signals = applyColumnDateFilter(signals, columnState.feedMode);
-  
+
   if (columnState.sortMode === 'favorite') {
     signals = signals.filter((a) => a.is_favorite);
   }
 
-  signals.sort(createAlertSortFn(columnState.sortMode === 'favorite' ? 'time' : columnState.sortMode, columnState.sortDirection));
+  signals.sort(
+    createAlertSortFn(columnState.sortMode === 'favorite' ? 'time' : columnState.sortMode, columnState.sortDirection),
+  );
 
   const total = signals.length;
   const slice = signals.slice(0, columnState.visibleCount);
@@ -169,8 +188,12 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
   };
 
   const handleCustomDateApply = () => {
-    const fromInput = document.querySelector(`.column-tf-controls[data-column="${columnKey}"] .column-tf-from`) as HTMLInputElement | null;
-    const toInput = document.querySelector(`.column-tf-controls[data-column="${columnKey}"] .column-tf-to`) as HTMLInputElement | null;
+    const fromInput = document.querySelector(
+      `.column-tf-controls[data-column="${columnKey}"] .column-tf-from`,
+    ) as HTMLInputElement | null;
+    const toInput = document.querySelector(
+      `.column-tf-controls[data-column="${columnKey}"] .column-tf-to`,
+    ) as HTMLInputElement | null;
     if (fromInput?.value && toInput?.value) {
       setColumnCustomDates(columnKey, fromInput.value, toInput.value);
       fetchDivergenceSignalsByTimeframe(timeframe);
@@ -184,7 +207,7 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
     let newDir = s.sortDirection;
     let newPreFav = s.preFavSortMode;
     let newPreFavDir = s.preFavSortDirection;
-  
+
     if (mode === 'favorite' && s.sortMode === 'favorite') {
       newSort = s.preFavSortMode ?? 'score';
       newDir = s.preFavSortDirection;
@@ -201,7 +224,7 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
       newDir = 'desc';
       newPreFav = null;
     }
-  
+
     store.setColumnSort(columnKey, newSort, newDir);
     store.setColumnPreFavSort(columnKey, newPreFav, newPreFavDir);
     store.setColumnVisibleCount(columnKey, 100);
@@ -212,7 +235,11 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
   };
 
   useEffect(() => {
-    updateSortButtonUi(`#view-divergence .divergence-${columnKey}-sort`, columnState.sortMode, columnState.sortDirection);
+    updateSortButtonUi(
+      `#view-divergence .divergence-${columnKey}-sort`,
+      columnState.sortMode,
+      columnState.sortDirection,
+    );
   }, [columnKey, columnState.sortMode, columnState.sortDirection]);
 
   useEffect(() => {
@@ -232,27 +259,94 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
         <div className="header-title-group">
           <h2>{title}</h2>
           <div className="column-tf-controls" data-column={columnKey}>
-            <button className={`pane-btn ${columnState.feedMode === '1' ? 'active' : ''}`} data-tf="1" onClick={() => handleFeedModeClick('1')} title="Last fetch day">1</button>
-            <button className={`pane-btn ${columnState.feedMode === '5' ? 'active' : ''}`} data-tf="5" onClick={() => handleFeedModeClick('5')} title="Last 5 fetch days">5</button>
-            <button className={`pane-btn ${columnState.feedMode === '30' ? 'active' : ''}`} data-tf="30" onClick={() => handleFeedModeClick('30')} title="Last 30 fetch days">30</button>
-            <button className={`pane-btn ${columnState.feedMode === 'custom' ? 'active' : ''}`} data-tf="custom" onClick={() => handleFeedModeClick('custom')} title="Custom date range">C</button>
-            <div className={`column-tf-custom-panel header-dropdown-panel ${columnState.feedMode === 'custom' ? 'open' : 'hidden'}`}>
+            <button
+              className={`pane-btn ${columnState.feedMode === '1' ? 'active' : ''}`}
+              data-tf="1"
+              onClick={() => handleFeedModeClick('1')}
+              title="Last fetch day"
+            >
+              1
+            </button>
+            <button
+              className={`pane-btn ${columnState.feedMode === '5' ? 'active' : ''}`}
+              data-tf="5"
+              onClick={() => handleFeedModeClick('5')}
+              title="Last 5 fetch days"
+            >
+              5
+            </button>
+            <button
+              className={`pane-btn ${columnState.feedMode === '30' ? 'active' : ''}`}
+              data-tf="30"
+              onClick={() => handleFeedModeClick('30')}
+              title="Last 30 fetch days"
+            >
+              30
+            </button>
+            <button
+              className={`pane-btn ${columnState.feedMode === 'custom' ? 'active' : ''}`}
+              data-tf="custom"
+              onClick={() => handleFeedModeClick('custom')}
+              title="Custom date range"
+            >
+              C
+            </button>
+            <div
+              className={`column-tf-custom-panel header-dropdown-panel ${columnState.feedMode === 'custom' ? 'open' : 'hidden'}`}
+            >
               <input type="date" className="glass-input column-tf-from" defaultValue={columnState.customFrom} />
               <span className="column-tf-sep">to</span>
               <input type="date" className="glass-input column-tf-to" defaultValue={columnState.customTo} />
-              <button className="pane-btn column-tf-apply" onClick={handleCustomDateApply}>&#x203A;</button>
+              <button className="pane-btn column-tf-apply" onClick={handleCustomDateApply}>
+                &#x203A;
+              </button>
             </div>
           </div>
         </div>
         <div className={`header-sort-controls divergence-${columnKey}-sort`}>
-          <button className={`pane-btn ${columnState.sortMode === 'favorite' ? 'active' : ''}`} data-sort="favorite" onClick={() => setDivergenceSort('favorite')} title="Favorites only">
-            <svg viewBox="0 0 24 24" fill="none" width="13" height="13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button
+            className={`pane-btn ${columnState.sortMode === 'favorite' ? 'active' : ''}`}
+            data-sort="favorite"
+            onClick={() => setDivergenceSort('favorite')}
+            title="Favorites only"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              width="13"
+              height="13"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
           </button>
-          <button className={`pane-btn ${columnState.sortMode === 'time' ? 'active' : ''}`} data-sort="time" onClick={() => setDivergenceSort('time')} title="Sort by Date">D</button>
-          <button className={`pane-btn ${columnState.sortMode === 'volume' ? 'active' : ''}`} data-sort="volume" onClick={() => setDivergenceSort('volume')} title="Sort by Volume">V</button>
-          <button className={`pane-btn ${columnState.sortMode === 'score' ? 'active' : ''}`} data-sort="score" onClick={() => setDivergenceSort('score')} title="Sort by Score">S</button>
+          <button
+            className={`pane-btn ${columnState.sortMode === 'time' ? 'active' : ''}`}
+            data-sort="time"
+            onClick={() => setDivergenceSort('time')}
+            title="Sort by Date"
+          >
+            D
+          </button>
+          <button
+            className={`pane-btn ${columnState.sortMode === 'volume' ? 'active' : ''}`}
+            data-sort="volume"
+            onClick={() => setDivergenceSort('volume')}
+            title="Sort by Volume"
+          >
+            V
+          </button>
+          <button
+            className={`pane-btn ${columnState.sortMode === 'score' ? 'active' : ''}`}
+            data-sort="score"
+            onClick={() => setDivergenceSort('score')}
+            title="Sort by Score"
+          >
+            S
+          </button>
         </div>
       </div>
       <div id={`divergence-${columnKey}-container`} className="alerts-list">
@@ -261,7 +355,7 @@ function DivergenceColumn({ columnKey, title, timeframe }: { columnKey: ColumnKe
         ))}
         {total > slice.length && (
           <button className="pane-btn show-more-btn" onClick={handleShowMore}>
-             ▼ Show {Math.min(100, total - slice.length)} more ({slice.length}/{total})
+            ▼ Show {Math.min(100, total - slice.length)} more ({slice.length}/{total})
           </button>
         )}
       </div>

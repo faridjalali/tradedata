@@ -173,7 +173,11 @@ export function normalizeIntradayVolumesFromCumulativeIfNeeded(bars: OHLCVBar[])
   return normalized;
 }
 
-export function computeVolumeDeltaByParentBars(parentBars: OHLCVBar[], lowerTimeframeBars: OHLCVBar[], interval: string) {
+export function computeVolumeDeltaByParentBars(
+  parentBars: OHLCVBar[],
+  lowerTimeframeBars: OHLCVBar[],
+  interval: string,
+) {
   if (!Array.isArray(parentBars) || parentBars.length === 0) return [];
   if (!Array.isArray(lowerTimeframeBars) || lowerTimeframeBars.length === 0) {
     return parentBars.map((bar) => ({ time: bar.time, delta: 0 }));

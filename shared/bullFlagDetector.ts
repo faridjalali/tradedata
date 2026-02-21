@@ -207,8 +207,7 @@ function scorePennant(
   // Convergence: compare range at start vs end using regression lines
   const n = flagBars.length;
   const startRange = regHighs.intercept - regLows.intercept;
-  const endRange =
-    regHighs.intercept + regHighs.slope * (n - 1) - (regLows.intercept + regLows.slope * (n - 1));
+  const endRange = regHighs.intercept + regHighs.slope * (n - 1) - (regLows.intercept + regLows.slope * (n - 1));
 
   if (startRange <= 0 || endRange <= 0) return null; // degenerate
   const convergenceRatio = endRange / startRange; // < 1 = converging
@@ -281,17 +280,14 @@ export function detectBullFlag(bars: Bar[]): BullFlagDetection | null {
     if (preFlagBars.length < 3) continue;
 
     const preFlagLow = Math.min(...preFlagBars.map((b) => b.low));
-    const preFlagHigh = Math.max(
-      ...preFlagBars.slice(-Math.min(5, preFlagBars.length)).map((b) => b.high),
-    );
+    const preFlagHigh = Math.max(...preFlagBars.slice(-Math.min(5, preFlagBars.length)).map((b) => b.high));
     const priorGainPct = ((preFlagHigh - preFlagLow) / preFlagLow) * 100;
     if (priorGainPct < PRIOR_UPTREND_MIN_PCT) continue;
 
     // --- Retracement check ---
     const priorHeight = preFlagHigh - preFlagLow;
     const flagLowestClose = Math.min(...flagCloses);
-    const retracePct =
-      priorHeight > 0 ? ((preFlagHigh - flagLowestClose) / priorHeight) * 100 : 0;
+    const retracePct = priorHeight > 0 ? ((preFlagHigh - flagLowestClose) / priorHeight) * 100 : 0;
     if (retracePct > MAX_RETRACE_PCT) continue;
 
     // --- Channel width (price-normalized) ---
@@ -312,10 +308,7 @@ export function detectBullFlag(bars: Bar[]): BullFlagDetection | null {
       flagLen,
     );
 
-    const chosen =
-      flagResult && flagResult.confidence >= (pennantResult?.confidence ?? 0)
-        ? flagResult
-        : pennantResult;
+    const chosen = flagResult && flagResult.confidence >= (pennantResult?.confidence ?? 0) ? flagResult : pennantResult;
 
     if (chosen && chosen.confidence > bestConfidence) {
       bestConfidence = chosen.confidence;

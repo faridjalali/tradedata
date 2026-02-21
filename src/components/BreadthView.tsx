@@ -20,7 +20,9 @@ export function BreadthView({
       <div class="single-page-header">
         <div class="single-page-controls">
           <div id="breadth-tf-btns" class="feed-controls-group">
-            <button class="pane-btn" data-days="1" type="button" onClick={() => onSelectTimeframe(1)}>T</button>
+            <button class="pane-btn" data-days="1" type="button" onClick={() => onSelectTimeframe(1)}>
+              T
+            </button>
             <button class="pane-btn active" data-days="5" type="button" onClick={() => onSelectTimeframe(5)}>
               5
             </button>

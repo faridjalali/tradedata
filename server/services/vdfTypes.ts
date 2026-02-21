@@ -95,7 +95,12 @@ export interface FormattedZone {
 }
 
 export interface DetectVDFOptions {
-  dataApiFetcher: (ticker: string, interval: string, days: number, opts: { signal?: AbortSignal }) => Promise<Bar1m[] | null>;
+  dataApiFetcher: (
+    ticker: string,
+    interval: string,
+    days: number,
+    opts: { signal?: AbortSignal },
+  ) => Promise<Bar1m[] | null>;
   signal?: AbortSignal;
   mode?: 'scan' | 'chart';
 }

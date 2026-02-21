@@ -208,16 +208,20 @@ export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
   return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
 }
 
-export function summarizeBreadthStatus(breadth: { running: boolean; status: string; finished_at?: string | null } | null): string {
+export function summarizeBreadthStatus(
+  breadth: { running: boolean; status: string; finished_at?: string | null } | null,
+): string {
   if (!breadth) return 'Ran --';
   const statusText = String(breadth.status || '').trim();
   if (breadth.running) {
     return statusText || 'Running...';
   }
-  const lastRunMmDd = breadth.finished_at ? (() => {
-    const key = toDateKeyAsET(breadth.finished_at);
-    return key ? dateKeyToMmDd(key) : '';
-  })() : '';
+  const lastRunMmDd = breadth.finished_at
+    ? (() => {
+        const key = toDateKeyAsET(breadth.finished_at);
+        return key ? dateKeyToMmDd(key) : '';
+      })()
+    : '';
   if (statusText.startsWith('Done')) return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
   if (statusText.startsWith('Stopped')) return lastRunMmDd ? `Stopped ${lastRunMmDd}` : 'Stopped';
   if (statusText.startsWith('Error')) return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Failed';

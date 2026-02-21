@@ -42,7 +42,11 @@ export function evaluateProximitySignals(
       }
     }
     if (maxStreakLen >= 3) {
-      signals.push({ type: 'seller_exhaustion', points: 15, detail: `${maxStreakLen}-day red streak${intensifying ? ' (intensifying)' : ' (fading)'}` });
+      signals.push({
+        type: 'seller_exhaustion',
+        points: 15,
+        detail: `${maxStreakLen}-day red streak${intensifying ? ' (intensifying)' : ' (fading)'}`,
+      });
     }
   }
 
@@ -55,7 +59,11 @@ export function evaluateProximitySignals(
       const startIdx = Math.max(0, globalIdx - 20);
       const rollingAvg = mean(allDaily.slice(startIdx, globalIdx).map((x) => Math.abs(x.delta)));
       if (rollingAvg > 0 && d.delta > 4 * rollingAvg) {
-        signals.push({ type: 'delta_anomaly', points: 25, detail: `${d.date}: ${(d.delta / rollingAvg).toFixed(1)}x avg (+${(d.delta / 1000).toFixed(0)}K)` });
+        signals.push({
+          type: 'delta_anomaly',
+          points: 25,
+          detail: `${d.date}: ${(d.delta / rollingAvg).toFixed(1)}x avg (+${(d.delta / 1000).toFixed(0)}K)`,
+        });
         break;
       }
     }
@@ -102,7 +110,11 @@ export function evaluateProximitySignals(
         if (idx > 0) {
           const priceChg = ((d.close - allDaily[idx - 1].close) / allDaily[idx - 1].close) * 100;
           if (priceChg < -2) {
-            signals.push({ type: 'final_capitulation', points: 10, detail: `${d.date}: ${(d.delta / 1000).toFixed(0)}K (${priceChg.toFixed(1)}%)` });
+            signals.push({
+              type: 'final_capitulation',
+              points: 10,
+              detail: `${d.date}: ${(d.delta / 1000).toFixed(0)}K (${priceChg.toFixed(1)}%)`,
+            });
             break;
           }
         }
@@ -117,7 +129,11 @@ export function evaluateProximitySignals(
       for (let i = 1; i < sortedByDate.length; i++) {
         const gap = sortedByDate[i].start - sortedByDate[i - 1].end;
         if (gap > 0 && gap < 30) {
-          signals.push({ type: 'multi_zone_sequence', points: 20, detail: `${sortedByDate.length} zones with ${gap}-day gap` });
+          signals.push({
+            type: 'multi_zone_sequence',
+            points: 20,
+            detail: `${sortedByDate.length} zones with ${gap}-day gap`,
+          });
           break;
         }
       }
@@ -129,7 +145,11 @@ export function evaluateProximitySignals(
     const recentCutoffIdx = Math.max(0, n - 90);
     for (const z of zones) {
       if (z.absorptionPct > 40 && z.end >= recentCutoffIdx) {
-        signals.push({ type: 'extreme_absorption', points: 15, detail: `Zone ${z.rank}: ${z.absorptionPct.toFixed(1)}% absorption` });
+        signals.push({
+          type: 'extreme_absorption',
+          points: 15,
+          detail: `Zone ${z.rank}: ${z.absorptionPct.toFixed(1)}% absorption`,
+        });
         break;
       }
     }

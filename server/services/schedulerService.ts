@@ -46,9 +46,29 @@ function isSuccessfulStatus(status: string): boolean {
   return status === 'completed' || status === 'success' || status === 'ok' || status === 'skipped';
 }
 
-async function runStepWithRetries(label: string, step: () => Promise<unknown>): Promise<void> {
+interface StepRunOptions {
+  ignoreRuntimeEnabled?: boolean;
+  retryDelayMs?: number;
+}
+
+export interface TradingDayPipelineDeps {
+  runFetchDaily?: () => Promise<unknown>;
+  runFetchAnalysis?: () => Promise<unknown>;
+  runFetchBreadth?: (tradeDate: string) => Promise<void>;
+  runBreadthCleanup?: () => Promise<void>;
+  runFetchWeekly?: () => Promise<unknown>;
+}
+
+export type TradingDayPipelineOptions = StepRunOptions;
+
+async function runStepWithRetries(
+  label: string,
+  step: () => Promise<unknown>,
+  options: StepRunOptions = {},
+): Promise<void> {
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? STEP_RETRY_DELAY_MS));
   for (let attempt = 1; attempt <= STEP_MAX_ATTEMPTS; attempt += 1) {
-    if (!schedulerEnabledRuntime) return;
+    if (!options.ignoreRuntimeEnabled && !schedulerEnabledRuntime) return;
     try {
       const result = await step();
       const status = getStatus(result);
@@ -62,11 +82,41 @@ async function runStepWithRetries(label: string, step: () => Promise<unknown>): 
       console.error(`[scheduler] ${label} failed (attempt ${attempt}/${STEP_MAX_ATTEMPTS}): ${message}`);
     }
 
-    if (attempt < STEP_MAX_ATTEMPTS) {
-      await wait(STEP_RETRY_DELAY_MS);
+    if (attempt < STEP_MAX_ATTEMPTS && retryDelayMs > 0) {
+      await wait(retryDelayMs);
     }
   }
   console.error(`[scheduler] ${label} exhausted retries; continuing to next step`);
+}
+
+export async function runTradingDayPipelineForDate(
+  tradeDate: string,
+  deps: TradingDayPipelineDeps = {},
+  options: TradingDayPipelineOptions = {},
+): Promise<void> {
+  const runFetchDaily = deps.runFetchDaily ?? (() => runDivergenceFetchDailyData({ trigger: 'scheduler' }));
+  const runFetchAnalysis = deps.runFetchAnalysis ?? (() => runVDFScan());
+  const runFetchBreadth = deps.runFetchBreadth ?? ((date: string) => runBreadthComputation(date));
+  const runBreadthCleanup = deps.runBreadthCleanup ?? (() => cleanupBreadthData());
+  const runFetchWeekly = deps.runFetchWeekly ?? (() => runDivergenceFetchWeeklyData({ trigger: 'scheduler-weekly' }));
+  console.log(`[scheduler] Trading-day pipeline started for ${tradeDate}`);
+
+  await runStepWithRetries('Fetch Daily', () => runFetchDaily(), options);
+  await runStepWithRetries('Fetch Analysis', () => runFetchAnalysis(), options);
+  await runStepWithRetries(
+    'Fetch Breadth',
+    async () => {
+      await runFetchBreadth(tradeDate);
+      await runBreadthCleanup();
+      return { status: 'completed' };
+    },
+    options,
+  );
+  if (isFridayEt(tradeDate)) {
+    await runStepWithRetries('Fetch Weekly', () => runFetchWeekly(), options);
+  }
+
+  console.log(`[scheduler] Trading-day pipeline finished for ${tradeDate}`);
 }
 
 async function runScheduledTradingDayPipeline(): Promise<void> {
@@ -75,22 +125,8 @@ async function runScheduledTradingDayPipeline(): Promise<void> {
     console.warn('[scheduler] Divergence DB is not configured; skipping trading-day pipeline');
     return;
   }
-
   const tradeDate = currentEtDateString();
-  console.log(`[scheduler] Trading-day pipeline started for ${tradeDate}`);
-
-  await runStepWithRetries('Fetch Daily', () => runDivergenceFetchDailyData({ trigger: 'scheduler' }));
-  await runStepWithRetries('Fetch Analysis', () => runVDFScan());
-  await runStepWithRetries('Fetch Breadth', async () => {
-    await runBreadthComputation(tradeDate);
-    await cleanupBreadthData();
-    return { status: 'completed' };
-  });
-  if (isFridayEt(tradeDate)) {
-    await runStepWithRetries('Fetch Weekly', () => runDivergenceFetchWeeklyData({ trigger: 'scheduler-weekly' }));
-  }
-
-  console.log(`[scheduler] Trading-day pipeline finished for ${tradeDate}`);
+  await runTradingDayPipelineForDate(tradeDate);
 }
 
 export function getNextDivergenceScanUtcMs(nowUtc = new Date()): number {

@@ -1,7 +1,19 @@
 import type { Bar1m, DailyAggregate, WeekAggregate } from './vdfTypes.js';
 
 export function vdAggregateDaily(bars1m: Bar1m[]): DailyAggregate[] {
-  const dailyMap = new Map<string, { buyVol: number; sellVol: number; totalVol: number; close: number; open: number; high: number; low: number; first: boolean }>();
+  const dailyMap = new Map<
+    string,
+    {
+      buyVol: number;
+      sellVol: number;
+      totalVol: number;
+      close: number;
+      open: number;
+      high: number;
+      low: number;
+      first: boolean;
+    }
+  >();
   for (const b of bars1m) {
     const d = new Date(b.time * 1000).toISOString().split('T')[0];
     if (!dailyMap.has(d))

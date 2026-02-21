@@ -4,7 +4,11 @@ import { scoreSubwindow } from './vdfScoring.js';
 /**
  * Scan all possible subwindows and cluster into non-overlapping accumulation zones.
  */
-export function findAccumulationZones(allDaily: DailyAggregate[], preDaily: DailyAggregate[], maxZones = 3): ScoredZone[] {
+export function findAccumulationZones(
+  allDaily: DailyAggregate[],
+  preDaily: DailyAggregate[],
+  maxZones = 3,
+): ScoredZone[] {
   const windowSizes = [10, 14, 17, 20, 24, 28, 35];
   const detected: ScoredZone[] = [];
 
@@ -55,7 +59,15 @@ export function findAccumulationZones(allDaily: DailyAggregate[], preDaily: Dail
  * but cumulative delta is negative (institutions selling into rally).
  */
 export function findDistributionClusters(allDaily: DailyAggregate[]): { distClusters: DistributionCluster[] } {
-  const distWindows: Array<{ start: number; end: number; startDate: string; endDate: string; priceChange: number; netDeltaPct: number; netDelta: number }> = [];
+  const distWindows: Array<{
+    start: number;
+    end: number;
+    startDate: string;
+    endDate: string;
+    priceChange: number;
+    netDeltaPct: number;
+    netDelta: number;
+  }> = [];
   for (let i = 10; i <= allDaily.length; i++) {
     const window = allDaily.slice(i - 10, i);
     const priceChange = ((window[9].close - window[0].close) / window[0].close) * 100;
@@ -63,7 +75,15 @@ export function findDistributionClusters(allDaily: DailyAggregate[]): { distClus
     const netDelta = window.reduce((s, d) => s + d.delta, 0);
     const netDeltaPct = totalVol > 0 ? (netDelta / totalVol) * 100 : 0;
     if (priceChange > 3 && netDeltaPct < -3) {
-      distWindows.push({ start: i - 10, end: i - 1, startDate: window[0].date, endDate: window[9].date, priceChange, netDeltaPct, netDelta });
+      distWindows.push({
+        start: i - 10,
+        end: i - 1,
+        startDate: window[0].date,
+        endDate: window[9].date,
+        priceChange,
+        netDeltaPct,
+        netDelta,
+      });
     }
   }
 
@@ -82,7 +102,15 @@ export function findDistributionClusters(allDaily: DailyAggregate[]): { distClus
       }
     }
     if (!merged) {
-      distClusters.push({ start: w.start, end: w.end, startDate: w.startDate, endDate: w.endDate, count: 1, maxPriceChg: w.priceChange, minDeltaPct: w.netDeltaPct });
+      distClusters.push({
+        start: w.start,
+        end: w.end,
+        startDate: w.startDate,
+        endDate: w.endDate,
+        count: 1,
+        maxPriceChg: w.priceChange,
+        minDeltaPct: w.netDeltaPct,
+      });
     }
   }
 

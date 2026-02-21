@@ -20,16 +20,15 @@ export function instrumentPool(pool: Pool, poolName = 'primary'): Pool {
 
   // pg's Pool.query is not redefinable through the public interface; monkey-patching is the
   // standard approach for transparent query instrumentation without a proxy layer.
-  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query =
-    async function monitoredQuery(...args: unknown[]) {
+  (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = async function monitoredQuery(
+    ...args: unknown[]
+  ) {
     const start = performance.now();
     try {
       const result = await (originalQuery as (...a: unknown[]) => Promise<unknown>)(...args);
       const durationMs = performance.now() - start;
       if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
-        console.warn(
-          `[slow-query] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)}`,
-        );
+        console.warn(`[slow-query] pool=${poolName} duration=${Math.round(durationMs)}ms sql=${extractSql(args)}`);
       }
       return result;
     } catch (err: unknown) {

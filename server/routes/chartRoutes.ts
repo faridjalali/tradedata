@@ -67,9 +67,16 @@ interface ChartRoutesOptions {
   app: FastifyInstance;
   parseChartRequestParams: (req: { query: Record<string, unknown> }) => ChartRequestParams;
   validChartIntervals: readonly string[];
-  getOrBuildChartResult: (params: Record<string, unknown>) => Promise<{ result: unknown; serverTiming: string | null; cacheHit: boolean }>;
+  getOrBuildChartResult: (
+    params: Record<string, unknown>,
+  ) => Promise<{ result: unknown; serverTiming: string | null; cacheHit: boolean }>;
   extractLatestChartPayload: (result: Record<string, unknown>) => Record<string, unknown>;
-  sendChartJsonResponse: (req: { headers: Record<string, string | undefined> }, res: FastifyReply, payload: unknown, serverTiming: string | null) => Promise<unknown>;
+  sendChartJsonResponse: (
+    req: { headers: Record<string, string | undefined> },
+    res: FastifyReply,
+    payload: unknown,
+    serverTiming: string | null,
+  ) => Promise<unknown>;
   validateChartPayload?: (payload: unknown) => PayloadValidation;
   validateChartLatestPayload?: (payload: unknown) => PayloadValidation;
   onChartRequestMeasured?: (info: { route: string; interval: string; cacheHit: boolean; durationMs: number }) => void;
@@ -84,7 +91,10 @@ interface ChartRoutesOptions {
   loadMiniChartBarsFromDbBatch?: (tickers: string[]) => Promise<Record<string, unknown[]>>;
   fetchMiniChartBarsFromApi?: (ticker: string) => Promise<unknown[]>;
   getVDFStatus?: (ticker: string, options: { force: boolean; mode: string }) => Promise<unknown>;
-  fetchTickerReference?: (ticker: unknown, options?: { signal?: AbortSignal | null }) => Promise<Record<string, unknown> | null>;
+  fetchTickerReference?: (
+    ticker: unknown,
+    options?: { signal?: AbortSignal | null },
+  ) => Promise<Record<string, unknown> | null>;
 }
 
 /**
@@ -163,7 +173,12 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
           durationMs: Date.now() - startedAtMs,
         });
       }
-      await sendChartJsonResponse(req as unknown as { headers: Record<string, string | undefined> }, res, payload, serverTiming);
+      await sendChartJsonResponse(
+        req as unknown as { headers: Record<string, string | undefined> },
+        res,
+        payload,
+        serverTiming,
+      );
     } catch (err: unknown) {
       console.error('Chart API Error:', err instanceof Error ? err.message : String(err));
       const errObj = err as Record<string, unknown>;
@@ -225,7 +240,12 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
           durationMs: Date.now() - startedAtMs,
         });
       }
-      await sendChartJsonResponse(req as unknown as { headers: Record<string, string | undefined> }, res, payload, serverTiming);
+      await sendChartJsonResponse(
+        req as unknown as { headers: Record<string, string | undefined> },
+        res,
+        payload,
+        serverTiming,
+      );
     } catch (err: unknown) {
       console.error('Chart Latest API Error:', err instanceof Error ? err.message : String(err));
       const errObj = err as Record<string, unknown>;
@@ -248,7 +268,10 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
         return res.code(400).send({ error: `Invalid ticker format: ${ticker}` });
       }
-      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<string, unknown[]> | null;
+      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<
+        string,
+        unknown[]
+      > | null;
       let bars: unknown[] = cache ? cache.get(ticker) || [] : [];
       // Fall back to DB if in-memory cache is empty (e.g. after server restart).
       if (bars.length === 0 && typeof loadMiniChartBarsFromDb === 'function') {
@@ -298,7 +321,10 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
       }
 
       const results: Record<string, unknown[]> = {};
-      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<string, unknown[]> | null;
+      const cache = (typeof getMiniBarsCacheByTicker === 'function' ? getMiniBarsCacheByTicker() : null) as Map<
+        string,
+        unknown[]
+      > | null;
       const dbNeeded = [];
 
       // 1. Check in-memory cache first (trim to ~30 bars in case of stale data)
@@ -402,7 +428,9 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
 
       const vdSourceInterval = String((req.query as Record<string, unknown>).vdSourceInterval || '1min').trim();
       const refresh = parseBooleanQueryFlag((req.query as Record<string, unknown>).refresh as string);
-      const noCache = parseBooleanQueryFlag((req.query as Record<string, unknown>).nocache as string) || parseBooleanQueryFlag((req.query as Record<string, unknown>).noCache as string);
+      const noCache =
+        parseBooleanQueryFlag((req.query as Record<string, unknown>).nocache as string) ||
+        parseBooleanQueryFlag((req.query as Record<string, unknown>).noCache as string);
       const payload = await getDivergenceSummaryForTickers({
         tickers,
         vdSourceInterval,
@@ -422,7 +450,9 @@ function registerChartRoutes(options: ChartRoutesOptions): void {
 
   if (fetchTickerReference) {
     app.get('/api/chart/ticker-info', async (req: FastifyRequest, res: FastifyReply) => {
-      const ticker = String((req.query as Record<string, unknown>).ticker || '').trim().toUpperCase();
+      const ticker = String((req.query as Record<string, unknown>).ticker || '')
+        .trim()
+        .toUpperCase();
       if (!ticker) return res.code(400).send({ error: 'ticker is required' });
       if (typeof isValidTickerSymbol === 'function' && !isValidTickerSymbol(ticker)) {
         return res.code(400).send({ error: 'Invalid ticker symbol' });
