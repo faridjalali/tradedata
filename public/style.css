@@ -1359,8 +1359,9 @@ button:hover {
   display: flex;
   align-items: center;
   gap: var(--sp-lg);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-height: 28px;
+  min-width: 0;
 }
 .admin-operation-row--stack {
   align-items: flex-start;
@@ -1369,7 +1370,8 @@ button:hover {
   display: flex;
   align-items: center;
   gap: var(--sp-sm);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 .admin-add-ticker-input {
   width: 6ch;
@@ -1379,9 +1381,23 @@ button:hover {
   font-family: var(--font-mono);
 }
 .admin-operation-row .divergence-run-status {
-  max-width: 72ch;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  margin-left: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.admin-add-ticker-controls .divergence-run-status {
+  margin-left: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 .admin-status-ok { color: var(--color-log-success); }
 .admin-status-warn { color: var(--color-vdf-high); }
@@ -1482,13 +1498,26 @@ button:hover {
   .admin-operations-layout { grid-template-columns: 1fr; gap: var(--sp-md); }
   .admin-operations-column { gap: var(--sp-sm); }
   .admin-operations-separator { display: none; }
-  .admin-operation-row { align-items: flex-start; gap: var(--sp-sm); min-height: 0; }
+  .admin-operation-row { align-items: center; gap: var(--sp-sm); min-height: 0; }
   .admin-operation-row .divergence-run-status {
-    margin-left: 0;
-    flex: 1 1 100%;
+    margin-left: auto;
+    flex: 1 1 auto;
+    min-width: 0;
     max-width: none;
     font-size: var(--fs-sm);
     line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
+  .admin-add-ticker-controls {
+    flex-wrap: nowrap;
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-add-ticker-controls .divergence-run-status {
+    text-align: left;
   }
 
   .pane-btn {

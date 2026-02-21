@@ -494,7 +494,7 @@ export function AdminView() {
     });
   }, [addTickersInput, runOp]);
 
-  const schedulerEnabled = Boolean(opsData?.scheduler?.enabled);
+  const schedulerEnabled = Boolean(opsData?.scheduler?.enabled ?? opsData?.scheduler?.enabledByConfig);
   const schedulerRuntimeText = schedulerEnabled ? 'On' : 'Off';
   const warmupRuntimeText = opsData?.warmup?.running
     ? `Running ${Number(opsData?.warmup?.completed || 0)}/${Number(opsData?.warmup?.total || 0)}`
@@ -677,10 +677,11 @@ export function AdminView() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: true }),
                   });
-                  const scheduler = (out.scheduler || {}) as { enabled?: boolean };
+                  const scheduler = (out.scheduler || {}) as { enabled?: boolean; enabledByConfig?: boolean };
+                  const enabled = Boolean(scheduler.enabled ?? scheduler.enabledByConfig);
                   setOpsStatus((prev) => ({
                     ...prev,
-                    scheduler: scheduler.enabled ? 'On' : 'Off',
+                    scheduler: enabled ? '' : 'Off',
                   }));
                 })
               }

@@ -60,7 +60,7 @@ export const DIVERGENCE_TABLE_MIN_COVERAGE_DAYS = Math.max(
   29,
   Number(process.env.DIVERGENCE_TABLE_MIN_COVERAGE_DAYS) || 29,
 );
-export const DIVERGENCE_SCANNER_ENABLED = false;
+export const DIVERGENCE_SCANNER_ENABLED = true;
 export const DIVERGENCE_MIN_UNIVERSE_SIZE = Math.max(1, Number(process.env.DIVERGENCE_MIN_UNIVERSE_SIZE) || 500);
 export const DIVERGENCE_SUMMARY_UPSERT_BATCH_SIZE = Math.max(
   100,
