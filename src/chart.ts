@@ -1640,7 +1640,8 @@ function rebuildVolumeDeltaCumulativeMap(): void {
   if (!Array.isArray(currentBars) || currentBars.length === 0) return;
 
   let running = 0;
-  for (const bar of currentBars) {
+  for (let i = currentBars.length - 1; i >= 0; i--) {
+    const bar = currentBars[i];
     const key = timeKey(bar.time);
     const delta = Number(volumeDeltaByTime.get(key));
     if (Number.isFinite(delta)) running += Number(delta);
