@@ -1099,8 +1099,6 @@ h2 {
 .vdf-score-badge.vdf-high { border-color: var(--color-vdf-high); color: var(--color-vdf-high); }
 .vdf-score-badge.vdf-imminent { border-color: var(--color-vdf-imminent); color: var(--color-vdf-imminent); animation: vdf-pulse 1.5s infinite; }
 @keyframes vdf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.vdf-prox-pulse { animation: vdf-prox-glow 1.5s ease-in-out infinite; }
-@keyframes vdf-prox-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 .ma-dot-row {
   display: inline-flex;

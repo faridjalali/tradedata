@@ -449,17 +449,6 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       }
     }
   }
-
-  // --- Proximity glow bar at right edge ---
-  const prox = entry.proximity;
-  if (prox && prox.level !== 'none' && prox.compositeScore > 0) {
-    const proxRgb = prox.level === 'imminent' ? '244,67,54' : prox.level === 'high' ? '255,152,0' : '255,193,7';
-    const proxOp = prox.level === 'imminent' ? 0.4 : prox.level === 'high' ? 0.3 : 0.2;
-    const bar = document.createElement('div');
-    bar.style.cssText = `position:absolute;right:0;top:0;width:3px;height:100%;background:rgba(${proxRgb},${proxOp});box-shadow:0 0 8px rgba(${proxRgb},${(proxOp * 1.5).toFixed(2)}),0 0 16px rgba(${proxRgb},${proxOp});`;
-    if (prox.level === 'imminent') bar.className = 'vdf-prox-pulse';
-    vdZoneOverlayEl.appendChild(bar);
-  }
 }
 
 export function refreshVDZones(): void {
