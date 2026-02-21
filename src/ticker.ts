@@ -5,7 +5,7 @@ import { createAlertSortFn, updateSortButtonUi, escapeHtml } from './utils';
 import { renderCustomChart } from './chart';
 import { getColumnFeedMode, filterToLatestNDates, ColumnFeedMode } from './divergenceFeed';
 import { appStore } from './store/appStore';
-import { buildChartDataCacheKey, getCachedChartData } from './chartDataCache';
+import { buildChartDataCacheKey, getCachedChartData, getCachedChartDataByTickerInterval } from './chartDataCache';
 import { timeKey, unixSecondsFromTimeValue } from './chartTimeUtils';
 import type { CandleBar } from '../shared/api-types';
 
@@ -15,6 +15,7 @@ let tickerDailySortDirection: 'asc' | 'desc' = 'desc';
 let tickerWeeklySortDirection: 'asc' | 'desc' = 'desc';
 let tickerDailyPreFavSort: { mode: SortMode; direction: 'asc' | 'desc' } | null = null;
 let tickerWeeklyPreFavSort: { mode: SortMode; direction: 'asc' | 'desc' } | null = null;
+let scheduledTickerChartRenderToken = 0;
 
 interface RenderTickerViewOptions {
   refreshCharts?: boolean;
@@ -29,6 +30,28 @@ interface DailyMetricPoint {
   dateKey: string;
   close: number;
   volumeDelta: number | null;
+}
+
+interface ChartDataReadyDetail {
+  ticker?: string;
+}
+
+let chartDataReadyListenerBound = false;
+
+function ensureTickerChartDataReadyListener(): void {
+  if (chartDataReadyListenerBound || typeof window === 'undefined') return;
+  chartDataReadyListenerBound = true;
+  window.addEventListener('chartdataready', (event: Event) => {
+    const detail = (event as CustomEvent<ChartDataReadyDetail>).detail;
+    const readyTicker = String(detail?.ticker || '')
+      .trim()
+      .toUpperCase();
+    const selectedTicker = String(appStore.getState().selectedTicker || '')
+      .trim()
+      .toUpperCase();
+    if (!readyTicker || !selectedTicker || readyTicker !== selectedTicker) return;
+    renderTickerView(selectedTicker, { refreshCharts: false });
+  });
 }
 
 function formatAlertCardDate(rawDate: string | null | undefined): string {
@@ -247,8 +270,10 @@ function getChartMetricsByDateForTicker(ticker: string): {
   dailyByDate: Map<string, TickerAlertChartMetrics>;
   weeklyByDate: Map<string, TickerAlertChartMetrics>;
 } {
-  const dailyData = getCachedChartData(buildChartDataCacheKey(ticker, '1day'));
-  const weeklyData = getCachedChartData(buildChartDataCacheKey(ticker, '1week'));
+  const dailyData =
+    getCachedChartData(buildChartDataCacheKey(ticker, '1day')) || getCachedChartDataByTickerInterval(ticker, '1day');
+  const weeklyData =
+    getCachedChartData(buildChartDataCacheKey(ticker, '1week')) || getCachedChartDataByTickerInterval(ticker, '1week');
 
   const dailyBundle = buildMetricsFromChartData(dailyData);
   const weeklyBundle = buildMetricsFromChartData(weeklyData);
@@ -353,13 +378,18 @@ export function setTickerWeeklySort(mode: SortMode): void {
 }
 
 export function renderTickerView(ticker: string, options: RenderTickerViewOptions = {}): void {
+  ensureTickerChartDataReadyListener();
   const refreshCharts = options.refreshCharts !== false;
+  const normalizedTicker = String(ticker || '')
+    .trim()
+    .toUpperCase();
+  if (!normalizedTicker) return;
   updateSortButtonUi('#ticker-view .ticker-daily-sort', tickerDailySortMode, tickerDailySortDirection);
   updateSortButtonUi('#ticker-view .ticker-weekly-sort', tickerWeeklySortMode, tickerWeeklySortDirection);
   const allAlerts = getDivergenceSignals();
   primeDivergenceSummaryCacheFromAlerts(allAlerts);
-  const { dailyByDate, weeklyByDate } = getChartMetricsByDateForTicker(ticker);
-  const alerts = allAlerts.filter((a) => a.ticker === ticker);
+  const { dailyByDate, weeklyByDate } = getChartMetricsByDateForTicker(normalizedTicker);
+  const alerts = allAlerts.filter((a) => a.ticker === normalizedTicker);
 
   let daily = alerts.filter((a) => (a.timeframe || '').trim() === '1d');
   let weekly = alerts.filter((a) => (a.timeframe || '').trim() === '1w');
@@ -401,12 +431,29 @@ export function renderTickerView(ticker: string, options: RenderTickerViewOption
   }
 
   if (refreshCharts) {
-    renderCustomChart(ticker)
-      .then(() => {
-        if (appStore.getState().selectedTicker === ticker) {
-          renderTickerView(ticker, { refreshCharts: false });
-        }
-      })
-      .catch(() => {});
+    const renderToken = ++scheduledTickerChartRenderToken;
+    const startChartRender = () => {
+      if (renderToken !== scheduledTickerChartRenderToken) return;
+      const selectedTicker = String(appStore.getState().selectedTicker || '')
+        .trim()
+        .toUpperCase();
+      if (selectedTicker !== normalizedTicker) return;
+      renderCustomChart(normalizedTicker)
+        .then(() => {
+          if (appStore.getState().selectedTicker === normalizedTicker) {
+            renderTickerView(normalizedTicker, { refreshCharts: false });
+          }
+        })
+        .catch(() => {});
+    };
+
+    // Defer heavy chart startup until after this frame so alert cards paint first.
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(startChartRender, 0);
+      });
+    } else {
+      setTimeout(startChartRender, 0);
+    }
   }
 }

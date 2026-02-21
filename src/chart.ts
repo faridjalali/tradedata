@@ -194,6 +194,26 @@ let marketContextIsRegularHoursEt = false;
 function tc() {
   return getThemeColors();
 }
+
+function notifyChartDataReady(ticker: string, interval: ChartInterval): void {
+  if (typeof window === 'undefined') return;
+  const normalizedTicker = String(ticker || '')
+    .trim()
+    .toUpperCase();
+  if (!normalizedTicker) return;
+  try {
+    window.dispatchEvent(
+      new CustomEvent('chartdataready', {
+        detail: {
+          ticker: normalizedTicker,
+          interval,
+        },
+      }),
+    );
+  } catch {
+    // Ignore event dispatch failures.
+  }
+}
 function getMonthGridlineColor(): string {
   return tc().monthGridlineColor;
 }
@@ -2799,6 +2819,7 @@ export async function renderCustomChart(
       volumeDeltaContainer as HTMLElement,
     );
     recordChartRenderPerf(interval, performance.now() - renderStartedAt);
+    notifyChartDataReady(ticker, interval);
     if (shouldApplyWeeklyDefaultRange) {
       applyWeeklyInitialVisibleRange();
     }
@@ -2851,6 +2872,7 @@ export async function renderCustomChart(
         volumeDeltaContainer as HTMLElement,
       );
       recordChartRenderPerf(interval, performance.now() - renderStartedAt);
+      notifyChartDataReady(ticker, interval);
       if (shouldApplyWeeklyDefaultRange) {
         applyWeeklyInitialVisibleRange();
       }

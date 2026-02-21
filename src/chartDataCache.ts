@@ -152,6 +152,23 @@ export function getCachedChartData(cacheKey: string): ChartData | null {
   return cached ? cached.data : null;
 }
 
+export function getCachedChartDataByTickerInterval(ticker: string, interval: ChartInterval): ChartData | null {
+  sweepChartDataCache();
+  const normalizedTicker = String(ticker || '')
+    .trim()
+    .toUpperCase();
+  if (!normalizedTicker) return null;
+  const prefix = `${normalizedTicker}|${interval}|`;
+  const entries = Array.from(chartDataCache.entries()).reverse();
+  for (const [key, entry] of entries) {
+    if (!key.startsWith(prefix) || !entry?.data) continue;
+    chartDataCache.delete(key);
+    chartDataCache.set(key, entry);
+    return entry.data;
+  }
+  return null;
+}
+
 export function setCachedChartData(cacheKey: string, data: ChartData): void {
   hydrateChartDataCacheFromSessionIfNeeded();
   chartDataCache.delete(cacheKey);

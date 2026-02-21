@@ -5,7 +5,7 @@
 
 import { getDateRangeForMode, createAlertSortFn, updateSortButtonUi } from './utils';
 import { fetchDivergenceSignalsFromApi } from './divergenceApi';
-import { setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
+import { setDivergenceSignals, setDivergenceSignalsByTimeframe, getDivergenceSignals } from './divergenceState';
 import { createAlertCard } from './components';
 import { primeDivergenceSummaryCacheFromAlerts, renderAlertCardDivergenceTablesFromCache } from './divergenceTable';
 import {
@@ -152,12 +152,23 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
 
 export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]> {
   try {
-    // Fetch both columns independently using their per-column modes
+    const dailyColumn = divergenceStore.getState().getColumn('daily');
+    const weeklyColumn = divergenceStore.getState().getColumn('weekly');
+    const dailyRange = getDateRangeForMode(dailyColumn.feedMode, dailyColumn.customFrom, dailyColumn.customTo);
+    const weeklyRange = getDateRangeForMode(weeklyColumn.feedMode, weeklyColumn.customFrom, weeklyColumn.customTo);
+    if (!dailyRange.startDate || !dailyRange.endDate || !weeklyRange.startDate || !weeklyRange.endDate) {
+      return [];
+    }
+
+    // Fetch both columns in parallel, then commit to store once so both render together.
     const [daily, weekly] = await Promise.all([
-      fetchDivergenceSignalsByTimeframe('1d'),
-      fetchDivergenceSignalsByTimeframe('1w'),
+      fetchDivergenceSignalsFromApi(`?start_date=${dailyRange.startDate}&end_date=${dailyRange.endDate}&timeframe=1d`),
+      fetchDivergenceSignalsFromApi(
+        `?start_date=${weeklyRange.startDate}&end_date=${weeklyRange.endDate}&timeframe=1w`,
+      ),
     ]);
     const all = [...daily, ...weekly];
+    setDivergenceSignals(all);
     primeDivergenceSummaryCacheFromAlerts(all);
     return all;
   } catch (error) {
