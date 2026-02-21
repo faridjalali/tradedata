@@ -99,6 +99,10 @@ export function populateBreadthIndexButtons(): void {
   for (const id of ['breadth-ma-index-btns', 'breadth-compare-index-btns']) {
     const container = document.getElementById(id);
     if (!container) continue;
+    const compareToggleBtn =
+      id === 'breadth-compare-index-btns'
+        ? (container.querySelector('#breadth-compare-toggle') as HTMLButtonElement | null)
+        : null;
     container.innerHTML = '';
     for (const idx of BREADTH_INDEXES) {
       const btn = document.createElement('button');
@@ -107,6 +111,9 @@ export function populateBreadthIndexButtons(): void {
       btn.dataset.index = idx;
       btn.textContent = idx;
       container.appendChild(btn);
+    }
+    if (compareToggleBtn) {
+      container.appendChild(compareToggleBtn);
     }
   }
 }
@@ -509,7 +516,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         {
           label: '21 MA',
           data: history.map((h) => h.ma21),
-          borderColor: '#00d4ff',
+          borderColor: '#22c55e',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
@@ -519,7 +526,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         {
           label: '50 MA',
           data: history.map((h) => h.ma50),
-          borderColor: '#58a6ff',
+          borderColor: '#3b82f6',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
@@ -529,7 +536,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         {
           label: '100 MA',
           data: history.map((h) => h.ma100),
-          borderColor: '#bc8cff',
+          borderColor: '#a855f7',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
@@ -539,7 +546,7 @@ function renderBreadthMAChart(history: BreadthMAHistory[]): void {
         {
           label: '200 MA',
           data: history.map((h) => h.ma200),
-          borderColor: '#f0883e',
+          borderColor: '#f59e0b',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
@@ -676,7 +683,7 @@ function renderBreadthCompareChart(): void {
       rawValues: rawMa21,
       rawSuffix: '%',
       rawDecimals: 1,
-      borderColor: '#00d4ff',
+      borderColor: '#22c55e',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       borderDash: [],
@@ -691,7 +698,7 @@ function renderBreadthCompareChart(): void {
       rawValues: rawMa50,
       rawSuffix: '%',
       rawDecimals: 1,
-      borderColor: '#58a6ff',
+      borderColor: '#3b82f6',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       pointRadius: ptRadius,
@@ -705,7 +712,7 @@ function renderBreadthCompareChart(): void {
       rawValues: rawMa100,
       rawSuffix: '%',
       rawDecimals: 1,
-      borderColor: '#bc8cff',
+      borderColor: '#a855f7',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       pointRadius: ptRadius,
@@ -719,7 +726,7 @@ function renderBreadthCompareChart(): void {
       rawValues: rawMa200,
       rawSuffix: '%',
       rawDecimals: 1,
-      borderColor: '#f0883e',
+      borderColor: '#f59e0b',
       backgroundColor: 'transparent',
       borderWidth: 1.5,
       pointRadius: ptRadius,
@@ -779,7 +786,7 @@ export function setBreadthCompareIndex(index: string): void {
     if (index === st.lockedCompareIndex) return; // can't compare to self
     st.setCompareIndex2(index);
     const locked = st.lockedCompareIndex;
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn[data-index]').forEach((btn) => {
       const btnIndex = (btn as HTMLElement).dataset.index;
       btn.classList.toggle('active', btnIndex === index || btnIndex === locked);
       btn.classList.toggle('locked', btnIndex === locked);
@@ -815,7 +822,7 @@ export function toggleBreadthCompareMode(): void {
     st.setLockedCompareIndex(st.compareIndex);
     st.setCompareIndex2(null);
     const locked = st.compareIndex;
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
+    document.querySelectorAll('#breadth-compare-index-btns .pane-btn[data-index]').forEach((btn) => {
       btn.classList.toggle('locked', (btn as HTMLElement).dataset.index === locked);
     });
     // Don't render dual chart yet — wait for 2nd pick
@@ -827,7 +834,9 @@ export function toggleBreadthCompareMode(): void {
     st.setCompareIndex2(null);
     const gaugesEl = document.getElementById('breadth-compare-gauges');
     if (gaugesEl) gaugesEl.style.display = 'none';
-    document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => btn.classList.remove('locked'));
+    document
+      .querySelectorAll('#breadth-compare-index-btns .pane-btn[data-index]')
+      .forEach((btn) => btn.classList.remove('locked'));
     setActiveInGroup('#breadth-compare-index-btns', 'index', restoreIndex);
     renderBreadthCompareChart();
   }
@@ -910,7 +919,7 @@ function renderBreadthCompareDual(): void {
   );
   const ptRadius = h1.length > 20 ? 0 : 3;
 
-  const MA_COLORS = ['#00d4ff', '#58a6ff', '#bc8cff', '#f0883e'];
+  const MA_COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f59e0b'];
   const MA_KEYS: Array<keyof BreadthMAHistory> = ['ma21', 'ma50', 'ma100', 'ma200'];
   const MA_LABELS = ['21d', '50d', '100d', '200d'];
 
@@ -1114,7 +1123,7 @@ export function initBreadth(): void {
   });
 
   // Wire Compare index buttons
-  document.querySelectorAll('#breadth-compare-index-btns .pane-btn').forEach((btn) => {
+  document.querySelectorAll('#breadth-compare-index-btns .pane-btn[data-index]').forEach((btn) => {
     btn.addEventListener('click', () => {
       setBreadthCompareIndex((btn as HTMLElement).dataset.index ?? '');
     });

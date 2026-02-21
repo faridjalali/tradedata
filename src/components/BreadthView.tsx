@@ -70,8 +70,7 @@ export function BreadthView({
       <div class="breadth-compare-section">
         <div class="single-page-header">
           <div class="single-page-controls">
-            <div id="breadth-compare-index-btns" class="feed-controls-group feed-controls-group--wrap"></div>
-            <div class="breadth-compare-controls-row">
+            <div id="breadth-compare-index-btns" class="feed-controls-group feed-controls-group--wrap">
               <button
                 id="breadth-compare-toggle"
                 class="pane-btn breadth-compare-toggle-btn"
@@ -80,6 +79,8 @@ export function BreadthView({
               >
                 Compare
               </button>
+            </div>
+            <div class="breadth-compare-timeframe-row">
               <div id="breadth-compare-tf-btns" class="feed-controls-group">
                 <button class="pane-btn" data-days="5" type="button" onClick={() => onSelectCompareTf(5)}>
                   5
