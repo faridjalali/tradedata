@@ -1493,43 +1493,6 @@ button:hover {
   /* Breadth gauges */
   .breadth-gauges-row { grid-template-columns: repeat(2, 1fr); }
 
-  /* Custom chart section */
-  .custom-chart-section { padding: 12px; margin: 16px auto 56px; overflow: hidden; }
-  #price-chart-container,
-  #vd-rsi-chart-container { height: 300px; }
-  #rsi-chart-container { height: 300px; overflow: hidden; }
-  #vd-chart-container { height: 220px; }
-  .chart-controls-bar { gap: 5px; margin-bottom: 14px; }
-  #chart-controls .pane-btn {
-    height: 30px;
-    min-width: 30px;
-    padding: 0 9px;
-  }
-  #chart-controls .pane-btn.chart-action-btn {
-    width: 30px;
-    min-width: 30px;
-    padding: 0;
-  }
-  #chart-controls .pane-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-  .pane-settings-btn,
-  .pane-trendline-btn {
-    width: 24px;
-    min-width: 24px;
-    height: 24px;
-    padding: 0;
-  }
-  .pane-name-badge {
-    min-height: 24px;
-    padding: 0 6px;
-    line-height: 24px;
-  }
-
-  /* Touch-friendly pane resize handle */
-  .pane-resize-handle { height: 12px; }
-
   /* Admin page mobile */
   .admin-health-grid { grid-template-columns: 1fr; }
   .admin-section + .admin-section { padding-top: var(--sp-lg); margin-top: var(--sp-lg); }
@@ -1557,12 +1520,6 @@ button:hover {
   }
   .admin-add-ticker-controls .divergence-run-status {
     text-align: left;
-  }
-
-  .pane-btn {
-    min-width: 28px;
-    height: 28px;
-    padding: 0 8px;
   }
 
   /* Run metrics/history mobile rhythm */
@@ -1597,6 +1554,14 @@ button:hover {
   align-items: center;
   gap: 5px;
   position: relative;
+}
+
+/* Ticker page parity with alerts page code path:
+   keep these controls in DOM but hide them only in ticker view. */
+#ticker-view .column-header .column-tf-controls > .pane-btn[data-tf="custom"],
+#ticker-view .column-header .header-sort-controls > .pane-btn[data-sort="favorite"],
+#ticker-view .column-header .column-tf-controls > .column-tf-custom-panel {
+  display: none;
 }
 
 
@@ -1912,13 +1877,6 @@ button:hover {
 @media (hover: none) and (pointer: coarse) {
   #ticker-view,
   #ticker-view * {
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  .custom-chart-section,
-  .custom-chart-section * {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
