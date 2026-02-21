@@ -1369,7 +1369,8 @@ button:hover {
   flex-wrap: wrap;
 }
 .admin-add-ticker-input {
-  width: 210px;
+  width: 6ch;
+  min-width: 6ch;
   min-height: 28px;
   padding: 0 8px;
   font-family: var(--font-mono);
@@ -1492,7 +1493,7 @@ button:hover {
   .log-history-header { font-size: var(--fs-sm); }
   .log-history-sub { font-size: var(--fs-sm); line-height: 1.35; max-width: none; }
   .log-history-pagination { margin-top: 6px; }
-  .admin-add-ticker-input { width: 100%; min-width: 0; }
+  .admin-add-ticker-input { width: 6ch; min-width: 6ch; }
 }
 
 .show-more-btn {

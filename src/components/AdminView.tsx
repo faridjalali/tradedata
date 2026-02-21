@@ -439,7 +439,6 @@ export function AdminView() {
         addTickers: invalidCount > 0 ? `Added ${addedCount} (${invalidCount} invalid)` : `Added ${addedCount}`,
       }));
       setAddTickersInput('');
-      setAddTickersOpen(false);
     });
   }, [addTickersInput, runOp]);
 
@@ -718,7 +717,6 @@ export function AdminView() {
                   <input
                     type="text"
                     class="glass-input admin-add-ticker-input"
-                    placeholder="AAPL, MSFT, NVDA"
                     value={addTickersInput}
                     onInput={(event) => setAddTickersInput((event.target as HTMLInputElement).value)}
                     onKeyDown={(event) => {
@@ -733,11 +731,11 @@ export function AdminView() {
                     disabled={Boolean(opsBusy.addTickers)}
                     onClick={submitAddTickers}
                   >
-                    Confirm
+                    Add
                   </button>
+                  <span class="divergence-run-status">{opsStatus.addTickers || '--'}</span>
                 </div>
               )}
-              <span class="divergence-run-status">{opsStatus.addTickers || '--'}</span>
             </div>
           </div>
         </div>

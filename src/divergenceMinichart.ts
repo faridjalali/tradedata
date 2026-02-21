@@ -7,8 +7,6 @@ import { createChart } from 'lightweight-charts';
 import type { IChartApi, CandlestickData } from 'lightweight-charts';
 import { getThemeColors } from './theme';
 
-
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -34,11 +32,19 @@ let miniChartAbortController: AbortController | null = null;
 let miniChartCurrentTicker: string | null = null;
 let miniChartHoveredCard: HTMLElement | null = null;
 
+function isAlertsViewVisible(): boolean {
+  const view = document.getElementById('view-divergence');
+  return Boolean(view && !view.classList.contains('hidden'));
+}
+
 // ---------------------------------------------------------------------------
 // Shared cache
 // ---------------------------------------------------------------------------
 
-interface MiniChartCacheEntry { bars: OHLC[]; fetchedAt: number }
+interface MiniChartCacheEntry {
+  bars: OHLC[];
+  fetchedAt: number;
+}
 const miniChartDataCacheInternal = new Map<string, MiniChartCacheEntry>();
 
 /** Read-only view for external consumers that need to check cache presence. */
@@ -64,7 +70,9 @@ export const miniChartDataCache = {
   set(ticker: string, bars: OHLC[]): void {
     miniChartDataCacheInternal.set(ticker, { bars, fetchedAt: Date.now() });
   },
-  get size(): number { return miniChartDataCacheInternal.size; },
+  get size(): number {
+    return miniChartDataCacheInternal.size;
+  },
 };
 let miniChartPrefetchInFlight = false;
 
@@ -155,6 +163,7 @@ export function destroyMiniChartOverlay(): void {
 }
 
 export async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, isTouch = false): Promise<void> {
+  if (!isAlertsViewVisible()) return;
   if (miniChartCurrentTicker === ticker && miniChartOverlayEl) return;
   destroyMiniChartOverlay();
   miniChartCurrentTicker = ticker;
@@ -235,8 +244,11 @@ export async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, is
     miniChartAbortController = null;
   }
 
-  // Guard: overlay may have been destroyed during await
-  if (miniChartCurrentTicker !== ticker || !miniChartOverlayEl) return;
+  // Guard: overlay may have been destroyed during await or route changed.
+  if (miniChartCurrentTicker !== ticker || !miniChartOverlayEl || !isAlertsViewVisible()) {
+    destroyMiniChartOverlay();
+    return;
+  }
 
   if (bars.length === 0) {
     destroyMiniChartOverlay();
@@ -330,7 +342,9 @@ function loadChartForWrapper(wrapper: HTMLElement, ticker: string): void {
           }
         }
       })
-      .catch(() => { inlineChartPending.delete(wrapper); });
+      .catch(() => {
+        inlineChartPending.delete(wrapper);
+      });
   }
 }
 
@@ -349,7 +363,11 @@ function getInlineChartObserver(): IntersectionObserver {
           // Left viewport zone — destroy chart to free memory
           const chart = inlineChartInstances.get(wrapper);
           if (chart) {
-            try { chart.remove(); } catch { /* ignore */ }
+            try {
+              chart.remove();
+            } catch {
+              /* ignore */
+            }
             inlineChartInstances.delete(wrapper);
             wrapper.innerHTML = '';
             delete wrapper.dataset.minichartLoaded;
@@ -422,7 +440,11 @@ function removeInlineMinicharts(container: HTMLElement): void {
     inlineChartPending.delete(wrapper);
     const chart = inlineChartInstances.get(wrapper);
     if (chart) {
-      try { chart.remove(); } catch { /* ignore */ }
+      try {
+        chart.remove();
+      } catch {
+        /* ignore */
+      }
       inlineChartInstances.delete(wrapper);
     }
     wrapper.remove();
@@ -473,10 +495,7 @@ export function detachInlineMinichartWrappers(container: HTMLElement): Map<strin
  * replacement. Wrappers for cards still present are re-inserted (chart intact,
  * no flicker). Wrappers for cards no longer in the slice are properly cleaned up.
  */
-export function reattachInlineMinichartWrappers(
-  container: HTMLElement,
-  saved: Map<string, HTMLElement>,
-): void {
+export function reattachInlineMinichartWrappers(container: HTMLElement, saved: Map<string, HTMLElement>): void {
   if (saved.size === 0) return;
   const obs = inlineChartObserver;
   const remaining = new Map(saved);
@@ -496,7 +515,11 @@ export function reattachInlineMinichartWrappers(
     inlineChartPending.delete(wrapper);
     const chart = inlineChartInstances.get(wrapper);
     if (chart) {
-      try { chart.remove(); } catch { /* ignore */ }
+      try {
+        chart.remove();
+      } catch {
+        /* ignore */
+      }
       inlineChartInstances.delete(wrapper);
     }
   }
@@ -555,7 +578,9 @@ function refreshInlineMinichartThemes(): void {
           textColor: _tc.textPrimary,
         },
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }
 

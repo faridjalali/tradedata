@@ -35,6 +35,7 @@ import { SortMode, TickerListContext } from './types';
 import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOptions } from './timezone';
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
+import { destroyMiniChartOverlay } from './divergenceMinichart';
 // ---------------------------------------------------------------------------
 // Route handling
 // ---------------------------------------------------------------------------
@@ -72,6 +73,7 @@ function applyTickerRoute(ticker: string): void {
   }
   unmountBreadthView();
   unmountDivergenceView();
+  destroyMiniChartOverlay();
 
   document.getElementById('view-admin')?.classList.add('hidden');
   document.getElementById('view-breadth')?.classList.add('hidden');
@@ -111,6 +113,9 @@ function applyViewRoute(view: ViewName): void {
   document.getElementById('view-breadth')?.classList.add('hidden');
   document.getElementById('ticker-view')?.classList.add('hidden');
   cancelChartLoading();
+  if (view !== 'divergence') {
+    destroyMiniChartOverlay();
+  }
 
   if (appStore.getState().adminMounted && view !== 'admin') {
     const adminRoot = document.getElementById('admin-root');
@@ -192,6 +197,7 @@ window.showTickerView = function (
     .trim()
     .toUpperCase();
   if (!normalizedTicker) return;
+  destroyMiniChartOverlay();
 
   appStore.getState().setTickerOriginView(sourceView);
   appStore.getState().setTickerListContext(listContext);

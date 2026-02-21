@@ -122,7 +122,7 @@ server/
     vdfZoneDetection.ts               Accumulation zone clustering, distribution detection
     vdfProximitySignals.ts            7 proximity signals → composite score + level
     scanControlService.ts             Scan lifecycle (pause/stop/resume) management
-    schedulerService.ts               Daily scan scheduler (4:20 PM ET)
+    schedulerService.ts               ET scheduler: trading-day pipeline + Friday post-sequence weekly job
     tradingCalendar.ts                US market holiday/early-close calendar
   orchestrators/
     dailyScanOrchestrator.ts          Daily divergence signal scan
@@ -711,14 +711,16 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 
 ### Job Summary
 
-| Job               | Trigger            | Schedule                      | Concurrency                | Data                              |
-| ----------------- | ------------------ | ----------------------------- | -------------------------- | --------------------------------- |
-| **Daily Scan**    | Scheduler + manual | 4:20 PM ET on trading days    | Configurable (default 128) | Live divergence signals           |
-| **Table Build**   | Post-scan + manual | After daily scan              | Configurable (default 24)  | Historical bar backfill + summary |
-| **Fetch Daily**   | Manual             | On-demand                     | Adaptive                   | 90+ days daily bars + MA states   |
-| **Fetch Weekly**  | Manual             | On-demand (post-Friday close) | Adaptive                   | 90+ days weekly bars              |
-| **VDF Scan**      | Manual             | On-demand                     | Hard-capped at 3           | 220 days 1-min bars per ticker    |
-| **Alert Pruning** | Boot timer         | Every 24 hours                | N/A                        | Deletes old alerts                |
+| Job                      | Trigger            | Schedule                         | Concurrency                | Data                               |
+| ------------------------ | ------------------ | -------------------------------- | -------------------------- | ---------------------------------- |
+| **Trading-Day Pipeline** | Scheduler          | 4:20 PM ET on trading days       | Step-specific              | Fetch Daily -> VDF Scan -> Breadth |
+| **Fetch Daily**          | Scheduler + manual | In pipeline + on-demand          | Adaptive                   | 90+ days daily bars + MA states    |
+| **VDF Scan**             | Scheduler + manual | In pipeline + on-demand          | Hard-capped at 3           | 220 days 1-min bars per ticker     |
+| **Breadth Compute**      | Scheduler + manual | In pipeline + on-demand          | Service-managed            | Breadth computation + cleanup      |
+| **Fetch Weekly**         | Scheduler + manual | Friday post-sequence + on-demand | Adaptive                   | 90+ days weekly bars               |
+| **Daily Scan**           | Manual             | On-demand                        | Configurable (default 128) | Live divergence signals            |
+| **Table Build**          | Manual             | On-demand                        | Configurable (default 24)  | Historical bar backfill + summary  |
+| **Alert Pruning**        | Boot timer         | Every 24 hours                   | N/A                        | Deletes old alerts                 |
 
 ### Daily Divergence Scan
 
@@ -734,7 +736,7 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 4. Two retry passes for failed tickers (half, then quarter concurrency)
 5. Rebuilds summaries and publishes trade date
 
-**Trigger:** Scheduled at 4:20 PM ET on trading days by `schedulerService.ts`, or manually via `POST /api/divergence/scan`.
+**Trigger:** Manual via `POST /api/divergence/scan`.
 
 **Lifecycle:** Supports pause/stop/resume. Progress saved at ticker level for resumption.
 
@@ -760,7 +762,7 @@ mini_chart_bars      ──→ UI rendering (standalone cache)
 
 **What they do:** Fetch and update divergence signals with full MA state computation for all tickers.
 
-**Trigger:** Manual via admin page operation buttons or API.
+**Trigger:** Trading-day scheduler (Fetch Daily 4:20 PM ET, then Analysis, then Breadth, and on Fridays Fetch Weekly after those steps) plus manual admin/API triggers.
 
 **Weekly constraint:** Only processes after Friday market close (4:16 PM ET).
 
@@ -807,15 +809,14 @@ idle → running → [paused] → running → completed / completed-with-errors 
 
 ```
 schedulerService.ts
-  └─ Calculates next trading day at 4:20 PM ET
-  └─ Sets setTimeout
-       └─ runScheduledDivergencePipeline()
-            ├─ runDailyDivergenceScan()
-            └─ (on success) runDivergenceTableBuild()
-       └─ Reschedules next run
+  ├─ Trading days (16:20 ET):
+  │    Fetch Daily (retry x2) -> Fetch Analysis/VDF (retry x2) -> Fetch Breadth + cleanup (retry x2)
+  ├─ Fridays (after the same sequence):
+  │    Fetch Weekly (retry x2)
+  └─ Each job reschedules itself after completion
 ```
 
-Controlled by `DIVERGENCE_SCANNER_ENABLED` (currently `false` by default).
+`DIVERGENCE_SCANNER_ENABLED` sets startup default only; runtime enable/disable is controlled by the admin scheduler toggle.
 
 ---
 
@@ -1130,7 +1131,7 @@ The project runs as a single Node.js process. No separate worker processes.
 
 **Required environment variables:** `DIVERGENCE_DATABASE_URL`, `DATA_API_KEY`
 
-**Optional operations variables:** `BREADTH_CONSTITUENTS_URL` (JSON map source for manual constituents rebuild), `DIVERGENCE_SCANNER_ENABLED`
+**Optional operations variables:** `BREADTH_CONSTITUENTS_URL` (JSON map source for manual constituents rebuild), `DIVERGENCE_SCANNER_ENABLED` (scheduler startup default)
 
 **Build command:** `npm ci && npm run build`
 
