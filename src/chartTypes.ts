@@ -111,6 +111,18 @@ export const INVALID_SYMBOL_MESSAGE = 'Invalid symbol';
 export const SETTINGS_STORAGE_KEY = 'custom_chart_settings_v1';
 export const VDF_CACHE_MAX_SIZE = 200;
 
+// Typography constants (kept in sync with CSS variables in public/style.css)
+export const FONT_UI_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+export const FONT_DATA_STACK = "'SF Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace";
+export const FONT_WEIGHT_REGULAR = 400;
+export const FONT_WEIGHT_MEDIUM = 500;
+export const FONT_WEIGHT_STRONG = 600;
+export const FONT_SIZE_META_PX = 11;
+export const FONT_SIZE_CONTROL_PX = 12;
+export const FONT_SIZE_TITLE_PX = 13;
+export const FONT_SIZE_MESSAGE_PX = 14;
+export const FONT_SIZE_AXIS_PX = 11;
+
 export const TOP_PANE_TICKER_LABEL_CLASS = 'top-pane-ticker-label';
 export const TOP_PANE_BADGE_CLASS = 'top-pane-badge';
 export const TOP_PANE_BADGE_START_LEFT_PX = 38;

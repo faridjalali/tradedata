@@ -30,6 +30,9 @@ import {
   SCALE_MIN_WIDTH_PX,
   PANE_TOOL_BUTTON_SIZE_PX,
   PANE_TOOL_BUTTON_GAP_PX,
+  FONT_DATA_STACK,
+  FONT_SIZE_CONTROL_PX,
+  FONT_WEIGHT_MEDIUM,
   volumeDeltaSettings,
 } from './chartTypes';
 import type { RSIChart } from './rsi';
@@ -190,8 +193,8 @@ function createTrendlineCrossLabelElement(text: string): HTMLDivElement {
   label.style.border = `1px solid ${tc().borderColor}`;
   label.style.background = tc().cardBg;
   label.style.color = tc().textPrimary;
-  label.style.fontSize = '12px';
-  label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  label.style.fontSize = `${FONT_SIZE_CONTROL_PX}px`;
+  label.style.fontFamily = FONT_DATA_STACK;
   label.style.pointerEvents = 'none';
   label.style.whiteSpace = 'nowrap';
   label.style.transform = 'translate(-50%, calc(-100% - 6px))';
@@ -751,10 +754,10 @@ export function renderVolumeDeltaDivergenceSummary(
     badge.style.borderRadius = '4px';
     badge.style.border = `1px solid ${tc().borderColor}`;
     badge.style.background = tc().cardBg;
-    badge.style.fontSize = '12px';
-    badge.style.fontWeight = '600';
+    badge.style.fontSize = `${FONT_SIZE_CONTROL_PX}px`;
+    badge.style.fontWeight = String(FONT_WEIGHT_MEDIUM);
     badge.style.lineHeight = '1';
-    badge.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+    badge.style.fontFamily = FONT_DATA_STACK;
     badge.style.color = color;
     badge.style.pointerEvents = 'none';
     return badge;

@@ -1,6 +1,15 @@
 import { getAppTimeZone } from './timezone';
 import { getThemeColors } from './theme';
 import { breadthStore } from './store/breadthStore';
+import {
+  FONT_UI_STACK,
+  FONT_DATA_STACK,
+  FONT_WEIGHT_REGULAR,
+  FONT_WEIGHT_MEDIUM,
+  FONT_SIZE_AXIS_PX,
+  FONT_SIZE_META_PX,
+  FONT_SIZE_CONTROL_PX,
+} from './chartTypes';
 
 /**
  * Minimal interface for Chart.js instances.
@@ -170,7 +179,11 @@ function makeBreadthChartOptions(
         ...(ov.legendOnClick ? { onClick: ov.legendOnClick } : {}),
         labels: {
           color: c.textPrimary,
-          font: { size: ov.legendFontSize ?? 12 },
+          font: {
+            family: FONT_UI_STACK,
+            size: ov.legendFontSize ?? FONT_SIZE_CONTROL_PX,
+            weight: String(FONT_WEIGHT_REGULAR),
+          },
           usePointStyle: true,
           pointStyle: 'line',
         },
@@ -182,6 +195,16 @@ function makeBreadthChartOptions(
         titleColor: c.textPrimary,
         bodyColor: c.textSecondary,
         padding: ov.tooltipPadding ?? 12,
+        titleFont: {
+          family: FONT_UI_STACK,
+          size: FONT_SIZE_CONTROL_PX,
+          weight: String(FONT_WEIGHT_REGULAR),
+        },
+        bodyFont: {
+          family: FONT_UI_STACK,
+          size: FONT_SIZE_CONTROL_PX,
+          weight: String(FONT_WEIGHT_REGULAR),
+        },
         ...(ov.tooltipCallback ? { callbacks: { label: ov.tooltipCallback } } : {}),
       },
       ...(ov.annotation50
@@ -204,13 +227,27 @@ function makeBreadthChartOptions(
     },
     scales: {
       x: {
-        ticks: { color: c.textSecondary, maxRotation: 0, autoSkip: true, maxTicksLimit: 10, font: { size: 11 } },
+        ticks: {
+          color: c.textSecondary,
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 10,
+          font: {
+            family: FONT_DATA_STACK,
+            size: FONT_SIZE_AXIS_PX,
+            weight: String(FONT_WEIGHT_REGULAR),
+          },
+        },
         grid: { color: c.borderOverlay30 },
       },
       y: {
         ticks: {
           color: c.textSecondary,
-          font: { size: 11 },
+          font: {
+            family: FONT_DATA_STACK,
+            size: FONT_SIZE_AXIS_PX,
+            weight: String(FONT_WEIGHT_REGULAR),
+          },
           ...(ov.yTickCallback ? { callback: ov.yTickCallback } : {}),
           ...(ov.yStepSize ? { stepSize: ov.yStepSize } : {}),
         },
@@ -447,7 +484,8 @@ function renderBreadthGauges(snapshot: BreadthMASnapshot | undefined): void {
 
   if (!snapshot) {
     const msg = document.createElement('div');
-    msg.style.cssText = 'color:var(--text-secondary);font-size:0.85rem;grid-column:1/-1;text-align:center';
+    msg.style.cssText =
+      'color:var(--text-secondary);font-size:var(--fs-control);font-family:var(--font-ui);font-weight:var(--fw-regular);grid-column:1/-1;text-align:center';
     msg.textContent = 'No snapshot data available';
     container.appendChild(msg);
     return;
@@ -983,7 +1021,7 @@ function renderBreadthCompareDual(): void {
         afterDatasetsDraw(chart: any) {
           // CDN chart instance with canvas ctx
           const ctx = chart.ctx as CanvasRenderingContext2D;
-          ctx.font = 'bold 10px sans-serif';
+          ctx.font = `${FONT_WEIGHT_MEDIUM} ${FONT_SIZE_META_PX}px ${FONT_UI_STACK}`;
           ctx.textBaseline = 'middle';
           // Draw ticker label at the right end of each visible dataset's last point.
           // Datasets come in pairs: [idx1 21d, idx2 21d, idx1 50d, idx2 50d, ...].
@@ -1079,11 +1117,26 @@ function renderBreadthBarsChart(): void {
         x: {
           min: 0,
           max: 100,
-          ticks: { color: c.textSecondary, font: { size: 11 }, callback: (v: number | string) => `${v}%` },
+          ticks: {
+            color: c.textSecondary,
+            font: {
+              family: FONT_DATA_STACK,
+              size: FONT_SIZE_AXIS_PX,
+              weight: String(FONT_WEIGHT_REGULAR),
+            },
+            callback: (v: number | string) => `${v}%`,
+          },
           grid: { color: c.borderOverlay30 },
         },
         y: {
-          ticks: { color: c.textPrimary, font: { size: 12, weight: 'bold' } },
+          ticks: {
+            color: c.textPrimary,
+            font: {
+              family: FONT_UI_STACK,
+              size: FONT_SIZE_CONTROL_PX,
+              weight: String(FONT_WEIGHT_MEDIUM),
+            },
+          },
           grid: { display: false },
         },
       },
@@ -1096,7 +1149,7 @@ function renderBreadthBarsChart(): void {
           // CDN chart instance with canvas ctx
           const ctx = chart.ctx as CanvasRenderingContext2D;
           const meta = chart.getDatasetMeta(0);
-          ctx.font = '11px sans-serif';
+          ctx.font = `${FONT_WEIGHT_REGULAR} ${FONT_SIZE_META_PX}px ${FONT_UI_STACK}`;
           ctx.fillStyle = c.textSecondary;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';

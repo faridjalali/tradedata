@@ -4,6 +4,7 @@ import { RSIPoint, RSIDisplayMode } from './chartApi';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import { isMobileTouch } from './chart';
 import { getThemeColors } from './theme';
+import { FONT_DATA_STACK, FONT_SIZE_AXIS_PX } from './chartTypes';
 
 // Declare Lightweight Charts global
 // LightweightCharts CDN — loaded globally; no npm package bundled declarations available
@@ -92,7 +93,8 @@ export class RSIChart {
       layout: {
         background: { color: themeColors.bgColor },
         textColor: themeColors.textPrimary,
-        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+        fontFamily: FONT_DATA_STACK,
+        fontSize: FONT_SIZE_AXIS_PX,
         attributionLogo: false,
       },
       grid: {
@@ -802,8 +804,6 @@ export class RSIChart {
     label.style.border = `1px solid ${c.borderColor}`;
     label.style.background = c.cardBg;
     label.style.color = c.textPrimary;
-    label.style.fontSize = '12px';
-    label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
     label.style.pointerEvents = 'none';
     label.style.whiteSpace = 'nowrap';
     label.style.transform = 'translate(-50%, calc(-100% - 6px))';
@@ -1075,7 +1075,12 @@ export class RSIChart {
     if (!this.chart) return;
     const c = getThemeColors();
     this.chart.applyOptions({
-      layout: { background: { color: c.bgColor }, textColor: c.textPrimary },
+      layout: {
+        background: { color: c.bgColor },
+        textColor: c.textPrimary,
+        fontFamily: FONT_DATA_STACK,
+        fontSize: FONT_SIZE_AXIS_PX,
+      },
       rightPriceScale: { borderColor: c.surfaceElevated },
       timeScale: { borderColor: c.surfaceElevated },
     });

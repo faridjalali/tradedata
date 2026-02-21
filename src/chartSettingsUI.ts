@@ -1,4 +1,3 @@
-import { getThemeColors } from './theme';
 import type { CandleBar } from '../shared/api-types';
 import type { ChartInterval } from './chartApi';
 import {
@@ -21,10 +20,6 @@ import {
   paneHeights,
   normalizePaneOrder,
 } from './chartTypes';
-
-function tc() {
-  return getThemeColors();
-}
 
 // ---------------------------------------------------------------------------
 // Callback interface – chart.ts provides these via initSettingsUI()
@@ -377,40 +372,6 @@ export function hideSettingsPanels(): void {
 }
 
 // ---------------------------------------------------------------------------
-// applyUniformSettingsPanelTypography
-// ---------------------------------------------------------------------------
-
-export function applyUniformSettingsPanelTypography(panel: HTMLDivElement): void {
-  panel.style.fontFamily = 'var(--font-sans)';
-  panel.style.fontSize = '12px';
-  panel.style.fontWeight = '500';
-  panel.style.lineHeight = '1.2';
-  panel.querySelectorAll<HTMLElement>('div, span, label, input, select, button').forEach((el) => {
-    el.style.fontFamily = 'inherit';
-    el.style.fontSize = 'inherit';
-    el.style.fontWeight = 'inherit';
-    el.style.fontStyle = 'normal';
-    el.style.letterSpacing = 'normal';
-  });
-  panel.querySelectorAll<HTMLElement>('label').forEach((label) => {
-    label.style.display = 'flex';
-    label.style.justifyContent = 'space-between';
-    label.style.alignItems = 'center';
-    label.style.gap = '8px';
-    label.style.minHeight = '26px';
-  });
-  panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((checkbox) => {
-    checkbox.style.width = '14px';
-    checkbox.style.height = '14px';
-    checkbox.style.margin = '0';
-  });
-  panel.querySelectorAll<HTMLElement>('input, select, button').forEach((control) => {
-    control.style.boxSizing = 'border-box';
-    control.style.lineHeight = '1.2';
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Reset functions
 // ---------------------------------------------------------------------------
 
@@ -483,59 +444,46 @@ export function resetVolumeDeltaRSISettingsToDefault(): void {
 
 export function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel price-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '280px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
+  panel.className = 'pane-settings-panel pane-settings-panel--price';
 
   panel.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Chart</div>
+    <div class="pane-settings-header-row">
+      <div class="pane-settings-title">Chart</div>
       <button type="button" class="pane-btn active pane-settings-reset-btn" data-price-setting="reset">Reset</button>
     </div>
-    <label style="margin-bottom:6px;">
-      <span>Vertical gridlines</span>
-      <input type="checkbox" data-price-setting="v-grid" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Horizontal gridlines</span>
-      <input type="checkbox" data-price-setting="h-grid" />
-    </label>
-    <label style="margin-bottom:4px;">
-      <span>MA source</span>
-      <select data-price-setting="ma-source" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="daily">Daily</option>
-        <option value="timeframe">Chart</option>
-      </select>
-    </label>
-    ${priceChartSettings.ma
-      .map(
-        (_, i) => `
-      <div style="display:grid; grid-template-columns: 20px 64px 58px 1fr; gap:6px; align-items:center; min-height:26px; margin-bottom:6px;">
-        <input type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
-        <select data-price-setting="ma-type-${i}" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-          <option value="SMA">SMA</option>
-          <option value="EMA">EMA</option>
+    <div class="pane-settings-section">
+      <label class="pane-settings-row">
+        <span>Vertical gridlines</span>
+        <input class="pane-settings-checkbox" type="checkbox" data-price-setting="v-grid" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Horizontal gridlines</span>
+        <input class="pane-settings-checkbox" type="checkbox" data-price-setting="h-grid" />
+      </label>
+      <label class="pane-settings-row">
+        <span>MA source</span>
+        <select class="pane-settings-input pane-settings-select" data-price-setting="ma-source">
+          <option value="daily">Daily</option>
+          <option value="timeframe">Chart</option>
         </select>
-        <input data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" style="width:58px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-        <input data-price-setting="ma-color-${i}" type="color" style="width:100%; height:24px; border:none; background:transparent; padding:0;" />
-      </div>
-    `,
-      )
-      .join('')}
+      </label>
+      ${priceChartSettings.ma
+        .map(
+          (_, i) => `
+        <div class="pane-settings-ma-row">
+          <input class="pane-settings-checkbox" type="checkbox" data-price-setting="ma-enabled-${i}" title="Enable MA ${i + 1}" />
+          <select class="pane-settings-input pane-settings-select" data-price-setting="ma-type-${i}">
+            <option value="SMA">SMA</option>
+            <option value="EMA">EMA</option>
+          </select>
+          <input class="pane-settings-input pane-settings-number pane-settings-number--ma" data-price-setting="ma-length-${i}" type="number" min="1" max="500" step="1" />
+          <input class="pane-settings-color-input" data-price-setting="ma-color-${i}" type="color" />
+        </div>
+      `,
+        )
+        .join('')}
+    </div>
   `;
-  applyUniformSettingsPanelTypography(panel);
-
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLElement;
     if (!target) return;
@@ -599,48 +547,35 @@ export function createPriceSettingsPanel(container: HTMLElement): HTMLDivElement
 
 export function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel rsi-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
+  panel.className = 'pane-settings-panel pane-settings-panel--compact';
 
   panel.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">RSI</div>
+    <div class="pane-settings-header-row">
+      <div class="pane-settings-title">RSI</div>
       <button type="button" class="pane-btn active pane-settings-reset-btn" data-rsi-setting="reset">Reset</button>
     </div>
-    <label style="margin-bottom:6px;">
-      <span>Length</span>
-      <input data-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Line color</span>
-      <input data-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline color</span>
-      <input data-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline style</span>
-      <select data-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="dotted">Dotted</option>
-        <option value="solid">Solid</option>
-      </select>
-    </label>
+    <div class="pane-settings-section">
+      <label class="pane-settings-row">
+        <span>Length</span>
+        <input class="pane-settings-input pane-settings-number" data-rsi-setting="length" type="number" min="1" max="200" step="1" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Line color</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" data-rsi-setting="line-color" type="color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Midline color</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" data-rsi-setting="midline-color" type="color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Midline style</span>
+        <select class="pane-settings-input pane-settings-select" data-rsi-setting="midline-style">
+          <option value="dotted">Dotted</option>
+          <option value="solid">Solid</option>
+        </select>
+      </label>
+    </div>
   `;
-  applyUniformSettingsPanelTypography(panel);
-
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement | HTMLSelectElement | null;
     if (!target) return;
@@ -690,55 +625,42 @@ export function createRSISettingsPanel(container: HTMLElement): HTMLDivElement {
 
 export function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel volume-delta-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
+  panel.className = 'pane-settings-panel pane-settings-panel--compact';
 
   panel.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Volume Delta</div>
+    <div class="pane-settings-header-row">
+      <div class="pane-settings-title">Volume Delta</div>
       <button type="button" class="pane-btn active pane-settings-reset-btn" data-vd-setting="reset">Reset</button>
     </div>
-    <label style="margin-bottom:6px;">
-      <span>Source</span>
-      <select data-vd-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
-      </select>
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Divergence table</span>
-      <input type="checkbox" data-vd-setting="divergence-table" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Divergent price bars</span>
-      <input type="checkbox" data-vd-setting="divergent-price-bars" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Bullish</span>
-      <input type="color" data-vd-setting="divergent-bullish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Bearish</span>
-      <input type="color" data-vd-setting="divergent-bearish-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Neutral</span>
-      <input type="color" data-vd-setting="divergent-neutral-color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
+    <div class="pane-settings-section">
+      <label class="pane-settings-row">
+        <span>Source</span>
+        <select class="pane-settings-input pane-settings-select" data-vd-setting="source-interval">
+          ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
+        </select>
+      </label>
+      <label class="pane-settings-row">
+        <span>Divergence table</span>
+        <input class="pane-settings-checkbox" type="checkbox" data-vd-setting="divergence-table" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Divergent price bars</span>
+        <input class="pane-settings-checkbox" type="checkbox" data-vd-setting="divergent-price-bars" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Bullish</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" type="color" data-vd-setting="divergent-bullish-color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Bearish</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" type="color" data-vd-setting="divergent-bearish-color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Neutral</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" type="color" data-vd-setting="divergent-neutral-color" />
+      </label>
+    </div>
   `;
-  applyUniformSettingsPanelTypography(panel);
-
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement | HTMLSelectElement | null;
     if (!target) return;
@@ -819,54 +741,41 @@ export function createVolumeDeltaSettingsPanel(container: HTMLElement): HTMLDivE
 
 export function createVolumeDeltaRSISettingsPanel(container: HTMLElement): HTMLDivElement {
   const panel = document.createElement('div');
-  panel.className = 'pane-settings-panel volume-delta-rsi-settings-panel';
-  panel.style.position = 'absolute';
-  panel.style.left = '8px';
-  panel.style.top = '38px';
-  panel.style.zIndex = '31';
-  panel.style.width = '230px';
-  panel.style.maxWidth = 'calc(100% - 16px)';
-  panel.style.background = tc().cardBgOverlay95;
-  panel.style.border = `1px solid ${tc().borderColor}`;
-  panel.style.borderRadius = '6px';
-  panel.style.padding = '10px';
-  panel.style.display = 'none';
-  panel.style.color = tc().textPrimary;
-  panel.style.backdropFilter = 'blur(6px)';
+  panel.className = 'pane-settings-panel pane-settings-panel--compact';
 
   panel.innerHTML = `
-    <div style="display:flex; align-items:center; gap:8px; min-height:26px; margin-bottom:8px;">
-      <div style="font-weight:600;">Volume Delta RSI</div>
+    <div class="pane-settings-header-row">
+      <div class="pane-settings-title">Volume Delta RSI</div>
       <button type="button" class="pane-btn active pane-settings-reset-btn" data-vd-rsi-setting="reset">Reset</button>
     </div>
-    <label style="margin-bottom:6px;">
-      <span>Length</span>
-      <input data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" style="width:64px; background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Source</span>
-      <select data-vd-rsi-setting="source-interval" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
-      </select>
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Line color</span>
-      <input data-vd-rsi-setting="line-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline color</span>
-      <input data-vd-rsi-setting="midline-color" type="color" style="width:64px; height:24px; border:none; background:transparent; padding:0;" />
-    </label>
-    <label style="margin-bottom:6px;">
-      <span>Midline style</span>
-      <select data-vd-rsi-setting="midline-style" style="background:${tc().bgColor}; color:${tc().textPrimary}; border:1px solid ${tc().borderColor}; border-radius:4px; padding:2px 4px;">
-        <option value="dotted">Dotted</option>
-        <option value="solid">Solid</option>
-      </select>
-    </label>
+    <div class="pane-settings-section">
+      <label class="pane-settings-row">
+        <span>Length</span>
+        <input class="pane-settings-input pane-settings-number" data-vd-rsi-setting="length" type="number" min="1" max="200" step="1" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Source</span>
+        <select class="pane-settings-input pane-settings-select" data-vd-rsi-setting="source-interval">
+          ${VOLUME_DELTA_SOURCE_OPTIONS.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')}
+        </select>
+      </label>
+      <label class="pane-settings-row">
+        <span>Line color</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" data-vd-rsi-setting="line-color" type="color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Midline color</span>
+        <input class="pane-settings-color-input pane-settings-color-input--narrow" data-vd-rsi-setting="midline-color" type="color" />
+      </label>
+      <label class="pane-settings-row">
+        <span>Midline style</span>
+        <select class="pane-settings-input pane-settings-select" data-vd-rsi-setting="midline-style">
+          <option value="dotted">Dotted</option>
+          <option value="solid">Solid</option>
+        </select>
+      </label>
+    </div>
   `;
-  applyUniformSettingsPanelTypography(panel);
-
   panel.addEventListener('input', (event) => {
     const target = event.target as HTMLInputElement | HTMLSelectElement | null;
     if (!target) return;

@@ -6,6 +6,7 @@
 import { createChart } from 'lightweight-charts';
 import type { IChartApi, CandlestickData } from 'lightweight-charts';
 import { getThemeColors } from './theme';
+import { FONT_DATA_STACK, FONT_SIZE_AXIS_PX } from './chartTypes';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -262,7 +263,8 @@ export async function showMiniChartOverlay(ticker: string, cardRect: DOMRect, is
     layout: {
       background: { color: _tc.bgColor },
       textColor: _tc.textPrimary,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      fontFamily: FONT_DATA_STACK,
+      fontSize: FONT_SIZE_AXIS_PX,
       attributionLogo: false,
     },
     grid: { vertLines: { visible: false }, horzLines: { visible: false } },
@@ -405,7 +407,8 @@ function createInlineChart(wrapper: HTMLElement, _ticker: string, bars: OHLC[]):
       layout: {
         background: { color: _tc.bgColor },
         textColor: _tc.textPrimary,
-        fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+        fontFamily: FONT_DATA_STACK,
+        fontSize: FONT_SIZE_AXIS_PX,
         attributionLogo: false,
       },
       grid: { vertLines: { visible: false }, horzLines: { visible: false } },

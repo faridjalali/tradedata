@@ -13,6 +13,9 @@ import {
   PANE_TOOL_BUTTON_GAP_PX,
   SCALE_MIN_WIDTH_PX,
   VDF_CACHE_MAX_SIZE,
+  FONT_SIZE_CONTROL_PX,
+  FONT_SIZE_META_PX,
+  FONT_WEIGHT_STRONG,
 } from './chartTypes';
 import { VDFCacheEntry, renderVDFAnalysisPanel } from './vdfAnalysisPanel';
 
@@ -150,10 +153,10 @@ export function ensureVDFButton(container: HTMLElement): HTMLButtonElement {
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.padding = '0 5px';
+  btn.style.padding = '0 4px';
   btn.style.color = VDF_COLOR_LOADING();
-  btn.style.fontSize = '12px';
-  btn.style.fontWeight = '700';
+  btn.style.fontSize = `${FONT_SIZE_CONTROL_PX}px`;
+  btn.style.fontWeight = String(FONT_WEIGHT_STRONG);
   btn.style.letterSpacing = '0.5px';
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   toolbar.appendChild(btn);
@@ -234,10 +237,10 @@ export function ensureBullFlagButton(container: HTMLElement): HTMLButtonElement 
   btn.style.width = 'auto';
   btn.style.minWidth = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.height = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
-  btn.style.padding = '0 5px';
+  btn.style.padding = '0 4px';
   btn.style.color = tc().textMuted;
-  btn.style.fontSize = '12px';
-  btn.style.fontWeight = '700';
+  btn.style.fontSize = `${FONT_SIZE_CONTROL_PX}px`;
+  btn.style.fontWeight = String(FONT_WEIGHT_STRONG);
   btn.style.letterSpacing = '0.5px';
   btn.style.lineHeight = `${PANE_TOOL_BUTTON_SIZE_PX}px`;
   btn.style.pointerEvents = 'auto';
@@ -331,8 +334,10 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       rect.style.cssText = `position:absolute;left:${Math.round(left)}px;top:0;width:${Math.max(Math.round(width), 2)}px;height:100%;background:rgba(38,166,154,${opacity.toFixed(3)});border-left:1px solid rgba(38,166,154,0.3);border-right:1px solid rgba(38,166,154,0.3);`;
 
       const badge = document.createElement('div');
-      badge.style.cssText =
-        'position:absolute;top:2px;right:2px;font-size:9px;color:rgba(38,166,154,0.8);font-family:monospace;';
+      badge.className = 'vdf-zone-score-badge';
+      badge.style.top = '2px';
+      badge.style.right = '2px';
+      badge.style.fontSize = `${FONT_SIZE_META_PX}px`;
       badge.textContent = (zone.score * 100).toFixed(0);
       rect.appendChild(badge);
       vdZoneOverlayEl.appendChild(rect);

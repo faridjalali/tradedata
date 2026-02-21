@@ -6,7 +6,13 @@
 import { getThemeColors } from './theme';
 import { getAppTimeZone, getAppTimeZoneFormatter } from './timezone';
 import { unixSecondsFromTimeValue, timeKey } from './chartTimeUtils';
-import { rsiSettings, volumeDeltaRsiSettings } from './chartTypes';
+import {
+  rsiSettings,
+  volumeDeltaRsiSettings,
+  FONT_UI_STACK,
+  FONT_SIZE_META_PX,
+  FONT_WEIGHT_REGULAR,
+} from './chartTypes';
 import type { ChartInterval } from './chartApi';
 import type { CandleBar } from '../shared/api-types';
 import type { TrendToolPane } from './chartTypes';
@@ -301,6 +307,16 @@ export function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: 
           borderWidth: 1,
           titleColor: tc().textPrimary,
           bodyColor: tc().textSecondary,
+          titleFont: {
+            family: FONT_UI_STACK,
+            size: FONT_SIZE_META_PX,
+            weight: String(FONT_WEIGHT_REGULAR),
+          },
+          bodyFont: {
+            family: FONT_UI_STACK,
+            size: FONT_SIZE_META_PX,
+            weight: String(FONT_WEIGHT_REGULAR),
+          },
         },
       },
       scales: {
@@ -311,7 +327,11 @@ export function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: 
             maxRotation: 0,
             autoSkip: true,
             maxTicksLimit: 6,
-            font: { size: 10 },
+            font: {
+              family: FONT_UI_STACK,
+              size: FONT_SIZE_META_PX,
+              weight: String(FONT_WEIGHT_REGULAR),
+            },
           },
           grid: { color: tc().borderOverlay22 },
         },
@@ -321,7 +341,11 @@ export function renderDivergenceOverlayForPane(pane: TrendToolPane, startIndex: 
           max: 100,
           ticks: {
             color: tc().textSecondary,
-            font: { size: 10 },
+            font: {
+              family: FONT_UI_STACK,
+              size: FONT_SIZE_META_PX,
+              weight: String(FONT_WEIGHT_REGULAR),
+            },
           },
           grid: { color: tc().borderOverlay22 },
         },

@@ -126,6 +126,8 @@ import {
   DEFAULT_PANE_HEIGHTS,
   normalizePaneOrder,
   DEFAULT_VOLUME_DELTA_SETTINGS,
+  FONT_DATA_STACK,
+  FONT_SIZE_AXIS_PX,
   rsiSettings,
   volumeDeltaRsiSettings,
   volumeDeltaSettings,
@@ -928,9 +930,6 @@ function syncTopPaneTickerLabel(): void {
     label.style.border = `1px solid ${tc().borderColor}`;
     label.style.background = tc().cardBg;
     label.style.color = tc().textPrimary;
-    label.style.fontSize = '12px';
-    label.style.fontWeight = '600';
-    label.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
     label.style.whiteSpace = 'nowrap';
     label.style.overflow = 'hidden';
     label.style.textOverflow = 'ellipsis';
@@ -1539,8 +1538,6 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   changeEl.style.border = `1px solid ${tc().borderColor}`;
   changeEl.style.background = tc().cardBg;
   changeEl.style.color = tc().textPrimary;
-  changeEl.style.fontSize = '12px';
-  changeEl.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   changeEl.style.pointerEvents = 'none';
   changeEl.style.display = 'none';
   container.appendChild(changeEl);
@@ -1603,8 +1600,6 @@ function ensureVolumeDeltaCumulativeEl(container: HTMLElement): HTMLDivElement {
   cumulativeEl.style.border = `1px solid ${tc().borderColor}`;
   cumulativeEl.style.background = tc().cardBg;
   cumulativeEl.style.color = tc().textSecondary;
-  cumulativeEl.style.fontSize = '12px';
-  cumulativeEl.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
   cumulativeEl.style.pointerEvents = 'none';
   cumulativeEl.title = 'Cumulative Value';
   cumulativeEl.textContent = '--';
@@ -1687,8 +1682,6 @@ function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
   messageEl.style.left = '50%';
   messageEl.style.transform = 'translate(-50%, -50%)';
   messageEl.style.color = tc().textSecondary;
-  messageEl.style.fontSize = '1rem';
-  messageEl.style.fontWeight = '600';
   messageEl.style.pointerEvents = 'none';
   messageEl.style.zIndex = '20';
   messageEl.style.display = 'none';
@@ -1744,7 +1737,8 @@ function createPriceChart(container: HTMLElement) {
     layout: {
       background: { color: tc().bgColor },
       textColor: tc().textPrimary,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      fontFamily: FONT_DATA_STACK,
+      fontSize: FONT_SIZE_AXIS_PX,
       attributionLogo: false,
     },
     grid: {
@@ -1819,7 +1813,8 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     layout: {
       background: { color: tc().bgColor },
       textColor: tc().textPrimary,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      fontFamily: FONT_DATA_STACK,
+      fontSize: FONT_SIZE_AXIS_PX,
       attributionLogo: false,
     },
     grid: {
@@ -1924,7 +1919,8 @@ function createVolumeDeltaChart(container: HTMLElement) {
     layout: {
       background: { color: tc().bgColor },
       textColor: tc().textPrimary,
-      fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
+      fontFamily: FONT_DATA_STACK,
+      fontSize: FONT_SIZE_AXIS_PX,
       attributionLogo: false,
     },
     grid: {
@@ -3437,7 +3433,12 @@ async function prefetchNeighborTickers(interval: ChartInterval, signal?: AbortSi
 window.addEventListener('themechange', () => {
   const c = tc();
   const chartOpts = {
-    layout: { background: { color: c.bgColor }, textColor: c.textPrimary },
+    layout: {
+      background: { color: c.bgColor },
+      textColor: c.textPrimary,
+      fontFamily: FONT_DATA_STACK,
+      fontSize: FONT_SIZE_AXIS_PX,
+    },
     rightPriceScale: { borderColor: c.surfaceElevated },
     timeScale: { borderColor: c.surfaceElevated },
     grid: { horzLines: { color: c.monthGridlineColor } },
