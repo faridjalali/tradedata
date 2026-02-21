@@ -1414,7 +1414,7 @@ button:hover {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
-  max-width: 360px;
+  max-width: 432px;
   font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--text-primary);

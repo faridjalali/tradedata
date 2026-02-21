@@ -792,7 +792,11 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
   appendTooltipLine('ticker-info-line1', info.name);
   appendTooltipLine('ticker-info-line2', formatMarketCap(info.market_cap));
   appendTooltipLine('ticker-info-line3', info.sic_description);
-  appendTooltipLine('ticker-info-line4', info.description);
+  const description =
+    info.description && info.description.length > 300
+      ? `${info.description.slice(0, 300).trimEnd()}...`
+      : info.description;
+  appendTooltipLine('ticker-info-line4', description);
 
   if (!tooltip.childElementCount) return;
 
@@ -809,7 +813,12 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
   activeTooltipTimer = window.setTimeout(dismissTickerTooltip, 4000);
 
   const onClickOutside = (e: MouseEvent): void => {
-    if (!tooltip.contains(e.target as Node)) {
+    const target = e.target as Node | null;
+    if (!target) return;
+    // Ignore clicks on the anchor badge itself so the second click can trigger
+    // the "open website" behavior in handleTickerBadgeClick().
+    if (anchor.contains(target)) return;
+    if (!tooltip.contains(target)) {
       dismissTickerTooltip();
       document.removeEventListener('click', onClickOutside, true);
     }
