@@ -1161,6 +1161,53 @@ h2 {
   text-align: right;
   flex-shrink: 0;
 }
+
+.ticker-alert-card {
+  gap: 8px;
+}
+
+.ticker-alert-card .card-group-id {
+  margin-right: auto;
+}
+
+.ticker-alert-vd,
+.ticker-alert-price {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ticker-alert-vd {
+  min-width: 8ch;
+}
+
+.ticker-alert-price {
+  min-width: 7ch;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+.ticker-alert-vd.is-positive,
+.ticker-alert-price.is-positive {
+  color: var(--accent-bullish);
+}
+
+.ticker-alert-vd.is-negative,
+.ticker-alert-price.is-negative {
+  color: var(--accent-bearish);
+}
+
+.ticker-alert-vd.is-neutral,
+.ticker-alert-price.is-neutral {
+  color: var(--text-secondary);
+}
 .bull-text {
   color: var(--accent-bullish);
 }
@@ -1567,6 +1614,9 @@ button:hover {
    keep these controls in DOM but hide them only in ticker view. */
 #ticker-view .column-header .column-tf-controls > .pane-btn[data-tf="custom"],
 #ticker-view .column-header .header-sort-controls > .pane-btn[data-sort="favorite"],
+#ticker-view .column-header .header-sort-controls > .pane-btn[data-sort="time"],
+#ticker-view .column-header .header-sort-controls > .pane-btn[data-sort="volume"],
+#ticker-view .column-header .header-sort-controls > .pane-btn[data-sort="score"],
 #ticker-view .column-header .column-tf-controls > .column-tf-custom-panel {
   display: none;
 }

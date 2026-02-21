@@ -173,6 +173,7 @@ let priceChangeByTime = new Map<string, number>();
 let rsiByTime = new Map<string, number>();
 let volumeDeltaRsiByTime = new Map<string, number>();
 let volumeDeltaByTime = new Map<string, number>();
+let volumeDeltaCumulativeByTime = new Map<string, number>();
 let barIndexByTime = new Map<string, number>();
 let currentBars: CandleBar[] = [];
 let monthBoundaryTimes: number[] = [];
@@ -726,6 +727,7 @@ function layoutTopPaneBadges(container: HTMLElement): void {
 // ---------------------------------------------------------------------------
 
 const tickerInfoCache = new Map<string, TickerInfoPayload | null>();
+const tickerInfoFetchInFlight = new Map<string, Promise<TickerInfoPayload | null>>();
 let activeTickerTooltip: HTMLElement | null = null;
 let activeTooltipTimer: number | null = null;
 let activeTooltipOutsideClickHandler: ((event: MouseEvent) => void) | null = null;
@@ -754,27 +756,48 @@ function dismissTickerTooltip(): void {
   }
 }
 
+async function fetchTickerInfo(symbol: string): Promise<TickerInfoPayload | null> {
+  const normalized = String(symbol || '')
+    .trim()
+    .toUpperCase();
+  if (!normalized) return null;
+
+  const cached = tickerInfoCache.get(normalized);
+  if (cached !== undefined) return cached;
+
+  const inFlight = tickerInfoFetchInFlight.get(normalized);
+  if (inFlight) return inFlight;
+
+  const request = (async () => {
+    try {
+      const res = await fetch(`/api/chart/ticker-info?ticker=${encodeURIComponent(normalized)}`);
+      if (!res.ok) {
+        tickerInfoCache.set(normalized, null);
+        return null;
+      }
+      const data = (await res.json()) as Record<string, unknown>;
+      const info = (data.results || null) as TickerInfoPayload | null;
+      tickerInfoCache.set(normalized, info);
+      return info;
+    } catch {
+      tickerInfoCache.set(normalized, null);
+      return null;
+    } finally {
+      tickerInfoFetchInFlight.delete(normalized);
+    }
+  })();
+
+  tickerInfoFetchInFlight.set(normalized, request);
+  return request;
+}
+
 async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promise<void> {
   const symbol = ticker.trim().toUpperCase();
   if (!symbol) return;
 
   dismissTickerTooltip();
 
-  let info = tickerInfoCache.get(symbol);
-  if (info === undefined) {
-    try {
-      const res = await fetch(`/api/chart/ticker-info?ticker=${encodeURIComponent(symbol)}`);
-      if (res.ok) {
-        const data = (await res.json()) as Record<string, unknown>;
-        info = (data.results || null) as TickerInfoPayload | null;
-      } else {
-        info = null;
-      }
-    } catch {
-      info = null;
-    }
-    tickerInfoCache.set(symbol, info);
-  }
+  const info = await fetchTickerInfo(symbol);
 
   if (!info) return;
 
@@ -785,7 +808,7 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
   // Line 1: name
   // Line 2: market cap
   // Line 3: SIC description
-  // Line 4: full description (no truncation)
+  // Line 4: description (truncated at 300 chars)
   const appendTooltipLine = (className: string, text: string | undefined | null): void => {
     const value = String(text || '').trim();
     if (!value) return;
@@ -1563,6 +1586,93 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   layoutTopPaneBadges(container);
 }
 
+function ensureVolumeDeltaCumulativeEl(container: HTMLElement): HTMLDivElement {
+  let cumulativeEl = container.querySelector('.volume-delta-cumulative') as HTMLDivElement | null;
+  if (cumulativeEl) return cumulativeEl;
+
+  cumulativeEl = document.createElement('div');
+  cumulativeEl.className = 'pane-btn pane-overlay label volume-delta-cumulative';
+  cumulativeEl.style.position = 'absolute';
+  cumulativeEl.style.zIndex = '30';
+  cumulativeEl.style.minHeight = '24px';
+  cumulativeEl.style.display = 'inline-flex';
+  cumulativeEl.style.alignItems = 'center';
+  cumulativeEl.style.padding = '0 8px';
+  cumulativeEl.style.borderRadius = '4px';
+  cumulativeEl.style.border = `1px solid ${tc().borderColor}`;
+  cumulativeEl.style.background = tc().cardBg;
+  cumulativeEl.style.color = tc().textSecondary;
+  cumulativeEl.style.fontSize = '12px';
+  cumulativeEl.style.fontFamily = "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace";
+  cumulativeEl.style.pointerEvents = 'none';
+  cumulativeEl.title = 'Cumulative Value';
+  cumulativeEl.textContent = '--';
+  container.appendChild(cumulativeEl);
+  return cumulativeEl;
+}
+
+function positionVolumeDeltaCumulativeEl(container: HTMLElement, cumulativeEl: HTMLElement): void {
+  const vdBadge = container.querySelector('.pane-name-badge[data-pane="volumeDelta"]') as HTMLElement | null;
+  const fallbackLeft = getPaneBadgeStartLeft(container);
+  const top =
+    vdBadge?.offsetTop !== undefined
+      ? vdBadge.offsetTop
+      : PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX;
+  const left = vdBadge ? vdBadge.offsetLeft + vdBadge.offsetWidth + TOP_PANE_BADGE_GAP_PX : fallbackLeft;
+
+  cumulativeEl.style.left = `${left}px`;
+  cumulativeEl.style.top = `${top}px`;
+  cumulativeEl.style.maxWidth = `calc(100% - ${left + 30}px)`;
+}
+
+function formatSignedCompactVolumeDelta(value: number): string {
+  if (!Number.isFinite(value)) return '--';
+  const abs = Math.abs(value);
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}${Math.round(abs)}`;
+}
+
+function rebuildVolumeDeltaCumulativeMap(): void {
+  volumeDeltaCumulativeByTime = new Map<string, number>();
+  if (!Array.isArray(currentBars) || currentBars.length === 0) return;
+
+  let running = 0;
+  for (const bar of currentBars) {
+    const key = timeKey(bar.time);
+    const delta = Number(volumeDeltaByTime.get(key));
+    if (Number.isFinite(delta)) running += Number(delta);
+    volumeDeltaCumulativeByTime.set(key, running);
+  }
+}
+
+function setVolumeDeltaCumulativeBadge(container: HTMLElement, time?: string | number | null): void {
+  const cumulativeEl = ensureVolumeDeltaCumulativeEl(container);
+  positionVolumeDeltaCumulativeEl(container, cumulativeEl);
+  cumulativeEl.style.border = `1px solid ${tc().borderColor}`;
+  cumulativeEl.style.background = tc().cardBg;
+
+  if (!Array.isArray(currentBars) || currentBars.length === 0 || volumeDeltaCumulativeByTime.size === 0) {
+    cumulativeEl.textContent = '--';
+    cumulativeEl.style.color = tc().textSecondary;
+    return;
+  }
+
+  const fallbackTime = currentBars[currentBars.length - 1]?.time;
+  const targetKey = time !== null && time !== undefined ? timeKey(time) : timeKey(fallbackTime);
+  const cumulative = Number(volumeDeltaCumulativeByTime.get(targetKey));
+  if (!Number.isFinite(cumulative)) {
+    cumulativeEl.textContent = '--';
+    cumulativeEl.style.color = tc().textSecondary;
+    return;
+  }
+
+  cumulativeEl.textContent = formatSignedCompactVolumeDelta(cumulative);
+  cumulativeEl.style.color = cumulative > 0 ? '#26a69a' : cumulative < 0 ? '#ef5350' : tc().textPrimary;
+}
+
 function ensurePricePaneMessageEl(container: HTMLElement): HTMLDivElement {
   let messageEl = container.querySelector('.price-pane-message') as HTMLDivElement | null;
   if (messageEl) return messageEl;
@@ -1962,6 +2072,7 @@ function setVolumeDeltaHistogramData(
 
   volumeDeltaHistogramSeries.setData(histogramData);
   volumeDeltaByTime = new Map(histogramData.map((point) => [timeKey(point.time), Number(point.value) || 0]));
+  rebuildVolumeDeltaCumulativeMap();
   applyPricePaneDivergentBarColors();
 }
 
@@ -2296,6 +2407,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
   if (Number.isFinite(latestDelta)) {
     const numericDelta = Number(latestDelta);
     volumeDeltaByTime.set(lastKey, numericDelta);
+    rebuildVolumeDeltaCumulativeMap();
     volumeDeltaHistogramSeries.update({
       time: lastTime,
       value: numericDelta,
@@ -2314,6 +2426,7 @@ function patchLatestBarInPlaceFromPayload(data: ChartLatestData): boolean {
     setPricePaneChange(pricePaneContainerEl, null);
   }
   if (volumeDeltaPaneContainerEl) {
+    setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
     renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
   }
   refreshActiveDivergenceOverlays();
@@ -2392,6 +2505,7 @@ function applyChartDataToUi(
   setPricePaneChange(chartContainer, null);
   setVolumeDeltaRsiData(bars, volumeDeltaRsiData);
   setVolumeDeltaHistogramData(bars, volumeDeltaData);
+  setVolumeDeltaCumulativeBadge(volumeDeltaContainer, null);
   renderVolumeDeltaDivergenceSummary(volumeDeltaContainer, bars);
   applyVolumeDeltaRSIVisualSettings();
 
@@ -2511,6 +2625,7 @@ export async function renderCustomChart(
   const shouldApplyWeeklyDefaultRange = interval === '1week' && (typeof previousTicker !== 'string' || contextChanged);
   currentChartInterval = interval;
   currentChartTicker = ticker;
+  fetchTickerInfo(ticker).catch(() => {});
   const cacheKey = buildChartDataCacheKey(ticker, interval);
 
   if (contextChanged) {
@@ -2700,8 +2815,10 @@ export async function renderCustomChart(
       resetVDTrendlineData();
       volumeDeltaRsiByTime = new Map();
       volumeDeltaByTime = new Map();
+      volumeDeltaCumulativeByTime = new Map();
       clearVolumeDeltaDivergenceSummary();
       currentBars = [];
+      setVolumeDeltaCumulativeBadge(volumeDeltaContainer as HTMLElement, null);
       barIndexByTime = new Map();
       clearMovingAverageSeries();
       monthBoundaryTimes = [];
@@ -2721,6 +2838,7 @@ export async function renderCustomChart(
 
     priceChangeByTime = new Map();
     setPricePaneChange(chartContainer, null);
+    setVolumeDeltaCumulativeBadge(volumeDeltaContainer as HTMLElement, null);
     clearVolumeDeltaDivergenceSummary();
     deactivateRsiDivergencePlotTool();
     deactivateVolumeDeltaRsiDivergencePlotTool();
@@ -2989,10 +3107,12 @@ function setupChartSync() {
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
+      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
       return;
     }
     if (crosshairHidden) return;
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
+    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3004,6 +3124,7 @@ function setupChartSync() {
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
+      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
       return;
     }
     if (crosshairHidden) return;
@@ -3011,6 +3132,7 @@ function setupChartSync() {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
     }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
+    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3022,6 +3144,7 @@ function setupChartSync() {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
+      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
       return;
     }
     if (crosshairHidden) return;
@@ -3029,6 +3152,7 @@ function setupChartSync() {
       updateRsiDivergencePlotPoint(param.time, true);
     }
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
+    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3040,10 +3164,12 @@ function setupChartSync() {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
       if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
+      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
       return;
     }
     if (crosshairHidden) return;
     if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
+    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
@@ -3275,6 +3401,7 @@ window.addEventListener('themechange', () => {
   reapplyInlineThemeStyles();
   // Re-render divergence summary badges with new theme colors
   if (volumeDeltaPaneContainerEl && Array.isArray(currentBars) && currentBars.length >= 2) {
+    setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
     renderVolumeDeltaDivergenceSummary(volumeDeltaPaneContainerEl, currentBars);
   }
 });

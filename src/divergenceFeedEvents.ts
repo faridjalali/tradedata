@@ -43,13 +43,35 @@ function applyFavIconState(star: Element, isFavorite: boolean): void {
   }
 }
 
-function handleFavoriteClick(e: Event): void {
-  const target = e.target as HTMLElement;
-  const starBtn = target.closest('.fav-icon');
-  if (!starBtn) return;
+let lastFavoriteToggleId = '';
+let lastFavoriteToggleAt = 0;
+let suppressCardNavigationUntil = 0;
 
-  e.stopPropagation();
-  const id = (starBtn as HTMLElement).dataset.id;
+function resolveFavoriteTargetForTouch(pe: PointerEvent): HTMLElement | null {
+  const target = pe.target as HTMLElement | null;
+  if (!target) return null;
+
+  const directStar = target.closest('.fav-icon') as HTMLElement | null;
+  if (directStar) return directStar;
+
+  const card = target.closest('.alert-card') as HTMLElement | null;
+  if (!card) return null;
+  const cardRect = card.getBoundingClientRect();
+
+  const starBtn = card.querySelector('.fav-icon') as HTMLElement | null;
+  if (!starBtn) return null;
+  const starRect = starBtn.getBoundingClientRect();
+
+  const leftBoundary = cardRect.left;
+  const rightBoundary = Math.max(cardRect.left, starRect.right);
+  if (pe.clientX >= leftBoundary && pe.clientX <= rightBoundary) {
+    return starBtn;
+  }
+  return null;
+}
+
+function toggleFavoriteForButton(starBtn: HTMLElement): void {
+  const id = starBtn.dataset.id;
   const source = 'DataAPI';
   if (!id) return;
 
@@ -101,6 +123,37 @@ function handleFavoriteClick(e: Event): void {
     });
 }
 
+function handleFavoriteClick(e: Event): void {
+  const target = e.target as HTMLElement;
+  const starBtn = target.closest('.fav-icon') as HTMLElement | null;
+  if (!starBtn) return;
+
+  const id = starBtn.dataset.id || '';
+  if (id && id === lastFavoriteToggleId && Date.now() - lastFavoriteToggleAt < 700) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  e.preventDefault();
+  e.stopPropagation();
+  toggleFavoriteForButton(starBtn);
+}
+
+function handleFavoritePointerUp(e: Event): void {
+  const pe = e as PointerEvent;
+  if (pe.pointerType === 'mouse') return;
+  const starBtn = resolveFavoriteTargetForTouch(pe);
+  if (!starBtn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  toggleFavoriteForButton(starBtn);
+  lastFavoriteToggleId = starBtn.dataset.id || '';
+  lastFavoriteToggleAt = Date.now();
+  suppressCardNavigationUntil = Date.now() + 800;
+}
+
 // ---------------------------------------------------------------------------
 // Main event delegation setup
 // ---------------------------------------------------------------------------
@@ -111,9 +164,11 @@ export function setupDivergenceFeedDelegation(): void {
 
   // Favorite toggle — attach to both alerts page and ticker page
   view.addEventListener('click', handleFavoriteClick);
+  view.addEventListener('pointerup', handleFavoritePointerUp);
   const tickerView = document.getElementById('ticker-view');
   if (tickerView) {
     tickerView.addEventListener('click', handleFavoriteClick);
+    tickerView.addEventListener('pointerup', handleFavoritePointerUp);
   }
 
   // --- Mini-chart overlay state (shared between mouse + touch handlers) ---
@@ -123,6 +178,12 @@ export function setupDivergenceFeedDelegation(): void {
   let lastTouchEndMs = 0;
 
   view.addEventListener('click', (e) => {
+    if (Date.now() < suppressCardNavigationUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     const target = e.target as HTMLElement;
     if (target.closest('.fav-icon')) return; // Already handled above
 
