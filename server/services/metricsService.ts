@@ -664,6 +664,13 @@ export function getLogsRunMetricsPayload() {
   const schedulerState = getSchedulerState();
   const breadthService = getBreadthRouteServiceInstance();
   const breadthStatus = breadthService ? breadthService.getBootstrapStateCached() : null;
+  const breadthRunMetricsStatus = breadthStatus
+    ? {
+        running: Boolean(breadthStatus.running),
+        status: breadthStatus.running ? String(breadthStatus.status || 'running') : 'idle',
+        finished_at: breadthStatus.finished_at || null,
+      }
+    : null;
   return {
     generatedAt: new Date().toISOString(),
     schedulerEnabled: schedulerState.enabled,
@@ -684,7 +691,7 @@ export function getLogsRunMetricsPayload() {
       scan: getDivergenceScanControlStatus(),
       table: getDivergenceTableBuildStatus(),
       vdfScan: vdfScan.getStatus(),
-      breadth: breadthStatus,
+      breadth: breadthRunMetricsStatus,
     },
     runs: {
       fetchDaily: summarizeRunMetrics(runMetricsByType.fetchDaily),

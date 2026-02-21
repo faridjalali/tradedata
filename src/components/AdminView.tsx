@@ -854,7 +854,7 @@ export function AdminView() {
                 statusFallback={metricsData.statuses?.fetchWeekly}
               />
               <RunCard
-                title="VDF Scan"
+                title="Fetch Analysis"
                 run={metricsData.runs?.vdfScan}
                 statusFallback={metricsData.statuses?.vdfScan}
               />

@@ -137,7 +137,7 @@ function renderRunCards(payload: RunMetricsPayload): void {
   host.innerHTML = [
     buildRunCardHtml('Fetch Daily', payload.runs?.fetchDaily, payload.statuses?.fetchDaily),
     buildRunCardHtml('Fetch Weekly', payload.runs?.fetchWeekly, payload.statuses?.fetchWeekly),
-    buildRunCardHtml('VDF Scan', payload.runs?.vdfScan, payload.statuses?.vdfScan),
+    buildRunCardHtml('Fetch Analysis', payload.runs?.vdfScan, payload.statuses?.vdfScan),
     buildRunCardHtml('Fetch Breadth', payload.runs?.fetchBreadth, payload.statuses?.breadth),
     buildConfigCardHtml(payload),
   ].join('');

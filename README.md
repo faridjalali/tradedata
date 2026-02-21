@@ -178,6 +178,11 @@ Routes never contain business logic. Services never import routes. No circular d
 - Pull request checklist: `.github/pull_request_template.md`
 - Release/rollback runbook: `docs/release-runbook.md`
 
+### UI Spacing Convention
+
+- Default panel/container padding is centralized in `public/style.css` as `--container-pad: 15px`.
+- For new top-level containers (cards/sections/panels), use `padding: var(--container-pad)` unless a view has an explicit exception.
+
 ---
 
 ## User Interface

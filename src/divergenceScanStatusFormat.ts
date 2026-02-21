@@ -186,10 +186,26 @@ export function summarizeFetchWeeklyStatus(status: DivergenceScanStatus): string
 
 export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
   const scan = status.vdfScan;
-  if (!scan) return 'Due for Fetch';
-  const state = String(scan.status || '').toLowerCase();
-  const lastRunDateKey = toDateKeyAsET(scan.finished_at || scan.started_at || null);
+  const scanLike = (scan || {}) as {
+    status?: unknown;
+    finished_at?: string | null;
+    started_at?: string | null;
+    finishedAt?: string | null;
+    startedAt?: string | null;
+  };
+  const statusLike = status as DivergenceScanStatus & {
+    runs?: { vdfScan?: { finishedAt?: string | null; startedAt?: string | null } | null };
+  };
+  const state = String(scanLike.status || '').toLowerCase();
+  const lastRunDateKey =
+    toDateKeyAsET(scanLike.finished_at || null) ||
+    toDateKeyAsET(scanLike.finishedAt || null) ||
+    toDateKeyAsET(scanLike.started_at || null) ||
+    toDateKeyAsET(scanLike.startedAt || null) ||
+    toDateKeyAsET(statusLike.runs?.vdfScan?.finishedAt || null) ||
+    toDateKeyAsET(statusLike.runs?.vdfScan?.startedAt || null);
   const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
+  if (!scan) return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
   if (state === 'stopping') return 'Stopping';
   if (state === 'stopped') {
     if (scan.can_resume) return 'Resumable Stop';
@@ -202,9 +218,9 @@ export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
     if (state === 'running-retry') return 'Retrying';
     return `${processed} / ${total}`;
   }
-  if (state === 'completed') return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
-  if (state === 'completed-with-errors') return lastRunMmDd ? `Ran (E) ${lastRunMmDd}` : 'Due for Fetch';
-  if (state === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Due for Fetch';
+  if (state === 'completed') return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
+  if (state === 'completed-with-errors') return lastRunMmDd ? `Ran (E) ${lastRunMmDd}` : 'Ran (E) --';
+  if (state === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Failed';
   return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
 }
 
