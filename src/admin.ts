@@ -147,7 +147,7 @@ function renderHistoryPage(): void {
   const paginationHost = document.getElementById('admin-history-pagination');
   if (!host) return;
   if (historyEntries.length === 0) {
-    host.innerHTML = '<div class="loading">No run history yet</div>';
+    host.innerHTML = '<div class="log-history-placeholder" aria-hidden="true"></div>';
     if (paginationHost) paginationHost.innerHTML = '';
     return;
   }

@@ -763,6 +763,20 @@ h2 {
   gap: 8px;
 }
 
+.log-history-placeholder {
+  position: relative;
+  height: 26px;
+}
+
+.log-history-placeholder::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--border-overlay-22);
+}
+
 
 .ticker-history-section .header-sort-controls {
   margin-bottom: 0px;
@@ -1320,10 +1334,23 @@ button:hover {
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-lg);
 }
-.admin-operations-grid {
+.admin-operations-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+  gap: var(--sp-lg);
+  align-items: start;
+}
+.admin-operations-column {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-lg);
+  gap: var(--sp-md);
+  min-width: 0;
+}
+.admin-operations-separator {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+  opacity: 0.7;
 }
 .admin-operation-row {
   display: flex;
@@ -1331,6 +1358,21 @@ button:hover {
   gap: var(--sp-lg);
   flex-wrap: wrap;
   min-height: 28px;
+}
+.admin-operation-row--stack {
+  align-items: flex-start;
+}
+.admin-add-ticker-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  flex-wrap: wrap;
+}
+.admin-add-ticker-input {
+  width: 210px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
 }
 .admin-operation-row .divergence-run-status {
   max-width: 72ch;
@@ -1423,7 +1465,9 @@ button:hover {
   .admin-health-grid { grid-template-columns: 1fr; }
   .admin-section + .admin-section { padding-top: var(--sp-lg); margin-top: var(--sp-lg); }
   .admin-section-header { margin-bottom: var(--sp-md); }
-  .admin-operations-grid { gap: var(--sp-md); }
+  .admin-operations-layout { grid-template-columns: 1fr; gap: var(--sp-md); }
+  .admin-operations-column { gap: var(--sp-sm); }
+  .admin-operations-separator { display: none; }
   .admin-operation-row { align-items: flex-start; gap: var(--sp-sm); min-height: 0; }
   .admin-operation-row .divergence-run-status {
     margin-left: 0;
@@ -1448,6 +1492,7 @@ button:hover {
   .log-history-header { font-size: var(--fs-sm); }
   .log-history-sub { font-size: var(--fs-sm); line-height: 1.35; max-width: none; }
   .log-history-pagination { margin-top: 6px; }
+  .admin-add-ticker-input { width: 100%; min-width: 0; }
 }
 
 .show-more-btn {

@@ -214,6 +214,46 @@ export async function getStoredDivergenceSymbolTickers() {
     .filter((ticker) => ticker && isValidTickerSymbol(ticker));
 }
 
+export async function upsertManualDivergenceSymbols(tickers: string[]) {
+  const normalizedTickers = Array.from(
+    new Set(
+      (Array.isArray(tickers) ? tickers : [])
+        .map((ticker) =>
+          String(ticker || '')
+            .trim()
+            .toUpperCase(),
+        )
+        .filter((ticker) => ticker && isValidTickerSymbol(ticker)),
+    ),
+  );
+  if (!divergencePool || normalizedTickers.length === 0) return [];
+
+  await withDivergenceClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      for (const ticker of normalizedTickers) {
+        await client.query(
+          `
+          INSERT INTO divergence_symbols(ticker, exchange, asset_type, is_active, updated_at)
+          VALUES($1, NULL, 'manual', TRUE, NOW())
+          ON CONFLICT (ticker)
+          DO UPDATE SET
+            is_active = TRUE,
+            updated_at = NOW()
+        `,
+          [ticker],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err: unknown) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+  });
+
+  return normalizedTickers;
+}
+
 export async function getLatestWeeklySignalTradeDate(sourceInterval: string) {
   if (!divergencePool) return '';
   const normalizedSource = String(sourceInterval || DIVERGENCE_SOURCE_INTERVAL).trim() || DIVERGENCE_SOURCE_INTERVAL;

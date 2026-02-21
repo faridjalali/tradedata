@@ -338,6 +338,17 @@ function opErrorText(error: unknown): string {
   return `Error: ${msg || 'unknown'}`;
 }
 
+function normalizeTickerInputList(raw: string): string[] {
+  return Array.from(
+    new Set(
+      String(raw || '')
+        .split(/[\s,]+/)
+        .map((token) => token.trim().toUpperCase())
+        .filter((ticker) => /^[A-Z][A-Z0-9.-]{0,19}$/.test(ticker)),
+    ),
+  );
+}
+
 function OperationActionRow(props: {
   label: string;
   onClick: () => void;
@@ -362,6 +373,8 @@ export function AdminView() {
   const [historyPage, setHistoryPage] = useState(0);
   const [opsBusy, setOpsBusy] = useState<Record<string, boolean>>({});
   const [opsStatus, setOpsStatus] = useState<Record<string, string>>({});
+  const [addTickersOpen, setAddTickersOpen] = useState(false);
+  const [addTickersInput, setAddTickersInput] = useState('');
 
   const refresh = useCallback(async () => {
     if (refreshing) return;
@@ -408,6 +421,28 @@ export function AdminView() {
     [opsBusy, refresh],
   );
 
+  const submitAddTickers = useCallback(() => {
+    void runOp('addTickers', async () => {
+      const tickers = normalizeTickerInputList(addTickersInput);
+      if (tickers.length === 0) {
+        throw new Error('Enter at least one valid ticker');
+      }
+      const out = await requestJson('/api/admin/operations/divergence-symbols/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers }),
+      });
+      const addedCount = Number(out.addedCount || 0);
+      const invalidCount = Array.isArray(out.invalidTickers) ? out.invalidTickers.length : 0;
+      setOpsStatus((prev) => ({
+        ...prev,
+        addTickers: invalidCount > 0 ? `Added ${addedCount} (${invalidCount} invalid)` : `Added ${addedCount}`,
+      }));
+      setAddTickersInput('');
+      setAddTickersOpen(false);
+    });
+  }, [addTickersInput, runOp]);
+
   const schedulerEnabled = Boolean(opsData?.scheduler?.enabled);
   const schedulerRuntimeText = schedulerEnabled ? 'On' : 'Off';
   const warmupRuntimeText = opsData?.warmup?.running
@@ -433,233 +468,278 @@ export function AdminView() {
         <div class="admin-section-header">
           <h2>Operations</h2>
         </div>
-        <div class="admin-operations-grid">
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
-            <button
-              class="pane-btn divergence-run-btn divergence-control-icon-btn"
-              id="divergence-fetch-daily-stop-btn"
-              aria-label="Stop Fetch Daily"
-              disabled
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                <rect width="10" height="10" rx="1" />
-              </svg>
-            </button>
-            <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
+        <div class="admin-operations-layout">
+          <div class="admin-operations-column">
+            <div class="admin-operation-row">
+              <button class="pane-btn divergence-run-btn" id="divergence-fetch-daily-btn">Fetch Daily</button>
+              <button
+                class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                id="divergence-fetch-daily-stop-btn"
+                aria-label="Stop Fetch Daily"
+                disabled
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <rect width="10" height="10" rx="1" />
+                </svg>
+              </button>
+              <span id="divergence-fetch-daily-status" class="divergence-run-status">Ran --</span>
+            </div>
+            <div class="admin-operation-row">
+              <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
+              <button
+                class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                id="divergence-fetch-weekly-stop-btn"
+                aria-label="Stop Fetch Weekly"
+                disabled
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <rect width="10" height="10" rx="1" />
+                </svg>
+              </button>
+              <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+            </div>
+            <div class="admin-operation-row">
+              <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Fetch Analysis</button>
+              <button
+                class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                id="divergence-vdf-scan-stop-btn"
+                aria-label="Stop Fetch Analysis"
+                disabled
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <rect width="10" height="10" rx="1" />
+                </svg>
+              </button>
+              <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
+            </div>
+            <div class="admin-operation-row">
+              <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Fetch Breadth</button>
+              <button
+                class="pane-btn divergence-run-btn divergence-control-icon-btn"
+                id="breadth-recompute-stop-btn"
+                aria-label="Stop Fetch Breadth"
+                disabled
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                  <rect width="10" height="10" rx="1" />
+                </svg>
+              </button>
+              <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
+            </div>
+
+            <OperationActionRow
+              label="Fetch ETF Holdings"
+              busy={opsBusy.constituents}
+              status={opsStatus.constituents || constituentsRuntimeText}
+              onClick={() =>
+                runOp('constituents', async () => {
+                  const out = await requestJson('/api/breadth/constituents/rebuild', { method: 'POST' });
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    constituents: `${fmtNumber(out.indexCount, 0)} ETFs / ${fmtNumber(out.tickerCount, 0)} tickers`,
+                  }));
+                })
+              }
+            />
           </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-fetch-weekly-btn">Fetch Weekly</button>
-            <button
-              class="pane-btn divergence-run-btn divergence-control-icon-btn"
-              id="divergence-fetch-weekly-stop-btn"
-              aria-label="Stop Fetch Weekly"
-              disabled
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                <rect width="10" height="10" rx="1" />
-              </svg>
-            </button>
-            <span id="divergence-fetch-weekly-status" class="divergence-run-status">Ran --</span>
+
+          <div class="admin-operations-separator" aria-hidden="true" />
+
+          <div class="admin-operations-column">
+            <OperationActionRow
+              label="Retry Failed Daily"
+              busy={opsBusy.retryDaily}
+              status={opsStatus.retryDaily || '--'}
+              onClick={() =>
+                runOp('retryDaily', async () => {
+                  const out = await requestJson('/api/admin/operations/retry-failed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ runType: 'fetchDaily' }),
+                  });
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    retryDaily: `${String(out.status || 'started')} (${fmtNumber(out.failedTickers, 0)} tickers)`,
+                  }));
+                  syncDivergenceScanUiState().catch(() => {});
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Retry Failed Weekly"
+              busy={opsBusy.retryWeekly}
+              status={opsStatus.retryWeekly || '--'}
+              onClick={() =>
+                runOp('retryWeekly', async () => {
+                  const out = await requestJson('/api/admin/operations/retry-failed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ runType: 'fetchWeekly' }),
+                  });
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    retryWeekly: `${String(out.status || 'started')} (${fmtNumber(out.failedTickers, 0)} tickers)`,
+                  }));
+                  syncDivergenceScanUiState().catch(() => {});
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Stop All Jobs"
+              busy={opsBusy.stopAll}
+              status={opsStatus.stopAll || '--'}
+              onClick={() =>
+                runOp('stopAll', async () => {
+                  const out = await requestJson('/api/admin/operations/stop-all', { method: 'POST' });
+                  setOpsStatus((prev) => ({ ...prev, stopAll: String(out.message || 'Stop requested') }));
+                  syncDivergenceScanUiState().catch(() => {});
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Enable Scheduler"
+              busy={opsBusy.scheduler}
+              status={opsStatus.scheduler || schedulerRuntimeText}
+              onClick={() =>
+                runOp('scheduler', async () => {
+                  const out = await requestJson('/api/admin/operations/scheduler', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: true }),
+                  });
+                  const scheduler = (out.scheduler || {}) as { enabled?: boolean };
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    scheduler: scheduler.enabled ? 'On' : 'Off',
+                  }));
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Rebuild Calendar"
+              busy={opsBusy.calendar}
+              status={opsStatus.calendar || '--'}
+              onClick={() =>
+                runOp('calendar', async () => {
+                  const out = await requestJson('/api/admin/operations/trading-calendar/rebuild', { method: 'POST' });
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    calendar: Boolean((out.calendar as Record<string, unknown> | undefined)?.initialized)
+                      ? 'Rebuilt'
+                      : 'Updated',
+                  }));
+                })
+              }
+            />
           </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="divergence-vdf-scan-btn">Analyze</button>
-            <button
-              class="pane-btn divergence-run-btn divergence-control-icon-btn"
-              id="divergence-vdf-scan-stop-btn"
-              aria-label="Stop VDF Scan"
-              disabled
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                <rect width="10" height="10" rx="1" />
-              </svg>
-            </button>
-            <span id="divergence-vdf-scan-status" class="divergence-run-status">Ran --</span>
+
+          <div class="admin-operations-separator" aria-hidden="true" />
+
+          <div class="admin-operations-column">
+            <OperationActionRow
+              label="Clear Caches"
+              busy={opsBusy.clearCaches}
+              status={opsStatus.clearCaches || '--'}
+              onClick={() =>
+                runOp('clearCaches', async () => {
+                  const out = await requestJson('/api/admin/operations/cache/clear', { method: 'POST' });
+                  setOpsStatus((prev) => ({ ...prev, clearCaches: String(out.message || 'Done') }));
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Warm Chart Cache"
+              busy={opsBusy.warmCache}
+              status={opsStatus.warmCache || warmupRuntimeText}
+              onClick={() =>
+                runOp('warmCache', async () => {
+                  const out = await requestJson('/api/admin/operations/chart/warm', { method: 'POST' });
+                  const status = String(out.status || 'started');
+                  const job = (out.job || {}) as { total?: number };
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    warmCache: `${status} (${fmtNumber(job.total, 0)} jobs)`,
+                  }));
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Health Check"
+              busy={opsBusy.healthcheck}
+              status={opsStatus.healthcheck || '--'}
+              onClick={() =>
+                runOp('healthcheck', async () => {
+                  const out = await requestJson('/api/admin/operations/healthcheck', { method: 'POST' });
+                  setOpsStatus((prev) => ({
+                    ...prev,
+                    healthcheck: `${String(out.status || 'ok')} (${fmtNumber(out.durationMs, 0)}ms)`,
+                  }));
+                })
+              }
+            />
+
+            <OperationActionRow
+              label="Export Diagnostics"
+              busy={opsBusy.diagnostics}
+              status={opsStatus.diagnostics || '--'}
+              onClick={() =>
+                runOp('diagnostics', async () => {
+                  const out = await requestJson('/api/admin/operations/diagnostics', { method: 'GET' });
+                  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+                  const fileUrl = window.URL.createObjectURL(blob);
+                  const anchor = document.createElement('a');
+                  anchor.href = fileUrl;
+                  anchor.download = `tradedata-diagnostics-${Date.now()}.json`;
+                  document.body.appendChild(anchor);
+                  anchor.click();
+                  anchor.remove();
+                  window.URL.revokeObjectURL(fileUrl);
+                  setOpsStatus((prev) => ({ ...prev, diagnostics: 'Downloaded' }));
+                })
+              }
+            />
+
+            <div class="admin-operation-row admin-operation-row--stack">
+              <button
+                class="pane-btn divergence-run-btn"
+                disabled={Boolean(opsBusy.addTickers)}
+                onClick={() => setAddTickersOpen((prev) => !prev)}
+              >
+                Add Tickers
+              </button>
+              {addTickersOpen && (
+                <div class="admin-add-ticker-controls">
+                  <input
+                    type="text"
+                    class="glass-input admin-add-ticker-input"
+                    placeholder="AAPL, MSFT, NVDA"
+                    value={addTickersInput}
+                    onInput={(event) => setAddTickersInput((event.target as HTMLInputElement).value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submitAddTickers();
+                      }
+                    }}
+                  />
+                  <button
+                    class="pane-btn divergence-run-btn"
+                    disabled={Boolean(opsBusy.addTickers)}
+                    onClick={submitAddTickers}
+                  >
+                    Confirm
+                  </button>
+                </div>
+              )}
+              <span class="divergence-run-status">{opsStatus.addTickers || '--'}</span>
+            </div>
           </div>
-          <div class="admin-operation-row">
-            <button class="pane-btn divergence-run-btn" id="breadth-recompute-btn">Breadth</button>
-            <button
-              class="pane-btn divergence-run-btn divergence-control-icon-btn"
-              id="breadth-recompute-stop-btn"
-              aria-label="Stop Breadth Bootstrap"
-              disabled
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                <rect width="10" height="10" rx="1" />
-              </svg>
-            </button>
-            <span id="breadth-recompute-status" class="divergence-run-status">Ran --</span>
-          </div>
-
-          <OperationActionRow
-            label="Health Check"
-            busy={opsBusy.healthcheck}
-            status={opsStatus.healthcheck || '--'}
-            onClick={() =>
-              runOp('healthcheck', async () => {
-                const out = await requestJson('/api/admin/operations/healthcheck', { method: 'POST' });
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  healthcheck: `${String(out.status || 'ok')} (${fmtNumber(out.durationMs, 0)}ms)`,
-                }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Clear Caches"
-            busy={opsBusy.clearCaches}
-            status={opsStatus.clearCaches || '--'}
-            onClick={() =>
-              runOp('clearCaches', async () => {
-                const out = await requestJson('/api/admin/operations/cache/clear', { method: 'POST' });
-                setOpsStatus((prev) => ({ ...prev, clearCaches: String(out.message || 'Done') }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Warm Chart Cache"
-            busy={opsBusy.warmCache}
-            status={opsStatus.warmCache || warmupRuntimeText}
-            onClick={() =>
-              runOp('warmCache', async () => {
-                const out = await requestJson('/api/admin/operations/chart/warm', { method: 'POST' });
-                const status = String(out.status || 'started');
-                const job = (out.job || {}) as { total?: number };
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  warmCache: `${status} (${fmtNumber(job.total, 0)} jobs)`,
-                }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Retry Failed Daily"
-            busy={opsBusy.retryDaily}
-            status={opsStatus.retryDaily || '--'}
-            onClick={() =>
-              runOp('retryDaily', async () => {
-                const out = await requestJson('/api/admin/operations/retry-failed', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ runType: 'fetchDaily' }),
-                });
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  retryDaily: `${String(out.status || 'started')} (${fmtNumber(out.failedTickers, 0)} tickers)`,
-                }));
-                syncDivergenceScanUiState().catch(() => {});
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Retry Failed Weekly"
-            busy={opsBusy.retryWeekly}
-            status={opsStatus.retryWeekly || '--'}
-            onClick={() =>
-              runOp('retryWeekly', async () => {
-                const out = await requestJson('/api/admin/operations/retry-failed', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ runType: 'fetchWeekly' }),
-                });
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  retryWeekly: `${String(out.status || 'started')} (${fmtNumber(out.failedTickers, 0)} tickers)`,
-                }));
-                syncDivergenceScanUiState().catch(() => {});
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Stop All Jobs"
-            busy={opsBusy.stopAll}
-            status={opsStatus.stopAll || '--'}
-            onClick={() =>
-              runOp('stopAll', async () => {
-                const out = await requestJson('/api/admin/operations/stop-all', { method: 'POST' });
-                setOpsStatus((prev) => ({ ...prev, stopAll: String(out.message || 'Stop requested') }));
-                syncDivergenceScanUiState().catch(() => {});
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Rebuild Calendar"
-            busy={opsBusy.calendar}
-            status={opsStatus.calendar || '--'}
-            onClick={() =>
-              runOp('calendar', async () => {
-                const out = await requestJson('/api/admin/operations/trading-calendar/rebuild', { method: 'POST' });
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  calendar: Boolean((out.calendar as Record<string, unknown> | undefined)?.initialized)
-                    ? 'Rebuilt'
-                    : 'Updated',
-                }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label={schedulerEnabled ? 'Disable Scheduler' : 'Enable Scheduler'}
-            busy={opsBusy.scheduler}
-            status={opsStatus.scheduler || schedulerRuntimeText}
-            onClick={() =>
-              runOp('scheduler', async () => {
-                const out = await requestJson('/api/admin/operations/scheduler', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ enabled: !schedulerEnabled }),
-                });
-                const scheduler = (out.scheduler || {}) as { enabled?: boolean };
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  scheduler: scheduler.enabled ? 'On' : 'Off',
-                }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Rebuild Constituents"
-            busy={opsBusy.constituents}
-            status={opsStatus.constituents || constituentsRuntimeText}
-            onClick={() =>
-              runOp('constituents', async () => {
-                const out = await requestJson('/api/breadth/constituents/rebuild', { method: 'POST' });
-                setOpsStatus((prev) => ({
-                  ...prev,
-                  constituents: `${fmtNumber(out.indexCount, 0)} ETFs / ${fmtNumber(out.tickerCount, 0)} tickers`,
-                }));
-              })
-            }
-          />
-
-          <OperationActionRow
-            label="Export Diagnostics"
-            busy={opsBusy.diagnostics}
-            status={opsStatus.diagnostics || '--'}
-            onClick={() =>
-              runOp('diagnostics', async () => {
-                const out = await requestJson('/api/admin/operations/diagnostics', { method: 'GET' });
-                const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-                const fileUrl = window.URL.createObjectURL(blob);
-                const anchor = document.createElement('a');
-                anchor.href = fileUrl;
-                anchor.download = `tradedata-diagnostics-${Date.now()}.json`;
-                document.body.appendChild(anchor);
-                anchor.click();
-                anchor.remove();
-                window.URL.revokeObjectURL(fileUrl);
-                setOpsStatus((prev) => ({ ...prev, diagnostics: 'Downloaded' }));
-              })
-            }
-          />
         </div>
       </div>
 
@@ -727,7 +807,7 @@ export function AdminView() {
         <div id="admin-history-container" class="alerts-list">
           {pageItems.length > 0
             ? pageItems.map((run, i) => <HistoryEntry key={i} run={run} />)
-            : <div class="loading">No run history yet</div>
+            : <div class="log-history-placeholder" aria-hidden="true"></div>
           }
         </div>
       </div>

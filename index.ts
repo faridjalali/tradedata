@@ -86,7 +86,10 @@ import {
 } from './server/services/scanControlService.js';
 import { vdfScan, getVDFStatus, runVDFScan } from './server/services/vdfService.js';
 import { getDivergenceSummaryForTickers } from './server/services/tickerHistoryService.js';
-import { getStoredDivergenceSymbolTickers } from './server/services/divergenceDbService.js';
+import {
+  getStoredDivergenceSymbolTickers,
+  upsertManualDivergenceSymbols,
+} from './server/services/divergenceDbService.js';
 import { runDivergenceTableBuild } from './server/orchestrators/tableBuildOrchestrator.js';
 import { runDivergenceFetchDailyData } from './server/orchestrators/fetchDailyOrchestrator.js';
 import { runDivergenceFetchWeeklyData } from './server/orchestrators/fetchWeeklyOrchestrator.js';
@@ -1034,6 +1037,50 @@ app.post('/api/admin/operations/scheduler', async (request, reply) => {
   return reply.send({
     status: 'ok',
     scheduler: state,
+  });
+});
+
+app.post('/api/admin/operations/divergence-symbols/add', async (request, reply) => {
+  if (!divergencePool) {
+    return reply.code(503).send({ error: 'Divergence DB is not configured', addedCount: 0, invalidTickers: [] });
+  }
+  const body = ((request.body as Record<string, unknown> | null) || {}) as { tickers?: unknown };
+  const input = body.tickers;
+  const tokens = Array.isArray(input) ? input : typeof input === 'string' ? input.split(/[\s,]+/) : [];
+  const normalized = Array.from(
+    new Set(
+      tokens
+        .map((token) =>
+          String(token || '')
+            .trim()
+            .toUpperCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
+  if (normalized.length === 0) {
+    return reply.code(400).send({ error: 'Provide at least one ticker', addedCount: 0, invalidTickers: [] });
+  }
+  if (normalized.length > 500) {
+    return reply.code(400).send({ error: 'Too many tickers (max 500)', addedCount: 0, invalidTickers: [] });
+  }
+
+  const validTickers = normalized.filter((ticker) => isValidTickerSymbol(ticker));
+  const invalidTickers = normalized.filter((ticker) => !isValidTickerSymbol(ticker));
+  if (validTickers.length === 0) {
+    return reply.code(400).send({
+      error: 'No valid tickers provided',
+      addedCount: 0,
+      invalidTickers,
+    });
+  }
+
+  const addedTickers = await upsertManualDivergenceSymbols(validTickers);
+  return reply.send({
+    status: 'ok',
+    addedCount: addedTickers.length,
+    addedTickers,
+    invalidTickers,
   });
 });
 
