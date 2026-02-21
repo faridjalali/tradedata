@@ -2,7 +2,6 @@
 
 import { RSIPoint, RSIDisplayMode } from './chartApi';
 import { getAppTimeZoneFormatter } from './timezone';
-import { isMobileTouch } from './chart';
 import { getThemeColors } from './theme';
 import { formatTimeScaleTickMark } from './chartTimeUtils';
 import { FONT_DATA_STACK, FONT_SIZE_AXIS_PX } from './chartTypes';
@@ -136,7 +135,7 @@ export class RSIChart {
       handleScroll: {
         pressedMouseMove: true,
         horzTouchDrag: true,
-        vertTouchDrag: isMobileTouch,
+        vertTouchDrag: false,
         mouseWheel: true,
       },
       handleScale: {

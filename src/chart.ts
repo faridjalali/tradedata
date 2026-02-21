@@ -1808,7 +1808,7 @@ function createPriceChart(container: HTMLElement) {
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: isMobileTouch,
+      vertTouchDrag: false,
       mouseWheel: true,
     },
     handleScale: {
@@ -1884,7 +1884,7 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: isMobileTouch,
+      vertTouchDrag: false,
       mouseWheel: true,
     },
     handleScale: {
@@ -1990,7 +1990,7 @@ function createVolumeDeltaChart(container: HTMLElement) {
     handleScroll: {
       pressedMouseMove: true,
       horzTouchDrag: true,
-      vertTouchDrag: isMobileTouch,
+      vertTouchDrag: false,
       mouseWheel: true,
     },
     handleScale: {

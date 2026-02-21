@@ -2226,7 +2226,7 @@ body.site-locked {
   width: 100%;
   border-radius: 6px;
   overflow: hidden;
-  touch-action: none;
+  touch-action: pan-y;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
 }
