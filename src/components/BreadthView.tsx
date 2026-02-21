@@ -18,7 +18,7 @@ export function BreadthView({
   return (
     <div class="single-page-container">
       <div class="single-page-header">
-        <div class="single-page-controls">
+        <div class="single-page-controls breadth-primary-controls">
           <div id="breadth-tf-btns" class="feed-controls-group">
             <button class="pane-btn" data-days="1" type="button" onClick={() => onSelectTimeframe(1)}>
               1

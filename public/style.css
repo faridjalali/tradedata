@@ -1647,6 +1647,24 @@ button:hover {
   flex-wrap: wrap;
 }
 
+/* Breadth top controls: keep left aligned and stacked on narrower widths */
+@media (max-width: 1100px) {
+  .breadth-primary-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .breadth-primary-controls #breadth-tf-btns,
+  .breadth-primary-controls #breadth-metric-btns {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .breadth-primary-controls #breadth-metric-btns {
+    flex-wrap: wrap;
+  }
+}
+
 
 #breadth-metric-btns .pane-btn {
   padding: 0 6px;
