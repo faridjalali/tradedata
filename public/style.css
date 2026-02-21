@@ -1432,6 +1432,16 @@ button:hover {
   color: var(--text-secondary);
   white-space: normal;
 }
+.ticker-info-line3 {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+.ticker-info-line4 {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  white-space: normal;
+}
 
 /* ===== Consolidated 768px breakpoint ===== */
 @media (max-width: 768px) {

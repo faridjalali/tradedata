@@ -775,25 +775,26 @@ async function showTickerInfoTooltip(ticker: string, anchor: HTMLElement): Promi
   const tooltip = document.createElement('div');
   tooltip.className = 'ticker-info-tooltip';
 
-  // Line 1: name · sic_description · market_cap
-  const parts: string[] = [];
-  if (info.name) parts.push(info.name);
-  if (info.sic_description) parts.push(info.sic_description);
-  const mcap = formatMarketCap(info.market_cap);
-  if (mcap) parts.push(mcap);
-  const line1 = document.createElement('div');
-  line1.className = 'ticker-info-line1';
-  line1.textContent = parts.join(' \u00b7 ');
-  tooltip.appendChild(line1);
+  // Tooltip structure:
+  // Line 1: name
+  // Line 2: market cap
+  // Line 3: SIC description
+  // Line 4: full description (no truncation)
+  const appendTooltipLine = (className: string, text: string | undefined | null): void => {
+    const value = String(text || '').trim();
+    if (!value) return;
+    const line = document.createElement('div');
+    line.className = className;
+    line.textContent = value;
+    tooltip.appendChild(line);
+  };
 
-  // Line 2: description (truncated ~200 chars)
-  if (info.description) {
-    const desc = info.description.length > 200 ? info.description.slice(0, 200).trimEnd() + '...' : info.description;
-    const line2 = document.createElement('div');
-    line2.className = 'ticker-info-line2';
-    line2.textContent = desc;
-    tooltip.appendChild(line2);
-  }
+  appendTooltipLine('ticker-info-line1', info.name);
+  appendTooltipLine('ticker-info-line2', formatMarketCap(info.market_cap));
+  appendTooltipLine('ticker-info-line3', info.sic_description);
+  appendTooltipLine('ticker-info-line4', info.description);
+
+  if (!tooltip.childElementCount) return;
 
   // Position below the anchor badge
   const pane = anchor.closest('[id]') as HTMLElement | null;
