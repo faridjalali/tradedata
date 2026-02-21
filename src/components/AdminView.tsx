@@ -858,6 +858,11 @@ export function AdminView() {
                 run={metricsData.runs?.vdfScan}
                 statusFallback={metricsData.statuses?.vdfScan}
               />
+              <RunCard
+                title="Fetch Breadth"
+                run={metricsData.runs?.fetchBreadth}
+                statusFallback={metricsData.statuses?.breadth}
+              />
               <ConfigCard payload={metricsData} />
             </>
           ) : (

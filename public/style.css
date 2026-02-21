@@ -1742,12 +1742,6 @@ button:hover {
   flex-wrap: wrap;
   align-items: center;
 }
-#chart-controls .pane-btn {
-  height: 26px;
-  min-width: 26px;
-  padding: 0 8px;
-  line-height: 1;
-}
 #chart-controls .pane-btn.chart-action-btn {
   width: 26px;
   min-width: 26px;

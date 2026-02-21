@@ -19,6 +19,7 @@ import {
 } from './scanControlService.js';
 import { getSchedulerState } from './schedulerService.js';
 import { vdfScan } from './vdfService.js';
+import { getBreadthRouteServiceInstance } from './breadthRouteServiceRegistry.js';
 
 const RUN_METRICS_DB_LIMIT = 200;
 
@@ -146,6 +147,7 @@ export const runMetricsByType: Record<string, RunMetricsInternal | null> = {
   fetchDaily: null,
   fetchWeekly: null,
   vdfScan: null,
+  fetchBreadth: null,
 };
 
 export const runMetricsHistory: RunMetricsSummary[] = [];
@@ -660,6 +662,8 @@ export function createRunMetricsTracker(runType: string, meta: Record<string, un
 
 export function getLogsRunMetricsPayload() {
   const schedulerState = getSchedulerState();
+  const breadthService = getBreadthRouteServiceInstance();
+  const breadthStatus = breadthService ? breadthService.getBootstrapStateCached() : null;
   return {
     generatedAt: new Date().toISOString(),
     schedulerEnabled: schedulerState.enabled,
@@ -680,11 +684,13 @@ export function getLogsRunMetricsPayload() {
       scan: getDivergenceScanControlStatus(),
       table: getDivergenceTableBuildStatus(),
       vdfScan: vdfScan.getStatus(),
+      breadth: breadthStatus,
     },
     runs: {
       fetchDaily: summarizeRunMetrics(runMetricsByType.fetchDaily),
       fetchWeekly: summarizeRunMetrics(runMetricsByType.fetchWeekly),
       vdfScan: summarizeRunMetrics(runMetricsByType.vdfScan),
+      fetchBreadth: summarizeRunMetrics(runMetricsByType.fetchBreadth),
     },
     history: runMetricsHistory.slice(0, RUN_METRICS_HISTORY_LIMIT),
   };

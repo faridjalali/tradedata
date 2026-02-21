@@ -108,7 +108,7 @@ registerFetchButton({
     stopButtonId: 'divergence-vdf-scan-stop-btn',
     statusId: 'divergence-vdf-scan-status',
   },
-  label: { idle: 'Analyze' },
+  label: { idle: 'Fetch Analysis' },
   stopAriaLabel: 'Stop VDF Scan',
   start: startVDFScan,
   stop: stopVDFScan,
@@ -131,7 +131,7 @@ registerFetchButton({
     stopButtonId: 'breadth-recompute-stop-btn',
     statusId: 'breadth-recompute-status',
   },
-  label: { idle: 'Breadth' },
+  label: { idle: 'Fetch Breadth' },
   stopAriaLabel: 'Stop Breadth Bootstrap',
   start: async () => {
     const res = await fetch('/api/breadth/ma/recompute', {

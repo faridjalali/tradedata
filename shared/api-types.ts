@@ -260,11 +260,17 @@ export interface RunMetricsPayload {
       total_tickers?: number;
       detected_tickers?: number;
     } | null;
+    breadth?: {
+      running?: boolean;
+      status?: string;
+      finished_at?: string | null;
+    } | null;
   };
   runs?: {
     fetchDaily?: RunMetricsSnapshot | null;
     fetchWeekly?: RunMetricsSnapshot | null;
     vdfScan?: RunMetricsSnapshot | null;
+    fetchBreadth?: RunMetricsSnapshot | null;
   };
   history?: RunMetricsSnapshot[];
 }

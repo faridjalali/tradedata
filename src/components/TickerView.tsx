@@ -199,23 +199,23 @@ export function TickerView() {
               <button class="pane-btn hidden-init" data-interval="5min" type="button">
                 5
               </button>
-              <button class="pane-btn" data-interval="15min" type="button">
+              <button class="pane-btn hidden-init" data-interval="15min" type="button">
                 15
               </button>
-              <button class="pane-btn" data-interval="30min" type="button">
+              <button class="pane-btn hidden-init" data-interval="30min" type="button">
                 30
               </button>
               <button class="pane-btn" data-interval="1hour" type="button">
-                1h
+                1
               </button>
               <button class="pane-btn" data-interval="4hour" type="button">
-                4h
+                4
               </button>
               <button class="pane-btn active" data-interval="1day" type="button">
-                1D
+                D
               </button>
               <button class="pane-btn" data-interval="1week" type="button">
-                1W
+                W
               </button>
             </div>
             <div class="chart-navigation-group">

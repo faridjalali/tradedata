@@ -659,6 +659,8 @@ registerDivergenceRoutes({
 
 app.get('/api/logs/run-metrics', async (request, reply) => {
   await hydrateRunMetricsHistoryIfEmpty();
+  const breadthService = getBreadthRouteServiceInstance();
+  if (breadthService) await breadthService.getBootstrapState();
   return reply.send(getLogsRunMetricsPayload());
 });
 
@@ -1088,6 +1090,8 @@ app.post('/api/admin/operations/divergence-symbols/add', async (request, reply) 
 
 app.get('/api/admin/operations/diagnostics', async (_request, reply) => {
   await hydrateRunMetricsHistoryIfEmpty();
+  const breadthService = getBreadthRouteServiceInstance();
+  if (breadthService) await breadthService.getBootstrapState();
   const ready = await getReadyPayload();
   const metricsPayload = getLogsRunMetricsPayload();
   return reply.send({

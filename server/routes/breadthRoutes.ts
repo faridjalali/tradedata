@@ -137,7 +137,8 @@ export function registerBreadthRoutes(app: FastifyInstance): void {
       },
     },
     async (_request, reply) => {
-      return reply.send(breadthService.getBootstrapState());
+      const state = await breadthService.getBootstrapState();
+      return reply.send(state);
     },
   );
 
