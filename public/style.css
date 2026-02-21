@@ -2401,3 +2401,25 @@ button:hover {
 .theme-swatch-btn[data-theme="light"] { background: #ffffff; }
 .theme-swatch-btn[data-theme="beige"] { background: #F5F0E8; }
 .theme-swatch-btn[data-theme="claude"] { background: linear-gradient(135deg, #1c1b17 50%, #da7756 50%); }
+
+/* ===== Admin View Facelift ===== */
+.admin-card-section {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.admin-card-section .admin-section-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.admin-card-section h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}

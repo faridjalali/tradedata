@@ -515,7 +515,7 @@ export function AdminView() {
   return (
     <>
       {/* Section 1: Operations */}
-      <div class="admin-section">
+      <div class="admin-card-section">
         <div class="admin-section-header">
           <h2>Operations</h2>
         </div>
@@ -810,7 +810,7 @@ export function AdminView() {
       </div>
 
       {/* Section 2: System Health */}
-      <div class="admin-section">
+      <div class="admin-card-section">
         <div class="admin-section-header">
           <h2>System</h2>
           <button class={`pane-btn refresh-btn${refreshing ? ' loading' : ''}`} onClick={refresh}>
@@ -832,7 +832,7 @@ export function AdminView() {
       </div>
 
       {/* Section 3: Run Metrics */}
-      <div class="admin-section">
+      <div class="admin-card-section">
         <div class="admin-section-header">
           <h2>Run Metrics</h2>
           <button class={`pane-btn refresh-btn${refreshing ? ' loading' : ''}`} onClick={refresh}>
@@ -866,7 +866,7 @@ export function AdminView() {
       </div>
 
       {/* Section 4: Run History */}
-      <div class="admin-section">
+      <div class="admin-card-section">
         <div class="admin-section-header">
           <h2>Run History</h2>
           {totalPages > 1 && (
