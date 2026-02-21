@@ -36,6 +36,7 @@ import { onAppTimeZoneChange, getAppTimeZone, setAppTimeZone, getAppTimeZoneOpti
 import { initTheme, setTheme, getTheme, ThemeName } from './theme';
 import { initializeSiteLock } from './siteLock';
 import { destroyMiniChartOverlay } from './divergenceMinichart';
+import { getDivergenceSignals } from './divergenceState';
 // ---------------------------------------------------------------------------
 // Route handling
 // ---------------------------------------------------------------------------
@@ -86,7 +87,8 @@ function applyTickerRoute(ticker: string): void {
   document.getElementById('dashboard-view')?.classList.add('hidden');
   tickerView.classList.remove('hidden');
 
-  if (previousView !== 'divergence') {
+  const shouldFetchSignals = previousView !== 'divergence' || getDivergenceSignals().length === 0;
+  if (shouldFetchSignals) {
     fetchDivergenceSignals(true)
       .then(() => {
         if (appStore.getState().selectedTicker === normalizedTicker) {
