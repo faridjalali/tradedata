@@ -24,11 +24,14 @@ function normalizeAlert(raw: unknown): Alert {
   } as Alert;
 }
 
-export async function fetchDivergenceSignalsFromApi(params: string = ''): Promise<Alert[]> {
+export async function fetchDivergenceSignalsFromApi(
+  params: string = '',
+  options: { signal?: AbortSignal } = {},
+): Promise<Alert[]> {
   try {
     const query = new URLSearchParams(String(params || '').replace(/^\?/, ''));
     query.set('vd_source_interval', getPreferredDivergenceSourceInterval());
-    const response = await fetch(`/api/divergence/signals?${query.toString()}`);
+    const response = await fetch(`/api/divergence/signals?${query.toString()}`, { signal: options.signal });
     if (!response.ok) throw new Error('Network response was not ok');
     const payload = await response.json();
     if (!Array.isArray(payload)) {
@@ -36,6 +39,9 @@ export async function fetchDivergenceSignalsFromApi(params: string = ''): Promis
     }
     return payload.map(normalizeAlert);
   } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      throw error;
+    }
     console.error('Error fetching divergence signals:', error);
     throw error;
   }

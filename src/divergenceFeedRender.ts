@@ -26,6 +26,16 @@ export type { ColumnFeedMode, ColumnKey } from './store/divergenceStore';
 // ---------------------------------------------------------------------------
 
 const ALERTS_PAGE_SIZE = 100;
+const timeframeFetchSequence: Record<'1d' | '1w', number> = { '1d': 0, '1w': 0 };
+const timeframeFetchControllers: Record<'1d' | '1w', AbortController | null> = { '1d': null, '1w': null };
+let overviewFetchSequence = 0;
+let overviewDailyController: AbortController | null = null;
+let overviewWeeklyController: AbortController | null = null;
+
+function isDivergencePreactMounted(): boolean {
+  const root = document.getElementById('divergence-root');
+  return Boolean(root && root.childElementCount > 0);
+}
 
 // ---------------------------------------------------------------------------
 // Column state accessors (now delegate to Zustand store)
@@ -151,6 +161,18 @@ export function setDivergenceWeeklySort(mode: SortMode): void {
 // ---------------------------------------------------------------------------
 
 export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]> {
+  const requestSequence = ++overviewFetchSequence;
+  overviewDailyController?.abort();
+  overviewWeeklyController?.abort();
+  overviewDailyController = new AbortController();
+  overviewWeeklyController = new AbortController();
+
+  // Invalidate any in-flight single-timeframe fetches so stale responses are ignored.
+  timeframeFetchSequence['1d'] += 1;
+  timeframeFetchSequence['1w'] += 1;
+  timeframeFetchControllers['1d']?.abort();
+  timeframeFetchControllers['1w']?.abort();
+
   try {
     const dailyColumn = divergenceStore.getState().getColumn('daily');
     const weeklyColumn = divergenceStore.getState().getColumn('weekly');
@@ -162,18 +184,32 @@ export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]>
 
     // Fetch both columns in parallel, then commit to store once so both render together.
     const [daily, weekly] = await Promise.all([
-      fetchDivergenceSignalsFromApi(`?start_date=${dailyRange.startDate}&end_date=${dailyRange.endDate}&timeframe=1d`),
+      fetchDivergenceSignalsFromApi(`?start_date=${dailyRange.startDate}&end_date=${dailyRange.endDate}&timeframe=1d`, {
+        signal: overviewDailyController.signal,
+      }),
       fetchDivergenceSignalsFromApi(
         `?start_date=${weeklyRange.startDate}&end_date=${weeklyRange.endDate}&timeframe=1w`,
+        {
+          signal: overviewWeeklyController.signal,
+        },
       ),
     ]);
+    if (requestSequence !== overviewFetchSequence) return [];
     const all = [...daily, ...weekly];
     setDivergenceSignals(all);
     primeDivergenceSummaryCacheFromAlerts(all);
     return all;
   } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      return [];
+    }
     console.error('Error fetching divergence signals:', error);
     return [];
+  } finally {
+    if (requestSequence === overviewFetchSequence) {
+      overviewDailyController = null;
+      overviewWeeklyController = null;
+    }
   }
 }
 
@@ -183,6 +219,11 @@ export async function fetchDivergenceSignals(_force?: boolean): Promise<Alert[]>
  * The other timeframe's signals are left completely untouched.
  */
 export async function fetchDivergenceSignalsByTimeframe(timeframe: '1d' | '1w'): Promise<Alert[]> {
+  const requestSequence = ++timeframeFetchSequence[timeframe];
+  timeframeFetchControllers[timeframe]?.abort();
+  const controller = new AbortController();
+  timeframeFetchControllers[timeframe] = controller;
+
   try {
     const column: 'daily' | 'weekly' = timeframe === '1d' ? 'daily' : 'weekly';
     const mode = getColumnFeedMode(column);
@@ -192,13 +233,21 @@ export async function fetchDivergenceSignalsByTimeframe(timeframe: '1d' | '1w'):
     if (!startDate || !endDate) return [];
 
     const params = `?start_date=${startDate}&end_date=${endDate}&timeframe=${timeframe}`;
-    const data = await fetchDivergenceSignalsFromApi(params);
+    const data = await fetchDivergenceSignalsFromApi(params, { signal: controller.signal });
+    if (requestSequence !== timeframeFetchSequence[timeframe]) return [];
     primeDivergenceSummaryCacheFromAlerts(data);
     setDivergenceSignalsByTimeframe(timeframe, data);
     return data;
   } catch (error) {
+    if ((error as Error)?.name === 'AbortError') {
+      return [];
+    }
     console.error(`Error fetching divergence signals for ${timeframe}:`, error);
     return [];
+  } finally {
+    if (timeframeFetchControllers[timeframe] === controller) {
+      timeframeFetchControllers[timeframe] = null;
+    }
   }
 }
 
@@ -333,17 +382,24 @@ export function renderDivergenceContainer(timeframe: '1d' | '1w'): void {
  */
 export function setColumnFeedMode(column: ColumnKey, mode: ColumnFeedMode, fetchData = true): void {
   divergenceStore.getState().setColumnFeedMode(column, mode);
+  const preactMounted = isDivergencePreactMounted();
 
-  // Update button active state for all instances of this column
-  document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach((controls) => {
-    controls.querySelectorAll('.pane-btn[data-tf]').forEach((btn) => {
-      const el = btn as HTMLElement;
-      el.classList.toggle('active', el.dataset.tf === mode);
+  if (!preactMounted) {
+    // Legacy DOM path: update button active state when Preact view is not mounted.
+    document.querySelectorAll(`.column-tf-controls[data-column="${column}"]`).forEach((controls) => {
+      controls.querySelectorAll('.pane-btn[data-tf]').forEach((btn) => {
+        const el = btn as HTMLElement;
+        el.classList.toggle('active', el.dataset.tf === mode);
+      });
     });
-  });
+  }
 
   if (fetchData) {
     const timeframe: '1d' | '1w' = column === 'daily' ? '1d' : '1w';
-    fetchDivergenceSignalsByTimeframe(timeframe).then(() => renderDivergenceContainer(timeframe));
+    fetchDivergenceSignalsByTimeframe(timeframe).then(() => {
+      if (!isDivergencePreactMounted()) {
+        renderDivergenceContainer(timeframe);
+      }
+    });
   }
 }
