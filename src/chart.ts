@@ -20,14 +20,7 @@ import {
   isRenderableMaValue,
 } from './chartIndicators';
 import { recordChartFetchPerf, recordChartRenderPerf, exposeChartPerfMetrics } from './chartPerf';
-import {
-  buildChartDataCacheKey,
-  getCachedChartData,
-  setCachedChartData,
-  evictCachedChartData,
-  getLastBarSignature,
-  schedulePersistChartDataCacheToSession,
-} from './chartDataCache';
+import { buildChartDataCacheKey, getCachedChartData, setCachedChartData, getLastBarSignature } from './chartDataCache';
 import { navigateChart, getNeighborTicker, initPaneAxisNavigation } from './chartNavigation';
 import {
   initVDF,
@@ -39,7 +32,6 @@ import {
   runVDFDetection,
   refreshVDZones,
   renderVDZones,
-  setRefreshButtonLoading,
 } from './chartVDF';
 import {
   initSettingsUI,
@@ -2956,9 +2948,6 @@ export async function renderCustomChart(
     if (chartFetchAbortController === fetchController) {
       chartFetchAbortController = null;
     }
-    // Clear chart refresh button loading state
-    const chartRefreshBtn = document.getElementById('chart-refresh-btn');
-    if (chartRefreshBtn) setRefreshButtonLoading(chartRefreshBtn, false);
   }
 }
 
@@ -3393,24 +3382,8 @@ function initChartFullscreen(): void {
   const container = document.getElementById('custom-chart-container');
   const navPrevBtn = document.getElementById('chart-nav-prev');
   const navNextBtn = document.getElementById('chart-nav-next');
-  const refreshBtn = document.getElementById('chart-refresh-btn');
 
   if (!btn || !container) return;
-
-  // Initialize Refresh Button
-  if (refreshBtn) {
-    setRefreshButtonLoading(refreshBtn, false);
-    refreshBtn.addEventListener('click', () => {
-      if (!currentChartTicker || chartActivelyLoading) return;
-      // Evict cached data for current ticker+interval so fetch is forced
-      const cacheKey = buildChartDataCacheKey(currentChartTicker, currentChartInterval);
-      evictCachedChartData(cacheKey);
-      schedulePersistChartDataCacheToSession();
-      // Show loading state, re-render with fresh data, then clear loading
-      setRefreshButtonLoading(refreshBtn, true);
-      renderCustomChart(currentChartTicker, currentChartInterval);
-    });
-  }
 
   // Initialize Navigation Buttons
   if (navPrevBtn) {

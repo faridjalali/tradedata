@@ -219,12 +219,6 @@ export function TickerView() {
               </button>
             </div>
             <div class="chart-navigation-group">
-              <button
-                id="chart-refresh-btn"
-                class="pane-btn refresh-btn chart-action-btn"
-                type="button"
-                title="Refresh Chart"
-              ></button>
               <button id="chart-nav-prev" class="pane-btn chart-action-btn" title="Previous Ticker" type="button">
                 <svg
                   width="13"
