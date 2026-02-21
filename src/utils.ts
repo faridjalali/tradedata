@@ -152,10 +152,10 @@ export function createAlertSortFn(mode: SortMode, direction: 'asc' | 'desc' = 'd
       result = (b.signal_volume || 0) - (a.signal_volume || 0);
     } else if (mode === 'score') {
       let bScore = b.divergence_states
-        ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states)
+        ? computeDivergenceScoreFromStates(b.divergence_states, b.ma_states, b.bull_flag_confidence)
         : getTickerDivergenceScoreFromCache(b.ticker);
       let aScore = a.divergence_states
-        ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states)
+        ? computeDivergenceScoreFromStates(a.divergence_states, a.ma_states, a.bull_flag_confidence)
         : getTickerDivergenceScoreFromCache(a.ticker);
       if (b.vdf_score) bScore += Math.round(b.vdf_score / 10);
       if (a.vdf_score) aScore += Math.round(a.vdf_score / 10);

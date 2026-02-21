@@ -216,17 +216,18 @@ export function renderMiniDivergencePlaceholders(root: ParentNode): void {
   });
 }
 
-const DIVERGENCE_SCORE_WEIGHTS: Record<string, number> = {
-  '1': 3,
-  '3': 3,
-  '7': 2,
-  '14': 2,
-  '28': 1,
+const DIVERGENCE_SCORE_RULES: Record<string, { bullish: number; bearish: number }> = {
+  '1': { bullish: 2, bearish: 0 },
+  '3': { bullish: 2, bearish: 0 },
+  '7': { bullish: 1, bearish: -1 },
+  '14': { bullish: 1, bearish: -1 },
+  '28': { bullish: 1, bearish: -1 },
 };
 
 export function computeDivergenceScoreFromStates(
   states?: Record<string, string | DivergenceState | null | undefined>,
   maStates?: { ema8?: boolean; ema21?: boolean; sma50?: boolean; sma200?: boolean } | null,
+  bullFlagConfidence?: number | null,
 ): number {
   let total = 0;
   for (const days of DIVERGENCE_LOOKBACK_DAYS) {
@@ -234,18 +235,21 @@ export function computeDivergenceScoreFromStates(
     const raw = String(states?.[key] || '')
       .trim()
       .toLowerCase();
-    const weight = Number(DIVERGENCE_SCORE_WEIGHTS[key] || 0);
+    const rule = DIVERGENCE_SCORE_RULES[key] || { bullish: 0, bearish: 0 };
     if (raw === 'bullish') {
-      total += weight;
+      total += Number(rule.bullish || 0);
     } else if (raw === 'bearish') {
-      total -= weight;
+      total += Number(rule.bearish || 0);
     }
   }
   if (maStates) {
-    total += maStates.ema8 === true ? 1 : maStates.ema8 === false ? -1 : 0;
-    total += maStates.ema21 === true ? 1 : maStates.ema21 === false ? -1 : 0;
+    total += maStates.ema8 === true ? 1 : 0;
+    total += maStates.ema21 === true ? 1 : 0;
     total += maStates.sma50 === true ? 1 : maStates.sma50 === false ? -1 : 0;
-    total += maStates.sma200 === true ? 1 : maStates.sma200 === false ? -1 : 0;
+    total += maStates.sma200 === false ? -3 : 0;
+  }
+  if (Number.isFinite(Number(bullFlagConfidence)) && Number(bullFlagConfidence) >= 50) {
+    total += 2;
   }
   return total;
 }
