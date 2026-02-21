@@ -6,7 +6,7 @@ import { renderCustomChart } from './chart';
 import { getColumnFeedMode, filterToLatestNDates, ColumnFeedMode } from './divergenceFeed';
 import { appStore } from './store/appStore';
 import { buildChartDataCacheKey, getCachedChartData } from './chartDataCache';
-import { dayKeyInAppTimeZone, unixSecondsFromTimeValue } from './chartTimeUtils';
+import { timeKey, unixSecondsFromTimeValue } from './chartTimeUtils';
 import type { CandleBar } from '../shared/api-types';
 
 let tickerDailySortMode: SortMode = 'time';
@@ -86,6 +86,36 @@ function metricToneClass(value: number | null): string {
   return 'is-neutral';
 }
 
+function toUtcDateKey(time: string | number): string | null {
+  if (typeof time === 'string') {
+    const datePart = time.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (datePart) return datePart;
+  }
+  const unix = unixSecondsFromTimeValue(time);
+  if (!Number.isFinite(unix)) return null;
+  return new Date(Number(unix) * 1000).toISOString().slice(0, 10);
+}
+
+function buildVolumeDeltaLookupKeys(time: string | number): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  };
+
+  push(`raw:${timeKey(time)}`);
+  const unix = unixSecondsFromTimeValue(time);
+  if (Number.isFinite(unix)) {
+    push(`unix:${Number(unix)}`);
+    push(`date:${new Date(Number(unix) * 1000).toISOString().slice(0, 10)}`);
+  }
+  const datePart = typeof time === 'string' ? time.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] : null;
+  if (datePart) push(`date:${datePart}`);
+  return keys;
+}
+
 function getChartMetricsByDateForTicker(ticker: string): Map<string, TickerAlertChartMetrics> {
   const result = new Map<string, TickerAlertChartMetrics>();
   const cacheKey = buildChartDataCacheKey(ticker, '1day');
@@ -94,27 +124,42 @@ function getChartMetricsByDateForTicker(ticker: string): Map<string, TickerAlert
 
   const bars = Array.isArray(data.bars) ? (data.bars as CandleBar[]) : [];
   const priceByDate = new Map<string, number>();
+  const volumeByDate = new Map<string, number>();
+
+  const volumeDeltaLookup = new Map<string, number>();
+  const volumeDeltaSeries = Array.isArray(data.volumeDelta) ? data.volumeDelta : [];
+  for (const point of volumeDeltaSeries) {
+    const delta = Number(point?.delta);
+    if (!Number.isFinite(delta)) continue;
+    for (const key of buildVolumeDeltaLookupKeys(point.time)) {
+      volumeDeltaLookup.set(key, delta);
+    }
+  }
+
+  const resolveVolumeDeltaForBar = (barTime: string | number): number | null => {
+    for (const key of buildVolumeDeltaLookupKeys(barTime)) {
+      const value = Number(volumeDeltaLookup.get(key));
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+
+  for (const bar of bars) {
+    const dateKey = toUtcDateKey(bar.time);
+    if (!dateKey) continue;
+    const delta = resolveVolumeDeltaForBar(bar.time);
+    if (delta !== null) volumeByDate.set(dateKey, delta);
+  }
+
   if (bars.length >= 2) {
     for (let i = 1; i < bars.length; i++) {
       const currClose = Number(bars[i]?.close);
       const prevClose = Number(bars[i - 1]?.close);
       if (!Number.isFinite(currClose) || !Number.isFinite(prevClose) || prevClose === 0) continue;
-      const unix = unixSecondsFromTimeValue(bars[i].time);
-      if (!Number.isFinite(unix)) continue;
-      const dateKey = dayKeyInAppTimeZone(Number(unix));
+      const dateKey = toUtcDateKey(bars[i].time);
+      if (!dateKey) continue;
       priceByDate.set(dateKey, ((currClose - prevClose) / prevClose) * 100);
     }
-  }
-
-  const volumeByDate = new Map<string, number>();
-  const volumeDeltaSeries = Array.isArray(data.volumeDelta) ? data.volumeDelta : [];
-  for (const point of volumeDeltaSeries) {
-    const delta = Number(point?.delta);
-    if (!Number.isFinite(delta)) continue;
-    const unix = unixSecondsFromTimeValue(point.time);
-    if (!Number.isFinite(unix)) continue;
-    const dateKey = dayKeyInAppTimeZone(Number(unix));
-    volumeByDate.set(dateKey, delta);
   }
 
   const dates = new Set<string>([...priceByDate.keys(), ...volumeByDate.keys()]);

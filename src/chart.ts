@@ -1569,8 +1569,9 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   }
 
   const fallbackTime = currentBars[currentBars.length - 1]?.time;
-  const targetKey = time !== null && time !== undefined ? timeKey(time) : timeKey(fallbackTime);
-  const deltaValue = Number(priceChangeByTime.get(targetKey));
+  const targetTime = time !== null && time !== undefined ? time : fallbackTime;
+  const entry = getNearestMappedEntryAtOrBefore(targetTime, priceChangeByTime);
+  const deltaValue = Number(entry?.value);
   if (!Number.isFinite(deltaValue)) {
     // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
     changeEl.style.display = 'none';
@@ -1662,8 +1663,9 @@ function setVolumeDeltaCumulativeBadge(container: HTMLElement, time?: string | n
   }
 
   const fallbackTime = currentBars[currentBars.length - 1]?.time;
-  const targetKey = time !== null && time !== undefined ? timeKey(time) : timeKey(fallbackTime);
-  const cumulative = Number(volumeDeltaCumulativeByTime.get(targetKey));
+  const targetTime = time !== null && time !== undefined ? time : fallbackTime;
+  const entry = getNearestMappedEntryAtOrBefore(targetTime, volumeDeltaCumulativeByTime);
+  const cumulative = Number(entry?.value);
   if (!Number.isFinite(cumulative)) {
     cumulativeEl.textContent = '--';
     cumulativeEl.style.color = tc().textSecondary;
@@ -2048,6 +2050,30 @@ function setVolumeDeltaRsiData(
   refreshActiveDivergenceOverlays();
 }
 
+function buildVolumeDeltaLookupKeys(time: string | number): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: string) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  };
+
+  push(`raw:${timeKey(time)}`);
+
+  const unix = toUnixSeconds(time);
+  if (Number.isFinite(unix)) {
+    push(`unix:${Number(unix)}`);
+    push(`date:${new Date(Number(unix) * 1000).toISOString().slice(0, 10)}`);
+  }
+
+  const dateFromString = typeof time === 'string' ? time.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] : null;
+  if (dateFromString) {
+    push(`date:${dateFromString}`);
+  }
+  return keys;
+}
+
 function setVolumeDeltaHistogramData(
   bars: CandleBar[],
   volumeDeltaValues: Array<{ time: string | number; delta: number }>,
@@ -2058,11 +2084,21 @@ function setVolumeDeltaHistogramData(
   for (const point of volumeDeltaValues) {
     const delta = Number(point.delta);
     if (!Number.isFinite(delta)) continue;
-    deltaByTime.set(timeKey(point.time), delta);
+    for (const key of buildVolumeDeltaLookupKeys(point.time)) {
+      deltaByTime.set(key, delta);
+    }
   }
 
   const histogramData = bars.map((bar) => {
-    const delta = deltaByTime.get(timeKey(bar.time)) ?? 0;
+    let resolvedDelta: number | null = null;
+    for (const key of buildVolumeDeltaLookupKeys(bar.time)) {
+      const candidate = Number(deltaByTime.get(key));
+      if (Number.isFinite(candidate)) {
+        resolvedDelta = candidate;
+        break;
+      }
+    }
+    const delta = resolvedDelta ?? 0;
     const numeric = Number.isFinite(Number(delta)) ? Number(delta) : 0;
     return {
       time: bar.time,
@@ -2925,20 +2961,40 @@ function applyWeeklyInitialVisibleRange(): void {
   }
 }
 
-function getNearestMappedValueAtOrBefore(time: string | number, valuesByTime: Map<string, number>): number | null {
+function normalizeCrosshairTimeValue(time: unknown): string | number | null {
+  if (typeof time === 'string' || typeof time === 'number') return time;
+  if (
+    time &&
+    typeof time === 'object' &&
+    Number.isFinite((time as { year?: number }).year) &&
+    Number.isFinite((time as { month?: number }).month) &&
+    Number.isFinite((time as { day?: number }).day)
+  ) {
+    const year = Number((time as { year: number }).year);
+    const month = String(Number((time as { month: number }).month)).padStart(2, '0');
+    const day = String(Number((time as { day: number }).day)).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+}
+
+function getNearestMappedValueAtOrBefore(time: unknown, valuesByTime: Map<string, number>): number | null {
   const result = getNearestMappedEntryAtOrBefore(time, valuesByTime);
   return result ? result.value : null;
 }
 
 function getNearestMappedEntryAtOrBefore(
-  time: string | number,
+  time: unknown,
   valuesByTime: Map<string, number>,
 ): { time: string | number; value: number } | null {
-  const direct = Number(valuesByTime.get(timeKey(time)));
-  if (Number.isFinite(direct)) return { time, value: direct };
+  const normalizedTime = normalizeCrosshairTimeValue(time);
+  if (normalizedTime === null) return null;
+
+  const direct = Number(valuesByTime.get(timeKey(normalizedTime)));
+  if (Number.isFinite(direct)) return { time: normalizedTime, value: direct };
   if (!Array.isArray(currentBars) || currentBars.length === 0) return null;
 
-  const targetUnix = toUnixSeconds(time);
+  const targetUnix = toUnixSeconds(normalizedTime);
   for (let i = currentBars.length - 1; i >= 0; i--) {
     const bar = currentBars[i];
     if (!bar) continue;
