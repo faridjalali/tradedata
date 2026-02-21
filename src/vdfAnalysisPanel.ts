@@ -278,12 +278,7 @@ export function toggleVDFAnalysisPanel(): void {
   if (!body) return;
   const isCollapsed = body.classList.toggle('is-collapsed');
   const chevron = vdfAnalysisPanelEl.querySelector('.vdf-ap-chevron') as HTMLElement | null;
-  if (chevron) chevron.textContent = isCollapsed ? '\u25be' : '\u25b8';
-  try {
-    localStorage.setItem('chart_vdf_panel_collapsed', isCollapsed ? '0' : '1');
-  } catch {
-    /* */
-  }
+  if (chevron) chevron.textContent = isCollapsed ? '\u25b8' : '\u25be';
 }
 
 export function clearVDFAnalysisPanel(): void {
@@ -319,12 +314,8 @@ export function renderVDFAnalysisPanel(entry: VDFCacheEntry | null, ticker: stri
   const tierClass = vdfScoreTierClass(score);
   const metrics = entry.details?.metrics;
 
-  let collapsed = true;
-  try {
-    collapsed = localStorage.getItem('chart_vdf_panel_collapsed') !== '0';
-  } catch {
-    /* */
-  }
+  // Always default to collapsed when the ticker analysis panel is rendered.
+  const collapsed = true;
 
   const chevron = collapsed ? '\u25b8' : '\u25be';
 
