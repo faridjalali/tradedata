@@ -1163,11 +1163,27 @@ h2 {
 }
 
 .ticker-alert-card {
-  gap: 8px;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content max-content 1fr max-content;
+  align-items: center;
+  column-gap: 8px;
 }
 
 .ticker-alert-card .card-group-id {
-  margin-right: auto;
+  grid-column: 1;
+}
+
+.ticker-alert-card .ticker-alert-vd {
+  grid-column: 3;
+}
+
+.ticker-alert-card .ticker-alert-price {
+  grid-column: 4;
+}
+
+.ticker-alert-card .alert-time {
+  grid-column: 6;
+  justify-self: end;
 }
 
 .ticker-alert-vd,
