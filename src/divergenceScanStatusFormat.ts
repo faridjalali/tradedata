@@ -196,16 +196,30 @@ export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
   const statusLike = status as DivergenceScanStatus & {
     runs?: { vdfScan?: { finishedAt?: string | null; startedAt?: string | null } | null };
   };
+  const latest = status.latestJob as
+    | (DivergenceScanStatus['latestJob'] & { run_for_date?: string; scanned_trade_date?: string })
+    | null;
   const state = String(scanLike.status || '').toLowerCase();
   const lastRunDateKey =
+    toDateKey(scanLike.finished_at || null) ||
     toDateKeyAsET(scanLike.finished_at || null) ||
+    toDateKey(scanLike.finishedAt || null) ||
     toDateKeyAsET(scanLike.finishedAt || null) ||
+    toDateKey(scanLike.started_at || null) ||
     toDateKeyAsET(scanLike.started_at || null) ||
+    toDateKey(scanLike.startedAt || null) ||
     toDateKeyAsET(scanLike.startedAt || null) ||
+    toDateKey(status.lastScanDateEt || null) ||
+    toDateKey(latest?.scanned_trade_date || null) ||
+    toDateKey(latest?.run_for_date || null) ||
+    toDateKey(latest?.finished_at || null) ||
+    toDateKey(latest?.started_at || null) ||
+    toDateKey(statusLike.runs?.vdfScan?.finishedAt || null) ||
     toDateKeyAsET(statusLike.runs?.vdfScan?.finishedAt || null) ||
+    toDateKey(statusLike.runs?.vdfScan?.startedAt || null) ||
     toDateKeyAsET(statusLike.runs?.vdfScan?.startedAt || null);
   const lastRunMmDd = lastRunDateKey ? dateKeyToMmDd(lastRunDateKey) : '';
-  if (!scan) return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
+  if (!scan) return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
   if (state === 'stopping') return 'Stopping';
   if (state === 'stopped') {
     if (scan.can_resume) return 'Resumable Stop';
@@ -221,7 +235,7 @@ export function summarizeVDFScanStatus(status: DivergenceScanStatus): string {
   if (state === 'completed') return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
   if (state === 'completed-with-errors') return lastRunMmDd ? `Ran (E) ${lastRunMmDd}` : 'Ran (E) --';
   if (state === 'failed') return lastRunMmDd ? `Failed ${lastRunMmDd}` : 'Failed';
-  return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Due for Fetch';
+  return lastRunMmDd ? `Ran ${lastRunMmDd}` : 'Ran --';
 }
 
 export function summarizeBreadthStatus(
