@@ -1803,15 +1803,8 @@ button:hover {
 }
 
 .chart-retry-btn {
-  background: var(--card-bg);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: var(--font-mono);
+  height: 28px;
+  padding: 0 10px;
 }
 
 .chart-error {

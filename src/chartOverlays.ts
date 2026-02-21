@@ -48,7 +48,7 @@ export function showRetryOverlay(container: HTMLElement, onRetry: () => void): v
 
   const retryBtn = document.createElement('button');
   retryBtn.type = 'button';
-  retryBtn.className = 'chart-retry-btn';
+  retryBtn.className = 'pane-btn chart-retry-btn';
   retryBtn.textContent = 'Try Refreshing';
   retryBtn.addEventListener('click', (event) => {
     event.preventDefault();
