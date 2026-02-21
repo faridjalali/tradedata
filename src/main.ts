@@ -186,13 +186,13 @@ export function getTickerListContext(): TickerListContext {
   return appStore.getState().tickerListContext;
 }
 
-export function getTickerOriginView(): 'divergence' {
+export function getTickerOriginView(): 'divergence' | 'breadth' {
   return appStore.getState().tickerOriginView;
 }
 
 window.showTickerView = function (
   ticker: string,
-  sourceView: 'divergence' = 'divergence',
+  sourceView: 'divergence' | 'breadth' = 'divergence',
   listContext: TickerListContext = null,
 ) {
   const normalizedTicker = String(ticker || '')
@@ -208,6 +208,12 @@ window.showTickerView = function (
 };
 
 window.showOverview = function () {
+  const originView = appStore.getState().tickerOriginView;
+  if (originView === 'breadth') {
+    pendingDivergenceScrollRestore = false;
+    navigateToPath(viewPath('breadth'));
+    return;
+  }
   pendingDivergenceScrollRestore = true;
   navigateToPath(viewPath('divergence'));
 };
@@ -384,7 +390,7 @@ declare global {
   interface Window {
     setTickerDailySort: (mode: SortMode) => void;
     setTickerWeeklySort: (mode: SortMode) => void;
-    showTickerView: (ticker: string, sourceView?: 'divergence', listContext?: TickerListContext) => void;
+    showTickerView: (ticker: string, sourceView?: 'divergence' | 'breadth', listContext?: TickerListContext) => void;
     showOverview: () => void;
   }
 }

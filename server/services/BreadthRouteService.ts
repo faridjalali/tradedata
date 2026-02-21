@@ -91,14 +91,23 @@ export class BreadthRouteService {
 
     if (isIntraday) {
       const lookbackDays = Math.max(14, days * 3);
-      const [spyBars, compBars] = await Promise.all([
-        getSpyIntraday(lookbackDays),
-        dataApiIntradayChartHistory(compTicker, '30min', lookbackDays),
-      ]);
+      try {
+        const [spyBars, compBars] = await Promise.all([
+          getSpyIntraday(lookbackDays),
+          dataApiIntradayChartHistory(compTicker, '30min', lookbackDays),
+        ]);
 
-      if (spyBars && compBars) {
-        const points = buildIntradayBreadthPoints(spyBars, compBars, days);
-        if (points.length > 0) return { intraday: true, points };
+        if (spyBars && compBars) {
+          const points = buildIntradayBreadthPoints(spyBars, compBars, days);
+          if (points.length > 0) return { intraday: true, points };
+        }
+      } catch (err: unknown) {
+        // Intraday fetches can occasionally fail for longer windows (e.g. 30d).
+        // Fall back to daily series instead of failing the endpoint.
+        console.warn(
+          `[breadth] Intraday fallback for ${compTicker} ${days}d:`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
 

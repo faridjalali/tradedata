@@ -573,6 +573,16 @@ function renderBreadthMAForIndex(index: string): void {
 }
 
 export function setBreadthMAIndex(index: string): void {
+  const selected = breadthStore.getState().maIndex;
+  if (selected === index) {
+    const ticker = String(index || '')
+      .trim()
+      .toUpperCase();
+    if (ticker && typeof window.showTickerView === 'function') {
+      window.showTickerView(ticker, 'breadth', null);
+    }
+    return;
+  }
   breadthStore.getState().setMAIndex(index);
   setActiveInGroup('#breadth-ma-index-btns', 'index', index);
   renderBreadthMAForIndex(index);
@@ -749,7 +759,22 @@ function renderBreadthCompareChart(): void {
 
 export function setBreadthCompareIndex(index: string): void {
   const st = breadthStore.getState();
+  const ticker = String(index || '')
+    .trim()
+    .toUpperCase();
+  if (!st.compareModeActive && st.compareIndex === index) {
+    if (ticker && typeof window.showTickerView === 'function') {
+      window.showTickerView(ticker, 'breadth', null);
+    }
+    return;
+  }
   if (st.compareModeActive && st.lockedCompareIndex) {
+    if (index === st.lockedCompareIndex || index === st.compareIndex2) {
+      if (ticker && typeof window.showTickerView === 'function') {
+        window.showTickerView(ticker, 'breadth', null);
+      }
+      return;
+    }
     // In compare mode — this click picks the 2nd ticker
     if (index === st.lockedCompareIndex) return; // can't compare to self
     st.setCompareIndex2(index);

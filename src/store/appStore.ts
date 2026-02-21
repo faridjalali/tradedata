@@ -16,7 +16,7 @@ export interface AppState {
   divergenceMounted: boolean;
   appInitialized: boolean;
   divergenceDashboardScrollY: number;
-  tickerOriginView: 'divergence';
+  tickerOriginView: 'divergence' | 'breadth';
   tickerListContext: TickerListContext;
   selectedTicker: string | null;
 }
@@ -29,7 +29,7 @@ export interface AppActions {
   setAppInitialized: () => void;
   saveDivergenceScroll: () => void;
   restoreDivergenceScroll: () => void;
-  setTickerOriginView: (view: 'divergence') => void;
+  setTickerOriginView: (view: 'divergence' | 'breadth') => void;
   setTickerListContext: (ctx: TickerListContext) => void;
   setSelectedTicker: (ticker: string | null) => void;
 }
