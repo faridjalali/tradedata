@@ -1647,6 +1647,23 @@ button:hover {
   flex-wrap: wrap;
 }
 
+/* Breadth page: keep all control rows left-aligned */
+.breadth-page .single-page-header {
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.breadth-page .single-page-controls {
+  width: 100%;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.breadth-page .feed-controls-group {
+  justify-content: flex-start;
+}
+.breadth-page .breadth-compare-controls-row {
+  justify-content: flex-start;
+}
+
 /* Breadth top controls: keep left aligned and stacked on narrower widths */
 @media (max-width: 1100px) {
   .breadth-primary-controls {

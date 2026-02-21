@@ -16,7 +16,7 @@ export function BreadthView({
   onSelectBarsMA,
 }: BreadthViewProps) {
   return (
-    <div class="single-page-container">
+    <div class="single-page-container breadth-page">
       <div class="single-page-header">
         <div class="single-page-controls breadth-primary-controls">
           <div id="breadth-tf-btns" class="feed-controls-group">
