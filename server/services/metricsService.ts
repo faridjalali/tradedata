@@ -149,6 +149,7 @@ export const runMetricsByType: Record<string, RunMetricsInternal | null> = {
 };
 
 export const runMetricsHistory: RunMetricsSummary[] = [];
+let runHistoryHydrationPromise: Promise<void> | null = null;
 
 export function clampTimingSample(valueMs: number | undefined | null) {
   const numeric = Number(valueMs);
@@ -344,7 +345,89 @@ export function persistRunSnapshotToDb(snapshot: RunMetricsSummary | null) {
     });
 }
 
+function normalizePersistedRunSnapshot(raw: unknown): RunMetricsSummary | null {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      return normalizePersistedRunSnapshot(JSON.parse(trimmed));
+    } catch {
+      return null;
+    }
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Record<string, unknown>;
+  const runId = String(candidate.runId ?? candidate.run_id ?? '').trim();
+  if (!runId) return null;
+  const tickers =
+    candidate.tickers && typeof candidate.tickers === 'object' ? (candidate.tickers as Record<string, unknown>) : {};
+  const api = candidate.api && typeof candidate.api === 'object' ? (candidate.api as Record<string, unknown>) : {};
+  const dbMetrics = candidate.db && typeof candidate.db === 'object' ? (candidate.db as Record<string, unknown>) : {};
+  const stalls =
+    candidate.stalls && typeof candidate.stalls === 'object' ? (candidate.stalls as Record<string, unknown>) : {};
+  const toNumber = (value: unknown) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+  const toTextArray = (value: unknown) =>
+    Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter((item) => Boolean(item)) : [];
+  const toIsoOrNull = (value: unknown) => {
+    const text = String(value || '').trim();
+    return text || null;
+  };
+  const meta =
+    candidate.meta && typeof candidate.meta === 'object' && !Array.isArray(candidate.meta)
+      ? (candidate.meta as Record<string, unknown>)
+      : {};
+
+  return {
+    runId,
+    runType: String(candidate.runType ?? candidate.run_type ?? 'unknown').trim() || 'unknown',
+    status: String(candidate.status || 'unknown').trim() || 'unknown',
+    phase: String(candidate.phase || '').trim(),
+    startedAt: toIsoOrNull(candidate.startedAt ?? candidate.started_at),
+    finishedAt: toIsoOrNull(candidate.finishedAt ?? candidate.finished_at),
+    updatedAt: toIsoOrNull(candidate.updatedAt ?? candidate.updated_at),
+    durationSeconds: toNumber(candidate.durationSeconds ?? candidate.duration_seconds),
+    tickers: {
+      total: toNumber(tickers.total),
+      processed: toNumber(tickers.processed),
+      errors: toNumber(tickers.errors),
+      processedPerSecond: toNumber(tickers.processedPerSecond ?? tickers.processed_per_second),
+    },
+    api: {
+      calls: toNumber(api.calls),
+      successes: toNumber(api.successes),
+      failures: toNumber(api.failures),
+      rateLimited: toNumber(api.rateLimited ?? api.rate_limited),
+      timedOut: toNumber(api.timedOut ?? api.timed_out),
+      aborted: toNumber(api.aborted),
+      subscriptionRestricted: toNumber(api.subscriptionRestricted ?? api.subscription_restricted),
+      avgLatencyMs: toNumber(api.avgLatencyMs ?? api.avg_latency_ms),
+      p50LatencyMs: toNumber(api.p50LatencyMs ?? api.p50_latency_ms),
+      p95LatencyMs: toNumber(api.p95LatencyMs ?? api.p95_latency_ms),
+    },
+    db: {
+      flushCount: toNumber(dbMetrics.flushCount ?? dbMetrics.flush_count),
+      dailyRows: toNumber(dbMetrics.dailyRows ?? dbMetrics.daily_rows),
+      summaryRows: toNumber(dbMetrics.summaryRows ?? dbMetrics.summary_rows),
+      signalRows: toNumber(dbMetrics.signalRows ?? dbMetrics.signal_rows),
+      neutralRows: toNumber(dbMetrics.neutralRows ?? dbMetrics.neutral_rows),
+      avgFlushMs: toNumber(dbMetrics.avgFlushMs ?? dbMetrics.avg_flush_ms),
+      maxFlushMs: toNumber(dbMetrics.maxFlushMs ?? dbMetrics.max_flush_ms),
+    },
+    stalls: {
+      retries: toNumber(stalls.retries),
+      watchdogAborts: toNumber(stalls.watchdogAborts ?? stalls.watchdog_aborts),
+    },
+    failedTickers: toTextArray(candidate.failedTickers ?? candidate.failed_tickers),
+    retryRecovered: toTextArray(candidate.retryRecovered ?? candidate.retry_recovered),
+    meta,
+  };
+}
+
 export async function loadRunHistoryFromDb() {
+  if (!db) return [] as RunMetricsSummary[];
   try {
     const rows = await db
       .selectFrom('run_metrics_history')
@@ -352,10 +435,32 @@ export async function loadRunHistoryFromDb() {
       .orderBy('created_at', 'desc')
       .limit(RUN_METRICS_DB_LIMIT)
       .execute();
-    return rows.map((r) => r.snapshot);
+    return rows
+      .map((r) => normalizePersistedRunSnapshot(r.snapshot))
+      .filter((entry): entry is RunMetricsSummary => Boolean(entry));
   } catch (err: unknown) {
     console.error('Failed to load run history from DB:', err instanceof Error ? err.message : String(err));
-    return [];
+    return [] as RunMetricsSummary[];
+  }
+}
+
+export async function hydrateRunMetricsHistoryIfEmpty(): Promise<void> {
+  if (runMetricsHistory.length > 0) return;
+  if (runHistoryHydrationPromise) {
+    await runHistoryHydrationPromise;
+    return;
+  }
+  runHistoryHydrationPromise = (async () => {
+    const persisted = await loadRunHistoryFromDb();
+    if (runMetricsHistory.length > 0) return;
+    if (persisted.length > 0) {
+      runMetricsHistory.push(...persisted.slice(0, RUN_METRICS_HISTORY_LIMIT));
+    }
+  })();
+  try {
+    await runHistoryHydrationPromise;
+  } finally {
+    runHistoryHydrationPromise = null;
   }
 }
 

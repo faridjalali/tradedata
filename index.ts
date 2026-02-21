@@ -57,6 +57,7 @@ import {
   chartDebugMetrics,
   httpDebugMetrics,
   recordChartRequestTiming,
+  hydrateRunMetricsHistoryIfEmpty,
   getLogsRunMetricsPayload,
 } from './server/services/metricsService.js';
 import {
@@ -657,6 +658,7 @@ registerDivergenceRoutes({
 });
 
 app.get('/api/logs/run-metrics', async (request, reply) => {
+  await hydrateRunMetricsHistoryIfEmpty();
   return reply.send(getLogsRunMetricsPayload());
 });
 
@@ -1085,6 +1087,7 @@ app.post('/api/admin/operations/divergence-symbols/add', async (request, reply) 
 });
 
 app.get('/api/admin/operations/diagnostics', async (_request, reply) => {
+  await hydrateRunMetricsHistoryIfEmpty();
   const ready = await getReadyPayload();
   const metricsPayload = getLogsRunMetricsPayload();
   return reply.send({
