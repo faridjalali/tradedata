@@ -143,11 +143,11 @@ export class RSIChart {
         pinch: true,
         axisPressedMouseMove: {
           time: true,
-          price: false,
+          price: true,
         },
         axisDoubleClickReset: {
           time: true,
-          price: false,
+          price: true,
         },
       },
     });

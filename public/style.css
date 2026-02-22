@@ -2235,6 +2235,14 @@ body.site-locked {
   -webkit-tap-highlight-color: transparent;
 }
 
+@media (hover: none) and (pointer: coarse) {
+  /* Keep page vertical scrolling for plot area, but allow chart Y-axis gestures on the right scale strip. */
+  .chart-container .tv-lightweight-charts > table tr > td:last-child,
+  .chart-container .tv-lightweight-charts > table tr > td:last-child * {
+    touch-action: none;
+  }
+}
+
 #vd-chart-container { height: 200px; }
 #price-chart-container { height: 400px; }
 #rsi-chart-container { height: 200px; overflow: visible; padding-bottom: var(--sp-md); }

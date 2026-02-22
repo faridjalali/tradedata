@@ -288,6 +288,11 @@ export function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
   return overlay;
 }
 
+export function setVDZoneOverlayInteractionHidden(hidden: boolean): void {
+  if (!vdZoneOverlayEl) return;
+  vdZoneOverlayEl.style.visibility = hidden ? 'hidden' : 'visible';
+}
+
 function getDateToBarTimeLookup(currentBars: CandleBar[]): Map<string, number> {
   if (vdZoneDateLookupSourceBars === currentBars) {
     return vdZoneDateLookupMap;

@@ -28,6 +28,7 @@ import {
   ensureBullFlagButton,
   ensureVDFRefreshButton,
   ensureVDZoneOverlay,
+  setVDZoneOverlayInteractionHidden,
   renderVDFRefreshIcon,
   runVDFDetection,
   refreshVDZones,
@@ -193,6 +194,8 @@ let rangeSyncInteractionActiveUntilMs = 0;
 let crosshairBadgeRefreshRafId: number | null = null;
 let hasPendingCrosshairBadgeUpdate = false;
 let pendingCrosshairBadgeTime: string | number | null = null;
+let vdZoneOverlayHiddenForPan = false;
+let vdZoneOverlayRevealAfterRefresh = false;
 const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
 const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
 const TOUCH_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 150;
@@ -696,6 +699,24 @@ function isRangeSyncInteractionActive(nowMs = performance.now()): boolean {
   return nowMs < rangeSyncInteractionActiveUntilMs;
 }
 
+function hideVDZoneOverlayForPan(): void {
+  if (vdZoneOverlayHiddenForPan) return;
+  vdZoneOverlayHiddenForPan = true;
+  vdZoneOverlayRevealAfterRefresh = false;
+  setVDZoneOverlayInteractionHidden(true);
+}
+
+function revealVDZoneOverlayAfterPanRefresh(): void {
+  if (!vdZoneOverlayHiddenForPan) return;
+  vdZoneOverlayRevealAfterRefresh = true;
+}
+
+function resetVDZoneOverlayPanVisibility(): void {
+  vdZoneOverlayHiddenForPan = false;
+  vdZoneOverlayRevealAfterRefresh = false;
+  setVDZoneOverlayInteractionHidden(false);
+}
+
 function queueChartLayoutRefreshFrame(): void {
   if (chartLayoutRefreshRafId !== null) return;
   chartLayoutRefreshRafId = requestAnimationFrame(() => {
@@ -717,6 +738,12 @@ function queueChartLayoutRefreshFrame(): void {
     if (shouldRefreshVDZones) {
       refreshVDZones();
       lastVDZoneRefreshAtMs = now;
+    }
+
+    if (vdZoneOverlayRevealAfterRefresh && !touchPanInteractionActive && !pointerPanInteractionActive) {
+      vdZoneOverlayRevealAfterRefresh = false;
+      vdZoneOverlayHiddenForPan = false;
+      setVDZoneOverlayInteractionHidden(false);
     }
   });
 }
@@ -759,24 +786,30 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
   const activateTouchPan = (): void => {
     touchPanInteractionActive = true;
+    hideVDZoneOverlayForPan();
   };
 
   const deactivateTouchPan = (event: TouchEvent): void => {
     const remainingTouches = Number(event.touches?.length || 0);
     if (remainingTouches > 0) return;
     touchPanInteractionActive = false;
+    revealVDZoneOverlayAfterPanRefresh();
     scheduleChartLayoutRefresh(true);
   };
 
   const activatePointerPan = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
+    const target = event.target as HTMLElement | null;
+    if (!target?.closest('.chart-container')) return;
     pointerPanInteractionActive = true;
+    hideVDZoneOverlayForPan();
   };
 
   const deactivatePointerPan = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
     if (!pointerPanInteractionActive) return;
     pointerPanInteractionActive = false;
+    revealVDZoneOverlayAfterPanRefresh();
     scheduleChartLayoutRefresh(true);
   };
 
@@ -2040,11 +2073,11 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       pinch: true,
       axisPressedMouseMove: {
         time: true,
-        price: false,
+        price: true,
       },
       axisDoubleClickReset: {
         time: true,
-        price: false,
+        price: true,
       },
     },
     rightPriceScale: {
@@ -2146,11 +2179,11 @@ function createVolumeDeltaChart(container: HTMLElement) {
       pinch: true,
       axisPressedMouseMove: {
         time: true,
-        price: false,
+        price: true,
       },
       axisDoubleClickReset: {
         time: true,
-        price: false,
+        price: true,
       },
     },
     rightPriceScale: {
@@ -2838,6 +2871,7 @@ export function cancelChartLoading(): void {
   touchPanInteractionActive = false;
   pointerPanInteractionActive = false;
   rangeSyncInteractionActiveUntilMs = 0;
+  resetVDZoneOverlayPanVisibility();
   chartLiveRefreshInFlight = false;
   chartActivelyLoading = false;
   latestRenderRequestId++;
@@ -2868,6 +2902,7 @@ export async function renderCustomChart(
   }
   hasPendingCrosshairBadgeUpdate = false;
   pendingCrosshairBadgeTime = null;
+  resetVDZoneOverlayPanVisibility();
   fetchTickerInfo(ticker).catch(() => {});
   const cacheKey = buildChartDataCacheKey(ticker, interval);
 
