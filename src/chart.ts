@@ -3001,7 +3001,14 @@ export async function renderCustomChart(
   const requestId = ++latestRenderRequestId;
   const contextChanged =
     typeof previousTicker === 'string' && (previousTicker !== ticker || previousInterval !== interval);
+  const tickerChanged = typeof previousTicker === 'string' && previousTicker !== ticker;
   const shouldApplyWeeklyDefaultRange = interval === '1week' && (typeof previousTicker !== 'string' || contextChanged);
+  let didResetYAxesForTickerChange = false;
+  const resetYAxesIfTickerChanged = (): void => {
+    if (!tickerChanged || didResetYAxesForTickerChange) return;
+    resetAllPaneYAxesToDefaultView();
+    didResetYAxesForTickerChange = true;
+  };
   currentChartInterval = interval;
   currentChartTicker = ticker;
   if (crosshairBadgeRefreshRafId !== null) {
@@ -3106,6 +3113,7 @@ export async function renderCustomChart(
       rsiContainer as HTMLElement,
       volumeDeltaContainer as HTMLElement,
     );
+    resetYAxesIfTickerChanged();
     recordChartRenderPerf(interval, performance.now() - renderStartedAt);
     notifyChartDataReady(ticker, interval);
     if (shouldApplyWeeklyDefaultRange) {
@@ -3159,6 +3167,7 @@ export async function renderCustomChart(
         rsiContainer as HTMLElement,
         volumeDeltaContainer as HTMLElement,
       );
+      resetYAxesIfTickerChanged();
       recordChartRenderPerf(interval, performance.now() - renderStartedAt);
       notifyChartDataReady(ticker, interval);
       if (shouldApplyWeeklyDefaultRange) {
@@ -3279,6 +3288,23 @@ function syncChartsToPriceRange(): void {
   } catch {
     // Ignore transient range sync errors during live updates.
   }
+}
+
+function resetChartYAxisToDefault(chart: any): void {
+  if (!chart) return;
+  try {
+    chart.priceScale?.('right')?.applyOptions?.({ autoScale: true });
+  } catch {
+    // Ignore transient chart lifecycle issues during render.
+  }
+}
+
+function resetAllPaneYAxesToDefaultView(): void {
+  resetChartYAxisToDefault(priceChart);
+  resetChartYAxisToDefault(volumeDeltaRsiChart);
+  resetChartYAxisToDefault(rsiChart?.getChart?.());
+  resetChartYAxisToDefault(volumeDeltaChart);
+  scheduleChartLayoutRefresh();
 }
 
 function applyRightMargin(): void {
