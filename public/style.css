@@ -2236,10 +2236,22 @@ body.site-locked {
 }
 
 @media (hover: none) and (pointer: coarse) {
-  /* Keep page vertical scrolling for plot area, but allow chart Y-axis gestures on the right scale strip. */
+  /* Plot area (non-axis cells): preserve vertical page scroll. */
+  .chart-container .tv-lightweight-charts table tr:not(:last-child) td:not(:last-child),
+  .chart-container .tv-lightweight-charts table tr:not(:last-child) td:not(:last-child) * {
+    touch-action: pan-y !important;
+  }
+
+  /* Right Y-axis cells on every pane: allow chart touch handling (price-scale drag). */
   .chart-container .tv-lightweight-charts table td:last-child,
   .chart-container .tv-lightweight-charts table td:last-child * {
-    touch-action: none;
+    touch-action: none !important;
+  }
+
+  /* Bottom X-axis row: allow chart touch handling (time-scale drag/zoom). */
+  .chart-container .tv-lightweight-charts table tr:last-child td,
+  .chart-container .tv-lightweight-charts table tr:last-child td * {
+    touch-action: none !important;
   }
 }
 

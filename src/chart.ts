@@ -895,6 +895,32 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   document.addEventListener('pointerup', deactivatePointerPan, { passive: true });
 }
 
+function applyTouchAxisGestureOverrides(root: ParentNode | null = document): void {
+  if (!isMobileTouch || !root) return;
+  const chartRoots = Array.from(root.querySelectorAll<HTMLElement>('.chart-container .tv-lightweight-charts'));
+  for (const chartRoot of chartRoots) {
+    const table = chartRoot.querySelector('table');
+    if (!table) continue;
+
+    // Plot cells (non-axis): keep vertical page scroll.
+    table
+      .querySelectorAll('tr:not(:last-child) td:not(:last-child), tr:not(:last-child) td:not(:last-child) *')
+      .forEach((el) => {
+        if (el instanceof HTMLElement) el.style.touchAction = 'pan-y';
+      });
+
+    // Right Y-axis cells: allow chart to own the gesture.
+    table.querySelectorAll('td:last-child, td:last-child *').forEach((el) => {
+      if (el instanceof HTMLElement) el.style.touchAction = 'none';
+    });
+
+    // Bottom X-axis row: allow chart to own the gesture.
+    table.querySelectorAll('tr:last-child td, tr:last-child td *').forEach((el) => {
+      if (el instanceof HTMLElement) el.style.touchAction = 'none';
+    });
+  }
+}
+
 function applyPriceGridOptions(): void {
   if (!priceChart) return;
   priceChart.applyOptions({
@@ -3061,6 +3087,7 @@ export async function renderCustomChart(
     volumeDeltaHistogramSeries = histogramSeries;
     volumeDeltaTimelineSeries = timelineSeries;
   }
+  applyTouchAxisGestureOverrides(chartContent);
 
   applyPersistedPaneHeights(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
   ensureResizeObserver(chartContainer, volumeDeltaRsiContainer, rsiContainer, volumeDeltaContainer);
