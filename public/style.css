@@ -2244,22 +2244,16 @@ body.site-locked {
     touch-action: pan-y !important;
   }
 
-  /* Price pane Y-axis: allow chart touch handling (price-scale drag). */
-  #price-chart-container .tv-lightweight-charts table td:last-child,
-  #price-chart-container .tv-lightweight-charts table td:last-child * {
-    touch-action: none !important;
-  }
-
-  /* Non-price pane Y-axes: keep vertical page scroll (no y-scale touch adjust). */
-  .chart-container:not(#price-chart-container) .tv-lightweight-charts table td:last-child,
-  .chart-container:not(#price-chart-container) .tv-lightweight-charts table td:last-child * {
+  /* Y-axis cells on all panes: preserve vertical page scroll. */
+  .chart-container .tv-lightweight-charts table td:last-child,
+  .chart-container .tv-lightweight-charts table td:last-child * {
     touch-action: pan-y !important;
   }
 
-  /* Bottom X-axis row: allow chart touch handling (time-scale drag/zoom). */
+  /* Bottom X-axis row: preserve vertical page scroll. */
   .chart-container .tv-lightweight-charts table tr:last-child td,
   .chart-container .tv-lightweight-charts table tr:last-child td * {
-    touch-action: none !important;
+    touch-action: pan-y !important;
   }
 }
 
