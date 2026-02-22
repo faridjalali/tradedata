@@ -694,6 +694,9 @@ function refreshMonthGridLines(): void {
 
 function markRangeSyncInteraction(): void {
   rangeSyncInteractionActiveUntilMs = performance.now() + RANGE_SYNC_INTERACTION_WINDOW_MS;
+  if (touchPanInteractionActive || pointerPanInteractionActive) {
+    hideVDZoneOverlayForPan();
+  }
 }
 
 function isRangeSyncInteractionActive(nowMs = performance.now()): boolean {
@@ -787,7 +790,6 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
   const activateTouchPan = (): void => {
     touchPanInteractionActive = true;
-    hideVDZoneOverlayForPan();
   };
 
   const deactivateTouchPan = (event: TouchEvent): void => {
@@ -803,7 +805,6 @@ function ensureTouchPanTracking(container: HTMLElement): void {
     const target = event.target as HTMLElement | null;
     if (!target?.closest('.chart-container')) return;
     pointerPanInteractionActive = true;
-    hideVDZoneOverlayForPan();
   };
 
   const deactivatePointerPan = (event: PointerEvent): void => {

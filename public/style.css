@@ -2237,8 +2237,8 @@ body.site-locked {
 
 @media (hover: none) and (pointer: coarse) {
   /* Keep page vertical scrolling for plot area, but allow chart Y-axis gestures on the right scale strip. */
-  .chart-container .tv-lightweight-charts > table tr > td:last-child,
-  .chart-container .tv-lightweight-charts > table tr > td:last-child * {
+  .chart-container .tv-lightweight-charts table td:last-child,
+  .chart-container .tv-lightweight-charts table td:last-child * {
     touch-action: none;
   }
 }
