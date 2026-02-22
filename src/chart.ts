@@ -1942,33 +1942,32 @@ function positionVolumeDeltaCumulativeBadges(
   cumulativeEl: HTMLElement,
   cumulativePriceChangeEl: HTMLElement,
 ): void {
-  const cumulativeWidth = Math.ceil(cumulativeEl.getBoundingClientRect().width || cumulativeEl.offsetWidth || 0);
   const priceChangeWidth = Math.ceil(
     cumulativePriceChangeEl.getBoundingClientRect().width || cumulativePriceChangeEl.offsetWidth || 0,
   );
-  const rightInset = SCALE_MIN_WIDTH_PX + 8;
   const divergenceSummaryEl = container.querySelector('.volume-delta-divergence-summary') as HTMLElement | null;
+  const defaultRightInset = SCALE_MIN_WIDTH_PX + 8;
+  const anchorRight =
+    divergenceSummaryEl && Number.isFinite(Number.parseFloat(divergenceSummaryEl.style.right))
+      ? Number.parseFloat(divergenceSummaryEl.style.right)
+      : defaultRightInset;
   const summaryTop = divergenceSummaryEl ? divergenceSummaryEl.offsetTop : PANE_TOOL_BUTTON_TOP_PX;
   const summaryHeight =
     divergenceSummaryEl && divergenceSummaryEl.style.display !== 'none'
       ? Math.ceil(divergenceSummaryEl.getBoundingClientRect().height || divergenceSummaryEl.offsetHeight || 0)
       : PANE_TOOL_BUTTON_SIZE_PX;
   const top = summaryTop + Math.max(PANE_TOOL_BUTTON_SIZE_PX, summaryHeight) + PANE_TOOL_BUTTON_GAP_PX;
-  const minLeft = 8;
-  const priceChangeLeft = Math.max(
-    minLeft + cumulativeWidth + TOP_PANE_BADGE_GAP_PX,
-    container.clientWidth - rightInset - priceChangeWidth,
-  );
-  const cumulativeLeft = Math.max(minLeft, priceChangeLeft - TOP_PANE_BADGE_GAP_PX - cumulativeWidth);
+  const priceChangeRight = Math.max(8, Math.round(anchorRight));
+  const cumulativeRight = Math.max(8, Math.round(anchorRight + priceChangeWidth + TOP_PANE_BADGE_GAP_PX));
 
-  cumulativeEl.style.left = `${cumulativeLeft}px`;
-  cumulativeEl.style.right = 'auto';
+  cumulativeEl.style.left = 'auto';
+  cumulativeEl.style.right = `${cumulativeRight}px`;
   cumulativeEl.style.top = `${top}px`;
-  cumulativePriceChangeEl.style.left = `${priceChangeLeft}px`;
-  cumulativePriceChangeEl.style.right = 'auto';
+  cumulativePriceChangeEl.style.left = 'auto';
+  cumulativePriceChangeEl.style.right = `${priceChangeRight}px`;
   cumulativePriceChangeEl.style.top = `${top}px`;
-  cumulativeEl.style.maxWidth = `calc(100% - ${rightInset + priceChangeWidth + TOP_PANE_BADGE_GAP_PX + 12}px)`;
-  cumulativePriceChangeEl.style.maxWidth = `calc(100% - ${rightInset + 8}px)`;
+  cumulativeEl.style.maxWidth = `calc(100% - ${cumulativeRight + 8}px)`;
+  cumulativePriceChangeEl.style.maxWidth = `calc(100% - ${priceChangeRight + 8}px)`;
 }
 
 function formatSignedCompactVolumeDelta(value: number): string {
