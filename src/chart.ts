@@ -809,18 +809,22 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   if (touchPanTrackingInstalled) return;
   touchPanTrackingInstalled = true;
 
-  const shouldCapturePricePaneYAxisTouch = (event: TouchEvent): boolean => {
-    const touch = event.touches?.[0] || event.changedTouches?.[0];
-    if (!touch) return false;
+  const isPointInPricePaneYAxis = (clientX: number, clientY: number): boolean => {
     const pricePane = pricePaneContainerEl || (document.getElementById('price-chart-container') as HTMLElement | null);
     if (!pricePane) return false;
     const rect = pricePane.getBoundingClientRect();
     if (!rect.width || !rect.height) return false;
-    const x = Number(touch.clientX);
-    const y = Number(touch.clientY);
+    const x = Number(clientX);
+    const y = Number(clientY);
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return false;
-    const yAxisStripWidth = SCALE_MIN_WIDTH_PX + 14;
+    const yAxisStripWidth = SCALE_MIN_WIDTH_PX + 24;
     return x >= rect.right - yAxisStripWidth;
+  };
+
+  const shouldCapturePricePaneYAxisTouch = (event: TouchEvent): boolean => {
+    const touch = event.touches?.[0] || event.changedTouches?.[0];
+    if (!touch) return false;
+    return isPointInPricePaneYAxis(Number(touch.clientX), Number(touch.clientY));
   };
 
   const activateTouchPan = (event: TouchEvent): void => {
@@ -929,16 +933,39 @@ function ensureTouchPanTracking(container: HTMLElement): void {
     { passive: true },
   );
   container.addEventListener('pointerdown', activatePointerPan, { passive: true });
+  container.addEventListener(
+    'pointerdown',
+    (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      if (isPointInPricePaneYAxis(Number(event.clientX), Number(event.clientY))) {
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
+  );
+  container.addEventListener(
+    'pointermove',
+    (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      if (isPointInPricePaneYAxis(Number(event.clientX), Number(event.clientY))) {
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
+  );
   container.addEventListener('pointercancel', deactivatePointerPan, { passive: true });
   document.addEventListener('pointerup', deactivatePointerPan, { passive: true });
 }
 
 function applyTouchAxisGestureOverrides(root: ParentNode | null = document): void {
   if (!isMobileTouch || !root) return;
-  const chartRoots = Array.from(root.querySelectorAll<HTMLElement>('.chart-container .tv-lightweight-charts'));
-  for (const chartRoot of chartRoots) {
-    const paneContainer = chartRoot.closest('.chart-container');
-    const allowYAxisTouchScale = paneContainer?.id === 'price-chart-container';
+  const paneIds = ['price-chart-container', 'vd-rsi-chart-container', 'rsi-chart-container', 'vd-chart-container'];
+  for (const paneId of paneIds) {
+    const paneContainer = root.querySelector<HTMLElement>(`#${paneId}`);
+    if (!paneContainer) continue;
+    const chartRoot = paneContainer.querySelector<HTMLElement>('.tv-lightweight-charts');
+    if (!chartRoot) continue;
+    const allowYAxisTouchScale = paneId === 'price-chart-container';
     const table = chartRoot.querySelector('table');
     if (!table) continue;
 
