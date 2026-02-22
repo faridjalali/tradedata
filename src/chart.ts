@@ -209,8 +209,6 @@ const RANGE_SYNC_LAYOUT_REFRESH_MIN_INTERVAL_MS = 40;
 const RANGE_SYNC_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 110;
 const TOUCH_CROSSHAIR_HOLD_MS = 140;
 const TOUCH_CROSSHAIR_HOLD_MOVE_TOLERANCE_PX = 8;
-const CUSTOM_CHART_PANE_SELECTOR =
-  '#price-chart-container, #vd-rsi-chart-container, #rsi-chart-container, #vd-chart-container';
 const chartPrefetchInFlight = new Map<string, Promise<void>>();
 const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
 
@@ -705,7 +703,7 @@ function refreshMonthGridLines(): void {
 function getChartGestureTargetRole(target: EventTarget | null): ChartGestureTargetRole {
   const el = target instanceof HTMLElement ? target : null;
   if (!el) return 'unknown';
-  if (!el.closest(CUSTOM_CHART_PANE_SELECTOR)) return 'unknown';
+  if (!el.closest('.chart-container')) return 'unknown';
   if (el.closest('.tv-lightweight-charts table td:last-child')) return 'y-scale';
   if (el.closest('.tv-lightweight-charts table tr:last-child')) return 'x-scale';
   return 'plot';
@@ -847,7 +845,7 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   const activatePointerPan = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
     const target = event.target as HTMLElement | null;
-    if (!target?.closest(CUSTOM_CHART_PANE_SELECTOR)) return;
+    if (!target?.closest('.chart-container')) return;
     pointerPanInteractionActive = true;
     pointerGestureTargetRole = getChartGestureTargetRole(event.target);
   };
@@ -866,22 +864,6 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
   container.addEventListener('touchstart', activateTouchPan, { passive: true });
   container.addEventListener(
-    'touchstart',
-    (event: TouchEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      const isPricePaneYAxis =
-        Boolean(target.closest('#price-chart-container')) &&
-        Boolean(target.closest('.tv-lightweight-charts table td:last-child')) &&
-        !target.closest('.tv-lightweight-charts table tr:last-child');
-      if (isPricePaneYAxis) {
-        // Safari can ignore nested touch-action on table cells; block page scroll explicitly.
-        event.preventDefault();
-      }
-    },
-    { passive: false, capture: true },
-  );
-  container.addEventListener(
     'touchmove',
     (event: TouchEvent) => {
       touchPanInteractionActive = true;
@@ -897,21 +879,6 @@ function ensureTouchPanTracking(container: HTMLElement): void {
       }
     },
     { passive: true },
-  );
-  container.addEventListener(
-    'touchmove',
-    (event: TouchEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      const isPricePaneYAxis =
-        Boolean(target.closest('#price-chart-container')) &&
-        Boolean(target.closest('.tv-lightweight-charts table td:last-child')) &&
-        !target.closest('.tv-lightweight-charts table tr:last-child');
-      if (isPricePaneYAxis) {
-        event.preventDefault();
-      }
-    },
-    { passive: false, capture: true },
   );
   container.addEventListener('touchend', deactivateTouchPan, { passive: true });
   container.addEventListener(
@@ -929,11 +896,10 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
 function applyTouchAxisGestureOverrides(root: ParentNode | null = document): void {
   if (!isMobileTouch || !root) return;
-  const paneContainers = Array.from(root.querySelectorAll<HTMLElement>(CUSTOM_CHART_PANE_SELECTOR));
-  for (const paneContainer of paneContainers) {
-    const chartRoot = paneContainer.querySelector<HTMLElement>('.tv-lightweight-charts');
-    if (!chartRoot) continue;
-    const allowYAxisTouchScale = paneContainer.id === 'price-chart-container';
+  const chartRoots = Array.from(root.querySelectorAll<HTMLElement>('.chart-container .tv-lightweight-charts'));
+  for (const chartRoot of chartRoots) {
+    const paneContainer = chartRoot.closest('.chart-container');
+    const allowYAxisTouchScale = paneContainer?.id === 'price-chart-container';
     const table = chartRoot.querySelector('table');
     if (!table) continue;
 
