@@ -2227,8 +2227,12 @@ body.site-locked {
   border-radius: 6px;
   overflow: hidden;
   touch-action: pan-y;
+  overscroll-behavior: contain;
+  contain: paint;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
+  transform: translateZ(0);
+  -webkit-tap-highlight-color: transparent;
 }
 
 #vd-chart-container { height: 200px; }

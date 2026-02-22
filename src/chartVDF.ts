@@ -114,6 +114,8 @@ let bullFlagButtonEl: HTMLButtonElement | null = null;
 let vdfLoadingForTicker: string | null = null;
 const vdfResultCache = new Map<string, VDFCacheEntry>();
 let vdZoneOverlayEl: HTMLDivElement | null = null;
+let vdZoneDateLookupSourceBars: CandleBar[] | null = null;
+let vdZoneDateLookupMap = new Map<string, number>();
 
 // ---------------------------------------------------------------------------
 // Toolbar / button creation
@@ -286,6 +288,29 @@ export function ensureVDZoneOverlay(container: HTMLElement): HTMLDivElement {
   return overlay;
 }
 
+function getDateToBarTimeLookup(currentBars: CandleBar[]): Map<string, number> {
+  if (vdZoneDateLookupSourceBars === currentBars) {
+    return vdZoneDateLookupMap;
+  }
+
+  const nextLookup = new Map<string, number>();
+  for (const bar of currentBars) {
+    const t = unixSecondsFromTimeValue(bar?.time);
+    if (t === null) continue;
+    const dateKey = new Date(t * 1000).toLocaleDateString('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    if (!nextLookup.has(dateKey)) nextLookup.set(dateKey, t);
+  }
+
+  vdZoneDateLookupSourceBars = currentBars;
+  vdZoneDateLookupMap = nextLookup;
+  return vdZoneDateLookupMap;
+}
+
 export function renderVDZones(entry?: VDFCacheEntry | null): void {
   if (!vdZoneOverlayEl) return;
   vdZoneOverlayEl.innerHTML = '';
@@ -296,20 +321,9 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
   const overlayHeight = vdZoneOverlayEl.clientHeight || vdZoneOverlayEl.offsetHeight;
   if (!Number.isFinite(overlayWidth) || overlayWidth <= 0) return;
 
-  // Build lookup from YYYY-MM-DD (ET) → actual bar time value.
   const currentBars = getCurrentBars();
-  const dateToBarTime = new Map<string, number>();
-  for (const bar of currentBars) {
-    const t = unixSecondsFromTimeValue(bar?.time);
-    if (t === null) continue;
-    const dateKey = new Date(t * 1000).toLocaleDateString('en-CA', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    if (!dateToBarTime.has(dateKey)) dateToBarTime.set(dateKey, t);
-  }
+  const dateToBarTime = getDateToBarTimeLookup(currentBars);
+  const fragment = document.createDocumentFragment();
 
   const dateToX = (dateStr: string): number | null => {
     const barTime = dateToBarTime.get(dateStr);
@@ -340,7 +354,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       badge.style.fontSize = `${FONT_SIZE_META_PX}px`;
       badge.textContent = (zone.score * 100).toFixed(0);
       rect.appendChild(badge);
-      vdZoneOverlayEl.appendChild(rect);
+      fragment.appendChild(rect);
     }
   }
 
@@ -355,7 +369,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
 
       const rect = document.createElement('div');
       rect.style.cssText = `position:absolute;left:${Math.round(left)}px;top:0;width:${Math.max(Math.round(width), 2)}px;height:100%;background:rgba(239,83,80,0.06);border-left:1px solid rgba(239,83,80,0.3);border-right:1px solid rgba(239,83,80,0.3);`;
-      vdZoneOverlayEl.appendChild(rect);
+      fragment.appendChild(rect);
     }
   }
 
@@ -383,7 +397,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
         const op = (0.4 + zone.score * 0.5).toFixed(2);
         const band = document.createElement('div');
         band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${accumY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(38,166,154,${op});border-radius:1px;`;
-        vdZoneOverlayEl.appendChild(band);
+        fragment.appendChild(band);
       }
     }
 
@@ -398,7 +412,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
         if (left > overlayWidth || left + width < 0) continue;
         const band = document.createElement('div');
         band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${distY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(239,83,80,0.65);border-radius:1px;`;
-        vdZoneOverlayEl.appendChild(band);
+        fragment.appendChild(band);
       }
     }
 
@@ -416,7 +430,7 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
         const op = Math.min(0.3 + (absPct / 100) * 0.6, 0.9).toFixed(2);
         const band = document.createElement('div');
         band.style.cssText = `position:absolute;left:${Math.round(left)}px;top:${absY}px;width:${Math.max(Math.round(width), 2)}px;height:${BAND_H}px;background:rgba(255,167,38,${op});border-radius:1px;`;
-        vdZoneOverlayEl.appendChild(band);
+        fragment.appendChild(band);
       }
     }
   }
@@ -429,12 +443,12 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       if (xs !== null && xs >= 0 && xs <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
-        vdZoneOverlayEl.appendChild(line);
+        fragment.appendChild(line);
       }
       if (xe !== null && xe >= 0 && xe <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(38,166,154,0.25);`;
-        vdZoneOverlayEl.appendChild(line);
+        fragment.appendChild(line);
       }
     }
   }
@@ -445,15 +459,16 @@ export function renderVDZones(entry?: VDFCacheEntry | null): void {
       if (xs !== null && xs >= 0 && xs <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xs)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
-        vdZoneOverlayEl.appendChild(line);
+        fragment.appendChild(line);
       }
       if (xe !== null && xe >= 0 && xe <= overlayWidth) {
         const line = document.createElement('div');
         line.style.cssText = `position:absolute;left:${Math.round(xe)}px;top:0;width:0;height:100%;border-left:1px dashed rgba(239,83,80,0.2);`;
-        vdZoneOverlayEl.appendChild(line);
+        fragment.appendChild(line);
       }
     }
   }
+  vdZoneOverlayEl.appendChild(fragment);
 }
 
 export function refreshVDZones(): void {

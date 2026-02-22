@@ -182,6 +182,22 @@ let intervalSwitchDebounceTimer: number | null = null;
 let chartLiveRefreshTimer: number | null = null;
 let chartLiveRefreshInFlight = false;
 let chartLayoutRefreshRafId: number | null = null;
+let chartLayoutRefreshTimeoutId: number | null = null;
+let chartLayoutRefreshForcePending = false;
+let lastChartLayoutRefreshAtMs = 0;
+let lastVDZoneRefreshAtMs = 0;
+let touchPanTrackingInstalled = false;
+let touchPanInteractionActive = false;
+let pointerPanInteractionActive = false;
+let rangeSyncInteractionActiveUntilMs = 0;
+let crosshairBadgeRefreshRafId: number | null = null;
+let hasPendingCrosshairBadgeUpdate = false;
+let pendingCrosshairBadgeTime: string | number | null = null;
+const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
+const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
+const TOUCH_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 150;
+const RANGE_SYNC_LAYOUT_REFRESH_MIN_INTERVAL_MS = 40;
+const RANGE_SYNC_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 110;
 const chartPrefetchInFlight = new Map<string, Promise<void>>();
 const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
 
@@ -646,6 +662,7 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
   const width = overlayEl.clientWidth || overlayEl.offsetWidth;
   if (!Number.isFinite(width) || width <= 0) return;
 
+  const fragment = document.createDocumentFragment();
   for (const time of monthBoundaryTimes) {
     const x = chart.timeScale().timeToCoordinate(time);
     if (!Number.isFinite(x)) continue;
@@ -658,8 +675,9 @@ function renderMonthGridLines(chart: any, overlayEl: HTMLDivElement | null): voi
     line.style.left = `${Math.round(x)}px`;
     line.style.width = '1px';
     line.style.background = getMonthGridlineColor();
-    overlayEl.appendChild(line);
+    fragment.appendChild(line);
   }
+  overlayEl.appendChild(fragment);
 }
 
 function refreshMonthGridLines(): void {
@@ -670,13 +688,105 @@ function refreshMonthGridLines(): void {
   refreshVolumeDeltaTrendlineCrossLabels();
 }
 
-function scheduleChartLayoutRefresh(): void {
+function markRangeSyncInteraction(): void {
+  rangeSyncInteractionActiveUntilMs = performance.now() + RANGE_SYNC_INTERACTION_WINDOW_MS;
+}
+
+function isRangeSyncInteractionActive(nowMs = performance.now()): boolean {
+  return nowMs < rangeSyncInteractionActiveUntilMs;
+}
+
+function queueChartLayoutRefreshFrame(): void {
   if (chartLayoutRefreshRafId !== null) return;
   chartLayoutRefreshRafId = requestAnimationFrame(() => {
     chartLayoutRefreshRafId = null;
+    lastChartLayoutRefreshAtMs = performance.now();
+    const forceRefresh = chartLayoutRefreshForcePending;
+    chartLayoutRefreshForcePending = false;
+
     refreshMonthGridLines();
-    refreshVDZones();
+
+    const now = performance.now();
+    const interactionActive =
+      touchPanInteractionActive || pointerPanInteractionActive || isRangeSyncInteractionActive(now);
+    const vdZoneMinIntervalMs = touchPanInteractionActive
+      ? TOUCH_VD_ZONE_REFRESH_MIN_INTERVAL_MS
+      : RANGE_SYNC_VD_ZONE_REFRESH_MIN_INTERVAL_MS;
+    const shouldRefreshVDZones =
+      forceRefresh || !interactionActive || now - lastVDZoneRefreshAtMs >= vdZoneMinIntervalMs;
+    if (shouldRefreshVDZones) {
+      refreshVDZones();
+      lastVDZoneRefreshAtMs = now;
+    }
   });
+}
+
+function scheduleChartLayoutRefresh(force = false): void {
+  if (force) chartLayoutRefreshForcePending = true;
+  if (force && chartLayoutRefreshTimeoutId !== null) {
+    window.clearTimeout(chartLayoutRefreshTimeoutId);
+    chartLayoutRefreshTimeoutId = null;
+  }
+
+  const now = performance.now();
+  const shouldThrottleForInteraction =
+    !force && (touchPanInteractionActive || pointerPanInteractionActive || isRangeSyncInteractionActive(now));
+  if (shouldThrottleForInteraction) {
+    const minIntervalMs = touchPanInteractionActive
+      ? TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS
+      : RANGE_SYNC_LAYOUT_REFRESH_MIN_INTERVAL_MS;
+    const elapsed = now - lastChartLayoutRefreshAtMs;
+    if (elapsed < minIntervalMs) {
+      if (chartLayoutRefreshTimeoutId !== null || chartLayoutRefreshRafId !== null) return;
+      const waitMs = Math.max(0, minIntervalMs - elapsed);
+      chartLayoutRefreshTimeoutId = window.setTimeout(() => {
+        chartLayoutRefreshTimeoutId = null;
+        queueChartLayoutRefreshFrame();
+      }, waitMs);
+      return;
+    }
+  } else if (chartLayoutRefreshTimeoutId !== null) {
+    window.clearTimeout(chartLayoutRefreshTimeoutId);
+    chartLayoutRefreshTimeoutId = null;
+  }
+
+  queueChartLayoutRefreshFrame();
+}
+
+function ensureTouchPanTracking(container: HTMLElement): void {
+  if (touchPanTrackingInstalled) return;
+  touchPanTrackingInstalled = true;
+
+  const activateTouchPan = (): void => {
+    touchPanInteractionActive = true;
+  };
+
+  const deactivateTouchPan = (event: TouchEvent): void => {
+    const remainingTouches = Number(event.touches?.length || 0);
+    if (remainingTouches > 0) return;
+    touchPanInteractionActive = false;
+    scheduleChartLayoutRefresh(true);
+  };
+
+  const activatePointerPan = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') return;
+    pointerPanInteractionActive = true;
+  };
+
+  const deactivatePointerPan = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') return;
+    if (!pointerPanInteractionActive) return;
+    pointerPanInteractionActive = false;
+    scheduleChartLayoutRefresh(true);
+  };
+
+  container.addEventListener('touchstart', activateTouchPan, { passive: true });
+  container.addEventListener('touchmove', activateTouchPan, { passive: true });
+  container.addEventListener('touchend', deactivateTouchPan, { passive: true });
+  container.addEventListener('touchcancel', deactivateTouchPan, { passive: true });
+  container.addEventListener('pointerdown', activatePointerPan, { passive: true });
+  container.addEventListener('pointercancel', deactivatePointerPan, { passive: true });
+  document.addEventListener('pointerup', deactivatePointerPan, { passive: true });
 }
 
 function applyPriceGridOptions(): void {
@@ -1552,6 +1662,7 @@ function ensurePricePaneChangeEl(container: HTMLElement): HTMLDivElement {
   changeEl.style.color = tc().textPrimary;
   changeEl.style.pointerEvents = 'none';
   changeEl.style.display = 'none';
+  changeEl.dataset.changeStateKey = '';
   container.appendChild(changeEl);
   return changeEl;
 }
@@ -1571,8 +1682,10 @@ function rebuildPricePaneChangeMap(bars: CandleBar[]): void {
 function setPricePaneChange(container: HTMLElement, time?: string | number | null): void {
   const changeEl = ensurePricePaneChangeEl(container);
   if (!currentBars.length || priceChangeByTime.size === 0) {
+    if (changeEl.style.display === 'none' && changeEl.textContent === '') return;
     changeEl.style.display = 'none';
     changeEl.textContent = '';
+    changeEl.dataset.changeStateKey = '';
     layoutTopPaneBadges(container);
     return;
   }
@@ -1580,19 +1693,34 @@ function setPricePaneChange(container: HTMLElement, time?: string | number | nul
   const fallbackTime = currentBars[currentBars.length - 1]?.time;
   const targetTime = time !== null && time !== undefined ? time : fallbackTime;
   const entry = getNearestMappedEntryAtOrBefore(targetTime, priceChangeByTime);
+  if (!entry) {
+    if (changeEl.style.display === 'none' && changeEl.textContent === '') return;
+    changeEl.style.display = 'none';
+    changeEl.textContent = '';
+    changeEl.dataset.changeStateKey = '';
+    layoutTopPaneBadges(container);
+    return;
+  }
   const deltaValue = Number(entry?.value);
   if (!Number.isFinite(deltaValue)) {
     // If no previous candle exists for this crosshair candle (e.g., very first bar), hide label.
+    if (changeEl.style.display === 'none' && changeEl.textContent === '') return;
     changeEl.style.display = 'none';
     changeEl.textContent = '';
+    changeEl.dataset.changeStateKey = '';
     layoutTopPaneBadges(container);
     return;
   }
 
   const sign = deltaValue > 0 ? '+' : '';
-  changeEl.textContent = `${sign}${deltaValue.toFixed(2)}%`;
-  changeEl.style.color = deltaValue > 0 ? '#26a69a' : deltaValue < 0 ? '#ef5350' : tc().textPrimary;
+  const nextText = `${sign}${deltaValue.toFixed(2)}%`;
+  const nextColor = deltaValue > 0 ? '#26a69a' : deltaValue < 0 ? '#ef5350' : tc().textPrimary;
+  const nextStateKey = `${timeKey(entry.time)}|${nextText}|${nextColor}`;
+  if (changeEl.style.display === 'inline-flex' && changeEl.dataset.changeStateKey === nextStateKey) return;
+  changeEl.textContent = nextText;
+  changeEl.style.color = nextColor;
   changeEl.style.display = 'inline-flex';
+  changeEl.dataset.changeStateKey = nextStateKey;
   layoutTopPaneBadges(container);
 }
 
@@ -2707,6 +2835,9 @@ export function cancelChartLoading(): void {
     window.clearInterval(chartLiveRefreshTimer);
     chartLiveRefreshTimer = null;
   }
+  touchPanInteractionActive = false;
+  pointerPanInteractionActive = false;
+  rangeSyncInteractionActiveUntilMs = 0;
   chartLiveRefreshInFlight = false;
   chartActivelyLoading = false;
   latestRenderRequestId++;
@@ -2731,6 +2862,12 @@ export async function renderCustomChart(
   const shouldApplyWeeklyDefaultRange = interval === '1week' && (typeof previousTicker !== 'string' || contextChanged);
   currentChartInterval = interval;
   currentChartTicker = ticker;
+  if (crosshairBadgeRefreshRafId !== null) {
+    cancelAnimationFrame(crosshairBadgeRefreshRafId);
+    crosshairBadgeRefreshRafId = null;
+  }
+  hasPendingCrosshairBadgeUpdate = false;
+  pendingCrosshairBadgeTime = null;
   fetchTickerInfo(ticker).catch(() => {});
   const cacheKey = buildChartDataCacheKey(ticker, interval);
 
@@ -2749,6 +2886,10 @@ export async function renderCustomChart(
   if (!chartContent || !(chartContent instanceof HTMLElement)) {
     console.error('Chart content container not found');
     return;
+  }
+  const customChartSection = document.getElementById('custom-chart-container');
+  if (customChartSection && customChartSection instanceof HTMLElement) {
+    ensureTouchPanTracking(customChartSection);
   }
   ensurePaneReorderUI(chartContent);
 
@@ -3077,6 +3218,22 @@ function getNearestMappedEntryAtOrBefore(
   return null;
 }
 
+function flushCrosshairBadgeRefresh(): void {
+  crosshairBadgeRefreshRafId = null;
+  if (!hasPendingCrosshairBadgeUpdate) return;
+  hasPendingCrosshairBadgeUpdate = false;
+  const targetTime = pendingCrosshairBadgeTime;
+  if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, targetTime);
+  if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, targetTime);
+}
+
+function scheduleCrosshairBadgeRefresh(time?: string | number | null): void {
+  pendingCrosshairBadgeTime = time !== null && time !== undefined ? time : null;
+  hasPendingCrosshairBadgeUpdate = true;
+  if (crosshairBadgeRefreshRafId !== null) return;
+  crosshairBadgeRefreshRafId = requestAnimationFrame(flushCrosshairBadgeRefresh);
+}
+
 /** Toggle crosshair visibility on all four chart panes. */
 function toggleCrosshairVisibility() {
   crosshairHidden = !crosshairHidden;
@@ -3133,6 +3290,7 @@ function setupChartSync() {
 
   priceChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
+    markRangeSyncInteraction();
     syncLock = 'price';
     try {
       syncRangeFromOwner('price', timeRange);
@@ -3144,6 +3302,7 @@ function setupChartSync() {
   volumeDeltaRsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (isVolumeDeltaSyncSuppressed()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'rsi' || syncLock === 'volumeDelta') return;
+    markRangeSyncInteraction();
     syncLock = 'volumeDeltaRsi';
     try {
       syncRangeFromOwner('volumeDeltaRsi', timeRange);
@@ -3155,6 +3314,7 @@ function setupChartSync() {
   rsiChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (rsiChart?.isSyncSuppressed?.()) return;
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'volumeDelta') return;
+    markRangeSyncInteraction();
     syncLock = 'rsi';
     try {
       syncRangeFromOwner('rsi', timeRange);
@@ -3165,6 +3325,7 @@ function setupChartSync() {
 
   volumeDeltaChartInstance.timeScale().subscribeVisibleLogicalRangeChange((timeRange: any) => {
     if (!timeRange || syncLock === 'price' || syncLock === 'volumeDeltaRsi' || syncLock === 'rsi') return;
+    markRangeSyncInteraction();
     syncLock = 'volumeDelta';
     try {
       syncRangeFromOwner('volumeDelta', timeRange);
@@ -3231,13 +3392,11 @@ function setupChartSync() {
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
-      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
-      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
+      scheduleCrosshairBadgeRefresh(null);
       return;
     }
     if (crosshairHidden) return;
-    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
-    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
+    scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3248,16 +3407,14 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
-      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
-      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
+      scheduleCrosshairBadgeRefresh(null);
       return;
     }
     if (crosshairHidden) return;
     if (isVolumeDeltaRsiDivergencePlotToolActive()) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
     }
-    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
-    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
+    scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3268,16 +3425,14 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       volumeDeltaChartInstance.clearCrosshairPosition();
-      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
-      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
+      scheduleCrosshairBadgeRefresh(null);
       return;
     }
     if (crosshairHidden) return;
     if (isRsiDivergencePlotToolActive()) {
       updateRsiDivergencePlotPoint(param.time, true);
     }
-    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
-    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
+    scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnVolumeDelta(param.time);
@@ -3288,13 +3443,11 @@ function setupChartSync() {
       priceChart.clearCrosshairPosition();
       volumeDeltaRsiChartInstance.clearCrosshairPosition();
       rsiChartInstance.clearCrosshairPosition();
-      if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, null);
-      if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, null);
+      scheduleCrosshairBadgeRefresh(null);
       return;
     }
     if (crosshairHidden) return;
-    if (pricePaneContainerEl) setPricePaneChange(pricePaneContainerEl, param.time);
-    if (volumeDeltaPaneContainerEl) setVolumeDeltaCumulativeBadge(volumeDeltaPaneContainerEl, param.time);
+    scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
