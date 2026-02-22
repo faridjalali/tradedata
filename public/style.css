@@ -2261,6 +2261,12 @@ body.site-locked {
   }
 }
 
+@media (max-width: 767px) and (hover: none) and (pointer: coarse) {
+  .pane-btn {
+    zoom: 0.75;
+  }
+}
+
 #vd-chart-container { height: 200px; }
 #price-chart-container { height: 400px; }
 #rsi-chart-container { height: 200px; overflow: visible; padding-bottom: var(--sp-md); }
