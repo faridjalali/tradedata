@@ -119,8 +119,8 @@ export class RSIChart {
       },
       crosshair: {
         mode: 1, // CrosshairMode.Magnet — snaps to nearest data point
-        vertLine: { width: 0.5 as any },
-        horzLine: { width: 0.5 as any },
+        vertLine: { width: 0.75 as any },
+        horzLine: { width: 0.75 as any },
       },
       kineticScroll: {
         touch: false,
