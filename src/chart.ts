@@ -73,7 +73,6 @@ import {
   updateVDRsiLastPoint,
   isVolumeDeltaDivergenceToolActive,
   isVolumeDeltaSyncSuppressed,
-  fixedVolumeDeltaAutoscaleInfoProvider,
   normalizeVolumeDeltaValue,
   refreshVolumeDeltaTrendlineCrossLabels,
   deactivateVolumeDeltaDivergenceTool,
@@ -899,6 +898,8 @@ function applyTouchAxisGestureOverrides(root: ParentNode | null = document): voi
   if (!isMobileTouch || !root) return;
   const chartRoots = Array.from(root.querySelectorAll<HTMLElement>('.chart-container .tv-lightweight-charts'));
   for (const chartRoot of chartRoots) {
+    const paneContainer = chartRoot.closest('.chart-container');
+    const allowYAxisTouchScale = paneContainer?.id === 'price-chart-container';
     const table = chartRoot.querySelector('table');
     if (!table) continue;
 
@@ -911,7 +912,7 @@ function applyTouchAxisGestureOverrides(root: ParentNode | null = document): voi
 
     // Right Y-axis cells: allow chart to own the gesture.
     table.querySelectorAll('td:last-child, td:last-child *').forEach((el) => {
-      if (el instanceof HTMLElement) el.style.touchAction = 'none';
+      if (el instanceof HTMLElement) el.style.touchAction = allowYAxisTouchScale ? 'none' : 'pan-y';
     });
 
     // Bottom X-axis row: allow chart to own the gesture.
@@ -2176,23 +2177,17 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       pinch: true,
       axisPressedMouseMove: {
         time: true,
-        price: true,
+        price: false,
       },
       axisDoubleClickReset: {
         time: true,
-        price: true,
+        price: false,
       },
     },
     rightPriceScale: {
       borderColor: tc().surfaceElevated,
       minimumWidth: SCALE_MIN_WIDTH_PX,
       entireTextOnly: true,
-      // Default view: 20-80 range (20% margin top + 20% margin bottom)
-      // User can adjust but won't go beyond 0-100 data bounds
-      scaleMargins: {
-        top: 0.2, // 20% margin = hides 0-20 by default
-        bottom: 0.2, // 20% margin = hides 80-100 by default
-      },
     },
     timeScale: {
       visible: false,
@@ -2217,7 +2212,6 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
       minMove: 0.1,
       formatter: (value: number) => formatVolumeDeltaScaleLabel(Number(value)),
     },
-    autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
   });
 
   const timelineSeries = chart.addLineSeries({
@@ -2284,11 +2278,11 @@ function createVolumeDeltaChart(container: HTMLElement) {
       pinch: true,
       axisPressedMouseMove: {
         time: true,
-        price: true,
+        price: false,
       },
       axisDoubleClickReset: {
         time: true,
-        price: true,
+        price: false,
       },
     },
     rightPriceScale: {

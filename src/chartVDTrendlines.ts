@@ -467,7 +467,6 @@ function highlightVolumeDeltaPoints(points: Array<{ time: string | number; value
     priceLineVisible: false,
     lastValueVisible: false,
     crosshairMarkerVisible: false,
-    autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
   });
 
   const step = Math.max(1, Math.ceil(points.length / VOLUME_DELTA_MAX_HIGHLIGHT_POINTS));
@@ -532,7 +531,6 @@ export function drawVolumeDeltaTrendLine(
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
-      autoscaleInfoProvider: () => fixedVolumeDeltaAutoscaleInfoProvider(),
     });
     trendLineSeries.setData(trendLineData);
     volumeDeltaTrendLineSeriesList.push(trendLineSeries);

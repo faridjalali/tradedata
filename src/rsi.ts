@@ -34,8 +34,6 @@ export class RSIChart {
   private static readonly SCALE_MIN_WIDTH_PX = 56;
   private static readonly RSI_DATA_MIN = 0;
   private static readonly RSI_DATA_MAX = 100;
-  private static readonly RSI_AXIS_MIN = 20;
-  private static readonly RSI_AXIS_MAX = 80;
   private static readonly MIDLINE_VALUE = 50;
   private container: HTMLElement;
   // LightweightCharts CDN objects — any is required; no bundled type declarations
@@ -118,12 +116,6 @@ export class RSIChart {
         borderColor: themeColors.surfaceElevated,
         minimumWidth: RSIChart.SCALE_MIN_WIDTH_PX,
         entireTextOnly: true,
-        // Default view: 20-80 range (20% margin top + 20% margin bottom)
-        // User can adjust but won't go beyond 0-100 data bounds
-        scaleMargins: {
-          top: 0.2, // 20% margin = hides 0-20 by default
-          bottom: 0.2, // 20% margin = hides 80-100 by default
-        },
       },
       crosshair: {
         mode: 1, // CrosshairMode.Magnet — snaps to nearest data point
@@ -145,11 +137,11 @@ export class RSIChart {
         pinch: true,
         axisPressedMouseMove: {
           time: true,
-          price: true,
+          price: false,
         },
         axisDoubleClickReset: {
           time: true,
-          price: true,
+          price: false,
         },
       },
     });
@@ -198,17 +190,6 @@ export class RSIChart {
     if (!Number.isFinite(value)) return '';
     const label = Number(value).toFixed(1);
     return label.length >= RSIChart.SCALE_LABEL_CHARS ? label : label.padEnd(RSIChart.SCALE_LABEL_CHARS, ' ');
-  }
-
-  private fixedRSIAutoscaleInfoProvider(): any {
-    // Return the default axis range (20-80) to match VD-RSI behavior
-    // Combined with scaleMargins, this creates the proper Y-axis bounds
-    return {
-      priceRange: {
-        minValue: RSIChart.RSI_AXIS_MIN, // 20
-        maxValue: RSIChart.RSI_AXIS_MAX, // 80
-      },
-    };
   }
 
   private timeKey(time: string | number): string {
@@ -380,7 +361,6 @@ export class RSIChart {
           minMove: 1,
           formatter: (value: number) => this.formatRSIScaleLabel(Number(value)),
         },
-        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
         lastValueVisible: false,
       });
@@ -393,7 +373,6 @@ export class RSIChart {
           minMove: 1,
           formatter: (value: number) => this.formatRSIScaleLabel(Number(value)),
         },
-        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
         lastValueVisible: false,
       });
@@ -719,7 +698,6 @@ export class RSIChart {
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
-      autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
     });
 
     const step = Math.max(1, Math.ceil(points.length / RSIChart.MAX_HIGHLIGHT_POINTS));
@@ -940,7 +918,6 @@ export class RSIChart {
         color: '#ffa500', // Orange color for trend line
         lineWidth: 1,
         lineStyle: 0, // Solid line
-        autoscaleInfoProvider: () => this.fixedRSIAutoscaleInfoProvider(),
         priceLineVisible: false,
         lastValueVisible: false,
         crosshairMarkerVisible: false,
