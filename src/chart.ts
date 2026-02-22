@@ -209,6 +209,8 @@ const RANGE_SYNC_LAYOUT_REFRESH_MIN_INTERVAL_MS = 40;
 const RANGE_SYNC_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 110;
 const TOUCH_CROSSHAIR_HOLD_MS = 140;
 const TOUCH_CROSSHAIR_HOLD_MOVE_TOLERANCE_PX = 8;
+const CUSTOM_CHART_PANE_SELECTOR =
+  '#price-chart-container, #vd-rsi-chart-container, #rsi-chart-container, #vd-chart-container';
 const chartPrefetchInFlight = new Map<string, Promise<void>>();
 const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
 
@@ -703,7 +705,7 @@ function refreshMonthGridLines(): void {
 function getChartGestureTargetRole(target: EventTarget | null): ChartGestureTargetRole {
   const el = target instanceof HTMLElement ? target : null;
   if (!el) return 'unknown';
-  if (!el.closest('.chart-container')) return 'unknown';
+  if (!el.closest(CUSTOM_CHART_PANE_SELECTOR)) return 'unknown';
   if (el.closest('.tv-lightweight-charts table td:last-child')) return 'y-scale';
   if (el.closest('.tv-lightweight-charts table tr:last-child')) return 'x-scale';
   return 'plot';
@@ -845,7 +847,7 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   const activatePointerPan = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
     const target = event.target as HTMLElement | null;
-    if (!target?.closest('.chart-container')) return;
+    if (!target?.closest(CUSTOM_CHART_PANE_SELECTOR)) return;
     pointerPanInteractionActive = true;
     pointerGestureTargetRole = getChartGestureTargetRole(event.target);
   };
@@ -864,6 +866,22 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
   container.addEventListener('touchstart', activateTouchPan, { passive: true });
   container.addEventListener(
+    'touchstart',
+    (event: TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const isPricePaneYAxis =
+        Boolean(target.closest('#price-chart-container')) &&
+        Boolean(target.closest('.tv-lightweight-charts table td:last-child')) &&
+        !target.closest('.tv-lightweight-charts table tr:last-child');
+      if (isPricePaneYAxis) {
+        // Safari can ignore nested touch-action on table cells; block page scroll explicitly.
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
+  );
+  container.addEventListener(
     'touchmove',
     (event: TouchEvent) => {
       touchPanInteractionActive = true;
@@ -879,6 +897,21 @@ function ensureTouchPanTracking(container: HTMLElement): void {
       }
     },
     { passive: true },
+  );
+  container.addEventListener(
+    'touchmove',
+    (event: TouchEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const isPricePaneYAxis =
+        Boolean(target.closest('#price-chart-container')) &&
+        Boolean(target.closest('.tv-lightweight-charts table td:last-child')) &&
+        !target.closest('.tv-lightweight-charts table tr:last-child');
+      if (isPricePaneYAxis) {
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
   );
   container.addEventListener('touchend', deactivateTouchPan, { passive: true });
   container.addEventListener(
@@ -896,10 +929,11 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
 function applyTouchAxisGestureOverrides(root: ParentNode | null = document): void {
   if (!isMobileTouch || !root) return;
-  const chartRoots = Array.from(root.querySelectorAll<HTMLElement>('.chart-container .tv-lightweight-charts'));
-  for (const chartRoot of chartRoots) {
-    const paneContainer = chartRoot.closest('.chart-container');
-    const allowYAxisTouchScale = paneContainer?.id === 'price-chart-container';
+  const paneContainers = Array.from(root.querySelectorAll<HTMLElement>(CUSTOM_CHART_PANE_SELECTOR));
+  for (const paneContainer of paneContainers) {
+    const chartRoot = paneContainer.querySelector<HTMLElement>('.tv-lightweight-charts');
+    if (!chartRoot) continue;
+    const allowYAxisTouchScale = paneContainer.id === 'price-chart-container';
     const table = chartRoot.querySelector('table');
     if (!table) continue;
 
@@ -1908,21 +1942,33 @@ function positionVolumeDeltaCumulativeBadges(
   cumulativeEl: HTMLElement,
   cumulativePriceChangeEl: HTMLElement,
 ): void {
-  const vdBadge = container.querySelector('.pane-name-badge[data-pane="volumeDelta"]') as HTMLElement | null;
-  const fallbackLeft = getPaneBadgeStartLeft(container);
-  const top =
-    vdBadge?.offsetTop !== undefined
-      ? vdBadge.offsetTop
-      : PANE_TOOL_BUTTON_TOP_PX + PANE_TOOL_BUTTON_SIZE_PX + PANE_TOOL_BUTTON_GAP_PX;
-  const left = vdBadge ? vdBadge.offsetLeft + vdBadge.offsetWidth + TOP_PANE_BADGE_GAP_PX : fallbackLeft;
   const cumulativeWidth = Math.ceil(cumulativeEl.getBoundingClientRect().width || cumulativeEl.offsetWidth || 0);
-  const changeLeft = left + cumulativeWidth + TOP_PANE_BADGE_GAP_PX;
+  const priceChangeWidth = Math.ceil(
+    cumulativePriceChangeEl.getBoundingClientRect().width || cumulativePriceChangeEl.offsetWidth || 0,
+  );
+  const rightInset = SCALE_MIN_WIDTH_PX + 8;
+  const divergenceSummaryEl = container.querySelector('.volume-delta-divergence-summary') as HTMLElement | null;
+  const summaryTop = divergenceSummaryEl ? divergenceSummaryEl.offsetTop : PANE_TOOL_BUTTON_TOP_PX;
+  const summaryHeight =
+    divergenceSummaryEl && divergenceSummaryEl.style.display !== 'none'
+      ? Math.ceil(divergenceSummaryEl.getBoundingClientRect().height || divergenceSummaryEl.offsetHeight || 0)
+      : PANE_TOOL_BUTTON_SIZE_PX;
+  const top = summaryTop + Math.max(PANE_TOOL_BUTTON_SIZE_PX, summaryHeight) + PANE_TOOL_BUTTON_GAP_PX;
+  const minLeft = 8;
+  const priceChangeLeft = Math.max(
+    minLeft + cumulativeWidth + TOP_PANE_BADGE_GAP_PX,
+    container.clientWidth - rightInset - priceChangeWidth,
+  );
+  const cumulativeLeft = Math.max(minLeft, priceChangeLeft - TOP_PANE_BADGE_GAP_PX - cumulativeWidth);
 
-  cumulativeEl.style.left = `${left}px`;
+  cumulativeEl.style.left = `${cumulativeLeft}px`;
+  cumulativeEl.style.right = 'auto';
   cumulativeEl.style.top = `${top}px`;
-  cumulativePriceChangeEl.style.left = `${changeLeft}px`;
+  cumulativePriceChangeEl.style.left = `${priceChangeLeft}px`;
+  cumulativePriceChangeEl.style.right = 'auto';
   cumulativePriceChangeEl.style.top = `${top}px`;
-  cumulativePriceChangeEl.style.maxWidth = `calc(100% - ${changeLeft + 30}px)`;
+  cumulativeEl.style.maxWidth = `calc(100% - ${rightInset + priceChangeWidth + TOP_PANE_BADGE_GAP_PX + 12}px)`;
+  cumulativePriceChangeEl.style.maxWidth = `calc(100% - ${rightInset + 8}px)`;
 }
 
 function formatSignedCompactVolumeDelta(value: number): string {
