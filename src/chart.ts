@@ -196,6 +196,8 @@ let hasPendingCrosshairBadgeUpdate = false;
 let pendingCrosshairBadgeTime: string | number | null = null;
 let vdZoneOverlayHiddenForPan = false;
 let vdZoneOverlayRevealAfterRefresh = false;
+let touchGestureTargetRole: ChartGestureTargetRole = 'unknown';
+let pointerGestureTargetRole: ChartGestureTargetRole = 'unknown';
 const CROSSHAIR_LINE_WIDTH_PX = 0.5;
 const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
 const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
@@ -208,6 +210,7 @@ const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
 interface TradingCalendarContextPayload {
   isRegularHoursEt?: boolean;
 }
+type ChartGestureTargetRole = 'unknown' | 'plot' | 'x-scale' | 'y-scale';
 
 let marketContextCachedAtMs = 0;
 let marketContextIsRegularHoursEt = false;
@@ -692,9 +695,21 @@ function refreshMonthGridLines(): void {
   refreshVolumeDeltaTrendlineCrossLabels();
 }
 
+function getChartGestureTargetRole(target: EventTarget | null): ChartGestureTargetRole {
+  const el = target instanceof HTMLElement ? target : null;
+  if (!el) return 'unknown';
+  if (!el.closest('.chart-container')) return 'unknown';
+  if (el.closest('.tv-lightweight-charts table td:last-child')) return 'y-scale';
+  if (el.closest('.tv-lightweight-charts table tr:last-child')) return 'x-scale';
+  return 'plot';
+}
+
 function markRangeSyncInteraction(): void {
   rangeSyncInteractionActiveUntilMs = performance.now() + RANGE_SYNC_INTERACTION_WINDOW_MS;
-  if (touchPanInteractionActive || pointerPanInteractionActive) {
+  const activeYScaleGesture =
+    (touchPanInteractionActive && touchGestureTargetRole === 'y-scale') ||
+    (pointerPanInteractionActive && pointerGestureTargetRole === 'y-scale');
+  if ((touchPanInteractionActive || pointerPanInteractionActive) && !activeYScaleGesture) {
     hideVDZoneOverlayForPan();
   }
 }
@@ -788,16 +803,21 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   if (touchPanTrackingInstalled) return;
   touchPanTrackingInstalled = true;
 
-  const activateTouchPan = (): void => {
+  const activateTouchPan = (event: TouchEvent): void => {
     touchPanInteractionActive = true;
+    touchGestureTargetRole = getChartGestureTargetRole(event.target);
   };
 
   const deactivateTouchPan = (event: TouchEvent): void => {
     const remainingTouches = Number(event.touches?.length || 0);
     if (remainingTouches > 0) return;
+    const shouldRestoreVdOverlay = vdZoneOverlayHiddenForPan;
     touchPanInteractionActive = false;
-    revealVDZoneOverlayAfterPanRefresh();
-    scheduleChartLayoutRefresh(true);
+    touchGestureTargetRole = 'unknown';
+    if (shouldRestoreVdOverlay) {
+      revealVDZoneOverlayAfterPanRefresh();
+      scheduleChartLayoutRefresh(true);
+    }
   };
 
   const activatePointerPan = (event: PointerEvent): void => {
@@ -805,14 +825,19 @@ function ensureTouchPanTracking(container: HTMLElement): void {
     const target = event.target as HTMLElement | null;
     if (!target?.closest('.chart-container')) return;
     pointerPanInteractionActive = true;
+    pointerGestureTargetRole = getChartGestureTargetRole(event.target);
   };
 
   const deactivatePointerPan = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
     if (!pointerPanInteractionActive) return;
+    const shouldRestoreVdOverlay = vdZoneOverlayHiddenForPan;
     pointerPanInteractionActive = false;
-    revealVDZoneOverlayAfterPanRefresh();
-    scheduleChartLayoutRefresh(true);
+    pointerGestureTargetRole = 'unknown';
+    if (shouldRestoreVdOverlay) {
+      revealVDZoneOverlayAfterPanRefresh();
+      scheduleChartLayoutRefresh(true);
+    }
   };
 
   container.addEventListener('touchstart', activateTouchPan, { passive: true });
@@ -2878,6 +2903,8 @@ export function cancelChartLoading(): void {
   }
   touchPanInteractionActive = false;
   pointerPanInteractionActive = false;
+  touchGestureTargetRole = 'unknown';
+  pointerGestureTargetRole = 'unknown';
   rangeSyncInteractionActiveUntilMs = 0;
   resetVDZoneOverlayPanVisibility();
   chartLiveRefreshInFlight = false;
@@ -2910,6 +2937,8 @@ export async function renderCustomChart(
   }
   hasPendingCrosshairBadgeUpdate = false;
   pendingCrosshairBadgeTime = null;
+  touchGestureTargetRole = 'unknown';
+  pointerGestureTargetRole = 'unknown';
   resetVDZoneOverlayPanVisibility();
   fetchTickerInfo(ticker).catch(() => {});
   const cacheKey = buildChartDataCacheKey(ticker, interval);
