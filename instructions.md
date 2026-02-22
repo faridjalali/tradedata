@@ -791,6 +791,12 @@ The gear icon in the header provides a settings dropdown (theme, minichart, time
 - Live refresh: 1-minute polling cadence, but chart updates only during regular U.S. market hours
   (9:30 AM-4:00 PM ET) using server trading-calendar context (holiday + early-close aware).
 - Pre-warm triggered after render: loads adjacent intervals in background.
+- **Mobile crosshair toggle**: On touch devices the crosshair starts hidden. Double-tap
+  anywhere inside a chart pane to toggle it on/off (all four panes sync). Touch event
+  listeners use `capture: true` so they fire before LightweightCharts' internal handlers.
+  When hidden, each pane's `subscribeCrosshairMove` callback immediately calls
+  `clearCrosshairPosition()` on the originating chart to suppress the library's built-in
+  long-press crosshair.
 - **Ticker badge tooltip**: Clicking the ticker badge in the chart shows an info tooltip
   (name, SIC description, market cap, business description) fetched from
   `GET /api/chart/ticker-info?ticker=X`. Tooltip auto-dismisses after 4 seconds.

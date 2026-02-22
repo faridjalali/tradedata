@@ -3555,7 +3555,10 @@ function setupChartSync() {
       scheduleCrosshairBadgeRefresh(null);
       return;
     }
-    if (crosshairHidden) return;
+    if (crosshairHidden) {
+      priceChart.clearCrosshairPosition();
+      return;
+    }
     scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
     setCrosshairOnRsi(param.time);
@@ -3570,7 +3573,10 @@ function setupChartSync() {
       scheduleCrosshairBadgeRefresh(null);
       return;
     }
-    if (crosshairHidden) return;
+    if (crosshairHidden) {
+      volumeDeltaRsiChartInstance.clearCrosshairPosition();
+      return;
+    }
     if (isVolumeDeltaRsiDivergencePlotToolActive()) {
       updateVolumeDeltaRsiDivergencePlotPoint(param.time, true);
     }
@@ -3588,7 +3594,10 @@ function setupChartSync() {
       scheduleCrosshairBadgeRefresh(null);
       return;
     }
-    if (crosshairHidden) return;
+    if (crosshairHidden) {
+      rsiChartInstance.clearCrosshairPosition();
+      return;
+    }
     if (isRsiDivergencePlotToolActive()) {
       updateRsiDivergencePlotPoint(param.time, true);
     }
@@ -3606,7 +3615,10 @@ function setupChartSync() {
       scheduleCrosshairBadgeRefresh(null);
       return;
     }
-    if (crosshairHidden) return;
+    if (crosshairHidden) {
+      volumeDeltaChartInstance.clearCrosshairPosition();
+      return;
+    }
     scheduleCrosshairBadgeRefresh(param.time);
     setCrosshairOnPrice(param.time);
     setCrosshairOnVolumeDeltaRsi(param.time);
@@ -3663,6 +3675,8 @@ export function initChartControls() {
   initChartFullscreen();
 
   // Mobile only: double-tap within any chart pane toggles crosshair visibility.
+  // Use capture phase so the events are seen before LightweightCharts' internal
+  // handlers can call stopPropagation() and swallow them.
   const chartSection = document.getElementById('custom-chart-container');
   if (chartSection && isMobileTouch) {
     let containerLastTapTime = 0;
@@ -3679,7 +3693,7 @@ export function initChartControls() {
         touchStartX = Number(touch.clientX);
         touchStartY = Number(touch.clientY);
       },
-      { passive: true },
+      { passive: true, capture: true },
     );
     chartSection.addEventListener(
       'touchmove',
@@ -3692,21 +3706,25 @@ export function initChartControls() {
           touchMoved = true;
         }
       },
-      { passive: true },
+      { passive: true, capture: true },
     );
-    chartSection.addEventListener('touchend', (e) => {
-      if (touchMoved) return;
-      const target = e.target as HTMLElement | null;
-      if (!target?.closest('.chart-container')) return;
-      const now = Date.now();
-      if (now - containerLastTapTime < 300) {
-        e.preventDefault();
-        toggleCrosshairVisibility();
-        containerLastTapTime = 0;
-      } else {
-        containerLastTapTime = now;
-      }
-    });
+    chartSection.addEventListener(
+      'touchend',
+      (e) => {
+        if (touchMoved) return;
+        const target = e.target as HTMLElement | null;
+        if (!target?.closest('.chart-container')) return;
+        const now = Date.now();
+        if (now - containerLastTapTime < 300) {
+          e.preventDefault();
+          toggleCrosshairVisibility();
+          containerLastTapTime = 0;
+        } else {
+          containerLastTapTime = now;
+        }
+      },
+      { passive: false, capture: true },
+    );
   }
 }
 

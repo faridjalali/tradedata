@@ -239,6 +239,7 @@ Opens when clicking an alert card. Shows:
 - Trendline drawing and eraser tools
 - Divergence plotting tool (mark divergence between price and indicators)
 - Per-pane settings: MA toggles, VD source interval, RSI length
+- Mobile crosshair: hidden by default on touch devices; double-tap any chart pane to toggle on/off across all panes
 - Ticker badge tooltip: click shows company info (name, SIC, market cap, description), auto-dismisses after 4s; click again opens ticker's website
 
 **VDF Analysis Panel** (collapsible, appears when VDF data available):
