@@ -198,12 +198,18 @@ let vdZoneOverlayHiddenForPan = false;
 let vdZoneOverlayRevealAfterRefresh = false;
 let touchGestureTargetRole: ChartGestureTargetRole = 'unknown';
 let pointerGestureTargetRole: ChartGestureTargetRole = 'unknown';
+let touchCrosshairHoldTimerId: number | null = null;
+let touchCrosshairHoldClientX = 0;
+let touchCrosshairHoldClientY = 0;
+let touchCrosshairHoldTarget: EventTarget | null = null;
 const CROSSHAIR_LINE_WIDTH_PX = 0.5;
 const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
 const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
 const TOUCH_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 150;
 const RANGE_SYNC_LAYOUT_REFRESH_MIN_INTERVAL_MS = 40;
 const RANGE_SYNC_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 110;
+const TOUCH_CROSSHAIR_HOLD_MS = 140;
+const TOUCH_CROSSHAIR_HOLD_MOVE_TOLERANCE_PX = 8;
 const chartPrefetchInFlight = new Map<string, Promise<void>>();
 const MARKET_CONTEXT_CACHE_MS = 45 * 1000;
 
@@ -806,14 +812,31 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   const activateTouchPan = (event: TouchEvent): void => {
     touchPanInteractionActive = true;
     touchGestureTargetRole = getChartGestureTargetRole(event.target);
+    clearTouchCrosshairHoldTimer();
+    if (touchGestureTargetRole === 'plot' && event.touches.length === 1) {
+      const touch = event.touches[0];
+      touchCrosshairHoldClientX = Number(touch.clientX);
+      touchCrosshairHoldClientY = Number(touch.clientY);
+      touchCrosshairHoldTarget = event.target;
+      touchCrosshairHoldTimerId = window.setTimeout(() => {
+        touchCrosshairHoldTimerId = null;
+        if (!touchPanInteractionActive) return;
+        if (touchGestureTargetRole !== 'plot') return;
+        const t = getTouchHoldCrosshairTime(touchCrosshairHoldTarget, touchCrosshairHoldClientX);
+        if (t === null || t === undefined) return;
+        setCrosshairAcrossAllPanesAtTime(t);
+      }, TOUCH_CROSSHAIR_HOLD_MS);
+    }
   };
 
   const deactivateTouchPan = (event: TouchEvent): void => {
     const remainingTouches = Number(event.touches?.length || 0);
     if (remainingTouches > 0) return;
+    clearTouchCrosshairHoldTimer();
     const shouldRestoreVdOverlay = vdZoneOverlayHiddenForPan;
     touchPanInteractionActive = false;
     touchGestureTargetRole = 'unknown';
+    touchCrosshairHoldTarget = null;
     if (shouldRestoreVdOverlay) {
       revealVDZoneOverlayAfterPanRefresh();
       scheduleChartLayoutRefresh(true);
@@ -841,9 +864,32 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   };
 
   container.addEventListener('touchstart', activateTouchPan, { passive: true });
-  container.addEventListener('touchmove', activateTouchPan, { passive: true });
+  container.addEventListener(
+    'touchmove',
+    (event: TouchEvent) => {
+      touchPanInteractionActive = true;
+      if (touchCrosshairHoldTimerId !== null && event.touches.length === 1) {
+        const touch = event.touches[0];
+        const dx = Math.abs(Number(touch.clientX) - touchCrosshairHoldClientX);
+        const dy = Math.abs(Number(touch.clientY) - touchCrosshairHoldClientY);
+        if (dx > TOUCH_CROSSHAIR_HOLD_MOVE_TOLERANCE_PX || dy > TOUCH_CROSSHAIR_HOLD_MOVE_TOLERANCE_PX) {
+          clearTouchCrosshairHoldTimer();
+        }
+      } else if (touchCrosshairHoldTimerId !== null && event.touches.length !== 1) {
+        clearTouchCrosshairHoldTimer();
+      }
+    },
+    { passive: true },
+  );
   container.addEventListener('touchend', deactivateTouchPan, { passive: true });
-  container.addEventListener('touchcancel', deactivateTouchPan, { passive: true });
+  container.addEventListener(
+    'touchcancel',
+    (event: TouchEvent) => {
+      clearTouchCrosshairHoldTimer();
+      deactivateTouchPan(event);
+    },
+    { passive: true },
+  );
   container.addEventListener('pointerdown', activatePointerPan, { passive: true });
   container.addEventListener('pointercancel', deactivatePointerPan, { passive: true });
   document.addEventListener('pointerup', deactivatePointerPan, { passive: true });
@@ -2901,6 +2947,7 @@ export function cancelChartLoading(): void {
     window.clearInterval(chartLiveRefreshTimer);
     chartLiveRefreshTimer = null;
   }
+  clearTouchCrosshairHoldTimer();
   touchPanInteractionActive = false;
   pointerPanInteractionActive = false;
   touchGestureTargetRole = 'unknown';
@@ -2935,6 +2982,7 @@ export async function renderCustomChart(
     cancelAnimationFrame(crosshairBadgeRefreshRafId);
     crosshairBadgeRefreshRafId = null;
   }
+  clearTouchCrosshairHoldTimer();
   hasPendingCrosshairBadgeUpdate = false;
   pendingCrosshairBadgeTime = null;
   touchGestureTargetRole = 'unknown';
@@ -3304,6 +3352,115 @@ function scheduleCrosshairBadgeRefresh(time?: string | number | null): void {
   hasPendingCrosshairBadgeUpdate = true;
   if (crosshairBadgeRefreshRafId !== null) return;
   crosshairBadgeRefreshRafId = requestAnimationFrame(flushCrosshairBadgeRefresh);
+}
+
+function setCrosshairOnPricePaneAtTime(time: string | number): void {
+  const entry = getNearestMappedEntryAtOrBefore(time, priceByTime);
+  if (entry && candleSeries && priceChart) {
+    try {
+      priceChart.setCrosshairPosition(entry.value, entry.time, candleSeries);
+      return;
+    } catch {
+      // Fall through to clear.
+    }
+  }
+  priceChart?.clearCrosshairPosition();
+}
+
+function setCrosshairOnVolumeDeltaRsiPaneAtTime(time: string | number): void {
+  const entry = getNearestMappedEntryAtOrBefore(time, volumeDeltaRsiByTime);
+  if (entry && volumeDeltaRsiChart && volumeDeltaRsiSeries) {
+    try {
+      volumeDeltaRsiChart.setCrosshairPosition(entry.value, entry.time, volumeDeltaRsiSeries);
+      return;
+    } catch {
+      // Fall through to clear.
+    }
+  }
+  volumeDeltaRsiChart?.clearCrosshairPosition();
+}
+
+function setCrosshairOnRsiPaneAtTime(time: string | number): void {
+  const entry = getNearestMappedEntryAtOrBefore(time, rsiByTime);
+  const chart = rsiChart?.getChart?.();
+  const series = rsiChart?.getSeries?.();
+  if (entry && chart && series) {
+    try {
+      chart.setCrosshairPosition(entry.value, entry.time, series);
+      return;
+    } catch {
+      // Fall through to clear.
+    }
+  }
+  chart?.clearCrosshairPosition();
+}
+
+function setCrosshairOnVolumeDeltaPaneAtTime(time: string | number): void {
+  const entry = getNearestMappedEntryAtOrBefore(time, volumeDeltaByTime);
+  if (entry && volumeDeltaChart && volumeDeltaHistogramSeries) {
+    try {
+      volumeDeltaChart.setCrosshairPosition(entry.value, entry.time, volumeDeltaHistogramSeries);
+      return;
+    } catch {
+      // Fall through to clear.
+    }
+  }
+  volumeDeltaChart?.clearCrosshairPosition();
+}
+
+function setCrosshairAcrossAllPanesAtTime(time: string | number): void {
+  if (crosshairHidden) return;
+  scheduleCrosshairBadgeRefresh(time);
+  setCrosshairOnPricePaneAtTime(time);
+  setCrosshairOnVolumeDeltaRsiPaneAtTime(time);
+  setCrosshairOnRsiPaneAtTime(time);
+  setCrosshairOnVolumeDeltaPaneAtTime(time);
+}
+
+function getChartApiForContainerId(containerId: string): any | null {
+  if (containerId === 'price-chart-container') return priceChart;
+  if (containerId === 'vd-rsi-chart-container') return volumeDeltaRsiChart;
+  if (containerId === 'vd-chart-container') return volumeDeltaChart;
+  if (containerId === 'rsi-chart-container') return rsiChart?.getChart?.() || null;
+  return null;
+}
+
+function getTouchHoldCrosshairTime(target: EventTarget | null, clientX: number): string | number | null {
+  const el = target instanceof HTMLElement ? target : null;
+  const container = el?.closest('.chart-container') as HTMLElement | null;
+  if (!container) return null;
+  const chartApi = getChartApiForContainerId(container.id);
+  if (!chartApi) return null;
+
+  const rect = container.getBoundingClientRect();
+  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+
+  try {
+    const directTime = chartApi.timeScale?.().coordinateToTime?.(x);
+    const normalizedDirect = normalizeCrosshairTimeValue(directTime);
+    if (normalizedDirect !== null) return normalizedDirect;
+  } catch {
+    // Fall through to logical conversion.
+  }
+
+  try {
+    const logical = Number(chartApi.timeScale?.().coordinateToLogical?.(x));
+    if (Number.isFinite(logical) && Array.isArray(currentBars) && currentBars.length > 0) {
+      const idx = Math.max(0, Math.min(currentBars.length - 1, Math.round(logical)));
+      const t = currentBars[idx]?.time;
+      if (typeof t === 'string' || typeof t === 'number') return t;
+    }
+  } catch {
+    // Fall through to center cue.
+  }
+
+  return getTrendlineCrosshairCueTime();
+}
+
+function clearTouchCrosshairHoldTimer(): void {
+  if (touchCrosshairHoldTimerId === null) return;
+  window.clearTimeout(touchCrosshairHoldTimerId);
+  touchCrosshairHoldTimerId = null;
 }
 
 /** Toggle crosshair visibility on all four chart panes. */
