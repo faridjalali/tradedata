@@ -201,6 +201,7 @@ let touchCrosshairHoldTimerId: number | null = null;
 let touchCrosshairHoldClientX = 0;
 let touchCrosshairHoldClientY = 0;
 let touchCrosshairHoldTarget: EventTarget | null = null;
+let touchPricePaneYAxisGestureActive = false;
 const CROSSHAIR_LINE_WIDTH_PX = 0.75;
 const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
 const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
@@ -808,6 +809,20 @@ function ensureTouchPanTracking(container: HTMLElement): void {
   if (touchPanTrackingInstalled) return;
   touchPanTrackingInstalled = true;
 
+  const shouldCapturePricePaneYAxisTouch = (event: TouchEvent): boolean => {
+    const touch = event.touches?.[0] || event.changedTouches?.[0];
+    if (!touch) return false;
+    const pricePane = pricePaneContainerEl || (document.getElementById('price-chart-container') as HTMLElement | null);
+    if (!pricePane) return false;
+    const rect = pricePane.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    const x = Number(touch.clientX);
+    const y = Number(touch.clientY);
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return false;
+    const yAxisStripWidth = SCALE_MIN_WIDTH_PX + 14;
+    return x >= rect.right - yAxisStripWidth;
+  };
+
   const activateTouchPan = (event: TouchEvent): void => {
     touchPanInteractionActive = true;
     touchGestureTargetRole = getChartGestureTargetRole(event.target);
@@ -834,6 +849,7 @@ function ensureTouchPanTracking(container: HTMLElement): void {
     clearTouchCrosshairHoldTimer();
     const shouldRestoreVdOverlay = vdZoneOverlayHiddenForPan;
     touchPanInteractionActive = false;
+    touchPricePaneYAxisGestureActive = false;
     touchGestureTargetRole = 'unknown';
     touchCrosshairHoldTarget = null;
     if (shouldRestoreVdOverlay) {
@@ -864,6 +880,16 @@ function ensureTouchPanTracking(container: HTMLElement): void {
 
   container.addEventListener('touchstart', activateTouchPan, { passive: true });
   container.addEventListener(
+    'touchstart',
+    (event: TouchEvent) => {
+      touchPricePaneYAxisGestureActive = shouldCapturePricePaneYAxisTouch(event);
+      if (touchPricePaneYAxisGestureActive) {
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
+  );
+  container.addEventListener(
     'touchmove',
     (event: TouchEvent) => {
       touchPanInteractionActive = true;
@@ -880,11 +906,24 @@ function ensureTouchPanTracking(container: HTMLElement): void {
     },
     { passive: true },
   );
+  container.addEventListener(
+    'touchmove',
+    (event: TouchEvent) => {
+      if (!touchPricePaneYAxisGestureActive && shouldCapturePricePaneYAxisTouch(event)) {
+        touchPricePaneYAxisGestureActive = true;
+      }
+      if (touchPricePaneYAxisGestureActive) {
+        event.preventDefault();
+      }
+    },
+    { passive: false, capture: true },
+  );
   container.addEventListener('touchend', deactivateTouchPan, { passive: true });
   container.addEventListener(
     'touchcancel',
     (event: TouchEvent) => {
       clearTouchCrosshairHoldTimer();
+      touchPricePaneYAxisGestureActive = false;
       deactivateTouchPan(event);
     },
     { passive: true },
