@@ -196,6 +196,7 @@ let hasPendingCrosshairBadgeUpdate = false;
 let pendingCrosshairBadgeTime: string | number | null = null;
 let vdZoneOverlayHiddenForPan = false;
 let vdZoneOverlayRevealAfterRefresh = false;
+const CROSSHAIR_LINE_WIDTH_PX = 0.5;
 const RANGE_SYNC_INTERACTION_WINDOW_MS = 140;
 const TOUCH_LAYOUT_REFRESH_MIN_INTERVAL_MS = 72;
 const TOUCH_VD_ZONE_REFRESH_MIN_INTERVAL_MS = 150;
@@ -1981,6 +1982,8 @@ function createPriceChart(container: HTMLElement) {
     },
     crosshair: {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+      vertLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
+      horzLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
     },
     kineticScroll: {
       touch: false,
@@ -2057,6 +2060,8 @@ function createVolumeDeltaRsiChart(container: HTMLElement) {
     },
     crosshair: {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+      vertLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
+      horzLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
     },
     kineticScroll: {
       touch: false,
@@ -2163,6 +2168,8 @@ function createVolumeDeltaChart(container: HTMLElement) {
     },
     crosshair: {
       mode: isMobileTouch ? CrosshairMode.Magnet : CrosshairMode.Normal,
+      vertLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
+      horzLine: { width: CROSSHAIR_LINE_WIDTH_PX as any },
     },
     kineticScroll: {
       touch: false,
